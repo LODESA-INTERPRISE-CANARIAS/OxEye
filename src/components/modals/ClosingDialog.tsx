@@ -5,6 +5,7 @@ import {resultHTML} from '../../engine/emergency/risk';
 import {phases} from '../../engine/logistics/phases';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {PhaseFilter, ShiftPlanResult} from '../../types';
+import {PostSimDiagnosticsView} from './PostSimDiagnosticsView';
 
 export interface ClosingDialogData {
   closedPhase: PhaseFilter;
@@ -107,11 +108,79 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
       <h2>Balance de jornada</h2>
       <div id="day-body">
         {!plan && data?.engine && (
-          <div
-            dangerouslySetInnerHTML={{
-              __html: resultHTML(data.engine),
-            }}
-          />
+          <>
+            <PostSimDiagnosticsView
+              engine={data.engine}
+              onSceneChanged={onSceneChanged}
+              onCloseModal={() => setActiveModal(null)}
+            />
+            <div
+              dangerouslySetInnerHTML={{
+                __html: resultHTML(data.engine),
+              }}
+            />
+          </>
+        )}
+        {plan && (
+          <section className="shift-visual-card">
+            <div className="diag-bar-meta">
+              <span>Avance del turno logístico</span>
+              <b>
+                {finished.length} / {plan.required} tareas (
+                {plan.required > 0
+                  ? Math.round((finished.length / plan.required) * 100)
+                  : 100}{' '}
+                %)
+              </b>
+            </div>
+            <div className="diag-bar-track">
+              <div
+                className="diag-bar-fill"
+                style={{
+                  width: `${plan.required > 0 ? Math.min(100, Math.round((finished.length / plan.required) * 100)) : 100}%`,
+                  background: pending > 0 ? '#d97706' : '#6aa84f',
+                }}
+              />
+            </div>
+            {(pending > 0 || plan.alerts.length > 0) && (
+              <article className="diag-guide-card severity-high" style={{marginTop: '12px'}}>
+                <header className="diag-guide-head">
+                  <span className="diag-guide-title">
+                    <i style={{background: '#d97706'}} />
+                    🚚 Tareas pendientes o alertas de turno
+                  </span>
+                  <span className="diag-badge badge-high">
+                    {pending} pendientes
+                  </span>
+                </header>
+                <p className="diag-why">
+                  El turno configurado no ha bastado para completar todas las
+                  piezas o faltan zonas logísticas (carga, maniobra o contenedores).
+                </p>
+                {plan.alerts.length > 0 && (
+                  <p className="diag-evidence">
+                    <b>Alertas:</b> {plan.alerts.join(' · ')}
+                  </p>
+                )}
+                <div className="diag-actions">
+                  <button
+                    type="button"
+                    className="dark"
+                    onClick={() => setActiveModal('org')}
+                  >
+                    Añadir operarios / camiones
+                  </button>
+                  <button
+                    type="button"
+                    className="quiet"
+                    onClick={() => setActiveModal('parameters')}
+                  >
+                    Ajustar tiempos y horas de turno
+                  </button>
+                </div>
+              </article>
+            )}
+          </section>
         )}
         <p>
           {(phases as Record<string, string>)[closedPhase] || 'Evento'} ·{' '}

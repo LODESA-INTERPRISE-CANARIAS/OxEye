@@ -20,6 +20,7 @@ import {membership, phaseScene} from '../../engine/logistics/phases';
 import {type LayoutOptions, redesign} from '../../engine/planning/layout';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {LensMode, PhaseKey, PolygonElement} from '../../types';
+import {PostSimDiagnosticsView} from '../modals/PostSimDiagnosticsView';
 
 export interface ProposalState {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1432,7 +1433,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     automáticamente.
                   </p>
                 ) : (
-                  <div className="review-accordions">
+                  <>
+                    <PostSimDiagnosticsView
+                      engine={engine}
+                      compact
+                      onSceneChanged={onSceneChanged}
+                    />
+                    <div className="review-accordions">
                     <details className="accordion-card" open>
                       <summary>
                         Prioridades del ensayo
@@ -1535,7 +1542,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {item.observedRuns || 0} ensayos: {item.description}
                       </p>
                     ))}
-                  </div>
+                    </div>
+                  </>
                 )}
               </div>
               <button

@@ -162,7 +162,7 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     await expect(page.locator('#heavy-load-toggle')).toBeChecked();
     await expect(page.locator('#subsoil-load-warning')).toBeVisible();
 
-    // Pulsar Play abre automáticamente el diálogo de riesgos con el bloqueo de carga pesada
+    // Pulsar Play abre automáticamente el diálogo de riesgos con el bloqueo de carga pesada y guía interactiva
     await page.locator('#play').click();
     const riskDialog = page.locator('#risk-dialog');
     await expect(riskDialog).toBeVisible();
@@ -170,5 +170,16 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
       'Carga pesada en zona de calor del subsuelo: Escenario'
     );
     await expect(riskDialog).toContainText('columna «Columna 1»');
+    await expect(
+      riskDialog.getByRole('button', {
+        name: 'Ver en Rayos X y seleccionar pieza',
+      })
+    ).toBeVisible();
+    await riskDialog
+      .getByRole('button', {name: 'Desmarcar carga pesada'})
+      .click();
+    await expect(
+      riskDialog.locator('[data-risk-id^="subsoil-load-"]')
+    ).toHaveCount(0);
   });
 });
