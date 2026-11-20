@@ -16,7 +16,11 @@ export const LayerPanel: React.FC = () => {
   const setRoutesVisible = useProjectStore((s) => s.setRoutesVisible);
 
   return (
-    <div id="layer-panel" className="layer-panel" hidden={!layerPanelOpen}>
+    <div
+      id="layer-panel"
+      className="float-panel layer-panel"
+      hidden={!layerPanelOpen}
+    >
       <span className="eyebrow">CAPAS</span>
       <label className="check">
         <input

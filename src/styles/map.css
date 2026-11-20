@@ -250,7 +250,7 @@
 .inspector {
   top: 17px;
   right: 17px;
-  width: 237px;
+  width: 262px;
 }
 
 .inspector .close {
@@ -259,33 +259,79 @@
   background: none;
   padding: 0;
   font-size: 20px;
+  line-height: 1;
+  color: var(--purple-dark);
+  cursor: pointer;
+}
+
+.inspector .close:hover {
+  color: var(--purple);
+}
+
+.inspector .eyebrow {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--purple);
+  margin-bottom: 4px;
 }
 
 .inspector h3 {
-  font-size: 14px;
-  font-weight: 500;
-  padding-right: 15px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  padding-right: 18px;
+  margin: 0 0 8px;
 }
 
 .inspector label {
   display: block;
   margin: 10px 0;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--muted);
-  line-height: 1.5;
+  line-height: 1.45;
+}
+
+.inspector label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
 }
 
 .inspector input,
-.inspector textarea {
+.inspector textarea,
+.inspector select {
   display: block;
   width: 100%;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 6px;
   margin-top: 5px;
   background: white;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink);
+}
+
+.inspector input:focus,
+.inspector textarea:focus,
+.inspector select:focus {
+  outline: 2px solid var(--purple-soft);
+  border-color: var(--purple);
+}
+
+.inspector input[type='checkbox'] {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 1px 0 0;
+  padding: 0;
+  accent-color: var(--purple);
 }
 
 .inspector .two {
@@ -295,21 +341,37 @@
 }
 
 .inspector button {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .inspector .cell-tag {
   display: inline-block;
-  border-radius: 3px;
+  border-radius: 5px;
   background: var(--purple-soft);
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 700;
   padding: 5px 8px;
   color: var(--purple);
+  margin: 4px 0 6px;
 }
 
 .inspector .warning {
   color: #9e6e30;
-  font-size: 9px;
+  font-size: 10px;
+}
+
+.inspector fieldset {
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 10px 0 0;
+  margin: 12px 0 0;
+}
+
+.inspector fieldset legend {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--purple-dark);
+  padding: 0 4px 0 0;
 }
 
 #inspector fieldset label {
@@ -317,25 +379,30 @@
   align-items: center;
   gap: 9px;
   margin: 8px 0;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
 }
 
 #inspector fieldset input[type='checkbox'] {
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   order: -1;
   margin: 0;
 }
 
 .coordinate-details {
   padding: 10px 0;
-  border-top: 1px solid #ded7c8;
-  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
 }
 
 .coordinate-details summary {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--purple-dark);
   cursor: pointer;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .draw-confirm {

@@ -8,7 +8,6 @@ import type {
   Entrance,
   Infrastructure,
   PhaseKey,
-  PolygonElement,
 } from '../../types';
 
 export interface InspectorProps {
@@ -79,7 +78,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   }, [found, isNote, selectedId]);
 
   if (!found || panel === 'simulate') {
-    return <aside id="inspector" className="inspector" hidden />;
+    return <aside id="inspector" className="float-panel inspector" hidden />;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,8 +181,22 @@ export const Inspector: React.FC<InspectorProps> = ({
     onSceneChanged();
   };
 
+  const commitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  };
+
   return (
-    <aside id="inspector" className="inspector">
+    <aside
+      id="inspector"
+      className="float-panel inspector"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          setSelectedId(null);
+        }
+      }}
+    >
       <button
         type="button"
         className="close"
@@ -237,6 +250,7 @@ export const Inspector: React.FC<InspectorProps> = ({
               maxLength={100}
               key={`name-${item.id}-${item.name}`}
               defaultValue={item.name}
+              onKeyDown={commitOnEnter}
               onBlur={(e) => {
                 if (e.target.value !== item.name) {
                   handlePropertyChange('name', e.target.value);
@@ -261,6 +275,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       step="0.1"
                       key={`x-${item.id}-${coords[0].toFixed(2)}`}
                       defaultValue={coords[0].toFixed(2)}
+                      onKeyDown={commitOnEnter}
                       onBlur={(e) => handlePropertyChange('x', e.target.value)}
                     />
                   </label>
@@ -272,6 +287,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       step="0.1"
                       key={`y-${item.id}-${coords[1].toFixed(2)}`}
                       defaultValue={coords[1].toFixed(2)}
+                      onKeyDown={commitOnEnter}
                       onBlur={(e) => handlePropertyChange('y', e.target.value)}
                     />
                   </label>
@@ -298,6 +314,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                         defaultValue={
                           item.width || Math.sqrt(item.area || 24)
                         }
+                        onKeyDown={commitOnEnter}
                         onBlur={(e) =>
                           handlePropertyChange('width', e.target.value)
                         }
@@ -315,6 +332,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                         defaultValue={
                           item.depth || Math.sqrt(item.area || 24)
                         }
+                        onKeyDown={commitOnEnter}
                         onBlur={(e) =>
                           handlePropertyChange('depth', e.target.value)
                         }
@@ -331,6 +349,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       max="360"
                       key={`rot-${item.id}-${item.rotation || 0}`}
                       defaultValue={item.rotation || 0}
+                      onKeyDown={commitOnEnter}
                       onBlur={(e) =>
                         handlePropertyChange('rotation', e.target.value)
                       }
@@ -349,6 +368,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       step="0.1"
                       key={`cw-${item.id}-${(item as Entrance).clearWidth || 4}`}
                       defaultValue={(item as Entrance).clearWidth || 4}
+                      onKeyDown={commitOnEnter}
                       onBlur={(e) =>
                         handlePropertyChange('clearWidth', e.target.value)
                       }
@@ -363,6 +383,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       max="360"
                       key={`ga-${item.id}-${(item as Entrance).gateAngle || 0}`}
                       defaultValue={(item as Entrance).gateAngle || 0}
+                      onKeyDown={commitOnEnter}
                       onBlur={(e) =>
                         handlePropertyChange('gateAngle', e.target.value)
                       }
@@ -508,7 +529,7 @@ export const Inspector: React.FC<InspectorProps> = ({
 
               {(item as Infrastructure).role === 'emergency' && (
                 <>
-                  <label>
+                  <label className="check">
                     <input
                       type="checkbox"
                       id="reserve-resource"
@@ -612,7 +633,7 @@ export const Inspector: React.FC<InspectorProps> = ({
       )}
 
       {isBooth && (
-        <label>
+        <label className="check">
           <input
             type="checkbox"
             id="lock-piece"
