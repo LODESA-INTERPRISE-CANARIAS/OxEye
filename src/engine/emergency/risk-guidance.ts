@@ -268,27 +268,43 @@ export function resolveRiskGuide(issue: RiskIssue, scene: Scene): RiskGuide {
             'Añade más dotaciones activas (sanitario, seguridad, bomberos o ambulancia) en Inventario.',
             'Reduce la demora o acerca los recursos al centro del recinto para acortar el tiempo de llegada.',
           ],
-      actions: [
-        {
-          label: isNarrow
-            ? 'Ir a Diseñar y despejar pasos'
-            : 'Añadir recursos en Inventario',
-          kind: isNarrow ? 'focus-panel' : 'open-modal',
-          panel: isNarrow ? 'design' : undefined,
-          modal: isNarrow ? undefined : 'inventory',
-          primary: true,
-        },
-        {
-          label: 'Probar redistribución automática',
-          kind: 'open-modal',
-          modal: 'comparison',
-        },
-        {
-          label: 'Ajustar recursos en Inventario',
-          kind: 'open-modal',
-          modal: 'inventory',
-        },
-      ],
+      actions: isNarrow
+        ? [
+            {
+              label: 'Ir a Diseñar y despejar pasos',
+              kind: 'focus-panel',
+              panel: 'design',
+              primary: true,
+            },
+            {
+              label: 'Probar redistribución automática',
+              kind: 'open-modal',
+              modal: 'comparison',
+            },
+            {
+              label: 'Ajustar recursos en Inventario',
+              kind: 'open-modal',
+              modal: 'inventory',
+            },
+          ]
+        : [
+            {
+              label: 'Añadir recursos en Inventario',
+              kind: 'open-modal',
+              modal: 'inventory',
+              primary: true,
+            },
+            {
+              label: 'Ir al plano a acercar equipos',
+              kind: 'focus-panel',
+              panel: 'design',
+            },
+            {
+              label: 'Probar redistribución automática',
+              kind: 'open-modal',
+              modal: 'comparison',
+            },
+          ],
     };
   }
 

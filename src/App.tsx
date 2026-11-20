@@ -241,6 +241,11 @@ export const App: React.FC = () => {
     setSafetyStop(false);
     preflightStampRef.current = '';
     setCustomRiskReport(null);
+    if (useProjectStore.getState().currentScene().safetyLock) {
+      updateScene((sc) => {
+        delete sc.safetyLock;
+      });
+    }
     seekIdRef.current++;
     replayLogRef.current = [];
     replayCursorRef.current = 0;
@@ -286,7 +291,7 @@ export const App: React.FC = () => {
     const seekEl = document.getElementById('seek-time');
     if (seekEl) seekEl.textContent = '00:00:00';
     setReviewTick((t) => t + 1);
-  }, []);
+  }, [updateScene]);
 
   const triggerDayClose = useCallback(() => {
     const currentPhase = useProjectStore.getState().phase;
@@ -537,9 +542,22 @@ export const App: React.FC = () => {
 
   const handleTimelineChange = useCallback(
     async (target: number) => {
+      const isRewind =
+        engineRef.current !== null && target < engineRef.current.time;
       if (safetyStopRef.current) {
-        setActiveModal('risk');
-        return;
+        if (isRewind) {
+          safetyStopRef.current = false;
+          setSafetyStop(false);
+          setCustomRiskReport(null);
+          if (useProjectStore.getState().currentScene().safetyLock) {
+            updateScene((sc) => {
+              delete sc.safetyLock;
+            });
+          }
+        } else {
+          setActiveModal('risk');
+          return;
+        }
       }
       const version = ++seekIdRef.current;
       runningRef.current = false;
@@ -661,6 +679,7 @@ export const App: React.FC = () => {
       triggerDayClose,
       setActiveModal,
       checkLiveSafety,
+      updateScene,
     ]
   );
 
