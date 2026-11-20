@@ -158,6 +158,85 @@ export const Inspector: React.FC<InspectorProps> = ({
     onSceneChanged();
   };
 
+  const handleDuplicate = () => {
+    const isPlaceableObject =
+      isBooth || isEntrance || s.infrastructure.some((i) => i.id === item.id);
+    if (
+      isPlaceableObject &&
+      s.base.booths.length + s.infrastructure.length + s.entrances.length >= 150
+    ) {
+      showToast('Límite del prototipo: 150 elementos por espacio');
+      return;
+    }
+    const newId = crypto.randomUUID();
+    updateScene((scene) => {
+      const lists = [
+        scene.base.booths,
+        scene.infrastructure,
+        scene.entrances,
+        scene.annotations,
+        scene.roadPlans,
+        scene.measurements,
+        scene.reserves,
+        scene.flows || [],
+        scene.fences || [],
+        scene.passages || [],
+      ];
+      for (const arr of lists) {
+        const idx = arr.findIndex((o) => o.id === item.id);
+        if (idx >= 0) {
+          const clone = structuredClone(arr[idx]) as unknown as Record<
+            string,
+            unknown
+          >;
+          clone.id = newId;
+          if (Array.isArray(clone.points)) {
+            const dx = (2 / m.widthMeters) * 100;
+            const dy = (2 / m.heightMeters) * 100;
+            clone.points = (clone.points as Array<[number, number]>).map(
+              ([px, py]) => [
+                Math.max(0, Math.min(100, px + dx)),
+                Math.max(0, Math.min(100, py + dy)),
+              ]
+            );
+          } else if (
+            typeof clone.x === 'number' &&
+            typeof clone.y === 'number'
+          ) {
+            const stepMeters =
+              typeof clone.width === 'number'
+                ? Math.max(2, clone.width * 0.5 + 1)
+                : 2;
+            const dx = (stepMeters / m.widthMeters) * 100;
+            const dy = (2 / m.heightMeters) * 100;
+            clone.x =
+              clone.x + dx <= 98
+                ? clone.x + dx
+                : Math.max(2, clone.x - dx);
+            clone.y =
+              clone.y + dy <= 98
+                ? clone.y + dy
+                : Math.max(2, clone.y - dy);
+            if (arr === scene.annotations) {
+              clone.cell = cellAt(
+                world([clone.x as number, clone.y as number], m),
+                (clone.grid as number) || grid
+              );
+            }
+          }
+          (arr as unknown[]).push(clone);
+          if (arr === scene.flows) {
+            scene.corridors = structuredClone(scene.flows || []);
+          }
+          break;
+        }
+      }
+    }, true);
+    setSelectedId(newId);
+    onSceneChanged();
+    showToast(isNote ? 'Observación duplicada' : 'Elemento duplicado');
+  };
+
   const handleDelete = () => {
     updateScene((scene) => {
       for (const arr of [
@@ -670,9 +749,19 @@ export const Inspector: React.FC<InspectorProps> = ({
 
       <button
         type="button"
+        id="duplicate-object"
+        className="duplicate quiet wide"
+        style={{marginTop: '12px'}}
+        onClick={handleDuplicate}
+      >
+        Duplicar {isNote ? 'observación' : 'elemento'}
+      </button>
+
+      <button
+        type="button"
         id="delete-object"
         className="danger quiet wide"
-        style={{marginTop: '12px'}}
+        style={{marginTop: '8px'}}
         onClick={handleDelete}
       >
         Eliminar {isNote ? 'observación' : 'elemento'}

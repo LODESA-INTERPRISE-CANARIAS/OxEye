@@ -344,6 +344,18 @@
   font-size: 11px;
 }
 
+.inspector button.duplicate {
+  color: #1c5ea8;
+  border-color: #bfd7f2;
+  background: #f3f8ff;
+}
+
+.inspector button.duplicate:hover:not(:disabled) {
+  background: #e4f0fe;
+  border-color: #8ab8ea;
+  color: #154984;
+}
+
 .inspector .cell-tag {
   display: inline-block;
   border-radius: 5px;
