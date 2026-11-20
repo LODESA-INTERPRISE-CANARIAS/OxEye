@@ -1,0 +1,374 @@
+/**
+ * Variables globales, paleta institucional (Ayuntamiento de San Cristóbal de La Laguna)
+ * y estilos base para todos los controles y componentes predeterminados de Ojo de Buey (OxEye).
+ */
+:root {
+  font-family: Inter, Arial, sans-serif;
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-rounded: 'Nunito', ui-rounded, 'SF Pro Rounded', 'Segoe UI', system-ui, sans-serif;
+  color: #261f2e;
+  background: #f5f2f8;
+  font-synthesis: none;
+
+  /* Paleta institucional en tonos morados · Ayuntamiento de La Laguna */
+  --purple: #4b2665;
+  --purple-dark: #2c163d;
+  --purple-mid: #633584;
+  --purple-soft: #f3eef8;
+  --lavender: #dfd0f2;
+  --gold: #c49a45;
+
+  /* Neutrales y superficies */
+  --ink: #261f2e;
+  --muted: #6e657a;
+  --line: #e0d8e8;
+  --paper: #fcfafd;
+  --bg: #f5f2f8;
+  --surface: #ffffff;
+  --danger: #b43c4c;
+  --ring: rgba(99, 53, 132, 0.28);
+
+  /* Alias semánticos heredados */
+  --green: var(--purple);
+  --lime: var(--lavender);
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #c7b7d9 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #cbbcd9;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #a58ec0;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+summary {
+  outline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--purple-mid);
+  outline-offset: 2px;
+}
+
+/* Controles de formulario predeterminados */
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+select,
+textarea {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 10px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='range']):hover,
+select:hover,
+textarea:hover {
+  border-color: #bfb0d0;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--purple-mid);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234b2665' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 12px 12px;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--purple);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+input[type='range'] {
+  accent-color: var(--purple);
+  cursor: pointer;
+  height: 6px;
+  background: transparent;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 999px;
+  background: #dfd7e8;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--purple);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(44, 22, 61, 0.3);
+  margin-top: -5px;
+  transition: transform 0.12s ease, background-color 0.15s ease;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  background: var(--purple-mid);
+  transform: scale(1.1);
+}
+
+input[type='range']::-moz-range-track {
+  height: 5px;
+  border-radius: 999px;
+  background: #dfd7e8;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--purple);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(44, 22, 61, 0.3);
+}
+
+/* Fieldset y Legend predeterminados */
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  background: #faf8fc;
+}
+
+legend {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--purple);
+  padding: 0 6px;
+}
+
+/* Details y Summary predeterminados */
+details {
+  border-radius: 7px;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--purple);
+  padding: 4px 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+summary::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 11px;
+  color: var(--purple-mid);
+  transition: transform 0.15s ease;
+}
+
+details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+summary:hover {
+  color: var(--purple-mid);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+
+/* Botones */
+button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-family: var(--font-rounded);
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.08s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--purple-soft);
+  border-color: #c5b4d6;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.active {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: #fff;
+}
+
+button.active:hover:not(:disabled) {
+  background: var(--purple-mid);
+  border-color: var(--purple-mid);
+}
+
+a {
+  color: var(--purple-mid);
+  text-decoration-color: #bfa9d4;
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--purple);
+  text-decoration-color: var(--purple);
+}
+
+button.dark {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: #faf6ff;
+}
+
+button.dark:hover:not(:disabled) {
+  background: var(--purple-mid);
+  border-color: var(--purple-mid);
+}
+
+button.quiet {
+  background: transparent;
+}
+
+button.quiet:hover:not(:disabled) {
+  background: var(--purple-soft);
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: #ebd3d7;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #fdf2f4;
+  border-color: #d9a7b0;
+}
+
+button.help {
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.skip {
+  position: absolute;
+  top: -60px;
+  z-index: 10;
+  background: var(--surface);
+  color: var(--purple);
+  border: 1px solid var(--line);
+  border-radius: 0 0 8px 0;
+  padding: 15px;
+}
+
+.skip:focus {
+  top: 0;
+}
+
+#toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--purple-dark);
+  color: #faf6ff;
+  border: 1px solid rgba(223, 208, 242, 0.25);
+  font-size: 12px;
+  padding: 14px 23px;
+  z-index: 50;
+  border-radius: 8px;
+  box-shadow: 0 6px 25px rgba(44, 22, 61, 0.28);
+  max-width: 90%;
+}

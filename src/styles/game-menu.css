@@ -1,0 +1,226 @@
+/**
+ * Estilos del Menú Principal a pantalla completa y Wizard de creación de modelos.
+ */
+.game-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: radial-gradient(ellipse at 75% 35%, #552c75, #1d0e2b 72%);
+  color: #f6f0fa;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  padding: 30px;
+  overflow: auto;
+  gap: 30px;
+}
+
+.game-menu[hidden] {
+  display: none;
+}
+
+.at-menu {
+  overflow: hidden;
+}
+
+.game-card {
+  width: min(520px, 100%);
+  padding: 28px;
+}
+
+.game-card h1 {
+  font-family: Georgia, serif;
+  font-size: clamp(34px, 5vw, 64px);
+  font-weight: normal;
+  margin: 12px 0 20px;
+  line-height: 1.1;
+  color: #faf6ff;
+}
+
+.game-card p,
+.game-card small {
+  color: #d6c8e4;
+  line-height: 1.65;
+}
+
+.game-eyebrow {
+  letter-spacing: 0.18em;
+  font-size: 10px;
+  color: #e4cfa2;
+}
+
+.game-actions {
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+  margin: 26px 0;
+}
+
+.game-menu button {
+  font: inherit;
+  padding: 12px 18px;
+  border: 1px solid #8a6ca8;
+  background: #3a1f50;
+  color: #f5effa;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.game-menu button:hover:not(:disabled) {
+  background: #522d70;
+  border-color: #ab8dc9;
+}
+
+.game-menu button:disabled {
+  opacity: 0.4;
+}
+
+.game-actions button:first-child,
+.game-menu .game-primary {
+  background: var(--lavender);
+  color: var(--purple-dark);
+  border-color: var(--lavender);
+  font-weight: 700;
+}
+
+.game-actions button:first-child:hover:not(:disabled),
+.game-menu .game-primary:hover:not(:disabled) {
+  background: #ece2f8;
+  border-color: #ece2f8;
+}
+
+.game-visual {
+  width: 35vw;
+  max-width: 450px;
+  display: grid;
+  justify-items: center;
+  gap: 32px;
+}
+
+.game-visual span {
+  letter-spacing: 0.15em;
+  font-size: 10px;
+}
+
+.game-ring {
+  width: 28vw;
+  height: 28vw;
+  max-width: 350px;
+  max-height: 350px;
+  border: 1px solid #b595d6;
+  border-radius: 50%;
+  position: relative;
+  box-shadow:
+    0 0 0 25px rgba(216, 194, 238, 0.08),
+    0 0 0 50px rgba(216, 194, 238, 0.04);
+}
+
+.game-ring:before {
+  content: '';
+  position: absolute;
+  inset: 20%;
+  border: 1px solid var(--gold);
+  transform: rotate(45deg);
+}
+
+.game-card label {
+  display: block;
+  margin: 16px 0;
+}
+
+.game-card input:not([type='checkbox']),
+.game-card select {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: #faf6ff;
+  color: var(--purple-dark);
+  border: 1px solid #a98ec4;
+  font: inherit;
+  margin-top: 6px;
+}
+
+.wizard {
+  max-width: 680px;
+  width: 100%;
+}
+
+.wizard h1 {
+  font-size: 38px;
+}
+
+.wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.wizard-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+
+.map-choice {
+  width: 100%;
+}
+
+.map-choice b,
+.map-choice span {
+  display: block;
+}
+
+.map-choice span {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.goal-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.goal-buttons button[aria-pressed='true'] {
+  background: var(--lavender);
+  color: var(--purple-dark);
+  border-color: #ffffff;
+  font-weight: 700;
+}
+
+#wizard-radar {
+  max-width: 330px;
+  margin: auto;
+}
+
+#wizard-error {
+  color: #ffb8c2;
+}
+
+.game-card dd {
+  margin: 0 0 14px;
+  color: #e4cfa2;
+}
+
+.game-card dt {
+  font-size: 12px;
+  color: #cbbad9;
+}
+
+@media (max-width: 750px) {
+  .game-visual {
+    display: none;
+  }
+  .game-menu {
+    padding: 14px;
+    align-items: flex-start;
+  }
+  .game-card {
+    padding: 16px;
+  }
+  .wizard-fields {
+    grid-template-columns: 1fr;
+  }
+}

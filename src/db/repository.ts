@@ -1,0 +1,286 @@
+import Dexie, {type Table} from 'dexie';
+import {VENUES} from '../data/catalog';
+import {CARTO_DATA, MAPS_DATA} from '../data/geodata';
+import {remapScene, world} from '../engine/cartography/geometry';
+import {
+  configure,
+  initialScene,
+  ORIGINAL,
+  validateScene,
+} from '../engine/crowd/presets';
+import {smallExample} from '../engine/crowd/small-example';
+import {addResponseExample} from '../engine/emergency/response-example';
+import {assessRisk} from '../engine/emergency/risk';
+import type {
+  ProjectFile,
+  UserPreferences,
+  VenueKey,
+  VenueMap,
+} from '../types';
+
+export const PROJECT_STORAGE_KEY = 'ojo-de-buey-project-v1';
+export const PREFS_STORAGE_KEY = 'ojo-prefs';
+
+export interface StoredProjectRecord {
+  id: string;
+  project: ProjectFile;
+  updatedAt: string;
+}
+
+export interface StoredSimulationRecord {
+  id: string;
+  venueKey: VenueKey;
+  score: number;
+  reportJson: string;
+  createdAt: string;
+}
+
+/**
+ * Dexie.js (IndexedDB) database instance for client-side relational storage.
+ */
+export class OxEyeDatabase extends Dexie {
+  projects!: Table<StoredProjectRecord, string>;
+  simulationRuns!: Table<StoredSimulationRecord, string>;
+
+  constructor() {
+    super('OxEyeDatabase');
+    this.version(1).stores({
+      projects: 'id, updatedAt',
+      simulationRuns: 'id, venueKey, createdAt',
+    });
+  }
+}
+
+export const db = new OxEyeDatabase();
+
+/**
+ * Creates a fresh default `ProjectFile` initialized with all three La Laguna venues.
+ *
+ * @returns Initialized `ProjectFile`.
+ */
+export function createDefaultProject(): ProjectFile {
+  configure(MAPS_DATA);
+  const scenes = Object.fromEntries(
+    (Object.keys(VENUES) as VenueKey[]).map((k) => [
+      k,
+      initialScene(k, MAPS_DATA[k], CARTO_DATA),
+    ])
+  ) as Record<VenueKey, ReturnType<typeof initialScene>>;
+  scenes.cristo = addResponseExample(smallExample(scenes.cristo));
+  for (const scene of Object.values(scenes)) {
+    for (const [i, f] of (scene.fences || []).entries()) {
+      f.id ??= 'fence-' + i;
+      f.name ??= 'Valla ' + (i + 1);
+    }
+    scene.safetyReview = assessRisk(scene);
+  }
+  return {
+    version: 1,
+    format: 'ojo-de-buey',
+    active: 'cristo',
+    maps: MAPS_DATA,
+    scenes,
+  };
+}
+
+/**
+ * Loads the active project synchronously from `localStorage` (falling back to `createDefaultProject`).
+ *
+ * @returns Validated `ProjectFile` and boolean `hasSaved` indicating whether a saved project existed.
+ */
+export function loadProjectFromStorage(): {
+  project: ProjectFile;
+  hasSaved: boolean;
+} {
+  configure(MAPS_DATA);
+  const fallback = createDefaultProject();
+  try {
+    const raw = localStorage.getItem(PROJECT_STORAGE_KEY);
+    if (!raw) return {project: fallback, hasSaved: false};
+    const saved = JSON.parse(raw) as ProjectFile;
+    if (saved?.format === 'ojo-de-buey' && saved.version === 1) {
+      for (const k of Object.keys(VENUES) as VenueKey[]) {
+        validateScene(saved.scenes[k]);
+        if (
+          JSON.stringify(saved.maps[k].bbox) !==
+          JSON.stringify(MAPS_DATA[k].bbox)
+        ) {
+          throw new Error('La base ha cambiado');
+        }
+        for (const [i, f] of (saved.scenes[k].fences || []).entries()) {
+          f.id ??= 'fence-' + i;
+          f.name ??= 'Valla ' + (i + 1);
+        }
+      }
+      return {project: saved, hasSaved: true};
+    }
+  } catch {
+    // Fallback to clean project if localStorage is corrupt or outdated
+  }
+  return {project: fallback, hasSaved: false};
+}
+
+/**
+ * Persists the project to both `localStorage` (synchronous fast access) and IndexedDB via Dexie.js.
+ *
+ * @param project - Project to persist.
+ * @returns `true` if `localStorage` write succeeded, `false` if quota was exceeded.
+ */
+export function saveProjectToStorage(project: ProjectFile): boolean {
+  let ok = true;
+  try {
+    localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(project));
+  } catch {
+    ok = false;
+  }
+  db.projects
+    .put({
+      id: 'active',
+      project: structuredClone(project),
+      updatedAt: new Date().toISOString(),
+    })
+    .catch(() => {
+      // Ignore IndexedDB errors in restricted environments
+    });
+  return ok;
+}
+
+/**
+ * Loads user preferences from `localStorage`.
+ *
+ * @returns User preferences object.
+ */
+export function loadPreferences(): UserPreferences {
+  try {
+    const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      speed: Number(parsed.speed) || 60,
+      reduceMotion: !!parsed.reduceMotion,
+      help: parsed.help !== false,
+    };
+  } catch {
+    return {speed: 60, reduceMotion: false, help: true};
+  }
+}
+
+/**
+ * Saves user preferences to `localStorage` and updates document body motion class.
+ *
+ * @param prefs - User preferences to save.
+ */
+export function savePreferences(prefs: UserPreferences): void {
+  document.body.classList.toggle('reduce-motion', !!prefs.reduceMotion);
+  try {
+    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+/**
+ * Triggers a browser file download with the given filename, text content, and MIME type.
+ *
+ * @param name - Target filename.
+ * @param text - File content string.
+ * @param type - MIME type (defaults to `'application/json'`).
+ */
+export function downloadFile(
+  name: string,
+  text: string,
+  type = 'application/json'
+): void {
+  const url = URL.createObjectURL(new Blob([text], {type}));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Exports all georeferenced annotations across all venues to a UTF-8 BOM CSV file.
+ *
+ * @param project - Active project file.
+ * @param maps - Georeferenced venue maps.
+ */
+export function exportNotesCSV(
+  project: ProjectFile,
+  maps: Record<VenueKey, VenueMap>
+): void {
+  const csv = (v: unknown): string =>
+    '"' + String(v ?? '').replaceAll('"', '""') + '"';
+  const rows: string[][] = [
+    ['Espacio', 'Celda', 'Malla_m', 'Este_UTM', 'Norte_UTM', 'Observacion'],
+  ];
+  for (const [k, scene] of Object.entries(project.scenes) as Array<
+    [VenueKey, ProjectFile['scenes'][VenueKey]]
+  >) {
+    for (const o of scene.annotations) {
+      const map = maps[k];
+      const p = world([o.x, o.y], map);
+      rows.push([
+        VENUES[k].name,
+        o.cell,
+        String(o.grid),
+        (map.bbox[0] + p[0]).toFixed(2),
+        (map.bbox[3] - p[1]).toFixed(2),
+        /^[=+@-]/.test(o.text) ? "'" + o.text : o.text,
+      ]);
+    }
+  }
+  downloadFile(
+    'Ojo_de_Buey_Observaciones.csv',
+    '\uFEFF' + rows.map((r) => r.map(csv).join(';')).join('\r\n'),
+    'text/csv;charset=utf-8'
+  );
+}
+
+/**
+ * Parses and validates an imported JSON file (either full `ojo-de-buey` project or legacy scenario).
+ *
+ * @param text - Raw JSON string.
+ * @param currentProject - Current project state (used when merging a single-venue legacy file).
+ * @param maps - Georeferenced venue maps.
+ * @returns Validated `ProjectFile`.
+ */
+export function parseImportedProject(
+  text: string,
+  currentProject: ProjectFile,
+  maps: Record<VenueKey, VenueMap>
+): ProjectFile {
+  const p = JSON.parse(text);
+  if (p.format === 'ojo-de-buey') {
+    if (p.version !== 1) {
+      throw new Error('Versión de proyecto no compatible');
+    }
+    for (const k of Object.keys(VENUES) as VenueKey[]) {
+      validateScene(p.scenes[k]);
+      if (
+        JSON.stringify(p.maps?.[k]?.bbox) !== JSON.stringify(maps[k].bbox)
+      ) {
+        throw new Error(
+          'La extensión cartográfica de este archivo es diferente.'
+        );
+      }
+    }
+    return p as ProjectFile;
+  } else {
+    let old = p.scenario || p;
+    const siteKey = old.site as VenueKey;
+    if (!ORIGINAL[siteKey] || !VENUES[siteKey]) {
+      throw new Error(
+        'Formato no reconocido. Usa un proyecto Ojo de Buey o un escenario del Cristo/La Vega del ZIP.'
+      );
+    }
+    old = remapScene(old, ORIGINAL[siteKey], maps[siteKey]);
+    old.annotations = [];
+    old.measurements = [];
+    old.roadPlans = [];
+    validateScene(old);
+    const next = structuredClone(currentProject);
+    next.scenes[siteKey] = old;
+    next.active = siteKey;
+    return next;
+  }
+}

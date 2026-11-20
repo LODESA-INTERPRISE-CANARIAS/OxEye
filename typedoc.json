@@ -1,0 +1,10 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts", "src/engine", "src/db", "src/store", "src/types"],
+  "entryPointStrategy": "expand",
+  "out": "docs/api",
+  "name": "Ojo de Buey (OxEye) · Documentación Técnica",
+  "includeVersion": true,
+  "readme": "SPECIFICATIONS.md",
+  "exclude": ["**/*.test.ts", "**/node_modules/**"]
+}

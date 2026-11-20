@@ -1,0 +1,50 @@
+{
+  "cristo": {
+    "bbox": [
+      371250,
+      3152300,
+      371750,
+      3152700
+    ],
+    "widthMeters": 500,
+    "heightMeters": 400,
+    "source": "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&STYLES=&CRS=EPSG:32628&BBOX=371250,3152300,371750,3152700&WIDTH=2500&HEIGHT=2000&FORMAT=image/jpeg",
+    "crs": "EPSG:32628",
+    "resolution": 0.2,
+    "retrieved": "2026-11-13",
+    "flightDate": "No confirmada",
+    "attribution": "PNOA / IGN · CC BY 4.0 · scne.es"
+  },
+  "constitucion": {
+    "bbox": [
+      370990,
+      3152350,
+      371400,
+      3152760
+    ],
+    "widthMeters": 410,
+    "heightMeters": 410,
+    "source": "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&STYLES=&CRS=EPSG%3A32628&BBOX=370990%2C3152350%2C371400%2C3152760&WIDTH=1640&HEIGHT=1640&FORMAT=image%2Fjpeg",
+    "crs": "EPSG:32628",
+    "resolution": 0.25,
+    "retrieved": "2026-11-13",
+    "flightDate": "No confirmada",
+    "attribution": "PNOA / IGN · CC BY 4.0 · scne.es"
+  },
+  "vega": {
+    "bbox": [
+      371260,
+      3152710,
+      371700,
+      3153080
+    ],
+    "widthMeters": 440,
+    "heightMeters": 370,
+    "source": "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&STYLES=&CRS=EPSG%3A32628&BBOX=371260%2C3152710%2C371700%2C3153080&WIDTH=1760&HEIGHT=1480&FORMAT=image%2Fjpeg",
+    "crs": "EPSG:32628",
+    "resolution": 0.25,
+    "retrieved": "2026-11-13",
+    "flightDate": "No confirmada",
+    "attribution": "PNOA / IGN · CC BY 4.0 · scne.es"
+  }
+}
