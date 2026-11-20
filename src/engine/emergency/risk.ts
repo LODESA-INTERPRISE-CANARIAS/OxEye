@@ -2,10 +2,18 @@
  * @module engine/emergency/risk
  * Pre-flight risk assessment, Poisson medical demand tail, live critical failure checks, and trial result summaries.
  */
-import type {EmergencyIncident, Infrastructure, Point, Scene} from '../../types';
+import {MAPS_DATA} from '../../data/geodata';
+import type {
+  EmergencyIncident,
+  Infrastructure,
+  Point,
+  Scene,
+  VenueKey,
+} from '../../types';
 import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
 import {demandPlan} from '../planning/demand';
+import {evaluateHeavyLoadConflicts} from '../subsoil/heat';
 import {RESPONSE_PROFILES, responseRoute} from './response-model';
 import {gateAllowsAuthority} from './priority';
 
@@ -63,6 +71,7 @@ export function safetyFingerprint(s: Scene): string {
     'points',
     'labCapacity',
     'labTime',
+    'heavyLoad',
   ];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const objects = (a?: any[]) =>
@@ -88,6 +97,7 @@ export function safetyFingerprint(s: Scene): string {
     trained: s.trained,
     riskInputs: s.riskInputs,
     demand: s.demandInputs,
+    subsoil: s.subsoil,
   });
 }
 
@@ -399,6 +409,28 @@ export function assessRisk(
       );
     }
   }
+
+  const venueMap = MAPS_DATA[s.site as VenueKey];
+  if (venueMap && s.subsoil) {
+    const loadConflicts = evaluateHeavyLoadConflicts(s, venueMap);
+    for (const conflict of loadConflicts) {
+      const sourceSummary = conflict.sources
+        .slice(0, 3)
+        .map(
+          (src) =>
+            `${src.kind === 'column' ? 'columna' : 'muro de carga'} «${src.name}»`
+        )
+        .join(', ');
+      const pct = Math.round(conflict.heat * 100);
+      add(
+        'subsoil-load-' + conflict.itemId,
+        conflict.level,
+        `Carga pesada en zona de calor del subsuelo: ${conflict.itemName}`,
+        `Afecta a ${sourceSummary} (intensidad ${pct} %). Reubica la pieza fuera de la zona restringida de Rayos X o ajusta su condición de carga pesada si no aplica.`
+      );
+    }
+  }
+
   add(
     'technical',
     'warning',

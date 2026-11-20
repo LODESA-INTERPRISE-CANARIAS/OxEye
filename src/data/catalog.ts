@@ -38,6 +38,8 @@ export interface CatalogEntry {
   w: number;
   h: number;
   color: string;
+  /** Indica si la pieza se considera carga pesada frente a zonas de calor del subsuelo. */
+  heavyLoad?: boolean;
 }
 
 /** Iconos simbólicos por tipo o rol de pieza. */
@@ -134,6 +136,7 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 5,
     h: 2.5,
     color: '#df9a72',
+    heavyLoad: true,
   },
   stage: {
     name: 'Escenario',
@@ -141,6 +144,7 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 12,
     h: 8,
     color: '#9dabc4',
+    heavyLoad: true,
   },
   rest: {
     name: 'Descanso',
@@ -155,6 +159,7 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 10,
     h: 10,
     color: '#bdd4c0',
+    heavyLoad: true,
   },
   toilet: {
     name: 'Aseos',
@@ -176,6 +181,7 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 2.5,
     h: 6,
     color: '#cadde1',
+    heavyLoad: true,
   },
   fire: {
     name: 'Bomberos',
@@ -183,6 +189,7 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 3,
     h: 8,
     color: '#cc8b75',
+    heavyLoad: true,
   },
   patrol: {
     name: 'Coche policial',
@@ -215,6 +222,7 @@ for (const [kind, [name, w, h]] of Object.entries(logistics).filter(
     h,
     role: 'logistics',
     color: kind === 'power' ? '#ebc44d' : '#b4c5cd',
+    heavyLoad: ['loading', 'turning', 'storage'].includes(kind),
   };
 }
 

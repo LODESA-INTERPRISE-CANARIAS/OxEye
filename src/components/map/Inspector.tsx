@@ -1,6 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {cellAt, inside, world} from '../../engine/cartography/geometry';
 import {membership, phases} from '../../engine/logistics/phases';
+import {
+  evaluateItemSubsoilHeat,
+  isHeavyLoadItem,
+} from '../../engine/subsoil/heat';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   Annotation,
@@ -801,6 +805,48 @@ export const Inspector: React.FC<InspectorProps> = ({
               </p>
             )
           )}
+        </>
+      )}
+
+      {!isNote && !isLine && !isEntrance && (
+        <>
+          <label className="check">
+            <input
+              type="checkbox"
+              id="heavy-load-toggle"
+              checked={isHeavyLoadItem(item)}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                updateScene((scene) => {
+                  const target = [
+                    ...scene.base.booths,
+                    ...scene.infrastructure,
+                  ].find((st) => st.id === item.id);
+                  if (target) target.heavyLoad = checked;
+                }, true);
+                onSceneChanged();
+              }}
+            />{' '}
+            Carga pesada (restricción de subsuelo)
+          </label>
+          {(() => {
+            if (!isHeavyLoadItem(item) || !s.subsoil) return null;
+            const conflict = evaluateItemSubsoilHeat(item, s.subsoil, m);
+            if (!conflict) return null;
+            const names = conflict.sources
+              .slice(0, 2)
+              .map(
+                (src) =>
+                  `${src.kind === 'column' ? 'columna' : 'muro'} «${src.name}»`
+              )
+              .join(', ');
+            return (
+              <p className="warning" id="subsoil-load-warning">
+                ⚠ Carga pesada sobre zona de calor del subsuelo ({names} ·{' '}
+                {Math.round(conflict.heat * 100)} %).
+              </p>
+            );
+          })()}
         </>
       )}
 

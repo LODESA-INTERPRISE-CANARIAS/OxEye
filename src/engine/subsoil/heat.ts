@@ -4,14 +4,24 @@
  * pertenencia al perímetro booleano del subsuelo, métricas y rotación de muros
  * de carga, y cálculo del mapa de calor estructural normalizado `[0, 1]`.
  */
+import {CATALOG} from '../../data/catalog';
 import type {
+  BoothItem,
+  InfrastructureItem,
   MapMetadata,
   Point2D,
+  Scene,
   SubsoilColumn,
   SubsoilStructure,
   SubsoilWall,
 } from '../../types';
-import {inside, percent, segmentDistance, world} from '../cartography/geometry';
+import {
+  inside,
+  percent,
+  rect,
+  segmentDistance,
+  world,
+} from '../cartography/geometry';
 
 /** Valores por defecto en metros para nuevos elementos estructurales del subsuelo. */
 export const SUBSOIL_DEFAULTS = {
@@ -210,3 +220,160 @@ export function structuralHeat(
 
 /** Alias en español de {@link structuralHeat}. */
 export const calor = structuralHeat;
+
+/** Umbrales de intensidad de calor estructural `[0, 1]` para avisos y bloqueos de riesgo. */
+export const SUBSOIL_HEAT_THRESHOLDS = {
+  /** Cualquier solapamiento positivo por encima de este valor genera al menos aviso (`warning`). */
+  warning: 0.01,
+  /** A partir de este valor de calor se emite bloqueo crítico (`critical`) al iniciar simulación. */
+  critical: 0.25,
+} as const;
+
+/** Elemento estructural del subsuelo (columna o muro de carga) que provoca calor en una pieza. */
+export interface StructuralHeatSource {
+  id: string;
+  name: string;
+  kind: 'column' | 'wall';
+  heat: number;
+}
+
+/** Conflicto detectado entre una pieza de carga pesada y la estructura del subsuelo. */
+export interface StructuralLoadConflict {
+  itemId: string;
+  itemName: string;
+  heat: number;
+  level: 'critical' | 'warning';
+  sources: StructuralHeatSource[];
+}
+
+/**
+ * Determina si un puesto o infraestructura se considera carga pesada frente al subsuelo.
+ * Respeta la marca explícita `item.heavyLoad` y, si no está definida, consulta el catálogo.
+ *
+ * @param item - Puesto o elemento de infraestructura.
+ * @returns `true` si la pieza se clasifica como carga pesada.
+ */
+export function isHeavyLoadItem(item: {
+  kind?: string;
+  type?: string;
+  role?: string;
+  heavyLoad?: boolean;
+}): boolean {
+  if (typeof item.heavyLoad === 'boolean') return item.heavyLoad;
+  const byKind = item.kind ? CATALOG[item.kind] : undefined;
+  if (byKind && typeof byKind.heavyLoad === 'boolean') return byKind.heavyLoad;
+  const byType = item.type ? CATALOG[item.type] : undefined;
+  if (byType && typeof byType.heavyLoad === 'boolean') return byType.heavyLoad;
+  const byRole = item.role ? CATALOG[item.role] : undefined;
+  if (byRole && typeof byRole.heavyLoad === 'boolean') return byRole.heavyLoad;
+  return false;
+}
+
+/**
+ * Evalúa el pico de calor estructural sobre la huella rotada (centro, 4 esquinas y
+ * 4 puntos medios de arista) de una pieza del plano y devuelve las columnas y muros
+ * de carga afectados.
+ *
+ * @param item - Puesto o infraestructura a evaluar.
+ * @param subsoil - Estructura de subsuelo del recinto.
+ * @param map - Metadatos cartográficos del recinto.
+ * @returns Conflicto estructural si la pieza interseca una zona de calor, o `null`.
+ */
+export function evaluateItemSubsoilHeat(
+  item: BoothItem | InfrastructureItem,
+  subsoil: SubsoilStructure | undefined,
+  map: MapMetadata
+): StructuralLoadConflict | null {
+  if (!subsoil || (!subsoil.columns.length && !subsoil.walls.length)) {
+    return null;
+  }
+  const corners = rect(item as unknown as Record<string, unknown>, map);
+  const center = world([item.x, item.y], map);
+  const samples: Point2D[] = [center, ...corners];
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    samples.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+  }
+
+  let peakHeat = 0;
+  const sourceMap = new Map<string, StructuralHeatSource>();
+
+  for (const pt of samples) {
+    const h = structuralHeat(pt, subsoil, map);
+    if (h > peakHeat) peakHeat = h;
+    for (const col of subsoil.columns) {
+      const ch = columnHeat(pt, col, map);
+      if (ch >= SUBSOIL_HEAT_THRESHOLDS.warning) {
+        const prev = sourceMap.get(col.id);
+        if (!prev || ch > prev.heat) {
+          sourceMap.set(col.id, {
+            id: col.id,
+            name: col.name,
+            kind: 'column',
+            heat: ch,
+          });
+        }
+      }
+    }
+    for (const wall of subsoil.walls) {
+      const wh = wallHeat(pt, wall, map);
+      if (wh >= SUBSOIL_HEAT_THRESHOLDS.warning) {
+        const prev = sourceMap.get(wall.id);
+        if (!prev || wh > prev.heat) {
+          sourceMap.set(wall.id, {
+            id: wall.id,
+            name: wall.name,
+            kind: 'wall',
+            heat: wh,
+          });
+        }
+      }
+    }
+  }
+
+  if (peakHeat < SUBSOIL_HEAT_THRESHOLDS.warning || !sourceMap.size) {
+    return null;
+  }
+
+  const sources = [...sourceMap.values()].sort((a, b) => b.heat - a.heat);
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    heat: peakHeat,
+    level:
+      peakHeat >= SUBSOIL_HEAT_THRESHOLDS.critical ? 'critical' : 'warning',
+    sources,
+  };
+}
+
+/**
+ * Analiza todas las piezas clasificadas como carga pesada de una escena frente
+ * a las columnas y muros de carga del subsuelo.
+ *
+ * @param scene - Escena a analizar.
+ * @param map - Metadatos cartográficos del recinto.
+ * @returns Lista de conflictos estructurales detectados.
+ */
+export function evaluateHeavyLoadConflicts(
+  scene: Scene,
+  map: MapMetadata
+): StructuralLoadConflict[] {
+  if (
+    !scene.subsoil ||
+    (!scene.subsoil.columns.length && !scene.subsoil.walls.length)
+  ) {
+    return [];
+  }
+  const conflicts: StructuralLoadConflict[] = [];
+  const candidates: Array<BoothItem | InfrastructureItem> = [
+    ...scene.base.booths,
+    ...scene.infrastructure.filter((r) => r.active !== false),
+  ];
+  for (const item of candidates) {
+    if (!isHeavyLoadItem(item)) continue;
+    const conflict = evaluateItemSubsoilHeat(item, scene.subsoil, map);
+    if (conflict) conflicts.push(conflict);
+  }
+  return conflicts;
+}

@@ -97,6 +97,7 @@ export interface BoothItem {
   open?: number;
   close?: number;
   locked?: boolean;
+  heavyLoad?: boolean;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   sound?: SoundConfig;
@@ -131,6 +132,7 @@ export interface InfrastructureItem {
   tableWidth?: number;
   benchWidth?: number;
   locked?: boolean;
+  heavyLoad?: boolean;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   coverGroup?: string;
@@ -552,6 +554,7 @@ export interface CatalogItemSpec {
   w: number;
   h: number;
   color: string;
+  heavyLoad?: boolean;
 }
 
 /** Resultado de planificación de un turno logístico (pre/post). */

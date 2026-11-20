@@ -139,4 +139,36 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
       await expect(xrayLayer).toHaveAttribute('pointer-events', 'none');
     });
   });
+
+  test('triggers critical risk in Risk Dialog on Play when a heavy load is placed on a subsoil heat zone', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.locator('#game-continue').click();
+    await expect(page.locator('#drawing')).toBeVisible();
+
+    const mapBox = (await page.locator('#map').boundingBox())!;
+    const cx = mapBox.x + mapBox.width * 0.55;
+    const cy = mapBox.y + mapBox.height * 0.42;
+
+    // Colocar una columna de subsuelo
+    await page.locator('[data-action="xray:column"]').click();
+    await page.mouse.click(cx, cy);
+    await expect(page.locator('#xray-layer .xray-column')).toHaveCount(1);
+
+    // Colocar una carga pesada (Escenario) exactamente sobre la columna
+    await page.locator('[data-place="stage"]').click();
+    await page.mouse.click(cx, cy);
+    await expect(page.locator('#heavy-load-toggle')).toBeChecked();
+    await expect(page.locator('#subsoil-load-warning')).toBeVisible();
+
+    // Pulsar Play abre automáticamente el diálogo de riesgos con el bloqueo de carga pesada
+    await page.locator('#play').click();
+    const riskDialog = page.locator('#risk-dialog');
+    await expect(riskDialog).toBeVisible();
+    await expect(riskDialog).toContainText(
+      'Carga pesada en zona de calor del subsuelo: Escenario'
+    );
+    await expect(riskDialog).toContainText('columna «Columna 1»');
+  });
 });

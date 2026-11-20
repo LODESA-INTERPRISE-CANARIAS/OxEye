@@ -18,9 +18,12 @@ import {
   initialScene,
   validateScene,
 } from '../../src/engine/crowd/presets';
+import {assessRisk, safetyFingerprint} from '../../src/engine/emergency/risk';
 import {
   calor,
   columnHeat,
+  evaluateHeavyLoadConflicts,
+  isHeavyLoadItem,
   pointInSubsoil,
   rotateWall,
   structuralHeat,
@@ -378,5 +381,107 @@ describe('Multi-Selection, Clipboard & Locked Rules', () => {
     const capRes = pasteItemsIntoScene(scene, boothClip, map, 10, 'design');
     expect(capRes.newIds.length).toBe(0);
     expect(capRes.skippedCatalogLimit).toBe(1);
+  });
+});
+
+describe('Heavy Load Structural Risk Assessment', () => {
+  it('classifies heavy loads by catalog defaults and respects explicit heavyLoad override', () => {
+    expect(isHeavyLoadItem({kind: 'stage', type: 'stage'})).toBe(true);
+    expect(isHeavyLoadItem({kind: 'food', type: 'food'})).toBe(true);
+    expect(isHeavyLoadItem({kind: 'cover', role: 'cover'})).toBe(true);
+    expect(isHeavyLoadItem({kind: 'fire', role: 'emergency'})).toBe(true);
+    expect(isHeavyLoadItem({kind: 'craft', type: 'commerce'})).toBe(false);
+    expect(isHeavyLoadItem({kind: 'picnic', role: 'furniture'})).toBe(false);
+
+    // Explicit override takes precedence
+    expect(
+      isHeavyLoadItem({kind: 'craft', type: 'commerce', heavyLoad: true})
+    ).toBe(true);
+    expect(
+      isHeavyLoadItem({kind: 'stage', type: 'stage', heavyLoad: false})
+    ).toBe(false);
+  });
+
+  it('detects heavy loads over subsoil columns/walls and emits critical risk in assessRisk', () => {
+    configure(MAPS_DATA);
+    const map = MAPS_DATA.cristo;
+    const scene = initialScene('cristo', map, CARTO_DATA);
+
+    // Place a column directly under a heavy stage and a wall near a light craft booth
+    scene.infrastructure = [];
+    scene.base.booths = [
+      {
+        id: 'heavy-stage-1',
+        name: 'Escenario principal',
+        kind: 'stage',
+        type: 'stage',
+        x: 50,
+        y: 50,
+        width: 12,
+        depth: 8,
+        rotation: 0,
+        phaseTags: ['event'],
+      },
+      {
+        id: 'light-craft-1',
+        name: 'Puesto artesanía',
+        kind: 'craft',
+        type: 'commerce',
+        x: 30,
+        y: 30,
+        width: 4,
+        depth: 3,
+        rotation: 0,
+        phaseTags: ['event'],
+      },
+    ];
+    scene.subsoil = {
+      polygons: [],
+      columns: [
+        {
+          id: 'col-under-stage',
+          name: 'Pilar S1',
+          x: 50,
+          y: 50,
+          diameter: 1,
+          influenceRadius: 4,
+        },
+      ],
+      walls: [
+        {
+          id: 'wall-under-craft',
+          name: 'Muro M1',
+          a: [28, 30],
+          b: [32, 30],
+          thickness: 0.5,
+          influenceDepth: 3,
+        },
+      ],
+    };
+
+    const conflicts = evaluateHeavyLoadConflicts(scene, map);
+    expect(conflicts.length).toBe(1);
+    expect(conflicts[0].itemId).toBe('heavy-stage-1');
+    expect(conflicts[0].level).toBe('critical');
+    expect(conflicts[0].sources[0].name).toBe('Pilar S1');
+
+    const report = assessRisk(scene);
+    const loadIssue = report.critical.find(
+      (i) => i.id === 'subsoil-load-heavy-stage-1'
+    );
+    expect(loadIssue).toBeDefined();
+    expect(loadIssue?.title).toContain('Escenario principal');
+    expect(loadIssue?.action).toContain('Pilar S1');
+
+    // Moving stage away clears the risk and changes safetyFingerprint
+    const fpBefore = safetyFingerprint(scene);
+    scene.base.booths[0].x = 80;
+    scene.base.booths[0].y = 80;
+    const fpAfter = safetyFingerprint(scene);
+    expect(fpAfter).not.toBe(fpBefore);
+    const reportAfter = assessRisk(scene);
+    expect(
+      reportAfter.issues.some((i) => i.id === 'subsoil-load-heavy-stage-1')
+    ).toBe(false);
   });
 });
