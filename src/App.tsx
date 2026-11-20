@@ -139,6 +139,8 @@ export const App: React.FC = () => {
     document.body.classList.toggle('reduce-motion', !!preferences.reduceMotion);
   }, [preferences.speed, preferences.reduceMotion]);
 
+  const dismissedIncidentsRef = useRef<Set<string>>(new Set());
+
   const syncDirectorOverlays = useCallback(() => {
     const engine = engineRef.current;
     const responseEl = document.getElementById('response-layer');
@@ -148,8 +150,11 @@ export const App: React.FC = () => {
       responseEl.innerHTML = engine ? responseSVG(engine) : '';
     }
     if (cornerEl) {
-      cornerEl.innerHTML = engine ? incidentDashboard(engine) : '';
-      cornerEl.hidden = !engine || !engine.emergency.events.length;
+      const html = engine
+        ? incidentDashboard(engine, dismissedIncidentsRef.current)
+        : '';
+      cornerEl.innerHTML = html;
+      cornerEl.hidden = !html;
     }
     const currentLens = useProjectStore.getState().lens;
     if (!heatEl) return;
@@ -251,6 +256,7 @@ export const App: React.FC = () => {
     setEngineInstance(null);
     lastReviewRef.current = -1;
     lastHeatRef.current = -1;
+    dismissedIncidentsRef.current.clear();
 
     for (const id of [
       'shift-layer',
@@ -657,6 +663,23 @@ export const App: React.FC = () => {
       checkLiveSafety,
     ]
   );
+
+  useEffect(() => {
+    const onCornerClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest<HTMLElement>('[data-dismiss-incident]');
+      if (!btn) return;
+      const id = btn.dataset.dismissIncident;
+      if (!id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dismissedIncidentsRef.current.add(id);
+      syncDirectorOverlays();
+    };
+    const cornerEl = document.getElementById('incident-corner');
+    cornerEl?.addEventListener('click', onCornerClick);
+    return () => cornerEl?.removeEventListener('click', onCornerClick);
+  }, [syncDirectorOverlays]);
 
   useEffect(() => {
     let rafId = 0;

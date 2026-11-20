@@ -22,9 +22,9 @@ function clock(seconds: number): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function incidentDashboard(e: any): string {
+export function incidentDashboard(e: any, dismissed?: Set<string>): string {
   const rows = (e.emergency.events as EmergencyIncident[]).filter(
-    (r) => r.status !== 'unreported'
+    (r) => r.status !== 'unreported' && !dismissed?.has(String(r.id))
   );
   return rows
     .slice(-4)
@@ -91,14 +91,16 @@ export function incidentDashboard(e: any): string {
       return (
         '<article class="incident-tracker"><header><b>' +
         esc(row.name) +
-        '</b><span>' +
+        '</b><div class="incident-header-actions"><span>' +
         esc(
           row.status === 'assigned' &&
             e.time < (row.assigned || 0) + (row.alertDelay || 0)
             ? 'Preparando salida'
             : names[row.status] || row.status
         ) +
-        '</span></header><ol>' +
+        '</span><button type="button" class="incident-close" data-dismiss-incident="' +
+        esc(row.id) +
+        '" aria-label="Cerrar tarjeta de incidencia" title="Ocultar incidencia">×</button></div></header><ol>' +
         steps
           .map(
             (s, i) =>
