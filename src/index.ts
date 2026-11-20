@@ -54,4 +54,10 @@ export * from './engine/planning/evaluator';
 export * from './engine/planning/inventory';
 export * from './engine/planning/layout';
 export * from './engine/planning/programme';
+export * from './engine/subsoil/heat';
+export type {
+  ClipboardEntry,
+  ClipboardPayload,
+  CollectionKey,
+} from './components/map/selectionActions';
 export * from './store/useProjectStore';

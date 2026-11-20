@@ -531,6 +531,68 @@
   display: none;
 }
 
+.draw-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
+.draw-mode-badge.mode-add {
+  background: #e1f5ee;
+  color: #167869;
+}
+
+.draw-mode-badge.mode-subtract {
+  background: #fce8ec;
+  color: #b43c4c;
+}
+
+.xray-item {
+  cursor: move;
+}
+
+.xray-wall-handle {
+  cursor: grab;
+  pointer-events: all;
+}
+
+.xray-wall-handle:hover {
+  fill: var(--lavender);
+}
+
+.multi-select-summary {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.multi-select-summary li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.multi-select-summary li:last-child {
+  border-bottom: 0;
+}
+
+.multi-select-summary b {
+  color: var(--purple);
+}
+
 .map-item {
   cursor: move;
 }

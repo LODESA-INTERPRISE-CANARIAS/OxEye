@@ -1,0 +1,453 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="."><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>Ojo de Buey (OxEye) · Documentación Técnica - v0.16.0</title><meta name="description" content="Documentation for Ojo de Buey (OxEye) · Documentación Técnica"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script><script async src="assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar"><div class="tsd-toolbar-contents container"><div class="table-cell" id="tsd-search"><div class="field"><label for="tsd-search-field" class="tsd-widget tsd-toolbar-icon search no-caption"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></label><input type="text" id="tsd-search-field" aria-label="Search"/></div><div class="field"><div id="tsd-toolbar-links"></div></div><ul class="results"><li class="state loading">Preparing search index...</li><li class="state failure">The search index is not available</li></ul><a href="index.html" class="title">Ojo de Buey (OxEye) · Documentación Técnica - v0.16.0</a></div><div class="table-cell" id="tsd-widgets"><a href="#" class="tsd-widget tsd-toolbar-icon menu no-caption" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></div></header><div class="container container-main"><div class="col-content"><div class="tsd-page-title"><h1>Ojo de Buey (OxEye) · Documentación Técnica - v0.16.0</h1></div><div class="tsd-panel tsd-typography"><a id="especificaciones-técnicas-y-funcionales--ojo-de-buey-oxeye" class="tsd-anchor"></a><h1 class="tsd-anchor-link">Especificaciones Técnicas y Funcionales — Ojo de Buey (OxEye)<a href="#especificaciones-técnicas-y-funcionales--ojo-de-buey-oxeye" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h1><blockquote>
+<p><strong>Documento de Especificación v1.0</strong><br>
+<strong>Propósito</strong>: Definir con precisión todas las funcionalidades, modelos de datos, algoritmos de simulación, interfaces de usuario, diseño visual y arquitectura objetivo extraídos del prototipo monolítico <code>Ojo_de_Buey.html</code> (v0.16) para su transformación en una aplicación modular moderna.</p>
+</blockquote>
+<hr>
+<a id="1-visión-general-y-contexto-del-proyecto" class="tsd-anchor"></a><h2 class="tsd-anchor-link">1. Visión General y Contexto del Proyecto<a href="#1-visión-general-y-contexto-del-proyecto" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p><strong>Ojo de Buey (OxEye)</strong> —subtitulado <em>«Espacio para anticiparse · Laboratorio de eventos»</em>— es un entorno interactivo de planificación espacial, gestión logística por fases y simulación multi-agente en vivo para eventos públicos sobre cartografía georreferenciada.</p>
+<a id="11-ámbito-geográfico-inicial" class="tsd-anchor"></a><h3 class="tsd-anchor-link">1.1 Ámbito Geográfico Inicial<a href="#11-ámbito-geográfico-inicial" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>El proyecto está contextualizado en <strong>San Cristóbal de La Laguna (Santa Cruz de Tenerife)</strong> y opera sobre el sistema de referencia <strong>UTM Zona 28N (<code>EPSG:32628</code>)</strong>:</p>
+<ol>
+<li><strong>Plaza del Cristo (<code>cristo</code>)</strong> — <em>01 · PLAZA · CASCO HISTÓRICO</em>: Recinto principal activo del prototipo, preconfigurado con el escenario de estudio <strong>«Navidad en el Cristo · mercado abierto»</strong> (y variante base <em>«Noche abierta · Plaza del Cristo»</em>).</li>
+<li><strong>Parque de la Constitución (<code>constitucion</code>)</strong> — <em>02 · PARQUE · CAMINO LARGO</em>: Recinto secundario incluido en los datos cartográficos y de ortofoto (oculto inicialmente en la barra de pestañas mediante CSS hasta su activación).</li>
+<li><strong>Parque de La Vega (<code>vega</code>)</strong> — <em>03 · PARQUE · PEDRO GONZÁLEZ</em>: Tercer recinto incluido en el modelo de datos y ortofotos (también oculto inicialmente en la barra de pestañas mediante CSS).</li>
+<li><strong>Soporte de compatibilidad (<em>Legacy</em>)</strong>: Capacidad de importar y remapear escenarios antiguos de <code>cristo</code>, <code>vega</code> y <code>adelantado</code> (<em>Plaza del Adelantado</em>).</li>
+</ol>
+<a id="12-principios-rectores-del-producto" class="tsd-anchor"></a><h3 class="tsd-anchor-link">1.2 Principios Rectores del Producto<a href="#12-principios-rectores-del-producto" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Un plano para conversar, un modelo para ensayar</strong>: Combina la edición CAD/GIS ligera sobre plano con un motor de simulación peatonal, gastronómica, logística y de emergencias en tiempo real.</li>
+<li><strong>Transparencia metodológica</strong>: Todos los cálculos advierten explícitamente qué datos son mediciones geométricas y cuáles son hipótesis editables pendientes de validación técnica municipal o de proveedores (referenciando el <em>PEMU de La Laguna 2011</em>, el <em>Plan de Autoprotección del Cristo 2021</em>, la <em>Directiva Europea 89/391/CEE art. 8</em> y el <em>Manual de buenas prácticas de montaje y desmontaje del INSST 2020</em>).</li>
+<li><strong>Accesibilidad y Lenguaje Claro (<code>plain-language</code>)</strong>: Cada parámetro técnico cuenta con una traducción a preguntas comprensibles y un botón de ayuda contextual (<code>?</code>) con explicaciones y ejemplos prácticos.</li>
+</ul>
+<hr>
+<a id="2-arquitectura-cartográfica-y-sistema-de-coordenadas" class="tsd-anchor"></a><h2 class="tsd-anchor-link">2. Arquitectura Cartográfica y Sistema de Coordenadas<a href="#2-arquitectura-cartográfica-y-sistema-de-coordenadas" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><a id="21-extensión-cartográfica-__ojo_datamaps" class="tsd-anchor"></a><h3 class="tsd-anchor-link">2.1 Extensión Cartográfica (<code>__OJO_DATA.maps</code>)<a href="#21-extensión-cartográfica-__ojo_datamaps" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Cada recinto define su caja delimitadora (<code>bbox</code>: <code>[minE, minN, maxE, maxN]</code>) en metros UTM (<code>EPSG:32628</code>):</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Clave</th>
+<th style="text-align:left">Recinto</th>
+<th style="text-align:left"><code>bbox</code> (<code>EPSG:32628</code>)</th>
+<th style="text-align:left">Dimensiones</th>
+<th style="text-align:left">Resolución PNOA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>cristo</code></td>
+<td style="text-align:left">Plaza del Cristo</td>
+<td style="text-align:left"><code>[371250, 3152300, 371750, 3152700]</code></td>
+<td style="text-align:left"><code>500 × 400 m</code></td>
+<td style="text-align:left"><code>0,20 m/px</code> (<code>2500 × 2000 px</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>constitucion</code></td>
+<td style="text-align:left">Parque de la Constitución</td>
+<td style="text-align:left"><code>[370990, 3152350, 371400, 3152760]</code></td>
+<td style="text-align:left"><code>410 × 410 m</code></td>
+<td style="text-align:left"><code>0,25 m/px</code> (<code>1640 × 1640 px</code>)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>vega</code></td>
+<td style="text-align:left">Parque de La Vega</td>
+<td style="text-align:left"><code>[371260, 3152710, 371700, 3153080]</code></td>
+<td style="text-align:left"><code>440 × 370 m</code></td>
+<td style="text-align:left"><code>0,25 m/px</code> (<code>1760 × 1480 px</code>)</td>
+</tr>
+</tbody>
+</table>
+<a id="22-transformaciones-espaciales" class="tsd-anchor"></a><h3 class="tsd-anchor-link">2.2 Transformaciones Espaciales<a href="#22-transformaciones-espaciales" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Coordenadas de Escena (<code>percent</code>)</strong>: Los elementos guardan su posición relativa <code>[x, y]</code> en porcentaje (<code>0</code> a <code>100</code>) respecto al ancho y alto del mapa del recinto para permitir remapeos (<code>remapPoint</code> / <code>remapScene</code>).</li>
+<li><strong>Coordenadas Locales en Metros (<code>world</code>)</strong>:
+<ul>
+<li><code>localX = (x / 100) * widthMeters</code> (metros hacia el Este desde <code>bbox[0]</code>).</li>
+<li><code>localY = (y / 100) * heightMeters</code> (metros hacia el Sur desde <code>bbox[3]</code>).</li>
+</ul>
+</li>
+<li><strong>Coordenadas Absolutas UTM</strong>:
+<ul>
+<li><code>UTM_Este = bbox[0] + localX</code></li>
+<li><code>UTM_Norte = bbox[3] - localY</code></li>
+</ul>
+</li>
+<li><strong>Sistema de Celdas Alfanuméricas (<code>cellAt</code>)</strong>:
+<ul>
+<li>Columnas nombradas en base 26 (<code>A..Z</code>, <code>AA..ZZ</code>) según <code>Math.floor(localX / grid)</code> y filas <code>1..N</code> según <code>Math.floor(localY / grid) + 1</code> (ej. <code>CELDA R14</code>).</li>
+</ul>
+</li>
+</ul>
+<a id="23-capas-del-lienzo-svg-drawing" class="tsd-anchor"></a><h3 class="tsd-anchor-link">2.3 Capas del Lienzo SVG (<code>#drawing</code>)<a href="#23-capas-del-lienzo-svg-drawing" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>El visor interactivo (<code>#map</code>) soporta desplazamiento (<em>pan</em> con puntero y flechas de teclado), zoom centrado en el cursor (<code>view.w</code> entre <code>35 m</code> y <code>900 m</code>), encuadre automático al perímetro (<code>fit</code>) y escala gráfica dinámica (<code>10 m</code>, <code>20 m</code> o <code>50 m</code>). Sus capas SVG ordenadas de fondo a frente son:</p>
+<ol>
+<li><code>#base-layer</code>:
+<ul>
+<li><strong>Modo Plano (<code>plan</code>)</strong>: Renderizado vectorial de geometrías OpenStreetMap (<code>__OJO_DATA.carto.features</code>) filtradas al entorno del recinto: parques y zonas verdes (<code>#dbe4c9</code> / <code>#d2dfbe</code>), agua (<code>#b8d4d1</code>), canchas/pistas (<code>#d4dcc4</code>), viales según jerarquía (<code>highway</code>: peatonales, servicio, residenciales/secundarios con doble trazo de borde y relleno) y edificios (<code>#d7dccf</code>), más etiquetas de calles rotadas según el segmento más largo (para vías &gt; 25 m).</li>
+<li><strong>Modo Ortofoto (<code>ortho</code>)</strong>: Imagen aérea PNOA-IGN georreferenciada (<code>__OJO_IMAGES[key]</code>) con inversión cromática de etiquetas (texto blanco con borde verde oscuro).</li>
+</ul>
+</li>
+<li><code>#grid-layer</code>: Cuadrícula visual conmutable (<code>5 m</code>, <code>10 m</code>, <code>20 m</code>, <code>50 m</code>) con cabeceras de fila y columna dinámicas.</li>
+<li><code>#heat-layer</code>: Mapa de calor logarítmico en celdas de <code>3 × 3 m</code> para las lentes de <em>Flujos</em> y <em>Esperas</em> del Modo Director.</li>
+<li><code>#xray-layer</code>: Capa conmutable <strong>«Rayos X»</strong> (<code>xrayVisible</code>, controlada desde el panel Capas) para la estructura única de subsuelo por recinto (aparcamiento, sótano, etc.). Renderiza el perímetro booleano del subsuelo (máscara SVG secuencial <code>add</code>/<code>subtract</code>), columnas estructurales, muros de carga y un mapa de calor estructural semitransparente derivado en vivo (independiente de <code>#heat-layer</code>). Solo captura eventos de puntero cuando una herramienta de Rayos X está activa en el espacio <em>Diseñar</em>; en <em>Simular</em> puede visualizarse en modo solo lectura.</li>
+<li><code>#scenario-layer</code>: Perímetro discontinuo del ámbito de ensayo (<code>boundary</code>), zonas excluidas (<code>reserves</code>), recorridos peatonales propuestos (<code>flows</code>), vallas (<code>fences</code>), estructuras/puestos (<code>booths</code> e <code>infrastructure</code> con rotación, dimensiones reales, cruces de carpa y anillo de selección), accesos (<code>entrances</code>) y propuestas viales (<code>roadPlans</code>).</li>
+<li><code>#layout-preview</code>: Capa para previsualizaciones del autoconfigurador.</li>
+<li><code>#annotation-layer</code>: Marcadores numerados de observaciones del equipo (<code>annotations</code>) y polilíneas de medición con etiqueta de distancia planimétrica en metros (<code>measurements</code>).</li>
+<li><code>#draft-layer</code>: Polilínea interactiva en construcción al dibujar perímetros, zonas excluidas, recorridos, viales, mediciones o geometrías de subsuelo (con indicador visual de modo <code>+</code> / <code>−</code>).</li>
+<li><code>#shift-layer</code>: Animación esquemática de camiones, carretillas, bultos, reservas traseras de foodtrucks y cuadrillas durante los ensayos de montaje (<code>pre</code>) y desmontaje/limpieza (<code>post</code>).</li>
+<li><code>#dining-layer</code>: Indicadores sobre mesas picnic (ocupación <code>X/6</code> o estado <code>Mojada</code>) y agentes del personal de secado.</li>
+<li><code>#people-layer</code>: Agentes visitantes en tiempo real representados a escala física (radio <code>&gt;= 0,45 m</code>), coloreados según su nivel de satisfacción actual.</li>
+<li><code>#response-layer</code>: Patrullas a pie (<code>Watch</code>), marcadores de incidentes activos/resueltos, conatos de incendio y animación de recursos de emergencia (equipos a pie, camillas, ambulancias, bomberos, coches policiales con luces estroboscópicas y trayectorias).</li>
+</ol>
+<hr>
+<a id="3-flujo-de-inicio-menú-principal-y-wizard-game-menumjs" class="tsd-anchor"></a><h2 class="tsd-anchor-link">3. Flujo de Inicio: Menú Principal y Wizard (<code>game-menu.mjs</code>)<a href="#3-flujo-de-inicio-menú-principal-y-wizard-game-menumjs" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>Al iniciar la aplicación (o pulsar <strong>Menú</strong> en la cabecera), se presenta una pantalla de portada a pantalla completa (<code>#game-menu</code>):</p>
+<ul>
+<li><strong>Acciones principales</strong>:
+<ul>
+<li><strong>Continuar</strong>: Retoma el proyecto activo guardado localmente.</li>
+<li><strong>Cargar modelo</strong>: Abre el selector de archivos <code>.json</code>.</li>
+<li><strong>Crear nuevo modelo</strong>: Lanza el asistente (<em>Wizard</em>) de 4 pasos.</li>
+<li><strong>Ajustes</strong>: Configura velocidad inicial de simulación (<code>1×</code> a <code>1200×</code>), reducción de efectos visuales (<code>reduce-motion</code>, que desactiva animaciones de lluvia y transiciones de luz) y aviso de guía inicial. Se persiste en <code>localStorage</code> bajo <code>ojo-prefs</code>.</li>
+<li><strong>Créditos</strong>: Autoría del prototipo (<em>Yeray López de Saja</em>), fuentes cartográficas (OSM ODbL y PNOA-IGN CC BY 4.0) y notas de alcance.</li>
+<li><strong>Salir</strong>: Pausa la simulación y ofrece exportar el proyecto <code>.json</code> antes de cerrar.</li>
+</ul>
+</li>
+<li><strong>Asistente de Nuevo Modelo (<em>Wizard</em> en 4 pasos)</strong>:
+<ol>
+<li><strong>Ubicación y base</strong>: Selección de <em>Plaza del Cristo</em>, nombre del modelo y opción <em>«Usar el ejemplo de Navidad como base»</em> (si se desmarca, crea el recinto limpio sin puestos ni vallas, manteniendo el perímetro y las reservas de edificios OSM).</li>
+<li><strong>Fechas y horario</strong>: Fecha de inicio y fin (<code>1</code> a <code>30</code> días consecutivos) y hora de apertura y cierre diario (<code>1</code> a <code>12</code> horas enteras, admitiendo cierre tras la medianoche).</li>
+<li><strong>Carácter del evento</strong>: Selección múltiple entre 6 objetivos (<code>Familias</code>, <code>Comercio local</code>, <code>Gastronomía</code>, <code>Cultura y talleres</code>, <code>Música</code>, <code>Descanso y accesibilidad</code>) acompañada de un <strong>gráfico radar SVG</strong> en vivo. Estos objetivos determinan la mezcla porcentual de arquetipos de visitantes (<code>mix</code>) y los pesos por defecto del Laboratorio comparativo.</li>
+<li><strong>Revisión y creación</strong>: Resumen de la ficha, inicialización del escenario y apertura automática del diálogo <strong>1. Inventario</strong>.</li>
+</ol>
+</li>
+</ul>
+<hr>
+<a id="4-gestión-por-fases-operativas-phasesmjs" class="tsd-anchor"></a><h2 class="tsd-anchor-link">4. Gestión por Fases Operativas (<code>phases.mjs</code>)<a href="#4-gestión-por-fases-operativas-phasesmjs" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>La barra de fases permite alternar la vista y el comportamiento del plano entre 4 estados:</p>
+<ol>
+<li><strong>Pre-evento (<code>pre</code> · borde <code>#89561d</code>)</strong>: Limpieza previa, acondicionamiento, logística de entrada de camiones, descarga con carretillas y montaje de estructuras. Oculta las capas de público y atmósfera.</li>
+<li><strong>Evento (<code>event</code> · borde <code>#175e58</code>)</strong>: Apertura al público, funcionamiento de la oferta comercial/gastronómica/escenarios, simulación de multitudes y emergencias.</li>
+<li><strong>Postevento (<code>post</code> · borde <code>#77548d</code>)</strong>: Limpieza entre jornadas (si el evento dura varios días) o desmontaje por lotes, carga en camiones y limpieza final.</li>
+<li><strong>Compuesta (<code>all</code>)</strong>: Muestra todos los elementos de todas las fases simultáneamente, coloreando el contorno de cada pieza según su fase principal y con trazo discontinuo si pertenece a múltiples fases. Incluye un <strong>analizador geométrico de solapamientos (<code>comparePhases</code>)</strong> que detecta intersecciones entre reservas logísticas y estructuras, distinguiendo cuántas coinciden en la misma fase (conflicto real) y cuántas son usos sucesivos en el tiempo (compatibles).</li>
+</ol>
+<p>Cada elemento del plano posee la propiedad <code>phaseTags: Array&lt;'pre' | 'event' | 'post'&gt;</code>, editable desde el Inspector.</p>
+<hr>
+<a id="5-los-3-espacios-de-trabajo-barra-lateral-y-herramientas" class="tsd-anchor"></a><h2 class="tsd-anchor-link">5. Los 3 Espacios de Trabajo (Barra Lateral y Herramientas)<a href="#5-los-3-espacios-de-trabajo-barra-lateral-y-herramientas" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><a id="51-espacio-01-diseñar-design" class="tsd-anchor"></a><h3 class="tsd-anchor-link">5.1 Espacio 01: Diseñar (<code>design</code>)<a href="#51-espacio-01-diseñar-design" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Gestión de Escenario</strong>: Edición del nombre de la propuesta y botón directo a <strong>1. Inventario</strong> con listado de piezas pendientes de ubicar (<code>pendingStock</code>) para colocarlas con un clic sobre el plano.</li>
+<li><strong>Autoconfigurador Espacial (<code>layout.mjs</code>)</strong>:
+<ul>
+<li>Permite <strong>reorganizar el montaje existente (<code>onlyMove</code>)</strong> o <strong>generar nuevas piezas</strong> según 3 estrategias espaciales (o rotación automática entre ellas):
+<ul>
+<li><code>0 · Patio central</code>: Agrupa o puntúa según distancia radial al centro.</li>
+<li><code>1 · Paseo longitudinal</code>: Organiza por franjas longitudinales según tipo de actividad (<code>food</code>, <code>rest</code>, <code>commerce</code>, <code>stage</code>).</li>
+<li><code>2 · Islas de actividad</code>: Agrupa por núcleos funcionales manteniendo siempre cada carpa (<code>cover</code>) unida a las mesas y puestos que cobija (<code>coverGroup</code>).</li>
+</ul>
+</li>
+<li>Opción <em>«Replantear ramales y vallas del ejemplo»</em>: Retira guías de cola y ramales secundarios predefinidos conservando el eje central y las salidas.</li>
+<li>Parámetros ajustables: Elementos a añadir (<code>1–36</code>), Separación de diseño (<code>0,5–8 m</code>), Tamaño/escala (<code>0,5×–2×</code>), y prioridades de Comercio, Descanso y Refugio (<code>0–100</code>).</li>
+<li>Flujo no destructivo: Genera una vista previa resaltando en verde (<code>#167869</code>) las piezas reubicadas, permite conmutar <strong>Ver original / Ver alternativa</strong>, <strong>Aplicar propuesta</strong> (con registro en historial Deshacer) o <strong>Descartar</strong>.</li>
+</ul>
+</li>
+<li><strong>Catálogo de Piezas (<code>catalog</code>)</strong>:
+<ul>
+<li>Límite de <strong>150 elementos</strong> por recinto.</li>
+<li><strong>Oferta y mobiliario</strong>:
+<ul>
+<li><code>craft</code>: Comercio · artesanía (<code>4 × 3 m</code>, <code>#ddbd7d</code>)</li>
+<li><code>books</code>: Comercio · libros (<code>4 × 3 m</code>, <code>#ddbd7d</code>)</li>
+<li><code>local</code>: Comercio · producto local (<code>4 × 3 m</code>, <code>#ddbd7d</code>)</li>
+<li><code>commerce</code>: Puesto general (<code>4 × 3 m</code>, <code>#e8bc6d</code>)</li>
+<li><code>ventorrillo</code>: Ventorrillo (<code>4 × 3 m</code>, <code>#d4a56e</code>)</li>
+<li><code>food</code>: Foodtruck (<code>5 × 2,5 m</code>, <code>#df9a72</code>)</li>
+<li><code>workshop</code>: Taller (<code>6 × 4 m</code>, <code>#a1b7ac</code>)</li>
+<li><code>stage</code>: Escenario (<code>12 × 8 m</code>, <code>#9dabc4</code>)</li>
+<li><code>rest</code>: Descanso (<code>6 × 4 m</code>, <code>#b3c78f</code>)</li>
+<li><code>picnic</code>: Mesa picnic (<code>3 × 1,8 m</code>, <code>#bb9667</code>, 6 plazas por defecto)</li>
+<li><code>cover</code>: Carpa (<code>10 × 10 m</code>, <code>#bdd4c0</code>)</li>
+<li><code>toilet</code>: Aseos (<code>3 × 2 m</code>, <code>#aaaac0</code>)</li>
+<li><code>bin</code>: Contenedor (<code>1,5 × 1,2 m</code>, <code>#73916c</code>, visible en <code>pre</code>, <code>event</code>, <code>post</code>)</li>
+</ul>
+</li>
+<li><strong>Emergencias y seguridad (<code>role: 'emergency'</code>)</strong>:
+<ul>
+<li><code>medical</code>: Equipo sanitario (<code>6 × 4 m</code>, <code>#dd9c8b</code>)</li>
+<li><code>ambulance</code>: Ambulancia (<code>2,5 × 6 m</code>, <code>#cadde1</code>)</li>
+<li><code>fire</code>: Bomberos (<code>3 × 8 m</code>, <code>#cc8b75</code>)</li>
+<li><code>patrol</code>: Coche policial (<code>1,9 × 4,6 m</code>, <code>#6888b5</code>)</li>
+<li><code>security</code>: Policía a pie (<code>2 × 2 m</code>, <code>#a5b8ca</code>)</li>
+</ul>
+</li>
+<li><strong>Accesos</strong>:
+<ul>
+<li><code>gate</code>: Acceso (<code>4 × 1 m</code>, <code>#86ae88</code>, configurable como Entrada y salida, Solo entrada, Solo salida o Solo emergencias).</li>
+</ul>
+</li>
+<li><strong>Reservas logísticas (<code>role: 'logistics'</code>)</strong>:
+<ul>
+<li><code>cleaning</code>: Limpieza (<code>4 × 3 m</code>)</li>
+<li><code>prep</code>: Acondicionamiento (<code>5 × 4 m</code>)</li>
+<li><code>assembly</code>: Montaje (<code>6 × 4 m</code>)</li>
+<li><code>dismantle</code>: Desmontaje (<code>6 × 4 m</code>)</li>
+<li><code>turning</code>: Maniobra de vehículos (<code>10 × 8 m</code>)</li>
+<li><code>loading</code>: Carga y descarga (<code>8 × 4 m</code>)</li>
+<li><code>power</code>: Punto eléctrico (<code>1 × 1 m</code>, <code>#ebc44d</code>)</li>
+<li><code>storage</code>: Acopio temporal (<code>4 × 4 m</code>)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Trazados de Espacio y Recorridos</strong>:
+<ul>
+<li><code>boundary</code>: Redibujar el polígono del perímetro del evento (mínimo 3 puntos; <code>Mayús</code> en el primer clic añade área, <code>Ctrl</code> resta área, con indicador visual <code>+</code> / <code>−</code>).</li>
+<li><code>reserve</code>: Dibujar polígono de zona excluida al tránsito peatonal (mínimo 3 puntos).</li>
+<li><code>flow</code>: Trazar polilínea de paso peatonal propuesto (mínimo 2 puntos).</li>
+<li><code>road</code>: Trazar polilínea de propuesta vial de planificación (mínimo 2 puntos).</li>
+</ul>
+</li>
+<li><strong>Subsuelo y Capa «Rayos X» (<code>Scene.subsoil</code> y <code>src/engine/subsoil/heat.ts</code>)</strong>:
+<ul>
+<li>Estructura única opcional por recinto (posiciones en porcentaje <code>0–100</code>, dimensiones en metros), validada por <code>validateScene</code>, persistida en JSON/almacenamiento local y compatible hacia atrás con proyectos antiguos sin el campo.</li>
+<li><strong>Perímetro del subsuelo (<code>xray:boundary</code>)</strong>: Independiente del perímetro del evento. Se representa como una lista ordenada de polígonos <code>{id, op: 'add' | 'subtract', points}</code> evaluada secuencialmente (<code>pointInSubsoil</code> y <code>&lt;mask&gt;</code> SVG): clic normal sustituye, <code>Mayús</code> en el primer clic añade (<code>+</code>) y <code>Ctrl</code> resta (<code>−</code>), mostrando indicador visual del modo activo.</li>
+<li><strong>Columnas (<code>xray:column</code>)</strong>: Círculos sin rotación con <code>diameter</code> (m) y <code>influenceRadius</code> (m) editables en el Inspector y degradado radial de calor.</li>
+<li><strong>Muros de carga (<code>xray:wall</code>)</strong>: Segmentos <code>a → b</code> con grosor estructural visible (<code>thickness</code>, m), profundidad de influencia (<code>influenceDepth</code>, m), extremos arrastrables y rotación editable en el Inspector; su banda simétrica de calor sigue la orientación en vivo.</li>
+<li><strong>Cálculo puro del calor (<code>structuralHeat</code> / <code>calor</code>)</strong>: Función pura en <code>src/engine/subsoil/heat.ts</code> que devuelve un valor normalizado en <code>[0, 1]</code> para cualquier punto en metros locales (no se persiste en JSON; reutilizable para futuros avisos de sobrecarga).</li>
+</ul>
+</li>
+<li><strong>Selección Múltiple, Portapapeles y Atajos de Teclado</strong>:
+<ul>
+<li>Selección múltiple (<code>selectedIds</code>) mediante <code>Shift + clic</code> sobre cualquier elemento colocable del mapa (puestos, infraestructura, accesos, trazados, notas y elementos de subsuelo). Con varios elementos seleccionados, el Inspector muestra un resumen por tipo y acciones comunes.</li>
+<li>Atajos globales (inactivos al escribir en inputs/textareas o en el espacio <em>Simular</em>): <code>Ctrl+C</code> / <code>Ctrl+V</code> (copia y pega con desplazamiento e IDs nuevos respetando el límite de 150 piezas del catálogo), <code>Supr</code> (elimina respetando <code>locked</code>) y <code>Ctrl+Z</code> / <code>Ctrl+Y</code> (deshacer / rehacer).</li>
+</ul>
+</li>
+<li><strong>Inspector de Elementos (<code>#inspector</code>)</strong>:
+<ul>
+<li>Permite editar nombre, posición exacta (<code>Este local</code>, <code>Sur local</code>) con visualización de celda y coordenadas UTM, anchura (<code>0,5–100 m</code>), fondo (<code>0,5–100 m</code>), rotación (<code>-360° a 360°</code>), precio (<code>€</code>), plazas simultáneas (<code>labCapacity</code>), tiempo de servicio (<code>labTime</code>), plazas de mesa picnic (<code>0–6</code>), nivel sonoro de escenario (<code>0–130 dB</code> a 5 m), dotación de emergencia (<code>staff</code>, <code>capacity</code>, <code>delay</code>, <code>handling</code>), dirección de acceso (<code>gate</code>), casilla de bloqueo para el autoconfigurador (<code>locked</code>) y fases de visibilidad (<code>phaseTags</code>).</li>
+<li>Avisa mediante alerta visual si una pieza queda situada fuera del polígono del ámbito de ensayo (<code>!inside</code>).</li>
+</ul>
+</li>
+</ul>
+<a id="52-espacio-02-simular-simulate" class="tsd-anchor"></a><h3 class="tsd-anchor-link">5.2 Espacio 02: Simular (<code>simulate</code>)<a href="#52-espacio-02-simular-simulate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><a id="a-simulación-de-evento-público-fase-event" class="tsd-anchor"></a><h4 class="tsd-anchor-link">A) Simulación de Evento Público (Fase <code>event</code>)<a href="#a-simulación-de-evento-público-fase-event" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><ul>
+<li><strong>Motor Basado en Agentes (<code>EventEngine</code> en <code>event-lab-model.mjs</code>)</strong>:
+<ul>
+<li><strong>Malla de Navegación</strong>: Celdas de <code>0,75 × 0,75 m</code> (<code>buildGrid</code>). Descarta automáticamente zonas fuera del perímetro (salvo pasillos habilitados como el pasillo trasero del mercado), reservas/edificios OSM, huellas de puestos/mobiliario y vallas (con margen de seguridad según el diámetro peatonal de <code>0,6 m</code>).</li>
+<li><strong>Campos de Flujo (<code>flow</code>)</strong>: Búsqueda en anchura (BFS) sobre la malla para cada acceso, puesto, cola y punto de paso (<code>waypoints</code>), con caché LRU de hasta 96 campos.</li>
+<li><strong>Población Sintética (<code>PERSONAS</code> en <code>crowd-personas.mjs</code> y <code>persona-demography.mjs</code>)</strong>:
+<ul>
+<li>Catálogo determinista de <strong>1.000 perfiles ficticios</strong> cuyas cuotas marginales de edad y sexo siguen el padrón administrativo de San Cristóbal de La Laguna (<code>167.176</code> habitantes: <code>86.902</code> mujeres y <code>80.274</code> hombres en 11 tramos de edad), asignando nombre, apellidos canarios/españoles, barrio de residencia en La Laguna (Casco, San Benito, La Cuesta, Taco, Tejina, etc.), nivel de estudios, modo de transporte, presupuesto (<code>12, 24, 45, 80 €</code>), ritmo de marcha (<code>pace</code>), paciencia (<code>patience</code>), duración de estancia (<code>stayFactor</code>), espontaneidad y preferencia de refugio climático.</li>
+</ul>
+</li>
+<li><strong>Perfil Horario de Llegadas (<code>arrivalProfile</code>)</strong>: Curva gaussiana asimétrica con pico al 65 % de la jornada, modulada por la exposición climática (<code>lluvia</code> reduce un 40 % la llegada expuesta; <code>viento</code> un 25 %).</li>
+<li><strong>Ciclo de Vida del Agente</strong>: Entrada por un acceso público (<code>spawn</code>) → asignación de objetivos según arquetipo (<code>buyer</code>, <code>foodie</code>, <code>culture</code>, <code>music</code>, <code>walker</code>) → desplazamiento con evasión local de colisiones (<code>clearAt</code> con hash espacial) → espera en cola (<code>queue</code>) → atención en ranuras del puesto (<code>serviceWalk</code> / <code>service</code>) → si compra comida, pasa al subsistema de comedor (<code>Dining</code>) → paseo (<code>roam</code>) o salida (<code>exit</code> / <code>depart</code>).</li>
+</ul>
+</li>
+<li><strong>Subsistema de Comedor y Clima (<code>Dining</code> en <code>event-dining.mjs</code>)</strong>:
+<ul>
+<li>Gestiona las mesas de picnic y sus asientos libres.</li>
+<li>Si llueve (<code>weather === 'rain'</code>), las mesas descubiertas se mojan en <code>45 s</code> (y las cubiertas en <code>240 s</code> si está activa la opción de <em>lluvia horizontal</em>). Cuando <code>wet &gt;= 0.25</code>, la mesa queda inutilizable hasta que un operario del <strong>personal de secado (<code>dryStaff</code>)</strong> camina hasta ella y trabaja durante <code>drySeconds</code> (<code>45 s</code> por defecto).</li>
+<li>Si un visitante con comida busca asiento durante más de <code>seatWaitMin</code> (<code>3 min</code> por defecto) sin encontrar plaza seca, consume su comida de pie (<code>mealStanding</code>) y registra una incidencia de confort.</li>
+</ul>
+</li>
+<li><strong>Modo Director en Vivo (<code>director.mjs</code>)</strong>:
+<ul>
+<li><strong>Controles en tiempo real</strong> (se registran en <code>replayLog</code> para reproducibilidad al mover la línea temporal):
+<ul>
+<li><strong>Clima en vivo</strong>: <em>Sol</em> (<code>☀</code>), <em>Nubes</em> (<code>☁</code>), <em>Lluvia</em> (<code>☂</code>), <em>Viento</em> (<code>≋</code>) con superposición visual animada (<code>#atmosphere</code>).</li>
+<li><strong>Luz de escena</strong>: Control deslizante de <code>6:00</code> a <code>23:00</code> que ajusta la opacidad nocturna y solar con modos de fusión CSS.</li>
+<li><strong>Vista Inmersiva (<code>⛶</code>)</strong>: Oculta cabecera, barra lateral y pie de página para maximizar el mapa a pantalla completa.</li>
+<li><strong>Lentes de lectura de multitud</strong>:
+<ol>
+<li><em>Personas</em>: Muestra cada asistente coloreado por satisfacción (<code>#b5e48c</code> Satisfecho <code>&gt;=70</code>, <code>#eed777</code> Neutral <code>40–69</code>, <code>#e56b64</code> Descontento <code>&lt;40</code>).</li>
+<li><em>Flujos</em>: Mapa de calor de tránsito acumulado (<code>engine.trails</code>).</li>
+<li><em>Esperas</em>: Mapa de calor de retenciones y colas (<code>engine.stalls</code>).</li>
+</ol>
+</li>
+<li><strong>Provocación y Simulación de Incidencias (<code>ResponseSimulation</code> + <code>Watch</code>)</strong>:
+<ul>
+<li>Modos configurables: Respuesta sanitaria (<em>Atención en el lugar · equipo a pie</em>, <em>Camilla hasta una ambulancia</em>, <em>Ambulancia hasta la incidencia</em>), Policía (<em>Equipo a pie</em> o <em>Coche policial</em>) y probabilidad de éxito del extintor (<code>fireSuccess %</code>, por defecto <code>85 %</code>).</li>
+<li>4 botones de disparo en vivo: <strong>⊕ Caída</strong> (<code>fall</code>), <strong>♨ Cocina / Incendio</strong> (<code>fire</code>), <strong>✚ Corte</strong> (<code>cut</code>), <strong>! Conflicto</strong> (<code>conflict</code>).</li>
+<li><strong>Detección y aviso (<code>Watch</code>)</strong>: Un incidente nace como <code>unreported</code> hasta que visitantes cercanos (<code>&lt;= 12 m</code>), patrullas a pie (<code>&lt;= 16 m</code>) o el responsable del puesto dan la voz de alarma, calculando la demora de aviso (<code>reportDelay</code>).</li>
+<li><strong>Primera intervención en incendio</strong>: Si el puesto cuenta con personal formado (<code>trained === true</code>), el responsable sale del puesto e intenta extinguir el conato durante <code>12 s</code> antes de escalar a bomberos.</li>
+<li><strong>Rutas y cinemática de emergencia (<code>responseRoute</code> + <code>vehiclePath</code>)</strong>: Comprueba si existe un acceso de emergencia con anchura suficiente (<code>width + 0,3 m</code>), calcula un corredor libre para la huella del recurso, suaviza los giros según el radio de curvatura vehicular (<code>Math.max(3, length * 0.8)</code>), solicita a los peatones que cedan el paso lateralmente (<code>yieldForPriority</code>) y ejecuta la fase de traslado (<code>transfer</code>) en camilla o ambulancia hasta la entrega (<code>handover</code>).</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<a id="b-simulación-de-jornada-logística-fases-pre-y-post--shiftmjs" class="tsd-anchor"></a><h4 class="tsd-anchor-link">B) Simulación de Jornada Logística (Fases <code>pre</code> y <code>post</code> — <code>shift.mjs</code>)<a href="#b-simulación-de-jornada-logística-fases-pre-y-post--shiftmjs" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><ul>
+<li>En las fases <code>Pre-evento</code> y <code>Postevento</code>, el simulador modela el turno de trabajo (hasta <code>8 h</code> configurables):
+<ul>
+<li>En <code>Postevento</code> de eventos de varios días, permite elegir entre <strong>Limpieza entre jornadas</strong> (tras el día $1 \dots N-1$) o <strong>Último día · desmontaje</strong>.</li>
+<li>Simula paso a paso:
+<ol>
+<li>Recorridos del personal de limpieza recogiendo residuos generados por cada estructura (<code>wasteLitres</code>), llenando bolsas hasta <code>bagLitres</code> (<code>60 L</code>) y caminando al contenedor (<code>bin</code>) más cercano para vaciarlas (<code>15 s</code>).</li>
+<li>Entrada de camiones por el acceso hacia la reserva de maniobra (<code>turning</code>), aparcamiento (<code>parkMin</code>) en la zona de carga (<code>loading</code>), descarga/carga de lotes (<code>truckBatch</code>) con carretillas elevadoras (<code>forks</code>) y montaje/desmontaje por cuadrillas (<code>Montadores</code>) según la empresa adjudicataria de cada lote (<code>allocate</code>).</li>
+</ol>
+</li>
+<li>Al terminar el turno (o pulsar cierre), muestra el diálogo <strong>Balance de jornada (<code>#closing</code>)</strong> con tareas completadas vs. pendientes y permite añadir otra jornada conservando el avance (<code>progressByPhase</code>).</li>
+</ul>
+</li>
+</ul>
+<a id="53-espacio-03-revisar-review" class="tsd-anchor"></a><h3 class="tsd-anchor-link">5.3 Espacio 03: Revisar (<code>review</code>)<a href="#53-espacio-03-revisar-review" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Monitor Automático de Experiencia (<code>ExperienceMonitor</code> + <code>analyze</code> en <code>experience.mjs</code>)</strong>:
+<ul>
+<li>Evalúa cada <code>5 s</code> simulados a todos los asistentes activos para detectar 7 categorías de fricción (<code>TOPICS</code>):
+<ul>
+<li><code>price</code>: El precio del puesto supera el presupuesto restante del visitante.</li>
+<li><code>queue</code>: La espera en cola supera el 50 % de su tolerancia (o <code>120 s</code>).</li>
+<li><code>blocked</code>: El visitante lleva más de <code>15 s</code> retenido sin poder avanzar.</li>
+<li><code>exit</code>: El visitante quiere salir pero no encuentra una salida pública conectada (<code>trapped</code>).</li>
+<li><code>shelter</code>: Llueve y el visitante lleva <code>&gt;= 30 s</code> expuesto sin plaza bajo cubierta.</li>
+<li><code>sound</code>: Nivel de presión sonora estimado en campo libre ($L = \text{SPL}<em>{5\text{m}} - 20 \log</em>{10}(d / 5)$) supera el umbral de confort (<code>78 dB</code> general, <code>88 dB</code> para perfil música) durante <code>&gt;= 30 s</code>.</li>
+<li><code>offer</code>: El visitante no encuentra ningún puesto abierto de la categoría que busca.</li>
+</ul>
+</li>
+<li>Agrupa los problemas por prioridad y propone <strong>acciones correctivas</strong>, incluyendo candidatos geométricos automáticos (<code>moveCandidate</code>) que buscan desplazar un puesto conflictivo <code>2, 4 o 6 m</code> en 8 rumbos cardinales sin colisionar con el perímetro, reservas, vallas ni accesos.</li>
+<li>Permite descargar el informe completo en JSON (<code>Informe_de_visitantes.json</code>).</li>
+</ul>
+</li>
+<li><strong>Autoinforme del Motor (<code>compareMaps</code> en <code>evaluator.mjs</code>)</strong>:
+<ul>
+<li>Ejecuta en segundo plano un ensayo de <code>15 min</code> del mapa actual (<code>before</code>) y calcula una puntuación de fallos:
+$$\text{Puntuación} = \text{Episodios} + 2 \times \text{Abandonos} + 3 \times \text{Entradas Bloqueadas}$$</li>
+<li>Genera mutaciones candidatas (reducir precio un 15 %, añadir 1 plaza de atención simultánea, reubicar pieza bloqueante o bajar 3 dB el escenario), las ordena según el aprendizaje histórico del recinto (<code>s.learning</code>), simula las 2 mejores alternativas durante <code>15 min</code> con la misma semilla y presenta una comparativa lado a lado con minimapas SVG para conservar el original o adoptar la mejora con un clic.</li>
+</ul>
+</li>
+<li><strong>Notas del Equipo y Mediciones</strong>:
+<ul>
+<li>Creación y edición de observaciones georreferenciadas (<code>⊕ Añadir observación</code>) vinculadas a la celda y tamaño de malla activos.</li>
+<li>Herramienta de polilínea para medir distancias planimétricas (<code>↔ Medir sobre el plano</code>).</li>
+<li>Exportación de todas las observaciones de los 3 espacios a un archivo <strong>CSV compatible con Excel (<code>Ojo_de_Buey_Observaciones.csv</code>)</strong> con codificación UTF-8 BOM, separador <code>;</code>, protección contra inyección de fórmulas CSV y coordenadas UTM Este/Norte exactas.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<a id="6-módulos-de-gestión-en-cabecera-diálogos-modales" class="tsd-anchor"></a><h2 class="tsd-anchor-link">6. Módulos de Gestión en Cabecera (Diálogos Modales)<a href="#6-módulos-de-gestión-en-cabecera-diálogos-modales" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><ol>
+<li><strong>Calcular servicios (<code>demand.mjs</code> — <code>#demand-dialog</code>)</strong>:
+<ul>
+<li>Calcula una primera dotación recomendada a partir de 17 variables de entrada (llegadas/h, superficie disponible, estancia media, % compra comida, servicios/h por puesto, % utilización objetivo, % comidas sentadas, duración mínima y máxima de comida, mesas por carpa, % visita comercios, minutos por compra, clientes simultáneos por comercio, % uso de baños, minutos por uso de baño, % menores y % mayores).</li>
+<li>Devuelve: puestos de comida, mesas de 6 plazas, carpas necesarias, comercios, cabinas de baño, plazas para menores/mayores, ocupación simultánea media, huella estimada de módulos ($\text{comida}\times 20 + \text{mesas}\times 5.4 + \text{comercios}\times 12 + \text{baños}\times 2.5\text{ m}^2$) y superficie restante, junto con referencias de colaboradores locales (<em>Lífer</em>, <em>Palmelita</em>, <em>Mercado de La Laguna</em>).</li>
+</ul>
+</li>
+<li><strong>1. Inventario (<code>inventory.mjs</code> — <code>#inventory-dialog</code>)</strong>:
+<ul>
+<li>Permite definir las cantidades totales (<code>0–150</code>) de las 27 categorías del catálogo mediante botones <code>−</code> / <code>+</code> o entrada numérica.</li>
+<li>Protege las piezas que tengan activada la casilla <em>«Fijar posición» (<code>locked</code>)</em> impidiendo bajar la cantidad por debajo de las piezas fijadas.</li>
+<li>Ofrece dos modos de inserción para las piezas añadidas: <strong>Colocar yo las piezas</strong> (pasan a <code>pendingStock</code> en la barra lateral) o <strong>Proponer distribución</strong> (ejecuta <code>arrangeStock</code> colocando mesas bajo carpas libres y respetando corredores, seguido de <code>redesign</code>, mostrando una vista previa en minimapa antes de confirmar).</li>
+</ul>
+</li>
+<li><strong>Comparar diseños / Laboratorio (<code>batch.mjs</code> — <code>#laboratory-dialog</code>)</strong>:
+<ul>
+<li>Permite ponderar con controles deslizantes (<code>0–100</code>) 4 metas de evaluación:
+<ul>
+<li><code>comfort</code>: Comer sentado y con refugio</li>
+<li><code>queues</code>: Esperas y accesos fluidos</li>
+<li><code>emergency</code>: Atender incidencias</li>
+<li><code>experience</code>: Variedad y satisfacción</li>
+</ul>
+</li>
+<li>Incluye un campo de texto libre para registrar los <strong>Deseos de la ciudadanía (<code>citizenWishes</code>)</strong>.</li>
+<li>Permite lanzar una batería asíncrona de <strong>3, 6 o 10 configuraciones</strong> durante <strong>15, 30 o 60 minutos simulados</strong>, con opción de repetir cada diseño bajo lluvia e inyectando automáticamente los 4 tipos de emergencia (<code>fall</code>, <code>cut</code>, <code>fire</code>, <code>conflict</code>) a los <code>120, 210, 300 y 390 s</code>.</li>
+<li>Muestra el avance en vivo en un minimapa SVG, genera un ranking ordenado por puntuación global (<code>0–100</code>), destaca el punto fuerte y el margen de mejora de cada alternativa, permite <strong>Exportar ranking (<code>Ranking_Ojo_de_Buey.json</code>)</strong> o <strong>Usar esta configuración</strong> directamente en el proyecto.</li>
+</ul>
+</li>
+<li><strong>Contactos (<code>#contacts-dialog</code>)</strong>:
+<ul>
+<li>Gestión de directorio de proveedores (<em>Nombre o empresa</em>, <em>Actividad</em>: Foodtruck / Ventorrillo / Taller / Comercio / Montaje, <em>Email</em>, <em>WhatsApp con prefijo internacional</em>).</li>
+<li>Genera enlaces directos <strong>Preparar correo (<code>mailto:</code>)</strong> y <strong>Preparar WhatsApp (<code>https://wa.me/...</code>)</strong> con un mensaje pre-redactado contextualizado con el nombre del evento y el recinto activo.</li>
+</ul>
+</li>
+<li><strong>Empresas y recursos (<code>companies.mjs</code> — <code>#org</code>)</strong>:
+<ul>
+<li>Permite gestionar las empresas adjudicatarias (por defecto <em>Equipo municipal</em> para carpas y <em>Empresa de producción</em> para el resto), su persona responsable, el alcance de su lote (<code>Carpas</code>, <code>Puestos y actividades</code>, <code>Cualquier lote</code>) y sus recursos tanto en <strong>Pre-evento</strong> como en <strong>Postevento</strong> (<em>Montadores</em>, <em>Camiones</em>, <em>Carretillas</em>), además de las dotaciones de <strong>Control de aforo</strong> y <strong>Seguridad privada</strong>.</li>
+</ul>
+</li>
+<li><strong>Ficha de producción (<code>#parameters</code>)</strong>:
+<ul>
+<li>Configura los 17 parámetros operativos y presupuestarios del evento: tiempos de comida (<code>mealMin</code>, <code>mealMax</code>, <code>seatWaitMin</code>), personal y tiempo de secado de mesas (<code>dryStaff</code>, <code>drySeconds</code>), días de evento (<code>eventDays</code>), tiempos de camión y tamaño de lote (<code>parkMin</code>, <code>truckBatch</code>), gestión de residuos (<code>bagLitres</code>, <code>wasteLitres</code>, <code>cleanMin</code>), costes y turnos de personal (<code>teamSize</code>, <code>rate</code> €/h, <code>burden</code> %, <code>hoursLimit</code> h, <code>setupMin</code>, <code>strikeMin</code>), fuente documental de las tarifas (<code>estimateSource</code>), casilla de <strong>Lluvia horizontal</strong> (<code>horizontalRain</code>) y casilla de <strong>Personal formado para primera intervención</strong> (<code>trained</code>).</li>
+<li>Calcula y muestra en tiempo real la duración estimada en horas y el coste salarial de los turnos de Pre-evento y Postevento.</li>
+</ul>
+</li>
+<li><strong>Abrir / Exportar Proyecto y Ayuda (<code>#import</code>, <code>#export</code>, <code>#info</code>)</strong>:
+<ul>
+<li>Exporta e importa el proyecto completo (<code>Ojo_de_Buey_Proyecto.json</code>, hasta 5 MB) validando integridad geométrica y de rangos (<code>validateScene</code>), con soporte de migración automática para escenarios heredados.</li>
+<li>Modal informativo (<code>?</code> / <code>Fuentes y precisión ↗</code>) con notas metodológicas, enlaces a PEMU y SUC Canarias, y descarga directa de <code>Ojo_de_Buey_Fuentes.json</code>.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<a id="7-identidad-visual-y-especificaciones-de-estilo" class="tsd-anchor"></a><h2 class="tsd-anchor-link">7. Identidad Visual y Especificaciones de Estilo<a href="#7-identidad-visual-y-especificaciones-de-estilo" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>El diseño visual tiene una personalidad editorial y cartográfica muy marcada que debe conservarse íntegramente:</p>
+<a id="71-paleta-de-colores-principal" class="tsd-anchor"></a><h3 class="tsd-anchor-link">7.1 Paleta de Colores Principal<a href="#71-paleta-de-colores-principal" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Cabecera, Rail y Menú Principal</strong>: Verde petróleo profundo <code>#162829</code> (y <code>#153e38</code>), texto crema <code>#f4eddb</code> / <code>#f2e8d6</code>, borde dorado envejecido <code>#ae8d55</code>, botones de acción principales en dorado arena <code>#e0c99c</code> / <code>#cfb57d</code> con texto oscuro <code>#172a2b</code>.</li>
+<li><strong>Superficies de Trabajo (Sidebar, Barras, Diálogos)</strong>: Papel cálido <code>#faf7ee</code> / <code>#fffcf4</code>, fondo general <code>#f4f0e7</code>, líneas divisorias <code>#dfe3d8</code> / <code>#d4cbb8</code>, acento lima <code>#e1ed9f</code>.</li>
+<li>** Fases Operativas**: Pre-evento <code>#89561d</code> (ocre), Evento <code>#175e58</code> (verde azulado), Postevento <code>#77548d</code> (púrpura).</li>
+<li><strong>Semáforo de Satisfacción Peatonal</strong>: Satisfecho <code>#b5e48c</code> (leyenda <code>#31572c</code>), Neutral <code>#eed777</code> (leyenda <code>#836718</code>), Descontento <code>#e56b64</code> (leyenda <code>#aa3734</code>).</li>
+</ul>
+<a id="72-tipografía" class="tsd-anchor"></a><h3 class="tsd-anchor-link">7.2 Tipografía<a href="#72-tipografía" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Títulos editoriales (<code>h1</code> de barra lateral, <code>h2</code> de diálogos, marca y menú principal)</strong>: <code>Georgia, 'Times New Roman', serif</code>, peso normal, <code>letter-spacing: -0.035em</code>.</li>
+<li><strong>Interfaz técnica, controles, métricas y tablas</strong>: <code>Inter, Arial, sans-serif</code>, con números tabulares (<code>font-variant-numeric: tabular-nums</code>) en relojes y contadores en vivo.</li>
+</ul>
+<a id="73-adaptabilidad-responsive--immersive" class="tsd-anchor"></a><h3 class="tsd-anchor-link">7.3 Adaptabilidad (Responsive &amp; Immersive)<a href="#73-adaptabilidad-responsive--immersive" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Puntos de ruptura (<code>@media</code>)</strong>:
+<ul>
+<li><code>min-width: 1600px</code>: Sidebar ampliado a <code>310px</code>, cabecera de <code>90px</code>.</li>
+<li><code>max-width: 1200px</code>: Compactación de paddings y ocultación de subtítulos secundarios en cabecera.</li>
+<li><code>max-width: 850px</code>: Layout flexible adaptativo para tablets.</li>
+<li><code>max-width: 640px</code>: El rail de navegación pasa a ser una barra superior horizontal <code>sticky</code> y el sidebar se sitúa sobre el mapa.</li>
+</ul>
+</li>
+<li><strong>Modo Inmersivo (<code>body.immersive</code>)</strong>: Oculta <code>.header</code>, <code>.rail</code>, <code>.sidebar</code> y <code>.source-bar</code> para dedicar el 100 % del alto (<code>100dvh</code>) al área del mapa y la barra de simulación.</li>
+</ul>
+<hr>
+<a id="8-stack-tecnológico-y-arquitectura-del-nuevo-proyecto" class="tsd-anchor"></a><h2 class="tsd-anchor-link">8. Stack Tecnológico y Arquitectura del Nuevo Proyecto<a href="#8-stack-tecnológico-y-arquitectura-del-nuevo-proyecto" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>Para transformar el prototipo en una aplicación mantenible, escalable y preparada para su futura conversión en <strong>Desktop App</strong>, se empleará el siguiente stack:</p>
+<a id="81-tecnologías-seleccionadas" class="tsd-anchor"></a><h3 class="tsd-anchor-link">8.1 Tecnologías Seleccionadas<a href="#81-tecnologías-seleccionadas" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
+<li><strong>Framework UI y Lenguaje</strong>: <strong>React 18+ con TypeScript</strong> estricto.</li>
+<li><strong>Bundler y Entorno de Desarrollo</strong>: <strong>Vite</strong>.</li>
+<li><strong>Gestión de Estado</strong>: <strong>Zustand</strong> (estado de proyecto, escenas, herramientas y UI desacoplado de la referencia mutable de alta frecuencia del motor <code>EventEngine</code> para garantizar 60 FPS en el lienzo SVG).</li>
+<li><strong>Persistencia y Base de Datos</strong>:
+<ul>
+<li><strong>Capa de Repositorio (<code>StorageRepository</code>)</strong> con esquema relacional tipado mediante <strong>Drizzle ORM + SQLite (WASM/OPFS en navegador o SQLite nativo en Desktop)</strong> y soporte de <strong>IndexedDB (Dexie.js)</strong> / <code>localStorage</code> como fallback inmediato, manteniendo además la compatibilidad 100 % con la importación/exportación de archivos <code>Ojo_de_Buey_Proyecto.json</code> y <code>.csv</code>.</li>
+</ul>
+</li>
+<li><strong>Calidad de Código y Estilo</strong>: <strong>ESLint</strong> configurado con la <strong>Guía de Estilo de TypeScript de Google (<code>gts</code>)</strong> + <strong>Prettier</strong>.</li>
+<li><strong>Documentación de Código</strong>: <strong>TypeDoc</strong> para generar documentación automática de todos los módulos del motor, modelos geométricos y componentes.</li>
+<li><strong>Testing</strong>:
+<ul>
+<li><strong>Playwright</strong>: Pruebas End-to-End (E2E) de los flujos de usuario (menú/wizard, colocación de piezas en el plano, ejecución de simulación, diálogos de inventario/demanda/laboratorio y exportación).</li>
+<li><strong>Vitest</strong>: Pruebas unitarias rápidas para las funciones puras del motor (<code>demandPlan</code>, <code>reconcile</code>, <code>shift</code>, transformaciones UTM, colisiones geométricas).</li>
+</ul>
+</li>
+</ul>
+<a id="82-estructura-de-directorios-propuesta" class="tsd-anchor"></a><h3 class="tsd-anchor-link">8.2 Estructura de Directorios Propuesta<a href="#82-estructura-de-directorios-propuesta" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><pre><code class="text">OxEye/
+├── public/
+│   └── assets/                  # Ortofotos PNOA (cristo, constitucion, vega) y fuentes estáticas
+├── src/
+│   ├── assets/                  # Iconos SVG y recursos gráficos
+│   ├── components/              # Componentes React de UI desacoplados
+│   │   ├── header/              # Header, barra de acciones y estado de guardado
+│   │   ├── layout/              # Rail lateral, Sidebar, Barra de fases, Footer de fuentes
+│   │   ├── map/                 # MapShell, capas SVG, controles de zoom/herramientas, Inspector, DirectorHUD
+│   │   ├── simulation/          # SimulationStrip, controles de línea temporal y métricas en vivo
+│   │   ├── modals/              # DemandDialog, InventoryDialog, LaboratoryDialog, ContactsDialog, OrgDialog, SettingsDialog, InfoDialog, ClosingDialog, ComparisonDialog
+│   │   ├── menu/                # GameMenu y Wizard de 4 pasos
+│   │   └── common/              # ExplainPopup (Lenguaje claro), Toast, controles reutilizables
+│   ├── engine/                  # Motor matemático, geométrico y de simulación en TypeScript puro (documentado con TypeDoc)
+│   │   ├── cartography/         # Transformaciones UTM EPSG:32628, celdas, mallas y datos OSM
+│   │   ├── crowd/               # EventEngine, campos BFS, 1.000 PERSONAS y demografía de La Laguna
+│   │   ├── dining/              # Subsistema de comedor, mesas picnic, lluvia y secado
+│   │   ├── emergency/           # ResponseSimulation, patrullas Watch, trayectorias vehiculares y cesión de paso
+│   │   ├── logistics/           # Simulación de turnos Pre/Post-evento (shift), camiones, carretillas y limpieza
+│   │   ├── planning/            # Demand, Inventory, Layout (autoconfigurador), Batch (laboratorio) y Evaluator (autoinforme)
+│   │   └── experience/          # ExperienceMonitor, cálculo de nivel sonoro dB y recomendaciones
+│   ├── data/                    # Presets (Navidad en el Cristo, Noche abierta), catálogo de piezas y cartografía base
+│   ├── db/                      # Esquema Drizzle/SQLite y adaptadores de persistencia local/exportación
+│   ├── store/                   # Stores de Zustand (useProjectStore, useUIStore, useSimulationStore)
+│   ├── styles/                  # Hojas de estilo CSS modulares manteniendo el diseño original exacto
+│   ├── types/                   # Interfaces y tipos globales de TypeScript
+│   ├── App.tsx                  # Componente raíz
+│   └── main.tsx                 # Punto de entrada de la aplicación
+├── tests/
+│   ├── e2e/                     # Tests End-to-End con Playwright
+│   └── unit/                    # Tests unitarios del motor con Vitest
+├── eslint.config.js             # Configuración ESLint (Google TS Style Guide)
+├── playwright.config.ts         # Configuración de Playwright
+├── typedoc.json                 # Configuración de TypeDoc
+├── vite.config.ts               # Configuración de Vite
+├── tsconfig.json                # Configuración estricta de TypeScript
+└── package.json
+</code><button type="button">Copy</button></pre>
+
+</div></div><div class="col-sidebar"><div class="page-menu"><div class="tsd-navigation settings"><details class="tsd-accordion"><summary class="tsd-accordion-summary"><h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>Settings</h3></summary><div class="tsd-accordion-details"><div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span><ul id="tsd-filter-options"><li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li><li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li><li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-external" name="external"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>External</span></label></li></ul></div><div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div><details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>On This Page</h3></summary><div class="tsd-accordion-details"><a href="#especificaciones-técnicas-y-funcionales--ojo-de-buey-oxeye"><span>Especificaciones <wbr/>Técnicas y <wbr/>Funcionales — <wbr/>Ojo de <wbr/>Buey (<wbr/>Ox<wbr/>Eye)</span></a><ul><li><a href="#1-visión-general-y-contexto-del-proyecto"><span>1. <wbr/>Visión <wbr/>General y <wbr/>Contexto del <wbr/>Proyecto</span></a></li><li><ul><li><a href="#11-ámbito-geográfico-inicial"><span>1.1 Ámbito <wbr/>Geográfico <wbr/>Inicial</span></a></li><li><a href="#12-principios-rectores-del-producto"><span>1.2 <wbr/>Principios <wbr/>Rectores del <wbr/>Producto</span></a></li></ul></li><li><a href="#2-arquitectura-cartográfica-y-sistema-de-coordenadas"><span>2. <wbr/>Arquitectura <wbr/>Cartográfica y <wbr/>Sistema de <wbr/>Coordenadas</span></a></li><li><ul><li><a href="#21-extensión-cartográfica-__ojo_datamaps"><span>2.1 <wbr/>Extensión <wbr/>Cartográfica (__OJO_<wbr/>DATA.maps)</span></a></li><li><a href="#22-transformaciones-espaciales"><span>2.2 <wbr/>Transformaciones <wbr/>Espaciales</span></a></li><li><a href="#23-capas-del-lienzo-svg-drawing"><span>2.3 <wbr/>Capas del <wbr/>Lienzo SVG (#drawing)</span></a></li></ul></li><li><a href="#3-flujo-de-inicio-menú-principal-y-wizard-game-menumjs"><span>3. <wbr/>Flujo de <wbr/>Inicio: <wbr/>Menú <wbr/>Principal y <wbr/>Wizard (game-<wbr/>menu.mjs)</span></a></li><li><a href="#4-gestión-por-fases-operativas-phasesmjs"><span>4. <wbr/>Gestión por <wbr/>Fases <wbr/>Operativas (phases.mjs)</span></a></li><li><a href="#5-los-3-espacios-de-trabajo-barra-lateral-y-herramientas"><span>5. <wbr/>Los 3 <wbr/>Espacios de <wbr/>Trabajo (<wbr/>Barra <wbr/>Lateral y <wbr/>Herramientas)</span></a></li><li><ul><li><a href="#51-espacio-01-diseñar-design"><span>5.1 <wbr/>Espacio 01: <wbr/>Diseñar (design)</span></a></li><li><a href="#52-espacio-02-simular-simulate"><span>5.2 <wbr/>Espacio 02: <wbr/>Simular (simulate)</span></a></li><li><ul><li><a href="#a-simulación-de-evento-público-fase-event"><span>A) <wbr/>Simulación de <wbr/>Evento <wbr/>Público (<wbr/>Fase event)</span></a></li><li><a href="#b-simulación-de-jornada-logística-fases-pre-y-post--shiftmjs"><span>B) <wbr/>Simulación de <wbr/>Jornada <wbr/>Logística (<wbr/>Fases pre y post — shift.mjs)</span></a></li></ul></li><li><a href="#53-espacio-03-revisar-review"><span>5.3 <wbr/>Espacio 03: <wbr/>Revisar (review)</span></a></li></ul></li><li><a href="#6-módulos-de-gestión-en-cabecera-diálogos-modales"><span>6. <wbr/>Módulos de <wbr/>Gestión en <wbr/>Cabecera (<wbr/>Diálogos <wbr/>Modales)</span></a></li><li><a href="#7-identidad-visual-y-especificaciones-de-estilo"><span>7. <wbr/>Identidad <wbr/>Visual y <wbr/>Especificaciones de <wbr/>Estilo</span></a></li><li><ul><li><a href="#71-paleta-de-colores-principal"><span>7.1 <wbr/>Paleta de <wbr/>Colores <wbr/>Principal</span></a></li><li><a href="#72-tipografía"><span>7.2 <wbr/>Tipografía</span></a></li><li><a href="#73-adaptabilidad-responsive--immersive"><span>7.3 <wbr/>Adaptabilidad (<wbr/>Responsive &amp; <wbr/>Immersive)</span></a></li></ul></li><li><a href="#8-stack-tecnológico-y-arquitectura-del-nuevo-proyecto"><span>8. <wbr/>Stack <wbr/>Tecnológico y <wbr/>Arquitectura del <wbr/>Nuevo <wbr/>Proyecto</span></a></li><li><ul><li><a href="#81-tecnologías-seleccionadas"><span>8.1 <wbr/>Tecnologías <wbr/>Seleccionadas</span></a></li><li><a href="#82-estructura-de-directorios-propuesta"><span>8.2 <wbr/>Estructura de <wbr/>Directorios <wbr/>Propuesta</span></a></li></ul></li></ul></div></details></div><div class="site-menu"><nav class="tsd-navigation"><a href="modules.html">Ojo de Buey (OxEye) · Documentación Técnica - v0.16.0</a><ul class="tsd-small-nested-navigation" id="tsd-nav-container"><li>Loading...</li></ul></nav></div></div></div><footer><p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer><div class="overlay"></div></body></html>

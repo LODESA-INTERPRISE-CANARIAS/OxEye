@@ -11,6 +11,8 @@ import {initialScene} from '../engine/crowd/presets';
 import {smallExample} from '../engine/crowd/small-example';
 import {addResponseExample} from '../engine/emergency/response-example';
 import {assessRisk} from '../engine/emergency/risk';
+import type {ClipboardPayload} from '../components/map/selectionActions';
+import {isXrayTool, subsoilIdsInScene} from '../components/map/selectionActions';
 import type {
   ActivePanel,
   BaseLayerMode,
@@ -47,10 +49,13 @@ export interface ProjectStoreState {
   base: BaseLayerMode;
   tool: string;
   selectedId: string | null;
+  selectedIds: string[];
+  clipboard: ClipboardPayload | null;
   grid: number;
   gridVisible: boolean;
   labelsVisible: boolean;
   routesVisible: boolean;
+  xrayVisible: boolean;
   layerPanelOpen: boolean;
   lens: LensMode;
   daylight: number;
@@ -75,10 +80,15 @@ export interface ProjectStoreState {
   setBase: (base: BaseLayerMode) => void;
   setTool: (tool: string) => void;
   setSelectedId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelectedId: (id: string) => void;
+  clearSelection: () => void;
+  setClipboard: (clipboard: ClipboardPayload | null) => void;
   setGrid: (grid: number) => void;
   setGridVisible: (visible: boolean) => void;
   setLabelsVisible: (visible: boolean) => void;
   setRoutesVisible: (visible: boolean) => void;
+  setXrayVisible: (visible: boolean) => void;
   setLayerPanelOpen: (open: boolean) => void;
   setLens: (lens: LensMode) => void;
   setDaylight: (hour: number) => void;
@@ -135,10 +145,13 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   base: 'plan',
   tool: 'select',
   selectedId: null,
+  selectedIds: [],
+  clipboard: null,
   grid: 10,
   gridVisible: true,
   labelsVisible: true,
   routesVisible: true,
+  xrayVisible: false,
   layerPanelOpen: false,
   lens: 'people',
   daylight: 15,
@@ -171,6 +184,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       project: nextProject,
       activeVenue: venue,
       selectedId: null,
+      selectedIds: [],
       tool: 'select',
       saveStatusText: ok
         ? 'Guardado en este navegador'
@@ -180,18 +194,38 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   setPanel: (panel) => {
-    set((state) => ({
-      panel,
-      tool: panel === 'simulate' ? 'select' : state.tool,
-      selectedId: panel === 'simulate' ? null : state.selectedId,
-      revision: state.revision + 1,
-    }));
+    set((state) => {
+      if (panel === 'simulate') {
+        return {
+          panel,
+          tool: 'select',
+          selectedId: null,
+          selectedIds: [],
+          revision: state.revision + 1,
+        };
+      }
+      const nextTool =
+        panel !== 'design' && isXrayTool(state.tool) ? 'select' : state.tool;
+      let nextIds = state.selectedIds;
+      if (panel !== 'design' && nextIds.length) {
+        const subIds = subsoilIdsInScene(state.project.scenes[state.activeVenue]);
+        nextIds = nextIds.filter((id) => !subIds.has(id));
+      }
+      return {
+        panel,
+        tool: nextTool,
+        selectedIds: nextIds,
+        selectedId: nextIds.length === 1 ? nextIds[0] : null,
+        revision: state.revision + 1,
+      };
+    });
   },
 
   setPhase: (phase) => {
     set((state) => ({
       phase,
       selectedId: null,
+      selectedIds: [],
       tool: 'select',
       revision: state.revision + 1,
     }));
@@ -202,27 +236,72 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   setTool: (tool) => {
     set((state) => {
       if (state.panel === 'simulate' && tool !== 'select') return state;
+      if (isXrayTool(tool) && state.panel !== 'design') return state;
+      const keepSelection = tool === 'select' || tool === 'xray:select';
       return {
         tool,
-        selectedId: tool !== 'select' ? null : state.selectedId,
+        xrayVisible: isXrayTool(tool) ? true : state.xrayVisible,
+        selectedIds: keepSelection ? state.selectedIds : [],
+        selectedId: keepSelection ? state.selectedId : null,
+      };
+    });
+  },
+
+  setSelectedIds: (ids) => {
+    set((state) => {
+      if (state.panel === 'simulate' && ids.length) return state;
+      const unique = [...new Set(ids)];
+      const nextTool =
+        unique.length && state.tool !== 'xray:select' ? 'select' : state.tool;
+      return {
+        selectedIds: unique,
+        selectedId: unique.length === 1 ? unique[0] : null,
+        tool: nextTool,
       };
     });
   },
 
   setSelectedId: (selectedId) => {
+    get().setSelectedIds(selectedId ? [selectedId] : []);
+  },
+
+  toggleSelectedId: (id) => {
     set((state) => {
-      if (state.panel === 'simulate' && selectedId !== null) return state;
+      if (state.panel === 'simulate') return state;
+      const exists = state.selectedIds.includes(id);
+      const nextIds = exists
+        ? state.selectedIds.filter((x) => x !== id)
+        : [...state.selectedIds, id];
+      const nextTool =
+        nextIds.length && state.tool !== 'xray:select' ? 'select' : state.tool;
       return {
-        selectedId,
-        tool: selectedId !== null ? 'select' : state.tool,
+        selectedIds: nextIds,
+        selectedId: nextIds.length === 1 ? nextIds[0] : null,
+        tool: nextTool,
       };
     });
   },
+
+  clearSelection: () => set({selectedIds: [], selectedId: null}),
+  setClipboard: (clipboard) => set({clipboard}),
 
   setGrid: (grid) => set({grid}),
   setGridVisible: (gridVisible) => set({gridVisible}),
   setLabelsVisible: (labelsVisible) => set({labelsVisible}),
   setRoutesVisible: (routesVisible) => set({routesVisible}),
+  setXrayVisible: (xrayVisible) => {
+    set((state) => {
+      if (xrayVisible) return {xrayVisible: true};
+      const subIds = subsoilIdsInScene(state.project.scenes[state.activeVenue]);
+      const nextIds = state.selectedIds.filter((id) => !subIds.has(id));
+      return {
+        xrayVisible: false,
+        tool: isXrayTool(state.tool) ? 'select' : state.tool,
+        selectedIds: nextIds,
+        selectedId: nextIds.length === 1 ? nextIds[0] : null,
+      };
+    });
+  },
   setLayerPanelOpen: (layerPanelOpen) => set({layerPanelOpen}),
   setLens: (lens) => set({lens}),
   setDaylight: (daylight) => set({daylight}),
@@ -280,6 +359,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       project: nextProject,
       activeVenue: nextVenue,
       selectedId: null,
+      selectedIds: [],
       history: isRedo ? to : from,
       future: isRedo ? from : to,
       saveStatusText: ok
@@ -339,6 +419,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       project: structuredClone(project),
       activeVenue: nextVenue,
       selectedId: null,
+      selectedIds: [],
       tool: 'select',
       saveStatusText: ok
         ? 'Guardado en este navegador'
@@ -441,6 +522,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       phase: 'event',
       panel: 'design',
       selectedId: null,
+      selectedIds: [],
       tool: 'select',
       menuOpen: false,
       activeModal: 'inventory',

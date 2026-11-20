@@ -630,6 +630,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Trazados libres. Los viales son anotaciones de planificación; no
                 se simulan vehículos.
               </p>
+
+              <div className="section-label" style={{marginTop: '18px'}}>
+                SUBSUELO · RAYOS X{' '}
+                <small>
+                  {(s.subsoil?.columns.length || 0) +
+                    (s.subsoil?.walls.length || 0)}{' '}
+                  elem.
+                </small>
+              </div>
+              <div className="tool-row">
+                <button
+                  type="button"
+                  data-action="xray:boundary"
+                  className={tool === 'xray:boundary' ? 'active' : ''}
+                  onClick={() => setTool('xray:boundary')}
+                >
+                  ▱ Perímetro subsuelo
+                </button>
+                <button
+                  type="button"
+                  data-action="xray:column"
+                  className={tool === 'xray:column' ? 'active' : ''}
+                  onClick={() => setTool('xray:column')}
+                >
+                  ● Columna
+                </button>
+                <button
+                  type="button"
+                  data-action="xray:wall"
+                  className={tool === 'xray:wall' ? 'active' : ''}
+                  onClick={() => setTool('xray:wall')}
+                >
+                  ━ Muro de carga
+                </button>
+                <button
+                  type="button"
+                  data-action="xray:select"
+                  className={tool === 'xray:select' ? 'active' : ''}
+                  onClick={() => setTool('xray:select')}
+                >
+                  ↖ Editar subsuelo
+                </button>
+              </div>
+              <p className="small-note">
+                Estructura del subsuelo y mapa de calor. En perímetro: Mayús
+                añade (+), Ctrl resta (−) en el primer clic.
+              </p>
+
               <div className="section-label" style={{marginTop: '18px'}}>
                 ELEMENTOS <small>{allObjects.length}</small>
               </div>

@@ -122,6 +122,18 @@ export function remapScene(
       }
     }
   }
+  if (copy.subsoil) {
+    for (const poly of copy.subsoil.polygons || []) {
+      poly.points = poly.points.map(p => remapPoint(p, old, next));
+    }
+    for (const col of copy.subsoil.columns || []) {
+      [col.x, col.y] = remapPoint([col.x, col.y], old, next);
+    }
+    for (const wall of copy.subsoil.walls || []) {
+      wall.a = remapPoint(wall.a, old, next);
+      wall.b = remapPoint(wall.b, old, next);
+    }
+  }
   return copy;
 }
 

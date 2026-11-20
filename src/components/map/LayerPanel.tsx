@@ -10,10 +10,12 @@ export const LayerPanel: React.FC = () => {
   const grid = useProjectStore((s) => s.grid);
   const labelsVisible = useProjectStore((s) => s.labelsVisible);
   const routesVisible = useProjectStore((s) => s.routesVisible);
+  const xrayVisible = useProjectStore((s) => s.xrayVisible);
   const setGridVisible = useProjectStore((s) => s.setGridVisible);
   const setGrid = useProjectStore((s) => s.setGrid);
   const setLabelsVisible = useProjectStore((s) => s.setLabelsVisible);
   const setRoutesVisible = useProjectStore((s) => s.setRoutesVisible);
+  const setXrayVisible = useProjectStore((s) => s.setXrayVisible);
 
   return (
     <div
@@ -60,6 +62,15 @@ export const LayerPanel: React.FC = () => {
           onChange={(e) => setRoutesVisible(e.target.checked)}
         />{' '}
         Recorridos orientativos
+      </label>
+      <label className="check">
+        <input
+          id="xray-visible"
+          type="checkbox"
+          checked={xrayVisible}
+          onChange={(e) => setXrayVisible(e.target.checked)}
+        />{' '}
+        Rayos X (subsuelo)
       </label>
     </div>
   );

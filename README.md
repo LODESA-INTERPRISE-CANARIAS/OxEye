@@ -80,6 +80,8 @@ flowchart LR
 - **Catálogo de 27 piezas** (hasta `150` elementos por recinto): puestos de artesanía/libros/producto local, ventorrillos, foodtrucks, talleres, escenarios, zonas de descanso, mesas picnic, carpas, aseos, contenedores, accesos configurables, recursos de emergencia y reservas logísticas.
 - **Autoconfigurador espacial**: reorganiza el montaje existente o distribuye nuevo inventario con 3 estrategias (*Patio central*, *Paseo longitudinal* e *Islas de actividad*) mediante vista previa no destructiva.
 - **Trazados e Inspector**: dibujo de perímetros, zonas excluidas, recorridos peatonales y propuestas viales; edición precisa de dimensiones, rotación, precio, capacidad, nivel sonoro (`dB`), bloqueo (`locked`) y etiquetas de fase.
+- **Capa «Rayos X» (subsuelo y mapa de calor estructural)**: toggle dedicado en el panel Capas (`#xray-layer`), perímetro booleano del subsuelo (`Mayús` añade `+`, `Ctrl` resta `−`) independiente del recinto del evento, columnas circulares con calor radial y muros de carga rotables con banda simétrica de restricción de carga calculada mediante función pura (`structuralHeat` / `calor`).
+- **Selección múltiple y atajos**: `Shift + clic` para multiseleccionar cualquier elemento colocable (incluyendo el subsuelo), con resumen en el Inspector y atajos `Ctrl+C` / `Ctrl+V`, `Supr` (respetando `locked` y el límite de 150 piezas) y `Ctrl+Z` / `Ctrl+Y`.
 
 ### 02 · Simular
 - **Motor multi-agente (`EventEngine`)**: malla de navegación de `0,75 × 0,75 m`, campos de flujo BFS con caché LRU y evasión local de colisiones.
@@ -122,7 +124,7 @@ OxEye/
 │   ├── components/         # UI React (header, layout, map, simulation, modals, menu, common)
 │   ├── data/               # Catálogo de piezas, cartografía JSON, mapas y textos en lenguaje claro
 │   ├── db/                 # Esquema Drizzle y repositorio de persistencia
-│   ├── engine/             # Motor puro TS (cartography, crowd, dining, director, emergency, experience, logistics, planning)
+│   ├── engine/             # Motor puro TS (cartography, crowd, dining, director, emergency, experience, logistics, planning, subsoil)
 │   ├── store/              # Store principal de Zustand (useProjectStore)
 │   ├── styles/             # Hojas de estilo modulares
 │   └── types/              # Definiciones de tipos TypeScript

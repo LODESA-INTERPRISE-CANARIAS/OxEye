@@ -52,14 +52,15 @@ El visor interactivo (`#map`) soporta desplazamiento (*pan* con puntero y flecha
    - **Modo Ortofoto (`ortho`)**: Imagen aérea PNOA-IGN georreferenciada (`__OJO_IMAGES[key]`) con inversión cromática de etiquetas (texto blanco con borde verde oscuro).
 2. `#grid-layer`: Cuadrícula visual conmutable (`5 m`, `10 m`, `20 m`, `50 m`) con cabeceras de fila y columna dinámicas.
 3. `#heat-layer`: Mapa de calor logarítmico en celdas de `3 × 3 m` para las lentes de *Flujos* y *Esperas* del Modo Director.
-4. `#scenario-layer`: Perímetro discontinuo del ámbito de ensayo (`boundary`), zonas excluidas (`reserves`), recorridos peatonales propuestos (`flows`), vallas (`fences`), estructuras/puestos (`booths` e `infrastructure` con rotación, dimensiones reales, cruces de carpa y anillo de selección), accesos (`entrances`) y propuestas viales (`roadPlans`).
-5. `#layout-preview`: Capa para previsualizaciones del autoconfigurador.
-6. `#annotation-layer`: Marcadores numerados de observaciones del equipo (`annotations`) y polilíneas de medición con etiqueta de distancia planimétrica en metros (`measurements`).
-7. `#draft-layer`: Polilínea interactiva en construcción al dibujar perímetros, zonas excluidas, recorridos, viales o mediciones.
-8. `#shift-layer`: Animación esquemática de camiones, carretillas, bultos, reservas traseras de foodtrucks y cuadrillas durante los ensayos de montaje (`pre`) y desmontaje/limpieza (`post`).
-9. `#dining-layer`: Indicadores sobre mesas picnic (ocupación `X/6` o estado `Mojada`) y agentes del personal de secado.
-10. `#people-layer`: Agentes visitantes en tiempo real representados a escala física (radio `>= 0,45 m`), coloreados según su nivel de satisfacción actual.
-11. `#response-layer`: Patrullas a pie (`Watch`), marcadores de incidentes activos/resueltos, conatos de incendio y animación de recursos de emergencia (equipos a pie, camillas, ambulancias, bomberos, coches policiales con luces estroboscópicas y trayectorias).
+4. `#xray-layer`: Capa conmutable **«Rayos X»** (`xrayVisible`, controlada desde el panel Capas) para la estructura única de subsuelo por recinto (aparcamiento, sótano, etc.). Renderiza el perímetro booleano del subsuelo (máscara SVG secuencial `add`/`subtract`), columnas estructurales, muros de carga y un mapa de calor estructural semitransparente derivado en vivo (independiente de `#heat-layer`). Solo captura eventos de puntero cuando una herramienta de Rayos X está activa en el espacio *Diseñar*; en *Simular* puede visualizarse en modo solo lectura.
+5. `#scenario-layer`: Perímetro discontinuo del ámbito de ensayo (`boundary`), zonas excluidas (`reserves`), recorridos peatonales propuestos (`flows`), vallas (`fences`), estructuras/puestos (`booths` e `infrastructure` con rotación, dimensiones reales, cruces de carpa y anillo de selección), accesos (`entrances`) y propuestas viales (`roadPlans`).
+6. `#layout-preview`: Capa para previsualizaciones del autoconfigurador.
+7. `#annotation-layer`: Marcadores numerados de observaciones del equipo (`annotations`) y polilíneas de medición con etiqueta de distancia planimétrica en metros (`measurements`).
+8. `#draft-layer`: Polilínea interactiva en construcción al dibujar perímetros, zonas excluidas, recorridos, viales, mediciones o geometrías de subsuelo (con indicador visual de modo `+` / `−`).
+9. `#shift-layer`: Animación esquemática de camiones, carretillas, bultos, reservas traseras de foodtrucks y cuadrillas durante los ensayos de montaje (`pre`) y desmontaje/limpieza (`post`).
+10. `#dining-layer`: Indicadores sobre mesas picnic (ocupación `X/6` o estado `Mojada`) y agentes del personal de secado.
+11. `#people-layer`: Agentes visitantes en tiempo real representados a escala física (radio `>= 0,45 m`), coloreados según su nivel de satisfacción actual.
+12. `#response-layer`: Patrullas a pie (`Watch`), marcadores de incidentes activos/resueltos, conatos de incendio y animación de recursos de emergencia (equipos a pie, camillas, ambulancias, bomberos, coches policiales con luces estroboscópicas y trayectorias).
 
 ---
 
@@ -139,10 +140,19 @@ Cada elemento del plano posee la propiedad `phaseTags: Array<'pre' | 'event' | '
     - `power`: Punto eléctrico (`1 × 1 m`, `#ebc44d`)
     - `storage`: Acopio temporal (`4 × 4 m`)
 - **Trazados de Espacio y Recorridos**:
-  - `boundary`: Redibujar el polígono del perímetro del evento (mínimo 3 puntos).
+  - `boundary`: Redibujar el polígono del perímetro del evento (mínimo 3 puntos; `Mayús` en el primer clic añade área, `Ctrl` resta área, con indicador visual `+` / `−`).
   - `reserve`: Dibujar polígono de zona excluida al tránsito peatonal (mínimo 3 puntos).
   - `flow`: Trazar polilínea de paso peatonal propuesto (mínimo 2 puntos).
   - `road`: Trazar polilínea de propuesta vial de planificación (mínimo 2 puntos).
+- **Subsuelo y Capa «Rayos X» (`Scene.subsoil` y `src/engine/subsoil/heat.ts`)**:
+  - Estructura única opcional por recinto (posiciones en porcentaje `0–100`, dimensiones en metros), validada por `validateScene`, persistida en JSON/almacenamiento local y compatible hacia atrás con proyectos antiguos sin el campo.
+  - **Perímetro del subsuelo (`xray:boundary`)**: Independiente del perímetro del evento. Se representa como una lista ordenada de polígonos `{id, op: 'add' | 'subtract', points}` evaluada secuencialmente (`pointInSubsoil` y `<mask>` SVG): clic normal sustituye, `Mayús` en el primer clic añade (`+`) y `Ctrl` resta (`−`), mostrando indicador visual del modo activo.
+  - **Columnas (`xray:column`)**: Círculos sin rotación con `diameter` (m) y `influenceRadius` (m) editables en el Inspector y degradado radial de calor.
+  - **Muros de carga (`xray:wall`)**: Segmentos `a → b` con grosor estructural visible (`thickness`, m), profundidad de influencia (`influenceDepth`, m), extremos arrastrables y rotación editable en el Inspector; su banda simétrica de calor sigue la orientación en vivo.
+  - **Cálculo puro del calor (`structuralHeat` / `calor`)**: Función pura en `src/engine/subsoil/heat.ts` que devuelve un valor normalizado en `[0, 1]` para cualquier punto en metros locales (no se persiste en JSON; reutilizable para futuros avisos de sobrecarga).
+- **Selección Múltiple, Portapapeles y Atajos de Teclado**:
+  - Selección múltiple (`selectedIds`) mediante `Shift + clic` sobre cualquier elemento colocable del mapa (puestos, infraestructura, accesos, trazados, notas y elementos de subsuelo). Con varios elementos seleccionados, el Inspector muestra un resumen por tipo y acciones comunes.
+  - Atajos globales (inactivos al escribir en inputs/textareas o en el espacio *Simular*): `Ctrl+C` / `Ctrl+V` (copia y pega con desplazamiento e IDs nuevos respetando el límite de 150 piezas del catálogo), `Supr` (elimina respetando `locked`) y `Ctrl+Z` / `Ctrl+Y` (deshacer / rehacer).
 - **Inspector de Elementos (`#inspector`)**:
   - Permite editar nombre, posición exacta (`Este local`, `Sur local`) con visualización de celda y coordenadas UTM, anchura (`0,5–100 m`), fondo (`0,5–100 m`), rotación (`-360° a 360°`), precio (`€`), plazas simultáneas (`labCapacity`), tiempo de servicio (`labTime`), plazas de mesa picnic (`0–6`), nivel sonoro de escenario (`0–130 dB` a 5 m), dotación de emergencia (`staff`, `capacity`, `delay`, `handling`), dirección de acceso (`gate`), casilla de bloqueo para el autoconfigurador (`locked`) y fases de visibilidad (`phaseTags`).
   - Avisa mediante alerta visual si una pieza queda situada fuera del polígono del ámbito de ensayo (`!inside`).

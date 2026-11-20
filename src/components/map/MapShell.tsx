@@ -38,6 +38,16 @@ import type {
 import type {ProposalState} from '../layout/Sidebar';
 import {Inspector} from './Inspector';
 import {LayerPanel} from './LayerPanel';
+import {useMapShortcuts} from './useMapShortcuts';
+import {XRayLayer} from './XRayLayer';
+import {
+  applyWallDrag,
+  buildDraftSvg,
+  commitSubsoilBoundary,
+  commitSubsoilWall,
+  placeSubsoilColumn,
+  resolveSubsoilPointerDown,
+} from './xrayTools';
 
 export interface MapShellHandle {
   fit: () => void;
@@ -116,6 +126,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       o: any;
       old: Point | null;
       handle: string | null;
+      xrayKind?: 'column' | 'wall' | 'polygon' | null;
+      xrayHandle?: 'a' | 'b' | null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       snapshot: any;
       moved: boolean;
@@ -123,17 +135,22 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     } | null>(null);
 
     const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+    const [boundaryMode, setBoundaryMode] = useState<
+      'replace' | 'add' | 'subtract'
+    >('replace');
 
     const activeVenue = useProjectStore((s) => s.activeVenue);
     const panel = useProjectStore((s) => s.panel);
     const phase = useProjectStore((s) => s.phase);
     const base = useProjectStore((s) => s.base);
     const tool = useProjectStore((s) => s.tool);
-    const selectedId = useProjectStore((s) => s.selectedId);
+    const selectedIds = useProjectStore((s) => s.selectedIds);
+    const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
     const grid = useProjectStore((s) => s.grid);
     const gridVisible = useProjectStore((s) => s.gridVisible);
     const labelsVisible = useProjectStore((s) => s.labelsVisible);
     const routesVisible = useProjectStore((s) => s.routesVisible);
+    const xrayVisible = useProjectStore((s) => s.xrayVisible);
     const daylight = useProjectStore((s) => s.daylight);
     const immersive = useProjectStore((s) => s.immersive);
     const history = useProjectStore((s) => s.history);
@@ -144,12 +161,16 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
 
     const setTool = useProjectStore((s) => s.setTool);
     const setSelectedId = useProjectStore((s) => s.setSelectedId);
+    const setSelectedIds = useProjectStore((s) => s.setSelectedIds);
+    const toggleSelectedId = useProjectStore((s) => s.toggleSelectedId);
     const setPanel = useProjectStore((s) => s.setPanel);
     const toggleImmersive = useProjectStore((s) => s.toggleImmersive);
     const updateScene = useProjectStore((s) => s.updateScene);
     const checkpoint = useProjectStore((s) => s.checkpoint);
     const save = useProjectStore((s) => s.save);
     const showToast = useProjectStore((s) => s.showToast);
+
+    useMapShortcuts(onSceneChanged, onUndoRedo);
 
     const tagsForNew = useCallback((): PhaseKey[] => {
       return phase === 'all' ? ['event'] : [phase];
@@ -457,6 +478,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           a.points
         )}" fill="#70af9e" fill-opacity=".18" stroke="#387f82" stroke-width=".5" stroke-dasharray="2 1"/>`;
       }
+      const selectedSet = new Set(selectedIds);
       for (const f of s.fences || []) {
         html += `<g data-id="${esc(f.id)}"><title>${esc(
           f.name || 'Valla'
@@ -465,7 +487,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         )}" fill="none" stroke="transparent" stroke-width="3"/><polyline points="${pts(
           f.points
         )}" fill="none" stroke="${
-          selectedId === f.id ? '#e18f2f' : '#806e55'
+          f.id && selectedSet.has(f.id) ? '#e18f2f' : '#806e55'
         }" stroke-width=".6"/></g>`;
       }
       for (const o of [...s.base.booths, ...s.infrastructure]) {
@@ -473,7 +495,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         const oArea = (o as Booth).area || 24;
         const w = o.width || Math.sqrt(oArea);
         const h = o.depth || Math.sqrt(oArea);
-        const sel = o.id === selectedId;
+        const sel = selectedSet.has(o.id);
         const isCover = (o as Infrastructure).role === 'cover';
         const oKind = (o as Infrastructure).kind;
         html += `<g data-id="${esc(
@@ -531,7 +553,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                   : role === 'free'
                     ? '⇄'
                     : '↕';
-        html += `<g data-id="${esc(o.id)}" class="map-item"><line x1="${
+        const isEntSel = selectedSet.has(o.id);
+        html += `<g data-id="${esc(o.id)}" class="map-item">${
+          isEntSel
+            ? `<circle class="selection-ring" cx="${x}" cy="${y}" r="${Math.max(2.6, w / 2 + 1)}"/>`
+            : ''
+        }<line x1="${
           x - dx
         }" y1="${y - dy}" x2="${x + dx}" y2="${
           y + dy
@@ -620,6 +647,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       base,
       routesVisible,
       selectedId,
+      selectedIds,
+      panel,
       drawAnnotations,
     ]);
 
@@ -641,25 +670,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
 
     useEffect(() => {
       drawScenario();
-    }, [drawScenario, revision, selectedId, phase, proposal, showAlternative, routesVisible]);
+    }, [drawScenario, revision, selectedIds, phase, proposal, showAlternative, routesVisible]);
 
     useEffect(() => {
       setDraftPoints([]);
+      boundaryModeRef.current = 'replace';
+      setBoundaryMode('replace');
     }, [tool]);
 
     useEffect(() => {
       const draftEl = draftLayerRef.current;
       if (!draftEl) return;
-      const points = draftPoints.map((p) => p.join(',')).join(' ');
-      draftEl.innerHTML = draftPoints.length
-        ? `<polyline points="${points}" fill="none" stroke="#633584" stroke-width=".65" stroke-dasharray="1 1"/>${draftPoints
-            .map(
-              (p) =>
-                `<circle cx="${p[0]}" cy="${p[1]}" r=".9" fill="#633584"/>`
-            )
-            .join('')}`
-        : '';
-    }, [draftPoints]);
+      draftEl.innerHTML = buildDraftSvg(draftPoints, tool, boundaryMode);
+    }, [draftPoints, tool, boundaryMode]);
 
     useEffect(() => {
       const mapEl = mapDivRef.current;
@@ -703,22 +726,41 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     };
 
     const finishDraw = () => {
-      const isPolygon = ['boundary', 'reserve'].includes(tool);
+      const isPolygon = ['boundary', 'reserve', 'xray:boundary'].includes(tool);
       if (draftPoints.length < (isPolygon ? 3 : 2)) return;
       const m = currentMap();
-      if (tool === 'gateLine') {
+      if (tool === 'gateLine' || tool === 'xray:wall') {
         const a = draftPoints[0];
         const b = draftPoints[draftPoints.length - 1];
         const w = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        if (w < 0.5 || w > 100) {
-          showToast('El acceso debe medir entre 0,5 y 100 metros.');
+        if (w < 0.5 || w > (tool === 'xray:wall' ? 500 : 100)) {
+          showToast(
+            tool === 'xray:wall'
+              ? 'El muro debe medir al menos 0,5 metros.'
+              : 'El acceso debe medir entre 0,5 y 100 metros.'
+          );
           return;
         }
       }
       const p = draftPoints.map((pt) => percent(pt, m));
       const id = crypto.randomUUID();
+      let createdSubsoilId: string | null = null;
       updateScene((s) => {
-        if (tool === 'gateLine') {
+        if (tool === 'xray:boundary') {
+          createdSubsoilId = commitSubsoilBoundary(
+            s,
+            draftPoints,
+            boundaryModeRef.current,
+            m
+          );
+        } else if (tool === 'xray:wall') {
+          createdSubsoilId = commitSubsoilWall(
+            s,
+            draftPoints[0],
+            draftPoints[draftPoints.length - 1],
+            m
+          );
+        } else if (tool === 'gateLine') {
           const a = draftPoints[0];
           const b = draftPoints[draftPoints.length - 1];
           const w = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -796,7 +838,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
       }, true);
       setDraftPoints([]);
-      setTool('select');
+      const wasXray = tool.startsWith('xray:');
+      setTool(wasXray ? 'xray:select' : 'select');
+      if (createdSubsoilId) setSelectedIds([createdSubsoilId]);
       onSceneChanged();
     };
 
@@ -904,6 +948,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           ? null
           : targetEl.closest<HTMLElement>('[data-id]')?.dataset.id || null;
       const s = currentScene();
+      const m = currentMap();
       const allItems = [
         ...s.base.booths,
         ...s.infrastructure,
@@ -916,8 +961,29 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         ...(s.fences || []),
         ...(s.passages || []),
       ];
+      let resolvedId = id;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const o = id ? (allItems.find((item) => item.id === id) as any) : null;
+      let o: any = resolvedId
+        ? allItems.find((item) => item.id === resolvedId) || null
+        : null;
+      let xrayKind: 'column' | 'wall' | 'polygon' | null = null;
+      let xrayHandle: 'a' | 'b' | null = null;
+      if (panel === 'design' && xrayVisible && !o) {
+        const subHit = resolveSubsoilPointerDown(
+          targetEl,
+          s,
+          p,
+          m,
+          selectedIds,
+          resolvedId
+        );
+        if (subHit) {
+          resolvedId = subHit.id;
+          o = subHit.item;
+          xrayKind = subHit.kind;
+          xrayHandle = subHit.handle || null;
+        }
+      }
       const handle =
         panel === 'design'
           ? targetEl.closest<HTMLElement>('[data-handle]')?.dataset.handle ||
@@ -927,13 +993,15 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         p,
         client: [e.clientX, e.clientY],
         view: {...viewRef.current},
-        id,
+        id: resolvedId,
         o,
         old:
           o && Number.isFinite(o.x) && Number.isFinite(o.y)
             ? [o.x, o.y]
             : null,
         handle,
+        xrayKind,
+        xrayHandle,
         snapshot: o ? structuredClone(o) : null,
         moved: false,
         checkpoint: false,
@@ -959,8 +1027,36 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       if (Math.hypot(dx, dy) > 3) drag.moved = true;
       if (!drag.moved) return;
 
+      const isSelectLike = tool === 'select' || tool === 'xray:select';
+
       if (
-        tool === 'select' &&
+        isSelectLike &&
+        drag.xrayKind === 'wall' &&
+        drag.o &&
+        drag.snapshot &&
+        drag.id &&
+        panel === 'design'
+      ) {
+        if (!drag.checkpoint) {
+          checkpoint();
+          drag.checkpoint = true;
+          onSceneChanged();
+        }
+        applyWallDrag(
+          drag.o,
+          drag.snapshot,
+          drag.p,
+          p,
+          m,
+          drag.xrayHandle || undefined
+        );
+        setSelectedIds([drag.id]);
+        useProjectStore.setState((st) => ({revision: st.revision + 1}));
+        return;
+      }
+
+      if (
+        isSelectLike &&
         drag.o?.points &&
         drag.snapshot?.points &&
         drag.id
@@ -982,7 +1078,11 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         ) {
           drag.o.points = moved;
           setSelectedId(drag.id);
-          drawScenario();
+          if (drag.xrayKind) {
+            useProjectStore.setState((st) => ({revision: st.revision + 1}));
+          } else {
+            drawScenario();
+          }
         }
         return;
       }
@@ -1008,7 +1108,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         return;
       }
 
-      if (tool === 'select' && drag.old && drag.o && drag.id) {
+      if (isSelectLike && drag.old && drag.o && drag.id) {
         if (!drag.checkpoint) {
           checkpoint();
           drag.checkpoint = true;
@@ -1033,8 +1133,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             drag.o.grid || grid
           );
         }
-        drawScenario();
-      } else if (tool === 'select' && mapDivRef.current) {
+        if (drag.xrayKind) {
+          useProjectStore.setState((st) => ({revision: st.revision + 1}));
+        } else {
+          drawScenario();
+        }
+      } else if (isSelectLike && mapDivRef.current) {
         const clientW = mapDivRef.current.clientWidth || 800;
         const clientH = mapDivRef.current.clientHeight || 600;
         viewRef.current.x = drag.view.x - (dx / clientW) * drag.view.w;
@@ -1061,9 +1165,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
         return;
       }
-      if (tool === 'select') {
-        if (d.id) setSelectedId(d.id);
-        else setSelectedId(null);
+      if (tool === 'select' || tool === 'xray:select') {
+        if (e.shiftKey && d.id) toggleSelectedId(d.id);
+        else if (d.id) setSelectedIds([d.id]);
+        else if (!e.shiftKey) setSelectedIds([]);
         return;
       }
       const m = currentMap();
@@ -1111,18 +1216,31 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         setTimeout(() => {
           document.getElementById('note-text')?.focus();
         }, 20);
+      } else if (tool === 'xray:column') {
+        let colId = '';
+        updateScene((sc) => {
+          colId = placeSubsoilColumn(sc, p, m);
+        }, true);
+        setTool('xray:select');
+        setSelectedIds([colId]);
+        onSceneChanged();
       } else {
-        if (tool === 'boundary' && !draftPoints.length) {
-          boundaryModeRef.current = e.ctrlKey
+        if (
+          (tool === 'boundary' || tool === 'xray:boundary') &&
+          !draftPoints.length
+        ) {
+          const nextMode = e.ctrlKey
             ? 'subtract'
             : e.shiftKey
               ? 'add'
               : 'replace';
+          boundaryModeRef.current = nextMode;
+          setBoundaryMode(nextMode);
           showToast(
-            boundaryModeRef.current === 'add'
-              ? 'Añadir área: dibuja y confirma'
-              : boundaryModeRef.current === 'subtract'
-                ? 'Restar área: dibuja y confirma'
+            nextMode === 'add'
+              ? '+ Añadir área: dibuja y confirma'
+              : nextMode === 'subtract'
+                ? '− Restar área: dibuja y confirma'
                 : 'Sustituir perímetro'
           );
         }
@@ -1170,6 +1288,11 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                     flow: 'Trazar recorrido',
                     gateLine: 'Dibujar acceso: marca sus dos extremos',
                     road: 'Propuesta vial',
+                    'xray:boundary':
+                      'Perímetro subsuelo: Mayús añade (+) · Ctrl resta (−)',
+                    'xray:column': 'Colocar columna en el subsuelo',
+                    'xray:wall': 'Muro de carga: marca los extremos A y B',
+                    'xray:select': 'Rayos X · seleccionar o mover subsuelo',
                   } as Record<string, string>
                 )[tool] || 'Edición';
 
@@ -1180,8 +1303,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       'reserve',
       'flow',
       'road',
+      'xray:boundary',
+      'xray:wall',
     ].includes(tool);
-    const isPolygonTool = ['boundary', 'reserve'].includes(tool);
+    const isPolygonTool = ['boundary', 'reserve', 'xray:boundary'].includes(
+      tool
+    );
 
     const nightOpacity =
       daylight < 8 || daylight >= 21 ? '0.54' : daylight >= 18 ? '0.27' : '0';
@@ -1242,6 +1369,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               <g id="base-layer" ref={baseLayerRef} />
               <g id="grid-layer" ref={gridLayerRef} pointerEvents="none" />
               <g id="heat-layer" pointerEvents="none" />
+              <XRayLayer />
               <g id="scenario-layer" ref={scenarioLayerRef} />
               <g id="layout-preview" pointerEvents="none" />
               <g id="dining-layer" pointerEvents="none" />
@@ -1368,6 +1496,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             className="draw-confirm"
             hidden={!isDrawingTool}
           >
+            {(tool === 'boundary' || tool === 'xray:boundary') && (
+              <span
+                id="draw-mode-badge"
+                className={`draw-mode-badge mode-${boundaryMode}`}
+              >
+                {boundaryMode === 'add'
+                  ? '+ Añadir'
+                  : boundaryMode === 'subtract'
+                    ? '− Restar'
+                    : 'Perímetro'}
+              </span>
+            )}
             <span id="draw-message">
               {draftPoints.length
                 ? `${draftPoints.length} puntos · ${num(polylineLength(draftPoints))} m`

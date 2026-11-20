@@ -189,6 +189,52 @@ export interface AnnotationItem {
   phaseTags?: PhaseKey[];
 }
 
+/** Operación booleana secuencial de un polígono del perímetro de subsuelo. */
+export type SubsoilPolygonOp = 'add' | 'subtract';
+
+/** Polígono con operación ordenada (`add` o `subtract`) que compone el perímetro del subsuelo. */
+export interface SubsoilPolygon {
+  id: string;
+  op: SubsoilPolygonOp;
+  points: Point2D[];
+  name?: string;
+  locked?: boolean;
+}
+
+/** Columna estructural del subsuelo (círculo sin rotación con radio de influencia de calor). */
+export interface SubsoilColumn {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  diameter: number;
+  influenceRadius: number;
+  locked?: boolean;
+}
+
+/** Muro de carga del subsuelo definido por un segmento A→B con grosor y banda de influencia. */
+export interface SubsoilWall {
+  id: string;
+  name: string;
+  a: Point2D;
+  b: Point2D;
+  thickness: number;
+  influenceDepth: number;
+  locked?: boolean;
+}
+
+/**
+ * Estructura única de subsuelo por recinto (aparcamiento, sótano, etc.).
+ * El perímetro se representa como una lista ordenada de polígonos con operación
+ * `add` o `subtract` aplicada secuencialmente; el mapa de calor estructural se
+ * deriva dinámicamente de columnas y muros y no se persiste.
+ */
+export interface SubsoilStructure {
+  polygons: SubsoilPolygon[];
+  columns: SubsoilColumn[];
+  walls: SubsoilWall[];
+}
+
 /** Dotación de recursos de una empresa en una fase logística. */
 export interface CompanyPhaseResources {
   people: number;
@@ -327,6 +373,7 @@ export interface Scene {
   annotations: AnnotationItem[];
   infrastructure: InfrastructureItem[];
   entrances: EntranceItem[];
+  subsoil?: SubsoilStructure;
   pendingStock?: Array<BoothItem | InfrastructureItem | EntranceItem>;
   companies?: CompanyItem[];
   contacts?: ContactItem[];

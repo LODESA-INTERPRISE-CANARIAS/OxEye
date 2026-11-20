@@ -9,7 +9,16 @@ import type {
   Entrance,
   Infrastructure,
   PhaseKey,
+  SubsoilColumn,
+  SubsoilPolygon,
+  SubsoilWall,
 } from '../../types';
+import {
+  deleteItemsFromScene,
+  duplicateItemsInScene,
+  findItemInScene,
+} from './selectionActions';
+import {MultiSelectionInspector, SubsoilInspector} from './SubsoilInspector';
 
 const AUTHORITY_UNITS: Array<{key: AuthorityAccessUnit; label: string}> = [
   {key: 'foot', label: 'Unidades a pie'},
@@ -37,7 +46,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   onSceneChanged,
   onClearProposal,
 }) => {
-  const selectedId = useProjectStore((s) => s.selectedId);
+  const selectedIds = useProjectStore((s) => s.selectedIds);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const panel = useProjectStore((s) => s.panel);
   const phase = useProjectStore((s) => s.phase);
   const grid = useProjectStore((s) => s.grid);
@@ -45,6 +55,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   const currentMap = useProjectStore((s) => s.currentMap);
   const revision = useProjectStore((s) => s.revision);
   const setSelectedId = useProjectStore((s) => s.setSelectedId);
+  const setSelectedIds = useProjectStore((s) => s.setSelectedIds);
   const updateScene = useProjectStore((s) => s.updateScene);
   const showToast = useProjectStore((s) => s.showToast);
 
@@ -52,21 +63,30 @@ export const Inspector: React.FC<InspectorProps> = ({
   const s = currentScene();
   const m = currentMap();
 
+  const subsoilHit =
+    selectedId !== null ? findItemInScene(s, selectedId) : null;
+  const isSubsoilSingle =
+    subsoilHit !== null &&
+    (subsoilHit.collection === 'subsoilColumns' ||
+      subsoilHit.collection === 'subsoilWalls' ||
+      subsoilHit.collection === 'subsoilPolygons');
+
   const allObjects = [
     ...s.base.booths,
     ...s.infrastructure,
     ...s.entrances,
   ];
-  const found =
-    allObjects.find((o) => o.id === selectedId) ||
-    s.annotations.find((o) => o.id === selectedId) ||
-    s.roadPlans.find((o) => o.id === selectedId) ||
-    s.measurements.find((o) => o.id === selectedId) ||
-    (s.flows || []).find((o) => o.id === selectedId) ||
-    s.reserves.find((o) => o.id === selectedId) ||
-    (s.fences || []).find((o) => o.id === selectedId) ||
-    (s.passages || []).find((o) => o.id === selectedId) ||
-    null;
+  const found = isSubsoilSingle
+    ? null
+    : allObjects.find((o) => o.id === selectedId) ||
+      s.annotations.find((o) => o.id === selectedId) ||
+      s.roadPlans.find((o) => o.id === selectedId) ||
+      s.measurements.find((o) => o.id === selectedId) ||
+      (s.flows || []).find((o) => o.id === selectedId) ||
+      s.reserves.find((o) => o.id === selectedId) ||
+      (s.fences || []).find((o) => o.id === selectedId) ||
+      (s.passages || []).find((o) => o.id === selectedId) ||
+      null;
 
   const isNote = found
     ? s.annotations.some((a) => a.id === found.id)
@@ -88,7 +108,71 @@ export const Inspector: React.FC<InspectorProps> = ({
     }
   }, [found, isNote, selectedId]);
 
-  if (!found || panel === 'simulate') {
+  if (panel === 'simulate' || !selectedIds.length) {
+    return <aside id="inspector" className="float-panel inspector" hidden />;
+  }
+
+  if (selectedIds.length > 1) {
+    return (
+      <aside
+        id="inspector"
+        className="float-panel inspector"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setSelectedIds([]);
+        }}
+      >
+        <button
+          type="button"
+          className="close"
+          id="close-inspector"
+          aria-label="Cerrar selección"
+          onClick={() => setSelectedIds([])}
+        >
+          ×
+        </button>
+        <MultiSelectionInspector
+          selectedIds={selectedIds}
+          onSceneChanged={onSceneChanged}
+        />
+      </aside>
+    );
+  }
+
+  if (isSubsoilSingle && subsoilHit) {
+    return (
+      <aside
+        id="inspector"
+        className="float-panel inspector"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setSelectedIds([]);
+        }}
+      >
+        <button
+          type="button"
+          className="close"
+          id="close-inspector"
+          aria-label="Cerrar selección"
+          onClick={() => setSelectedIds([])}
+        >
+          ×
+        </button>
+        <SubsoilInspector
+          collection={
+            subsoilHit.collection as
+              | 'subsoilColumns'
+              | 'subsoilWalls'
+              | 'subsoilPolygons'
+          }
+          item={
+            subsoilHit.item as SubsoilColumn | SubsoilWall | SubsoilPolygon
+          }
+          onSceneChanged={onSceneChanged}
+        />
+      </aside>
+    );
+  }
+
+  if (!found) {
     return <aside id="inspector" className="float-panel inspector" hidden />;
   }
 
@@ -170,105 +254,38 @@ export const Inspector: React.FC<InspectorProps> = ({
   };
 
   const handleDuplicate = () => {
-    const isPlaceableObject =
-      isBooth || isEntrance || s.infrastructure.some((i) => i.id === item.id);
-    if (
-      isPlaceableObject &&
-      s.base.booths.length + s.infrastructure.length + s.entrances.length >= 150
-    ) {
+    let newIds: string[] = [];
+    let skippedLimit = 0;
+    updateScene((scene) => {
+      const res = duplicateItemsInScene(scene, [item.id], m, grid, panel);
+      newIds = res.newIds;
+      skippedLimit = res.skippedCatalogLimit;
+    }, true);
+    if (skippedLimit > 0) {
       showToast('Límite del prototipo: 150 elementos por espacio');
       return;
     }
-    const newId = crypto.randomUUID();
-    updateScene((scene) => {
-      const lists = [
-        scene.base.booths,
-        scene.infrastructure,
-        scene.entrances,
-        scene.annotations,
-        scene.roadPlans,
-        scene.measurements,
-        scene.reserves,
-        scene.flows || [],
-        scene.fences || [],
-        scene.passages || [],
-      ];
-      for (const arr of lists) {
-        const idx = arr.findIndex((o) => o.id === item.id);
-        if (idx >= 0) {
-          const clone = structuredClone(arr[idx]) as unknown as Record<
-            string,
-            unknown
-          >;
-          clone.id = newId;
-          if (Array.isArray(clone.points)) {
-            const dx = (2 / m.widthMeters) * 100;
-            const dy = (2 / m.heightMeters) * 100;
-            clone.points = (clone.points as Array<[number, number]>).map(
-              ([px, py]) => [
-                Math.max(0, Math.min(100, px + dx)),
-                Math.max(0, Math.min(100, py + dy)),
-              ]
-            );
-          } else if (
-            typeof clone.x === 'number' &&
-            typeof clone.y === 'number'
-          ) {
-            const stepMeters =
-              typeof clone.width === 'number'
-                ? Math.max(2, clone.width * 0.5 + 1)
-                : 2;
-            const dx = (stepMeters / m.widthMeters) * 100;
-            const dy = (2 / m.heightMeters) * 100;
-            clone.x =
-              clone.x + dx <= 98
-                ? clone.x + dx
-                : Math.max(2, clone.x - dx);
-            clone.y =
-              clone.y + dy <= 98
-                ? clone.y + dy
-                : Math.max(2, clone.y - dy);
-            if (arr === scene.annotations) {
-              clone.cell = cellAt(
-                world([clone.x as number, clone.y as number], m),
-                (clone.grid as number) || grid
-              );
-            }
-          }
-          (arr as unknown[]).push(clone);
-          if (arr === scene.flows) {
-            scene.corridors = structuredClone(scene.flows || []);
-          }
-          break;
-        }
-      }
-    }, true);
-    setSelectedId(newId);
-    onSceneChanged();
-    showToast(isNote ? 'Observación duplicada' : 'Elemento duplicado');
+    if (newIds.length) {
+      setSelectedIds(newIds);
+      onSceneChanged();
+      showToast(isNote ? 'Observación duplicada' : 'Elemento duplicado');
+    }
   };
 
   const handleDelete = () => {
+    let deleted = 0;
+    let locked = 0;
     updateScene((scene) => {
-      for (const arr of [
-        scene.base.booths,
-        scene.infrastructure,
-        scene.entrances,
-        scene.annotations,
-        scene.roadPlans,
-        scene.measurements,
-        scene.reserves,
-        scene.flows || [],
-        scene.fences || [],
-        scene.passages || [],
-      ]) {
-        const idx = arr.findIndex((o) => o.id === item.id);
-        if (idx >= 0) arr.splice(idx, 1);
-      }
-      scene.corridors = structuredClone(scene.flows || []);
+      const res = deleteItemsFromScene(scene, [item.id], panel);
+      deleted = res.deletedIds.length;
+      locked = res.lockedIds.length;
     }, true);
-    setSelectedId(null);
-    onSceneChanged();
+    if (deleted > 0) {
+      setSelectedIds([]);
+      onSceneChanged();
+    } else if (locked > 0) {
+      showToast('Elemento bloqueado: desactiva el bloqueo antes de eliminarlo');
+    }
   };
 
   const commitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {

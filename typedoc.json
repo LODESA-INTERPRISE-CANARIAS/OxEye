@@ -5,6 +5,6 @@
   "out": "docs/api",
   "name": "Ojo de Buey (OxEye) · Documentación Técnica",
   "includeVersion": true,
-  "readme": "SPECIFICATIONS.md",
+  "readme": "doc/SPECIFICATIONS.md",
   "exclude": ["**/*.test.ts", "**/node_modules/**"]
 }

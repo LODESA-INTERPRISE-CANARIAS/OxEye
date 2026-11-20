@@ -1104,5 +1104,69 @@ export function validateScene(s: Scene): Scene {
       throw new Error('Trazado no válido.');
     }
   }
+  if (s.subsoil !== undefined) {
+    const sub = s.subsoil;
+    if (
+      !sub ||
+      typeof sub !== 'object' ||
+      !Array.isArray(sub.polygons) ||
+      !Array.isArray(sub.columns) ||
+      !Array.isArray(sub.walls)
+    ) {
+      throw new Error('Estructura de subsuelo no válida.');
+    }
+    if (
+      sub.polygons.length > 200 ||
+      sub.columns.length > 500 ||
+      sub.walls.length > 500
+    ) {
+      throw new Error('Demasiados elementos en el subsuelo.');
+    }
+    for (const poly of sub.polygons) {
+      if (
+        typeof poly.id !== 'string' ||
+        (poly.op !== 'add' && poly.op !== 'subtract') ||
+        !validPoints(poly.points) ||
+        poly.points.length < 3
+      ) {
+        throw new Error('Polígono de subsuelo no válido.');
+      }
+    }
+    for (const col of sub.columns) {
+      if (
+        typeof col.id !== 'string' ||
+        typeof col.name !== 'string' ||
+        !Number.isFinite(col.x) ||
+        !Number.isFinite(col.y) ||
+        col.x < 0 ||
+        col.x > 100 ||
+        col.y < 0 ||
+        col.y > 100 ||
+        !Number.isFinite(col.diameter) ||
+        col.diameter <= 0 ||
+        col.diameter > 50 ||
+        !Number.isFinite(col.influenceRadius) ||
+        col.influenceRadius < 0 ||
+        col.influenceRadius > 100
+      ) {
+        throw new Error('Columna de subsuelo no válida.');
+      }
+    }
+    for (const wall of sub.walls) {
+      if (
+        typeof wall.id !== 'string' ||
+        typeof wall.name !== 'string' ||
+        !validPoints([wall.a, wall.b]) ||
+        !Number.isFinite(wall.thickness) ||
+        wall.thickness <= 0 ||
+        wall.thickness > 50 ||
+        !Number.isFinite(wall.influenceDepth) ||
+        wall.influenceDepth < 0 ||
+        wall.influenceDepth > 100
+      ) {
+        throw new Error('Muro de carga de subsuelo no válido.');
+      }
+    }
+  }
   return s;
 }
