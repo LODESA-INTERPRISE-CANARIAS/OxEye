@@ -528,7 +528,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                 ? '×'
                 : role === 'emergency'
                   ? 'E'
-                  : '↕';
+                  : role === 'free'
+                    ? '⇄'
+                    : '↕';
         html += `<g data-id="${esc(o.id)}" class="map-item"><line x1="${
           x - dx
         }" y1="${y - dy}" x2="${x + dx}" y2="${

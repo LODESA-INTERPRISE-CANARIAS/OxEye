@@ -200,4 +200,83 @@ describe('Reference Edition 21 Functional Modules', () => {
     expect(resp.evacuation.orders.length).toBe(1);
     expect(serviceLoad(resp).length).toBe(5);
   });
+
+  it('enforces entrance direction restrictions (in, out, both, free) for people and authority unit types for vehicles', () => {
+    configure(MAPS_DATA);
+    const scene = addResponseExample(
+      smallExample(initialScene('cristo', MAPS_DATA.cristo, CARTO_DATA))
+    );
+    // 1) Solo un acceso de "Solo salida": las personas NO pueden entrar
+    scene.entrances = [
+      {
+        ...scene.entrances[0],
+        id: 'gate-out-only',
+        role: 'out',
+        phases: {event: 'out'},
+        clearWidth: 5,
+        recommendedAuthorities: ['foot'],
+      },
+    ];
+    const engineOutOnly = new EventEngine(scene);
+    engineOutOnly.spawn();
+    expect(engineOutOnly.agents.length).toBe(0);
+    expect(engineOutOnly.stats.entryBlocked).toBeGreaterThan(0);
+
+    // 2) Solo acceso "Solo entrada" para personas + solo "Unidades a pie" para autoridades
+    const sceneInOnly = structuredClone(scene);
+    sceneInOnly.entrances = [
+      {
+        ...scene.entrances[0],
+        id: 'gate-in-only',
+        role: 'in',
+        phases: {event: 'in'},
+        clearWidth: 5,
+        recommendedAuthorities: ['foot'],
+      },
+    ];
+    const engineInOnly = new EventEngine(sceneInOnly);
+    engineInOnly.spawn();
+    expect(engineInOnly.agents.length).toBe(1);
+    // Con solo acceso 'in', el visitante no puede salir por ahí
+    engineInOnly.exit(engineInOnly.agents[0]);
+    expect(engineInOnly.agents[0].state).toBe('trapped');
+
+    // Con solo 'foot' marcado, despachar bomberos ('fire' -> heavy_trucks) debe bloquearse
+    const respBlocked = new ResponseSimulation(engineInOnly);
+    engineInOnly.emergency = respBlocked;
+    const blockedFire = respBlocked.inject('fire');
+    expect(blockedFire).not.toBeNull();
+    respBlocked.assignResource(blockedFire!);
+    expect(blockedFire?.status).toBe('blocked');
+    expect(
+      assessRisk(sceneInOnly).critical.some((c) => c.id === 'gate-fire')
+    ).toBe(true);
+
+    // 3) Con 'Acceso libre' ('free') y 'heavy_trucks' marcado: personas entran y salen, y bomberos está autorizado
+    const sceneFree = structuredClone(scene);
+    sceneFree.entrances = [
+      {
+        ...scene.entrances[0],
+        id: 'gate-free-heavy',
+        role: 'free',
+        phases: {event: 'free'},
+        clearWidth: 5,
+        recommendedAuthorities: ['heavy_trucks'],
+      },
+    ];
+    const engineFree = new EventEngine(sceneFree);
+    engineFree.spawn();
+    expect(engineFree.agents.length).toBe(1);
+    engineFree.exit(engineFree.agents[0]);
+    expect(engineFree.agents[0].state).toBe('exit');
+    expect(
+      assessRisk(sceneFree).critical.some((c) => c.id === 'gate-fire')
+    ).toBe(false);
+    const respAllowed = new ResponseSimulation(engineFree);
+    engineFree.emergency = respAllowed;
+    const allowedFire = respAllowed.inject('fire');
+    expect(allowedFire).not.toBeNull();
+    respAllowed.assignResource(allowedFire!);
+    expect(allowedFire?.status).not.toBe('blocked');
+  });
 });

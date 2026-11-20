@@ -7,6 +7,7 @@ import type {
   VehiclePose,
 } from '../../types';
 import {flow} from '../crowd/grid-flow';
+import {gateAllowsAuthority} from './priority';
 import {EmergencyLab, INCIDENTS} from './emergency-lab';
 import {Evacuation} from './evacuation';
 import {FireModel} from './fire-model';
@@ -447,22 +448,35 @@ export class ResponseSimulation extends EmergencyLab {
         )
     )[0];
     const profile: ResponseProfile = {...p};
-    if (['ambulance', 'fire', 'patrol'].includes(row.responseMode || '')) {
+    const responseMode = row.responseMode || 'foot';
+    if (['ambulance', 'fire', 'patrol'].includes(responseMode)) {
       profile.width = resource.width || p.width;
       profile.length = resource.depth || p.length;
+    }
+    const hasAuthorityConfig = e.s.entrances.some(
+      (g: {recommendedAuthorities?: string[]}) =>
+        Array.isArray(g.recommendedAuthorities)
+    );
+    const needsAuthorityCheck =
+      ['ambulance', 'fire', 'patrol'].includes(responseMode) ||
+      (hasAuthorityConfig && ['stretcher', 'foot'].includes(responseMode));
+    if (needsAuthorityCheck) {
+      const requiredWidth = ['ambulance', 'fire', 'patrol'].includes(
+        responseMode
+      )
+        ? profile.width + 0.3
+        : profile.width;
       if (
-        !e.s.entrances.some(
-          (g: {phases?: {event?: string}; role?: string; clearWidth?: number}) =>
-            (g.phases?.event || g.role) === 'emergency' &&
-            (g.clearWidth || 0) >= profile.width + 0.3
+        !e.s.entrances.some((g: Record<string, unknown>) =>
+          gateAllowsAuthority(g as never, responseMode, requiredWidth)
         )
       ) {
         row.status = 'blocked';
         row.note =
-          'No hay un acceso reservado con la anchura de ensayo declarada.';
+          'No hay un acceso autorizado para esta unidad con la anchura de ensayo declarada.';
         row.reinforcements ??= {
           requestedAt: e.time,
-          status: 'Solicitud simulada · acceso reservado pendiente',
+          status: 'Solicitud simulada · acceso autorizado pendiente',
         };
         return;
       }

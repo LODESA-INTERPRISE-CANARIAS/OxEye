@@ -129,7 +129,7 @@ export function generateLayout(
 
   const grid = buildGrid(scene);
   const entrances = scene.entrances.filter((g) =>
-    ['both', 'in'].includes(g.phases?.event || g.role || '')
+    ['both', 'in', 'free'].includes(g.phases?.event || g.role || '')
   );
   const gateCells = entrances
     .map((g) =>
@@ -293,7 +293,7 @@ export function rebalance(
 
   const grid = buildGrid(scene);
   const entry = scene.entrances.find((g) =>
-    ['in', 'both'].includes(g.phases?.event || g.role || '')
+    ['in', 'both', 'free'].includes(g.phases?.event || g.role || '')
   );
   const field = entry
     ? flow(grid, grid.nearest(...pt(entry), 8))

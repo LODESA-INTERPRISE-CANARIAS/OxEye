@@ -80,8 +80,8 @@ export const PLAIN_LANGUAGE_FIELDS: Record<string, [string, string]> = {
     'Distancia desde el borde superior del mapa hasta el centro del elemento. Aumentar el número la desplaza hacia abajo, al sur.',
   ],
   'edit-gate': [
-    '¿Quién puede utilizar este acceso?',
-    'Elige entrada y salida, una sola dirección o uso de emergencias. Para indicar cuándo existe el acceso, utiliza las casillas de las fases que aparecen debajo.',
+    '¿Qué uso tiene este acceso?',
+    'Elige solo salida, solo entrada, entrada y salida o acceso libre. Las unidades de autoridades recomendadas se configuran por separado justo debajo.',
   ],
   'edit-width': [
     '¿Cuánto mide de ancho? (metros)',

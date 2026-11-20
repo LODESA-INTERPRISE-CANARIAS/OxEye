@@ -193,7 +193,7 @@ export class EventEngine {
     this.entries = this.s.entrances
       .filter(
         (e) =>
-          ['in', 'out', 'both'].includes(gateMode(e)) &&
+          ['in', 'out', 'both', 'free'].includes(gateMode(e)) &&
           (e.clearWidth || 3) >= this.s.diameter
       )
       .map((e) => ({
@@ -567,7 +567,7 @@ export class EventEngine {
       return;
     }
     const incoming = this.entries.filter((e) =>
-      ['in', 'both'].includes(gateMode(e))
+      ['in', 'both', 'free'].includes(gateMode(e))
     );
     if (!incoming.length) {
       this.stats.entryBlocked++;
@@ -787,7 +787,7 @@ export class EventEngine {
     const options = this.entries
       .filter(
         (e) =>
-          ['out', 'both'].includes(gateMode(e)) && e.field[cell] >= 0
+          ['out', 'both', 'free'].includes(gateMode(e)) && e.field[cell] >= 0
       )
       .sort((x, y) => x.field[cell] - y.field[cell]);
     if (!options.length) {

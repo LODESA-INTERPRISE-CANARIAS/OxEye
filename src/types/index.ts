@@ -136,6 +136,13 @@ export interface InfrastructureItem {
   coverGroup?: string;
 }
 
+/** Tipos de unidades de autoridades recomendadas para un acceso. */
+export type AuthorityAccessUnit =
+  | 'foot'
+  | 'light_stretchers'
+  | 'passenger_vehicles'
+  | 'heavy_trucks';
+
 /** Punto de acceso o salida del recinto. */
 export interface EntranceItem {
   id: string;
@@ -149,6 +156,7 @@ export interface EntranceItem {
   area?: number;
   rotation?: number;
   role?: string;
+  recommendedAuthorities?: AuthorityAccessUnit[];
   clearWidth?: number;
   gateAngle?: number;
   referenceAccess?: boolean;

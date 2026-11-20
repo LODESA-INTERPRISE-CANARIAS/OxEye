@@ -4,11 +4,22 @@ import {membership, phases} from '../../engine/logistics/phases';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   Annotation,
+  AuthorityAccessUnit,
   Booth,
   Entrance,
   Infrastructure,
   PhaseKey,
 } from '../../types';
+
+const AUTHORITY_UNITS: Array<{key: AuthorityAccessUnit; label: string}> = [
+  {key: 'foot', label: 'Unidades a pie'},
+  {
+    key: 'light_stretchers',
+    label: 'Unidades motorizadas ligeras y camillas',
+  },
+  {key: 'passenger_vehicles', label: 'Vehículos turismo'},
+  {key: 'heavy_trucks', label: 'Camiones y vehículos pesados'},
+];
 
 export interface InspectorProps {
   onSceneChanged: () => void;
@@ -472,11 +483,13 @@ export const Inspector: React.FC<InspectorProps> = ({
                     Uso del acceso
                     <select
                       id="edit-gate"
-                      value={
-                        (item as Entrance).phases?.event ||
-                        (item as Entrance).role ||
-                        'both'
-                      }
+                      value={(() => {
+                        const raw =
+                          (item as Entrance).phases?.event ||
+                          (item as Entrance).role ||
+                          'both';
+                        return raw === 'emergency' ? 'free' : raw;
+                      })()}
                       onChange={(e) => {
                         const val = e.target.value as Entrance['role'];
                         updateScene((scene) => {
@@ -491,12 +504,75 @@ export const Inspector: React.FC<InspectorProps> = ({
                         onSceneChanged();
                       }}
                     >
-                      <option value="both">Entrada y salida</option>
-                      <option value="in">Solo entrada</option>
                       <option value="out">Solo salida</option>
-                      <option value="emergency">Solo emergencias</option>
+                      <option value="in">Solo entrada</option>
+                      <option value="both">Entrada y salida</option>
+                      <option value="free">Acceso libre</option>
                     </select>
                   </label>
+                  <div className="authority-group">
+                    <span className="authority-title">
+                      ¿Están las autoridades recomendadas a usar este acceso?
+                    </span>
+                    <details className="authority-dropdown">
+                      <summary>
+                        <span className="authority-summary-text">
+                          {(() => {
+                            const selected =
+                              (item as Entrance).recommendedAuthorities || [];
+                            if (!selected.length) {
+                              return 'Seleccionar unidades...';
+                            }
+                            if (selected.length === 1) {
+                              return (
+                                AUTHORITY_UNITS.find(
+                                  (u) => u.key === selected[0]
+                                )?.label || '1 seleccionada'
+                              );
+                            }
+                            return `${selected.length} unidades seleccionadas`;
+                          })()}
+                        </span>
+                        <span className="authority-chevron" aria-hidden="true">
+                          ▾
+                        </span>
+                      </summary>
+                      <div className="authority-menu">
+                        {AUTHORITY_UNITS.map((unit) => {
+                          const selected =
+                            (item as Entrance).recommendedAuthorities || [];
+                          const checked = selected.includes(unit.key);
+                          return (
+                            <label
+                              key={unit.key}
+                              className={`authority-option ${checked ? 'is-checked' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                data-authority-unit={unit.key}
+                                checked={checked}
+                                onChange={(e) => {
+                                  const isChecked = e.target.checked;
+                                  updateScene((scene) => {
+                                    const g = scene.entrances.find(
+                                      (en) => en.id === item.id
+                                    );
+                                    if (!g) return;
+                                    const prev = g.recommendedAuthorities || [];
+                                    g.recommendedAuthorities = isChecked
+                                      ? [...new Set([...prev, unit.key])]
+                                      : prev.filter((k) => k !== unit.key);
+                                  }, true);
+                                  onSceneChanged();
+                                }}
+                              />
+                              <span>{unit.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </div>
                 </>
               )}
 

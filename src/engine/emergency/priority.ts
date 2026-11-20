@@ -3,7 +3,42 @@
  * Cálculo de poses sobre trayectorias, colisión con huella de vehículo y cesión de paso peatonal.
  */
 import {flow} from '../crowd/grid-flow';
-import type {Point2D} from '../../types';
+import type {AuthorityAccessUnit, Point2D} from '../../types';
+
+/** Compatibilidad entre modos de respuesta de emergencia y las casillas de autoridades recomendadas. */
+export const AUTHORITY_COMPAT: Record<string, AuthorityAccessUnit[]> = {
+  fire: ['heavy_trucks'],
+  ambulance: ['passenger_vehicles', 'heavy_trucks'],
+  patrol: ['passenger_vehicles', 'light_stretchers'],
+  stretcher: ['light_stretchers'],
+  foot: ['foot'],
+};
+
+/**
+ * Comprueba si un acceso permite el paso del tipo de unidad/vehículo indicado
+ * respetando su categoría en `recommendedAuthorities` (o el modo legado `'emergency'`)
+ * y la anchura libre declarada.
+ */
+export function gateAllowsAuthority(
+  g: {
+    phases?: {event?: string};
+    role?: string;
+    clearWidth?: number;
+    recommendedAuthorities?: AuthorityAccessUnit[];
+  },
+  mode: string,
+  requiredWidth: number,
+): boolean {
+  const gateRole = g.phases?.event || g.role || 'both';
+  if (gateRole === 'closed') return false;
+  if ((Number(g.clearWidth) || 0) < requiredWidth) return false;
+  const authorities = g.recommendedAuthorities;
+  if (Array.isArray(authorities) && authorities.length > 0) {
+    const allowed = AUTHORITY_COMPAT[mode] || ['heavy_trucks'];
+    return authorities.some((u) => allowed.includes(u));
+  }
+  return gateRole === 'emergency';
+}
 
 const distance = (a: Point2D, b: Point2D) =>
   Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -36,14 +71,14 @@ export function priorityRoute(
 ) {
   const width = Math.max(1.8, resource.width || 2.5);
   const length = Math.max(4, resource.depth || 6);
+  const mode = row.responseMode || resource.kind || 'fire';
   if (
-    !e.s.entrances.some(
-      (g: any) =>
-        g.phases?.event === 'emergency' && (g.clearWidth || 0) >= width + 0.3,
+    !e.s.entrances.some((g: any) =>
+      gateAllowsAuthority(g, mode, width + 0.3),
     )
   ) {
     return {
-      error: 'No hay acceso de emergencia declarado con el ancho de ensayo.',
+      error: 'No hay acceso autorizado para este tipo de unidad con el ancho de ensayo.',
     };
   }
   e.priorityGrids ??= new Map();

@@ -36,7 +36,7 @@ export async function trial(
   const engine = new EventEngine(phaseScene(scene, 'event'));
   if (
     !engine.entries.some((g) =>
-      ['both', 'in'].includes(g.phases?.event || g.role || '')
+      ['both', 'in', 'free'].includes(g.phases?.event || g.role || '')
     )
   ) {
     throw new Error('Añade una entrada pública conectada.');

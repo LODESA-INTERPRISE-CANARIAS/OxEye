@@ -486,7 +486,7 @@ export const App: React.FC = () => {
     if (!engineRef.current) {
       if (
         !s.entrances.some((g) =>
-          ['both', 'in'].includes(g.phases?.event || g.role || 'both')
+          ['both', 'in', 'free'].includes(g.phases?.event || g.role || 'both')
         )
       ) {
         showToast('Añade un acceso de entrada al recinto antes de simular');

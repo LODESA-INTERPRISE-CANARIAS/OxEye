@@ -59,7 +59,7 @@ export class Evacuation {
     const exits = e.entries.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (g: any) =>
-        ['out', 'both'].includes(g.phases?.event || g.role || 'both') &&
+        ['out', 'both', 'free'].includes(g.phases?.event || g.role || 'both') &&
         free[g.cell]
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

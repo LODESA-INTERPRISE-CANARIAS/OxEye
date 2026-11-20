@@ -7,6 +7,7 @@ import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
 import {demandPlan} from '../planning/demand';
 import {RESPONSE_PROFILES, responseRoute} from './response-model';
+import {gateAllowsAuthority} from './priority';
 
 export interface RiskIssue {
   id: string;
@@ -289,18 +290,22 @@ export function assessRisk(
   );
   if (
     publicPresent &&
-    !gates.some((g) => ['both', 'in'].includes(g.phases?.event || g.role || 'both'))
+    !gates.some((g) =>
+      ['both', 'in', 'free'].includes(g.phases?.event || g.role || 'both')
+    )
   ) {
     add(
       'entry',
       'critical',
       'Falta entrada de público',
-      'Define un acceso de entrada o de ambos sentidos.'
+      'Define un acceso de entrada, entrada y salida o acceso libre.'
     );
   }
   if (
     publicPresent &&
-    !gates.some((g) => ['both', 'out'].includes(g.phases?.event || g.role || 'both'))
+    !gates.some((g) =>
+      ['both', 'out', 'free'].includes(g.phases?.event || g.role || 'both')
+    )
   ) {
     add(
       'exit',
@@ -320,10 +325,8 @@ export function assessRisk(
   for (const kind of vehicleKinds) {
     if (
       slots(kind) &&
-      !gates.some(
-        (g) =>
-          (g.phases?.event || g.role) === 'emergency' &&
-          (Number(g.clearWidth) || 0) >= RESPONSE_PROFILES[kind].width + 0.3
+      !gates.some((g) =>
+        gateAllowsAuthority(g, kind, RESPONSE_PROFILES[kind].width + 0.3)
       )
     ) {
       add(
@@ -333,7 +336,7 @@ export function assessRisk(
           ({fire: 'bomberos', ambulance: 'ambulancia', patrol: 'policía'}[
             kind
           ] || kind),
-        'Declara un acceso de emergencias y comprueba su anchura libre y recorrido.'
+        'Marca las autoridades recomendadas en un acceso y comprueba su anchura libre y recorrido.'
       );
     }
   }
@@ -405,10 +408,10 @@ export function assessRisk(
 
   if (routes && engine) {
     const entries = engine.entries.filter((g) =>
-      ['both', 'in'].includes(g.phases?.event || g.role || '')
+      ['both', 'in', 'free'].includes(g.phases?.event || g.role || '')
     );
     const exits = engine.entries.filter((g) =>
-      ['both', 'out'].includes(g.phases?.event || g.role || '')
+      ['both', 'out', 'free'].includes(g.phases?.event || g.role || '')
     );
     for (const station of engine.stations) {
       if (
