@@ -92,6 +92,152 @@ dialog p {
   color: var(--purple-dark);
 }
 
+.risk-stats-visual {
+  margin: 18px 0 12px;
+}
+
+.risk-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.risk-stat-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.risk-stat-card small {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.risk-threshold-track {
+  position: relative;
+}
+
+.risk-threshold-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 25%;
+  width: 2px;
+  background: var(--purple-dark);
+  opacity: 0.55;
+}
+
+.risk-stat-footnote {
+  font-size: 10.5px !important;
+  margin-top: 8px;
+}
+
+.risk-sliders-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.risk-slider-field {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 11px 14px;
+}
+
+.risk-slider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.risk-slider-head label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.risk-slider-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--purple);
+  background: var(--purple-soft);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-slider-row {
+  display: grid;
+  grid-template-columns: 1fr 84px;
+  align-items: center;
+  gap: 12px;
+}
+
+.risk-slider-row input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+
+.risk-slider-row input[type='number'] {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-text-field {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.risk-text-field input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.risk-split-bar {
+  display: flex;
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.risk-split-bar .split-mild {
+  background: #e9dff5;
+  color: var(--purple-dark);
+}
+
+.risk-split-bar .split-severe {
+  background: #d9534f;
+  color: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .risk-stat-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .post-sim-diagnostics {
   margin: 14px 0 18px;
 }

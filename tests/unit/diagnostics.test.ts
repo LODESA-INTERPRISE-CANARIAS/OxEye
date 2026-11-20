@@ -1,6 +1,10 @@
 import {describe, expect, it} from 'vitest';
 import {CARTO_DATA, MAPS_DATA} from '../../src/data/geodata';
+import {EventEngine} from '../../src/engine/crowd/event-engine';
 import {configure, initialScene} from '../../src/engine/crowd/presets';
+import {smallExample} from '../../src/engine/crowd/small-example';
+import {addResponseExample} from '../../src/engine/emergency/response-example';
+import {ResponseSimulation} from '../../src/engine/emergency/response-model';
 import {resolveRiskGuide} from '../../src/engine/emergency/risk-guidance';
 import {
   buildPostSimDiagnostics,
@@ -276,5 +280,32 @@ describe('Post-Simulation Satisfaction & Guided Diagnostics', () => {
     );
     expect(subsoilGuide.actions[0].enableXray).toBe(true);
     expect(subsoilGuide.actions[0].itemId).toBe('stage-1');
+  });
+
+  it('dispatches security officer to disperse attendees shouting/whistling instead of stalling on occupied start position', () => {
+    configure(MAPS_DATA);
+    const scene = addResponseExample(
+      smallExample(initialScene('cristo', MAPS_DATA.cristo, CARTO_DATA))
+    );
+    const engine = new EventEngine(scene);
+    const resp = new ResponseSimulation(engine);
+    engine.emergency = resp;
+    engine.spawn();
+    engine.spawn();
+
+    // Place an agent directly on top of the security officer's position
+    const sec = scene.infrastructure.find((r) => r.kind === 'security');
+    expect(sec).toBeDefined();
+    const secX = (sec!.x * MAPS_DATA.cristo.widthMeters) / 100;
+    const secY = (sec!.y * MAPS_DATA.cristo.heightMeters) / 100;
+    engine.agents[0].x = secX;
+    engine.agents[0].y = secY;
+
+    const ev = resp.inject('conflict');
+    expect(ev).not.toBeNull();
+    resp.assignResource(ev!);
+    expect(ev!.status).toBe('assigned');
+    expect(ev!.note).toContain('silbato');
+    expect(resp.social.stats.dispersed).toBeGreaterThan(0);
   });
 });

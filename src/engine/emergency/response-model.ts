@@ -523,17 +523,48 @@ export class ResponseSimulation extends EmergencyLab {
       return;
     }
     const initialPose = poseAt(route.path, 0);
-    if (
-      e.agents.some(
-        (a: Agent) =>
-          a.state !== 'gone' &&
-          inVehicle([a.x, a.y], initialPose, profile.width, profile.length, a.r)
-      )
-    ) {
-      row.status = 'waiting';
-      row.note =
-        'La posición inicial del recurso está ocupada por asistentes.';
-      return;
+    const startBlockers = e.agents.filter(
+      (a: Agent) =>
+        a.state !== 'gone' &&
+        inVehicle([a.x, a.y], initialPose, profile.width, profile.length, a.r)
+    );
+    const isOfficerIntervention =
+      row.type === 'conflict' ||
+      ['security', 'patrol'].includes(row.responseMode || '');
+    if (startBlockers.length > 0) {
+      if (isOfficerIntervention) {
+        // El oficial desaloja inmediatamente gritando y silbando antes de intervenir
+        for (const a of startBlockers as Agent[]) {
+          const angle = Math.atan2(
+            a.y - initialPose.y,
+            a.x - initialPose.x
+          );
+          const pushDist = Math.max(profile.width, profile.length) / 2 + 1.8;
+          const tx = initialPose.x + Math.cos(angle) * pushDist;
+          const ty = initialPose.y + Math.sin(angle) * pushDist;
+          const k = e.g.nearest(tx, ty, 5);
+          if (k >= 0) {
+            const [nx, ny] = e.g.point(k);
+            a.x = nx;
+            a.y = ny;
+          }
+          a.incidentReaction = {
+            event: row.id,
+            mode: 'disperse',
+            ordered: true,
+            reactAt: e.time,
+            until: e.time + 30,
+            destination: this.social.destination(a, row, 'avoid'),
+          };
+          this.social.stats.dispersed++;
+        }
+        row.whistleDispersal = true;
+      } else {
+        row.status = 'waiting';
+        row.note =
+          'La posición inicial del recurso está ocupada por asistentes.';
+        return;
+      }
     }
     row.path = route.path;
     row.pathLength = route.length;
@@ -566,7 +597,9 @@ export class ResponseSimulation extends EmergencyLab {
     row.note = row.footDeployment
       ? 'Dotación de bomberos a pie desde el vehículo; aproximación del camión bloqueada: ' +
         row.vehicleBlock
-      : 'Recurso asignado. Recorrido geométrico de ensayo.';
+      : row.whistleDispersal || row.type === 'conflict'
+        ? 'Oficial desalojando paso con silbato y avisos de voz para intervenir.'
+        : 'Recurso asignado. Recorrido geométrico de ensayo.';
   }
 
   move(row: EmergencyIncident, dt: number): boolean {

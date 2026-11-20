@@ -6,6 +6,7 @@ import {
 } from '../../engine/emergency/response-model';
 import {
   assessRisk,
+  poissonTail,
   requiredStaff,
   resultHTML,
   type RiskAssessmentReport,
@@ -122,6 +123,41 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
       showToast((err as Error).message);
     }
   };
+
+  const formatSeconds = (sec: number): string => {
+    const m = Math.floor(sec / 60);
+    const rem = sec % 60;
+    return m > 0 ? `${sec} s (${m} min${rem ? ` ${rem} s` : ''})` : `${sec} s`;
+  };
+
+  // Previsualización estadística en vivo al mover los sliders
+  const liveStatistical = (() => {
+    const parsedRate = medicalRate === '' ? null : Number(medicalRate);
+    if (
+      parsedRate === null ||
+      !Number.isFinite(parsedRate) ||
+      parsedRate < 0 ||
+      parsedRate > 100
+    ) {
+      return baseReport.statistical;
+    }
+    const exposure = baseReport.expected * (Number(s.base.hours) || 0);
+    const slots = baseReport.slots.medical;
+    const meanServiceHours = (baseReport.statistical?.serviceMinutes || 4.5) / 60;
+    const expected = (parsedRate * exposure) / 1000;
+    return {
+      rate: parsedRate,
+      exposure,
+      expected,
+      any: poissonTail(expected, 0),
+      overlap: poissonTail(
+        ((parsedRate * baseReport.expected) / 1000) * meanServiceHours,
+        slots
+      ),
+      slots,
+      serviceMinutes: meanServiceHours * 60,
+    };
+  })();
 
   const closeDialog = () => {
     onClearCustomReport();
@@ -300,42 +336,107 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
           );
         })}
       </div>
-      {baseReport.statistical && (
-        <>
-          <h3>Escenario estadístico sanitario</h3>
-          <p>
-            Hipótesis: {baseReport.statistical.rate} incidencias/1.000
-            personas·hora. Exposición:{' '}
-            {Math.round(baseReport.statistical.exposure)} personas·hora. Se
-            esperan {baseReport.statistical.expected.toFixed(2)} incidencias por
-            jornada. Probabilidad de al menos una:{' '}
-            {(baseReport.statistical.any * 100).toFixed(1)} %. Probabilidad
-            teórica de demanda simultánea superior a equipos:{' '}
-            {(baseReport.statistical.overlap * 100).toFixed(2)} %.
+      {liveStatistical && (
+        <section
+          className="risk-stats-visual"
+          aria-label="Escenario estadístico sanitario"
+        >
+          <h3>Escenario estadístico sanitario (modelo Poisson)</h3>
+          <div className="risk-stat-cards">
+            <div className="risk-stat-card">
+              <div className="diag-bar-meta">
+                <span>Probabilidad de ≥ 1 incidencia</span>
+                <b>{(liveStatistical.any * 100).toFixed(1)} %</b>
+              </div>
+              <div className="diag-bar-track">
+                <div
+                  className="diag-bar-fill"
+                  style={{
+                    width: `${Math.min(100, Math.max(2, liveStatistical.any * 100))}%`,
+                    background:
+                      liveStatistical.any > 0.6
+                        ? '#d9534f'
+                        : liveStatistical.any > 0.25
+                          ? '#d97706'
+                          : '#6aa84f',
+                  }}
+                />
+              </div>
+              <small>
+                {liveStatistical.expected.toFixed(2)} incidencias esperadas en{' '}
+                {Math.round(liveStatistical.exposure)} pers·h
+              </small>
+            </div>
+
+            <div className="risk-stat-card">
+              <div className="diag-bar-meta">
+                <span>Riesgo de saturación simultánea</span>
+                <b>{(liveStatistical.overlap * 100).toFixed(2)} %</b>
+              </div>
+              <div className="diag-bar-track risk-threshold-track">
+                <div
+                  className="diag-bar-fill"
+                  style={{
+                    width: `${Math.min(100, Math.max(2, liveStatistical.overlap * 100 * 5))}%`,
+                    background:
+                      liveStatistical.overlap > 0.05 ? '#d9534f' : '#6aa84f',
+                  }}
+                />
+                <span
+                  className="risk-threshold-mark"
+                  title="Umbral interno de aviso: 5 %"
+                />
+              </div>
+              <small>
+                {liveStatistical.slots} equipos sanitarios · aviso interno si
+                supera 5 %
+              </small>
+            </div>
+          </div>
+          <p className="risk-stat-footnote">
+            Modelo Poisson de referencia, no probabilidad real de daño. Supone
+            tasa constante e independencia; omite lluvia, aglomeraciones,
+            incendios y evacuación.
           </p>
-          <p>
-            Modelo Poisson de referencia, no probabilidad de daño ni de fallo
-            real. Supone tasa constante e independencia; omite concentración por
-            zonas, viajes, correlaciones y agravamiento por lluvia. No cubre
-            incendios ni evacuación.
-          </p>
-        </>
+        </section>
       )}
       <h3>Hipótesis del ensayo</h3>
-      <form id="risk-form" onSubmit={handleFormSubmit}>
-        <label>
-          Incidencias sanitarias por 1.000 personas·hora (vacío: desconocido)
-          <input
-            name="medicalRate"
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            value={medicalRate}
-            onChange={(e) => setMedicalRate(e.target.value)}
-          />
-        </label>
-        <label>
+      <form id="risk-form" className="risk-sliders-form" onSubmit={handleFormSubmit}>
+        <div className="risk-slider-field">
+          <div className="risk-slider-head">
+            <label htmlFor="risk-medical-rate">
+              Incidencias sanitarias (por 1.000 pers·h)
+            </label>
+            <output className="risk-slider-pill">
+              {medicalRate === ''
+                ? 'Sin calibrar'
+                : `${Number(medicalRate).toFixed(1)} ‰ · ${liveStatistical ? (liveStatistical.any * 100).toFixed(0) : 0} % prob.`}
+            </output>
+          </div>
+          <div className="risk-slider-row">
+            <input
+              type="range"
+              aria-label="Deslizador de incidencias sanitarias por 1.000 personas·hora"
+              min="0"
+              max="20"
+              step="0.1"
+              value={medicalRate === '' ? 0 : Math.min(20, Number(medicalRate))}
+              onChange={(e) => setMedicalRate(e.target.value)}
+            />
+            <input
+              id="risk-medical-rate"
+              name="medicalRate"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={medicalRate}
+              onChange={(e) => setMedicalRate(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <label className="risk-text-field">
           Fuente y contexto de esa tasa
           <input
             name="source"
@@ -345,35 +446,94 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
             onChange={(e) => setSource(e.target.value)}
           />
         </label>
-        <label>
-          Intensidad de sucesos automáticos (avisos/1.000 personas·hora)
-          <input
-            name="autoRate"
-            type="number"
-            min="0"
-            max="1000"
-            required
-            value={autoRate}
-            onChange={(e) => setAutoRate(Number(e.target.value))}
-          />
-        </label>
-        <p>
-          La intensidad automática es una hipótesis de demostración. El 93 % son
-          avisos leves; no representa una estadística municipal.
-        </p>
-        <label>
-          Espera máxima sin asignación antes de cancelar el ensayo (s)
-          <input
-            name="maxWaitSeconds"
-            type="number"
-            min="15"
-            max="600"
-            required
-            value={maxWaitSeconds}
-            onChange={(e) => setMaxWaitSeconds(Number(e.target.value))}
-          />
-        </label>
-        <button type="submit">Guardar hipótesis y reevaluar</button>
+
+        <div className="risk-slider-field">
+          <div className="risk-slider-head">
+            <label htmlFor="risk-auto-rate">
+              Intensidad de sucesos automáticos (avisos / 1.000 pers·h)
+            </label>
+            <output className="risk-slider-pill">
+              {autoRate} ‰ ·{' '}
+              {autoRate === 0
+                ? 'Desactivado'
+                : autoRate <= 80
+                  ? 'Baja'
+                  : autoRate <= 200
+                    ? 'Media'
+                    : 'Alta'}
+            </output>
+          </div>
+          <div className="risk-slider-row">
+            <input
+              type="range"
+              aria-label="Deslizador de intensidad de sucesos automáticos"
+              min="0"
+              max="500"
+              step="5"
+              value={Math.min(500, autoRate)}
+              onChange={(e) => setAutoRate(Number(e.target.value))}
+            />
+            <input
+              id="risk-auto-rate"
+              name="autoRate"
+              type="number"
+              min="0"
+              max="1000"
+              required
+              value={autoRate}
+              onChange={(e) => setAutoRate(Number(e.target.value))}
+            />
+          </div>
+          <div className="risk-split-bar" aria-label="Reparto de severidad: 93% leves, 7% moderados o graves">
+            <span className="split-mild" style={{width: '93%'}}>
+              93 % leves
+            </span>
+            <span className="split-severe" style={{width: '7%'}}>
+              7 %
+            </span>
+          </div>
+        </div>
+
+        <div className="risk-slider-field">
+          <div className="risk-slider-head">
+            <label htmlFor="risk-max-wait">
+              Espera máxima sin asignación antes de cancelar
+            </label>
+            <output className="risk-slider-pill">
+              {formatSeconds(maxWaitSeconds)} ·{' '}
+              {maxWaitSeconds <= 90
+                ? 'Estricto'
+                : maxWaitSeconds <= 240
+                  ? 'Equilibrado'
+                  : 'Permisivo'}
+            </output>
+          </div>
+          <div className="risk-slider-row">
+            <input
+              type="range"
+              aria-label="Deslizador de espera máxima sin asignación"
+              min="15"
+              max="600"
+              step="15"
+              value={Math.max(15, Math.min(600, maxWaitSeconds))}
+              onChange={(e) => setMaxWaitSeconds(Number(e.target.value))}
+            />
+            <input
+              id="risk-max-wait"
+              name="maxWaitSeconds"
+              type="number"
+              min="15"
+              max="600"
+              required
+              value={maxWaitSeconds}
+              onChange={(e) => setMaxWaitSeconds(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <button type="submit" className="dark">
+          Guardar hipótesis y reevaluar
+        </button>
       </form>
       <div className="risk-actions">
         <button
