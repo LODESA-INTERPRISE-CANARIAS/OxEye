@@ -1170,17 +1170,17 @@ export const Inspector: React.FC<InspectorProps> = ({
             if (!isHeavyLoadItem(item) || !s.subsoil) return null;
             const conflict = evaluateItemSubsoilHeat(item, s.subsoil, m);
             if (!conflict) return null;
-            const names = conflict.sources
-              .slice(0, 2)
-              .map(
-                (src) =>
-                  `${src.kind === 'column' ? 'columna' : 'muro'} «${src.name}»`
-              )
-              .join(', ');
+            const areaNames =
+              conflict.sources
+                .slice(0, 2)
+                .map((src) => `«${src.name}»`)
+                .join(', ') || 'el subsuelo';
             return (
               <p className="warning" id="subsoil-load-warning">
-                ⚠ Carga pesada sobre zona de calor del subsuelo ({names} ·{' '}
-                {Math.round(conflict.heat * 100)} %).
+                ⚠ Carga pesada sobre forjado sin apoyo suficiente en {areaNames}{' '}
+                (apoyo mínimo {Math.round(conflict.support * 100)} %). Acércala
+                a un pilar, muro interior o muro perimetral, o sácala del
+                garaje.
               </p>
             );
           })()}

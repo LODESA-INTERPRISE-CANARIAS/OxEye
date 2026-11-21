@@ -60,16 +60,16 @@ export interface RiskGuide {
 export function resolveRiskGuide(issue: RiskIssue, scene: Scene): RiskGuide {
   const id = issue.id;
 
-  // 1. Carga pesada en zona de calor del subsuelo
+  // 1. Carga pesada sobre forjado del subsuelo sin apoyo estructural
   if (id.startsWith('subsoil-load-')) {
     const itemId = id.slice('subsoil-load-'.length);
     return {
       icon: '🧱',
       cause:
-        'La huella de una pieza clasificada como carga pesada pisa la zona de influencia de una columna o muro de carga del subsuelo.',
+        'La huella de una pieza clasificada como carga pesada apoya sobre el vano hueco del garaje/subsuelo fuera del radio de apoyo de pilares, muros interiores y muros perimetrales de carga.',
       steps: [
-        'Activa la capa Rayos X para ver el mapa de calor estructural.',
-        'Desplaza la pieza fuera de la mancha de calor roja/naranja.',
+        'Activa la capa Rayos X para ver el forjado hueco (rayado) y las zonas verdes de apoyo estructural.',
+        'Desplaza la pieza fuera del perímetro del garaje o sitúala sobre las bandas verdes de pilares, muros interiores o muros perimetrales.',
         'Si esta pieza concreta no supone carga pesada real, puedes desmarcar «Carga pesada» en su Inspector.',
       ],
       actions: [

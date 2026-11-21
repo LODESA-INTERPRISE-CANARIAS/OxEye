@@ -437,19 +437,19 @@ export function assessRisk(
   if (venueMap && s.subsoil) {
     const loadConflicts = evaluateHeavyLoadConflicts(s, venueMap);
     for (const conflict of loadConflicts) {
-      const sourceSummary = conflict.sources
-        .slice(0, 3)
-        .map(
-          (src) =>
-            `${src.kind === 'column' ? 'columna' : 'muro de carga'} «${src.name}»`
-        )
-        .join(', ');
-      const pct = Math.round(conflict.heat * 100);
+      const areaSummary =
+        conflict.sources
+          .slice(0, 2)
+          .map((src) => `«${src.name}»`)
+          .join(', ') || 'el subsuelo';
+      const supportPct = Math.round(conflict.support * 100);
       add(
         'subsoil-load-' + conflict.itemId,
         conflict.level,
-        `Carga pesada en zona de calor del subsuelo: ${conflict.itemName}`,
-        `Afecta a ${sourceSummary} (intensidad ${pct} %). Reubica la pieza fuera de la zona restringida de Rayos X o ajusta su condición de carga pesada si no aplica.`
+        conflict.level === 'critical'
+          ? `Carga pesada sobre forjado sin apoyo: ${conflict.itemName}`
+          : `Carga pesada con apoyo parcial en subsuelo: ${conflict.itemName}`,
+        `Pisa el forjado de ${areaSummary} fuera del radio de apoyo de pilares y muros de carga (apoyo mínimo ${supportPct} %). Reubica la pieza fuera del garaje, acércala a un pilar, muro interior o muro perimetral, o desmarca «Carga pesada» si no aplica.`
       );
     }
   }

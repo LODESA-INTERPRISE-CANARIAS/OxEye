@@ -140,7 +140,7 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     });
   });
 
-  test('triggers critical risk in Risk Dialog on Play when a heavy load is placed on a subsoil heat zone', async ({
+  test('triggers critical risk when a heavy load sits on unsupported garage slab and allows selecting/deleting the garage perimeter', async ({
     page,
   }) => {
     await page.goto('/');
@@ -151,25 +151,32 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     const cx = mapBox.x + mapBox.width * 0.55;
     const cy = mapBox.y + mapBox.height * 0.42;
 
-    // Colocar una columna de subsuelo
-    await page.locator('[data-action="xray:column"]').click();
-    await page.mouse.click(cx, cy);
-    await expect(page.locator('#xray-layer .xray-column')).toHaveCount(1);
+    // 1. Dibujar un perímetro amplio de garaje subterráneo
+    await page.locator('[data-action="xray:boundary"]').click();
+    await page.mouse.click(cx - 70, cy - 45);
+    await page.mouse.click(cx + 80, cy - 45);
+    await page.mouse.click(cx + 80, cy + 25);
+    await page.mouse.click(cx - 70, cy + 25);
+    await page.locator('#finish-draw').click();
+    await expect(page.locator('#xray-layer .xray-polygon')).toHaveCount(1);
+    await expect(
+      page.locator('#xray-layer [data-xray-heat-perimeter]')
+    ).toHaveCount(4);
 
-    // Colocar una carga pesada (Escenario) exactamente sobre la columna
+    // 2. Colocar una carga pesada (Escenario) en el vano hueco central del garaje (sin pilares)
     await page.locator('[data-place="stage"]').click();
-    await page.mouse.click(cx, cy);
+    await page.mouse.click(cx + 5, cy - 10);
     await expect(page.locator('#heavy-load-toggle')).toBeChecked();
     await expect(page.locator('#subsoil-load-warning')).toBeVisible();
 
-    // Pulsar Play abre automáticamente el diálogo de riesgos con el bloqueo de carga pesada y guía interactiva
+    // 3. Pulsar Play abre automáticamente el diálogo de riesgos con el bloqueo por forjado sin apoyo
     await page.locator('#play').click();
     const riskDialog = page.locator('#risk-dialog');
     await expect(riskDialog).toBeVisible();
     await expect(riskDialog).toContainText(
-      'Carga pesada en zona de calor del subsuelo: Escenario'
+      'Carga pesada sobre forjado sin apoyo: Escenario'
     );
-    await expect(riskDialog).toContainText('columna «Columna 1»');
+    await expect(riskDialog).toContainText('Perímetro del subsuelo');
     await expect(
       riskDialog.getByRole('button', {
         name: 'Ver en Rayos X y seleccionar pieza',
@@ -181,6 +188,16 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     await expect(
       riskDialog.locator('[data-risk-id^="subsoil-load-"]')
     ).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(riskDialog).toBeHidden();
+
+    // 4. Seleccionar el perímetro del garaje haciendo clic sobre su contorno y eliminarlo
+    await page.mouse.click(cx + 80, cy - 10);
+    await expect(page.locator('#inspector')).toContainText(
+      'Perímetro del subsuelo'
+    );
+    await page.locator('#delete-object').click();
+    await expect(page.locator('#xray-layer .xray-polygon')).toHaveCount(0);
   });
 
   test('supports Solo subsuelo view and locking any element against dragging', async ({

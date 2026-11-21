@@ -235,7 +235,7 @@ export const SubsoilInspector: React.FC<SubsoilInspectorProps> = ({
             />
           </label>
           <label>
-            Profundidad calor (m)
+            Radio de apoyo (m)
             <input
               id="edit-wall-influence"
               type="number"

@@ -1,6 +1,6 @@
 import React from 'react';
 import {world} from '../../engine/cartography/geometry';
-import {wallMetrics} from '../../engine/subsoil/heat';
+import {perimeterLoadWalls, wallMetrics} from '../../engine/subsoil/heat';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {Point2D} from '../../types';
 import {isXrayTool} from './selectionActions';
@@ -44,6 +44,7 @@ export const XRayLayer: React.FC = () => {
   const polygons = subsoil?.polygons || [];
   const columns = subsoil?.columns || [];
   const walls = subsoil?.walls || [];
+  const perimeterWalls = perimeterLoadWalls(subsoil);
   const hasPerimeter = polygons.some((p) => p.op === 'add' && p.points.length >= 3);
 
   return (
@@ -65,25 +66,26 @@ export const XRayLayer: React.FC = () => {
             y1="0"
             x2="0"
             y2="3"
-            stroke="#4b2665"
-            strokeOpacity="0.22"
+            stroke="#8f2d56"
+            strokeOpacity="0.26"
             strokeWidth="0.45"
           />
         </pattern>
+        {/* Zonas de apoyo estructural (pilares, muros interiores y muro perimetral) */}
         <radialGradient id="xray-col-heat" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#c81d4e" stopOpacity="0.82" />
-          <stop offset="35%" stopColor="#e64a3b" stopOpacity="0.58" />
-          <stop offset="70%" stopColor="#f29b38" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="#f29b38" stopOpacity="0" />
+          <stop offset="0%" stopColor="#15803d" stopOpacity="0.72" />
+          <stop offset="40%" stopColor="#16a34a" stopOpacity="0.46" />
+          <stop offset="72%" stopColor="#4ade80" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
         </radialGradient>
         <linearGradient id="xray-wall-heat" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f29b38" stopOpacity="0" />
-          <stop offset="22%" stopColor="#f29b38" stopOpacity="0.32" />
-          <stop offset="44%" stopColor="#e64a3b" stopOpacity="0.68" />
-          <stop offset="50%" stopColor="#c81d4e" stopOpacity="0.82" />
-          <stop offset="56%" stopColor="#e64a3b" stopOpacity="0.68" />
-          <stop offset="78%" stopColor="#f29b38" stopOpacity="0.32" />
-          <stop offset="100%" stopColor="#f29b38" stopOpacity="0" />
+          <stop offset="0%" stopColor="#4ade80" stopOpacity="0" />
+          <stop offset="22%" stopColor="#4ade80" stopOpacity="0.24" />
+          <stop offset="44%" stopColor="#16a34a" stopOpacity="0.52" />
+          <stop offset="50%" stopColor="#15803d" stopOpacity="0.72" />
+          <stop offset="56%" stopColor="#16a34a" stopOpacity="0.52" />
+          <stop offset="78%" stopColor="#4ade80" stopOpacity="0.24" />
+          <stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
         </linearGradient>
         {hasPerimeter && (
           <mask id="xray-subsoil-mask">
@@ -105,7 +107,7 @@ export const XRayLayer: React.FC = () => {
         )}
       </defs>
 
-      {/* Perímetro booleano del subsuelo */}
+      {/* Perímetro booleano del subsuelo (forjado hueco sensible a cargas pesadas sin apoyo) */}
       {hasPerimeter && (
         <g className="xray-perimeter" pointerEvents="none">
           <rect
@@ -113,8 +115,8 @@ export const XRayLayer: React.FC = () => {
             y="0"
             width={map.widthMeters}
             height={map.heightMeters}
-            fill="#4b2665"
-            fillOpacity="0.14"
+            fill="#8f2d56"
+            fillOpacity="0.16"
             mask="url(#xray-subsoil-mask)"
           />
           <rect
@@ -128,39 +130,37 @@ export const XRayLayer: React.FC = () => {
         </g>
       )}
 
-      {/* Contornos de polígonos del subsuelo */}
-      {polygons.map((poly) => {
-        const isSel = selectedSet.has(poly.id);
-        return (
-          <polygon
-            key={poly.id}
-            data-id={poly.id}
-            data-xray-kind="polygon"
-            className="xray-polygon"
-            points={toPointsAttr(poly.points)}
-            fill="none"
-            stroke={
-              isSel
-                ? '#c49a45'
-                : poly.op === 'add'
-                  ? '#5b2c86'
-                  : '#b43c4c'
-            }
-            strokeWidth={isSel ? 0.85 : 0.55}
-            strokeDasharray={poly.op === 'add' ? '2.4 1.2' : '1.2 1.2'}
-          >
-            <title>
-              {poly.name ||
-                (poly.op === 'add'
-                  ? 'Perímetro subsuelo (+)'
-                  : 'Área restada subsuelo (−)')}
-            </title>
-          </polygon>
-        );
-      })}
-
-      {/* Mapa de calor estructural (semitransparente, nunca captura puntero) */}
+      {/* Mapa de apoyo estructural (pilares, muros interiores y muros perimetrales del garaje) */}
       <g id="xray-heatmap" className="xray-heatmap" pointerEvents="none">
+        {hasPerimeter && (
+          <g mask="url(#xray-subsoil-mask)">
+            {perimeterWalls.map((wall) => {
+              const m = wallMetrics(wall, map);
+              const halfBand = Math.max(
+                0.1,
+                wall.thickness / 2 + wall.influenceDepth
+              );
+              const bandHeight = halfBand * 2;
+              const bandWidth = m.length + halfBand * 2;
+              return (
+                <g
+                  key={`heat-${wall.id}`}
+                  data-xray-heat-perimeter={wall.id}
+                  transform={`translate(${m.midMeters[0]} ${m.midMeters[1]}) rotate(${m.angleDeg})`}
+                >
+                  <rect
+                    x={-bandWidth / 2}
+                    y={-halfBand}
+                    width={bandWidth}
+                    height={bandHeight}
+                    rx={halfBand}
+                    fill="url(#xray-wall-heat)"
+                  />
+                </g>
+              );
+            })}
+          </g>
+        )}
         {columns.map((col) => {
           const [cx, cy] = world([col.x, col.y], map);
           const totalR = Math.max(0.1, col.diameter / 2 + col.influenceRadius);
@@ -201,6 +201,59 @@ export const XRayLayer: React.FC = () => {
           );
         })}
       </g>
+
+      {/* Contornos de polígonos del subsuelo (muros perimetrales de carga seleccionables) */}
+      {polygons.map((poly) => {
+        const isSel = selectedSet.has(poly.id);
+        const ptsAttr = toPointsAttr(poly.points);
+        return (
+          <g
+            key={poly.id}
+            data-id={poly.id}
+            data-xray-kind="polygon"
+            data-locked={poly.locked ? 'true' : undefined}
+            className="xray-item xray-polygon"
+          >
+            <title>
+              {poly.name ||
+                (poly.op === 'add'
+                  ? 'Perímetro subsuelo (muro perimetral de carga)'
+                  : 'Área restada subsuelo (−)')}
+            </title>
+            {/* Banda transparente ancha para facilitar el clic sobre el contorno */}
+            <polygon
+              points={ptsAttr}
+              fill={interactive ? 'rgba(0,0,0,0.001)' : 'none'}
+              stroke="transparent"
+              strokeWidth={2.6}
+            />
+            {isSel && (
+              <polygon
+                points={ptsAttr}
+                fill="none"
+                stroke="#c49a45"
+                strokeWidth={1.5}
+                strokeOpacity="0.65"
+                pointerEvents="none"
+              />
+            )}
+            <polygon
+              points={ptsAttr}
+              fill="none"
+              stroke={
+                isSel
+                  ? '#c49a45'
+                  : poly.op === 'add'
+                    ? '#2c163d'
+                    : '#b43c4c'
+              }
+              strokeWidth={isSel ? 0.9 : 0.65}
+              strokeDasharray={poly.op === 'add' ? '2.4 1.2' : '1.2 1.2'}
+              pointerEvents="none"
+            />
+          </g>
+        );
+      })}
 
       {/* Muros de carga */}
       {walls.map((wall) => {

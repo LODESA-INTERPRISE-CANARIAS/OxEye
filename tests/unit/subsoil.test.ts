@@ -402,33 +402,37 @@ describe('Heavy Load Structural Risk Assessment', () => {
     ).toBe(false);
   });
 
-  it('detects heavy loads over subsoil columns/walls and emits critical risk in assessRisk', () => {
+  it('flags heavy loads on unsupported garage slab and clears when supported by perimeter wall, column or moved outside', () => {
     configure(MAPS_DATA);
-    const map = MAPS_DATA.cristo;
+    const map = MAPS_DATA.cristo; // 500 x 400 m
     const scene = initialScene('cristo', map, CARTO_DATA);
 
-    // Place a column directly under a heavy stage and a wall near a light craft booth
-    scene.infrastructure = [];
-    scene.base.booths = [
+    // Garage perimeter covering x: [40%, 60%] (200..300 m), y: [40%, 60%] (160..240 m)
+    scene.infrastructure = [
       {
-        id: 'heavy-stage-1',
-        name: 'Escenario principal',
-        kind: 'stage',
-        type: 'stage',
-        x: 50,
-        y: 50,
-        width: 12,
+        id: 'fire-truck-1',
+        name: 'Bomberos',
+        kind: 'fire',
+        role: 'emergency',
+        x: 50, // 250 m (center of hollow garage slab, 50 m from perimeter walls)
+        y: 50, // 200 m
+        width: 3,
         depth: 8,
         rotation: 0,
+        staff: 4,
+        capacity: 1,
+        active: true,
         phaseTags: ['event'],
       },
+    ];
+    scene.base.booths = [
       {
         id: 'light-craft-1',
         name: 'Puesto artesanía',
         kind: 'craft',
         type: 'commerce',
-        x: 30,
-        y: 30,
+        x: 50,
+        y: 50,
         width: 4,
         depth: 3,
         rotation: 0,
@@ -436,52 +440,66 @@ describe('Heavy Load Structural Risk Assessment', () => {
       },
     ];
     scene.subsoil = {
-      polygons: [],
-      columns: [
+      polygons: [
         {
-          id: 'col-under-stage',
-          name: 'Pilar S1',
-          x: 50,
-          y: 50,
-          diameter: 1,
-          influenceRadius: 4,
+          id: 'garage-1',
+          op: 'add',
+          name: 'Garaje subterráneo',
+          points: [
+            [40, 40],
+            [60, 40],
+            [60, 60],
+            [40, 60],
+          ],
         },
       ],
-      walls: [
-        {
-          id: 'wall-under-craft',
-          name: 'Muro M1',
-          a: [28, 30],
-          b: [32, 30],
-          thickness: 0.5,
-          influenceDepth: 3,
-        },
-      ],
+      columns: [],
+      walls: [],
     };
 
+    // 1. Fire truck in the hollow center of the garage slab -> critical unsupported slab conflict
+    // Light craft booth at the same spot -> no conflict
     const conflicts = evaluateHeavyLoadConflicts(scene, map);
     expect(conflicts.length).toBe(1);
-    expect(conflicts[0].itemId).toBe('heavy-stage-1');
+    expect(conflicts[0].itemId).toBe('fire-truck-1');
     expect(conflicts[0].level).toBe('critical');
-    expect(conflicts[0].sources[0].name).toBe('Pilar S1');
+    expect(conflicts[0].support).toBe(0);
+    expect(conflicts[0].sources[0].name).toBe('Garaje subterráneo');
 
     const report = assessRisk(scene);
     const loadIssue = report.critical.find(
-      (i) => i.id === 'subsoil-load-heavy-stage-1'
+      (i) => i.id === 'subsoil-load-fire-truck-1'
     );
     expect(loadIssue).toBeDefined();
-    expect(loadIssue?.title).toContain('Escenario principal');
-    expect(loadIssue?.action).toContain('Pilar S1');
+    expect(loadIssue?.title).toContain('Bomberos');
+    expect(loadIssue?.action).toContain('Garaje subterráneo');
 
-    // Moving stage away clears the risk and changes safetyFingerprint
+    // 2. Perimeter edges act automatically as load-bearing walls:
+    // Moving a small heavy load right onto the north perimeter wall (y = 40% -> 160 m) is supported!
+    expect(structuralHeat([250, 160], scene.subsoil, map)).toBe(1);
+    expect(structuralHeat([250, 161.7], scene.subsoil, map)).toBeGreaterThan(0.4);
+    expect(structuralHeat([250, 200], scene.subsoil, map)).toBe(0);
+
+    // 3. Adding a column directly under the fire truck with sufficient influence supports it
     const fpBefore = safetyFingerprint(scene);
-    scene.base.booths[0].x = 80;
-    scene.base.booths[0].y = 80;
-    const fpAfter = safetyFingerprint(scene);
-    expect(fpAfter).not.toBe(fpBefore);
+    scene.subsoil.columns.push({
+      id: 'col-support-1',
+      name: 'Pilar S1',
+      x: 50,
+      y: 50,
+      diameter: 1,
+      influenceRadius: 10,
+    });
+    expect(safetyFingerprint(scene)).not.toBe(fpBefore);
+    expect(evaluateHeavyLoadConflicts(scene, map)).toHaveLength(0);
+
+    // 4. Removing the column and moving the fire truck outside the garage also clears the risk
+    scene.subsoil.columns = [];
+    scene.infrastructure[0].x = 80;
+    scene.infrastructure[0].y = 80;
     const reportAfter = assessRisk(scene);
     expect(
-      reportAfter.issues.some((i) => i.id === 'subsoil-load-heavy-stage-1')
+      reportAfter.issues.some((i) => i.id === 'subsoil-load-fire-truck-1')
     ).toBe(false);
   });
 });

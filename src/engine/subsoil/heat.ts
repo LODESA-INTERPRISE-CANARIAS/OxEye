@@ -182,21 +182,52 @@ export function wallHeat(
 }
 
 /**
- * Función pura de calor estructural del subsuelo en un punto `[x, y]` en
+ * Convierte las aristas de todos los polígonos del subsuelo en muros de carga
+ * perimetrales virtuales (el borde de un garaje o sótano actúa siempre como
+ * muro pantalla / muro perimetral de carga).
+ *
+ * @param subsoil - Estructura de subsuelo del recinto.
+ * @returns Lista de muros perimetrales derivados de `subsoil.polygons`.
+ */
+export function perimeterLoadWalls(
+  subsoil: SubsoilStructure | undefined
+): SubsoilWall[] {
+  if (!subsoil || !subsoil.polygons.length) return [];
+  const walls: SubsoilWall[] = [];
+  for (const poly of subsoil.polygons) {
+    if (poly.points.length < 3) continue;
+    const baseName = poly.name || 'Perímetro del subsuelo';
+    for (let i = 0; i < poly.points.length; i++) {
+      const a = poly.points[i];
+      const b = poly.points[(i + 1) % poly.points.length];
+      walls.push({
+        id: `perimeter-${poly.id}-${i}`,
+        name: `${baseName} (muro perimetral)`,
+        a,
+        b,
+        thickness: SUBSOIL_DEFAULTS.wallThickness,
+        influenceDepth: SUBSOIL_DEFAULTS.wallInfluenceDepth,
+      });
+    }
+  }
+  return walls;
+}
+
+/**
+ * Función pura de apoyo estructural del subsuelo en un punto `[x, y]` en
  * metros locales del recinto.
  *
- * Combina las contribuciones de todas las columnas y muros mediante unión
- * probabilística `1 - ∏(1 - h_i)`, garantizando un resultado acotado en `[0, 1]`:
- * - `0` fuera de toda zona de influencia.
- * - Igual a la contribución individual cuando solo afecta un elemento.
- * - `1` sobre el núcleo de cualquier columna o muro, y mayor en solapamientos.
- *
- * Pensada para reutilizarse en futuras validaciones o avisos de sobrecarga.
+ * Combina las contribuciones de todas las columnas, muros interiores y muros
+ * perimetrales del garaje mediante unión probabilística `1 - ∏(1 - h_i)`,
+ * garantizando un resultado acotado en `[0, 1]`:
+ * - `0` fuera de toda zona de apoyo (vano hueco del forjado).
+ * - Igual a la contribución individual cuando solo aporta un elemento.
+ * - `1` sobre el núcleo de cualquier columna, muro interior o muro perimetral.
  *
  * @param pointMeters - Punto de consulta `[x, y]` en metros locales.
  * @param subsoil - Estructura de subsuelo del recinto (puede ser `undefined`).
  * @param map - Metadatos cartográficos del recinto.
- * @returns Valor de calor estructural en `[0, 1]`.
+ * @returns Nivel de apoyo estructural normalizado en `[0, 1]`.
  */
 export function structuralHeat(
   pointMeters: Point2D,
@@ -215,33 +246,50 @@ export function structuralHeat(
     if (h >= 1) return 1;
     if (h > 0) complement *= 1 - h;
   }
+  for (const pWall of perimeterLoadWalls(subsoil)) {
+    const h = wallHeat(pointMeters, pWall, map);
+    if (h >= 1) return 1;
+    if (h > 0) complement *= 1 - h;
+  }
   return Math.max(0, Math.min(1, 1 - complement));
 }
 
 /** Alias en español de {@link structuralHeat}. */
 export const calor = structuralHeat;
 
-/** Umbrales de intensidad de calor estructural `[0, 1]` para avisos y bloqueos de riesgo. */
-export const SUBSOIL_HEAT_THRESHOLDS = {
-  /** Cualquier solapamiento positivo por encima de este valor genera al menos aviso (`warning`). */
-  warning: 0.01,
-  /** A partir de este valor de calor se emite bloqueo crítico (`critical`) al iniciar simulación. */
-  critical: 0.25,
+/**
+ * Umbrales de apoyo estructural `[0, 1]` sobre forjado de subsuelo/garaje:
+ * - `support >= supported` (0,50): pieza apoyada sobre pilar, muro o muro perimetral (segura).
+ * - `warning <= support < supported` (0,25–0,50): apoyo parcial en el borde de influencia (`warning`).
+ * - `support < warning` (< 0,25): carga pesada sobre forjado hueco sin apoyo cercano (`critical`).
+ */
+export const SUBSOIL_SUPPORT_THRESHOLDS = {
+  supported: 0.5,
+  warning: 0.25,
 } as const;
 
-/** Elemento estructural del subsuelo (columna o muro de carga) que provoca calor en una pieza. */
+/** Umbrales de riesgo por falta de apoyo (`1 - support`) en `[0, 1]`. */
+export const SUBSOIL_HEAT_THRESHOLDS = {
+  warning: 1 - SUBSOIL_SUPPORT_THRESHOLDS.supported,
+  critical: 1 - SUBSOIL_SUPPORT_THRESHOLDS.warning,
+} as const;
+
+/** Elemento del subsuelo implicado en la evaluación de carga pesada. */
 export interface StructuralHeatSource {
   id: string;
   name: string;
-  kind: 'column' | 'wall';
+  kind: 'column' | 'wall' | 'polygon';
   heat: number;
 }
 
-/** Conflicto detectado entre una pieza de carga pesada y la estructura del subsuelo. */
+/** Conflicto detectado entre una pieza de carga pesada y el forjado del subsuelo. */
 export interface StructuralLoadConflict {
   itemId: string;
   itemName: string;
+  /** Nivel de desprotección / falta de apoyo en `[0, 1]` (`1` = 0 % de apoyo). */
   heat: number;
+  /** Nivel mínimo de apoyo estructural encontrado bajo la huella (`0` a `1`). */
+  support: number;
   level: 'critical' | 'warning';
   sources: StructuralHeatSource[];
 }
@@ -270,21 +318,21 @@ export function isHeavyLoadItem(item: {
 }
 
 /**
- * Evalúa el pico de calor estructural sobre la huella rotada (centro, 4 esquinas y
- * 4 puntos medios de arista) de una pieza del plano y devuelve las columnas y muros
- * de carga afectados.
+ * Evalúa si una pieza de carga pesada apoya sobre el forjado hueco del subsuelo
+ * (dentro del perímetro del garaje) fuera del rango de apoyo de pilares, muros
+ * interiores y muros perimetrales de carga.
  *
  * @param item - Puesto o infraestructura a evaluar.
  * @param subsoil - Estructura de subsuelo del recinto.
  * @param map - Metadatos cartográficos del recinto.
- * @returns Conflicto estructural si la pieza interseca una zona de calor, o `null`.
+ * @returns Conflicto estructural si la pieza carece de apoyo suficiente sobre el forjado, o `null`.
  */
 export function evaluateItemSubsoilHeat(
   item: BoothItem | InfrastructureItem,
   subsoil: SubsoilStructure | undefined,
   map: MapMetadata
 ): StructuralLoadConflict | null {
-  if (!subsoil || (!subsoil.columns.length && !subsoil.walls.length)) {
+  if (!subsoil || !subsoil.polygons.length) {
     return null;
   }
   const corners = rect(item as unknown as Record<string, unknown>, map);
@@ -296,60 +344,53 @@ export function evaluateItemSubsoilHeat(
     samples.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
   }
 
-  let peakHeat = 0;
-  const sourceMap = new Map<string, StructuralHeatSource>();
+  let minSupport = 1;
+  let insideCount = 0;
+  const polySources = new Map<string, StructuralHeatSource>();
 
   for (const pt of samples) {
-    const h = structuralHeat(pt, subsoil, map);
-    if (h > peakHeat) peakHeat = h;
-    for (const col of subsoil.columns) {
-      const ch = columnHeat(pt, col, map);
-      if (ch >= SUBSOIL_HEAT_THRESHOLDS.warning) {
-        const prev = sourceMap.get(col.id);
-        if (!prev || ch > prev.heat) {
-          sourceMap.set(col.id, {
-            id: col.id,
-            name: col.name,
-            kind: 'column',
-            heat: ch,
-          });
-        }
-      }
-    }
-    for (const wall of subsoil.walls) {
-      const wh = wallHeat(pt, wall, map);
-      if (wh >= SUBSOIL_HEAT_THRESHOLDS.warning) {
-        const prev = sourceMap.get(wall.id);
-        if (!prev || wh > prev.heat) {
-          sourceMap.set(wall.id, {
-            id: wall.id,
-            name: wall.name,
-            kind: 'wall',
-            heat: wh,
+    const ptPct = percent(pt, map);
+    if (!pointInSubsoil(ptPct, subsoil)) continue;
+    insideCount++;
+    const support = structuralHeat(pt, subsoil, map);
+    if (support < minSupport) minSupport = support;
+    const unsupported = Math.max(0, Math.min(1, 1 - support));
+    for (const poly of subsoil.polygons) {
+      if (poly.op !== 'add' || poly.points.length < 3) continue;
+      if (inside(ptPct, poly.points)) {
+        const prev = polySources.get(poly.id);
+        if (!prev || unsupported > prev.heat) {
+          polySources.set(poly.id, {
+            id: poly.id,
+            name: poly.name || 'Perímetro del subsuelo',
+            kind: 'polygon',
+            heat: unsupported,
           });
         }
       }
     }
   }
 
-  if (peakHeat < SUBSOIL_HEAT_THRESHOLDS.warning || !sourceMap.size) {
+  if (insideCount === 0 || minSupport >= SUBSOIL_SUPPORT_THRESHOLDS.supported) {
     return null;
   }
 
-  const sources = [...sourceMap.values()].sort((a, b) => b.heat - a.heat);
+  const unsupported = Math.max(0, Math.min(1, 1 - minSupport));
+  const sources = [...polySources.values()].sort((a, b) => b.heat - a.heat);
   return {
     itemId: item.id,
     itemName: item.name,
-    heat: peakHeat,
+    heat: unsupported,
+    support: minSupport,
     level:
-      peakHeat >= SUBSOIL_HEAT_THRESHOLDS.critical ? 'critical' : 'warning',
+      minSupport < SUBSOIL_SUPPORT_THRESHOLDS.warning ? 'critical' : 'warning',
     sources,
   };
 }
 
 /**
  * Analiza todas las piezas clasificadas como carga pesada de una escena frente
- * a las columnas y muros de carga del subsuelo.
+ * al forjado y los apoyos estructurales del subsuelo.
  *
  * @param scene - Escena a analizar.
  * @param map - Metadatos cartográficos del recinto.
@@ -359,10 +400,7 @@ export function evaluateHeavyLoadConflicts(
   scene: Scene,
   map: MapMetadata
 ): StructuralLoadConflict[] {
-  if (
-    !scene.subsoil ||
-    (!scene.subsoil.columns.length && !scene.subsoil.walls.length)
-  ) {
+  if (!scene.subsoil || !scene.subsoil.polygons.length) {
     return [];
   }
   const conflicts: StructuralLoadConflict[] = [];

@@ -3,7 +3,12 @@
  * Lógica de herramientas interactivas de la capa «Rayos X» (perímetro booleano,
  * columnas y muros de carga), separada de `MapShell.tsx` para mantenerlo modular.
  */
-import {percent, segmentDistance, world} from '../../engine/cartography/geometry';
+import {
+  inside,
+  percent,
+  segmentDistance,
+  world,
+} from '../../engine/cartography/geometry';
 import {
   emptySubsoil,
   SUBSOIL_DEFAULTS,
@@ -156,6 +161,29 @@ export function hitTestSubsoil(
     const hitTol = Math.max(1.4, wall.thickness / 2 + 0.6);
     if (segmentDistance(pointMeters, m.aMeters, m.bMeters) <= hitTol) {
       return {id: wall.id, kind: 'wall', item: wall};
+    }
+  }
+
+  // 4. Bordes del perímetro del subsuelo (muros perimetrales de carga)
+  for (let i = sub.polygons.length - 1; i >= 0; i--) {
+    const poly = sub.polygons[i];
+    if (poly.points.length < 3) continue;
+    const ptsMeters = poly.points.map((pt) => world(pt, map));
+    for (let j = 0; j < ptsMeters.length; j++) {
+      const a = ptsMeters[j];
+      const b = ptsMeters[(j + 1) % ptsMeters.length];
+      if (segmentDistance(pointMeters, a, b) <= 2.2) {
+        return {id: poly.id, kind: 'polygon', item: poly};
+      }
+    }
+  }
+
+  // 5. Interior de polígonos del subsuelo (si no hay pieza de superficie, columna ni muro encima)
+  const ptPct = percent(pointMeters, map);
+  for (let i = sub.polygons.length - 1; i >= 0; i--) {
+    const poly = sub.polygons[i];
+    if (poly.points.length >= 3 && inside(ptPct, poly.points)) {
+      return {id: poly.id, kind: 'polygon', item: poly};
     }
   }
 
