@@ -59,9 +59,17 @@ describe('Custom Real-Map Location & Square Projection', () => {
 
     const planTiles = computeMapTiles(28.4682, -16.2546, 350, 'plan');
     const orthoTiles = computeMapTiles(28.4682, -16.2546, 350, 'ortho');
+    const orthoSmallTiles = computeMapTiles(28.4682, -16.2546, 200, 'ortho');
+    const orthoForeignTiles = computeMapTiles(48.8566, 2.3522, 350, 'ortho');
     expect(planTiles.length).toBeGreaterThanOrEqual(4);
     expect(planTiles[0].url).toContain('tile.openstreetmap.org');
-    expect(orthoTiles[0].url).toContain('World_Imagery');
+    // En España usa ortofoto PNOA–IGN de alta resolución (z=19 para 350 m, z=20 para ≤250 m)
+    expect(orthoTiles[0].url).toContain('ign.es/wmts/pnoa-ma');
+    expect(orthoTiles[0].z).toBe(19);
+    expect(orthoSmallTiles[0].z).toBe(20);
+    // Fuera de España usa Esri World Imagery a z=19
+    expect(orthoForeignTiles[0].url).toContain('World_Imagery');
+    expect(orthoForeignTiles[0].z).toBe(19);
     // Tiles must cover [0, 350] horizontally and vertically
     const minX = Math.min(...planTiles.map((t) => t.x));
     const maxX = Math.max(...planTiles.map((t) => t.x + t.width));

@@ -428,7 +428,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         if (base === 'ortho') {
           const tiles = computeMapTiles(cl.lat, cl.lon, cl.sizeMeters, 'ortho');
           for (const t of tiles) {
-            html += `<image href="${esc(t.url)}" x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" preserveAspectRatio="none"/>`;
+            html += `<image href="${esc(t.url)}" x="${t.x}" y="${t.y}" width="${t.width + 0.08}" height="${t.height + 0.08}" preserveAspectRatio="none"/>`;
           }
           if (hasVector) {
             html += renderStreetLabels(cl.features!);

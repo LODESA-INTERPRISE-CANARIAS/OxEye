@@ -171,8 +171,10 @@ export function buildCustomMapMetadata(
     crs: 'WGS84 / Local Metric',
     resolution: 0.25,
     retrieved: new Date().toISOString().slice(0, 10),
-    flightDate: 'Teselas en línea',
-    attribution: '© OpenStreetMap contributors · Esri World Imagery',
+    flightDate: isInsideSpain(lat, lon) ? 'PNOA–IGN en línea' : 'Teselas en línea',
+    attribution: isInsideSpain(lat, lon)
+      ? '© OpenStreetMap contributors · PNOA–IGN'
+      : '© OpenStreetMap contributors · Esri World Imagery',
     customLocation: normalized,
   };
 }
@@ -204,15 +206,36 @@ export function tileToLatLon(
 }
 
 /**
- * URL pública de una tesela cartográfica (plano OSM o imagen satelital).
+ * Comprueba si las coordenadas caen dentro de la cobertura de PNOA–IGN
+ * (Península, Baleares, Ceuta, Melilla e Islas Canarias).
+ */
+export function isInsideSpain(lat: number, lon: number): boolean {
+  const mainlandAndBalearics =
+    lat >= 35.1 && lat <= 43.9 && lon >= -9.5 && lon <= 4.5;
+  const canaries =
+    lat >= 27.5 && lat <= 29.6 && lon >= -18.3 && lon <= -13.3;
+  return mainlandAndBalearics || canaries;
+}
+
+/**
+ * URL pública de una tesela cartográfica (plano OSM, ortofoto PNOA–IGN de alta resolución
+ * dentro de España o imagen satelital Esri World Imagery en el resto del mundo).
  */
 export function tileUrl(
   z: number,
   tx: number,
   ty: number,
-  mode: BaseMapMode
+  mode: BaseMapMode,
+  usePnoa = false
 ): string {
   if (mode === 'ortho') {
+    if (usePnoa) {
+      return (
+        'https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+        '&LAYER=OI.OrthoimageCoverage&STYLE=default&FORMAT=image/jpeg' +
+        `&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX=${z}&TILEROW=${ty}&TILECOL=${tx}`
+      );
+    }
     return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`;
   }
   return `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
@@ -221,6 +244,9 @@ export function tileUrl(
 /**
  * Calcula el conjunto de teselas cartográficas que cubren el cuadrado operativo
  * con sus coordenadas exactas en metros locales para renderizarlas dentro de `<svg>`.
+ *
+ * En modo `ortho` utiliza un nivel de zoom alto (z19–z20 en zonas ≤ 550 m, z18 hasta 1000 m)
+ * y ortofotografía PNOA–IGN en España para ofrecer nitidez equivalente a los recintos base (~0,15–0,26 m/px).
  */
 export function computeMapTiles(
   lat: number,
@@ -228,7 +254,21 @@ export function computeMapTiles(
   sizeMeters: number,
   mode: BaseMapMode
 ): ProjectedMapTile[] {
-  const z = sizeMeters <= 320 ? 18 : sizeMeters <= 700 ? 17 : 16;
+  const usePnoa = mode === 'ortho' && isInsideSpain(lat, lon);
+  const z =
+    mode === 'ortho'
+      ? sizeMeters <= 250
+        ? usePnoa
+          ? 20
+          : 19
+        : sizeMeters <= 550
+          ? 19
+          : 18
+      : sizeMeters <= 320
+        ? 18
+        : sizeMeters <= 700
+          ? 17
+          : 16;
   const bounds = customAreaBounds(lat, lon, sizeMeters);
   const [xMinF, yMinF] = latLonToTileFloat(bounds.north, bounds.west, z);
   const [xMaxF, yMaxF] = latLonToTileFloat(bounds.south, bounds.east, z);
@@ -246,7 +286,7 @@ export function computeMapTiles(
       const p0 = latLonToLocalMeters(nw.lat, nw.lon, lat, lon, sizeMeters);
       const p1 = latLonToLocalMeters(se.lat, se.lon, lat, lon, sizeMeters);
       tiles.push({
-        url: tileUrl(z, tx, ty, mode),
+        url: tileUrl(z, tx, ty, mode, usePnoa),
         x: p0[0],
         y: p0[1],
         width: p1[0] - p0[0],
