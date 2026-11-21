@@ -213,8 +213,8 @@ export const catalog: Record<string, CatalogEntry> = {
   security: {
     name: 'Policía a pie',
     role: 'emergency',
-    w: 2,
-    h: 2,
+    w: 0.5,
+    h: 0.5,
     color: '#a5b8ca',
   },
   gate: {

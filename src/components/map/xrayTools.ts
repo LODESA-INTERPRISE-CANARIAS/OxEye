@@ -264,15 +264,21 @@ export function resolveSubsoilPointerDown(
 }
 
 /**
- * Genera el SVG del trazo en construcción (`#draft-layer`), incluyendo color y
- * distintivo `+` / `−` cuando se dibuja un perímetro (evento o subsuelo).
+ * Genera el SVG del trazo en construcción (`#draft-layer`) con tamaño constante
+ * en píxeles de pantalla (independiente del zoom) para máxima precisión al
+ * dibujar perímetros, reservas o zonas de maniobra.
  */
 export function buildDraftSvg(
   draftPoints: Point2D[],
   tool: string,
-  boundaryMode: 'replace' | 'add' | 'subtract'
+  boundaryMode: 'replace' | 'add' | 'subtract',
+  metersPerPixel = 0.25
 ): string {
   if (!draftPoints.length) return '';
+  const mpp =
+    Number.isFinite(metersPerPixel) && metersPerPixel > 0
+      ? metersPerPixel
+      : 0.25;
   const points = draftPoints.map((p) => p.join(',')).join(' ');
   const isBnd = tool === 'boundary' || tool === 'xray:boundary';
   const strokeColor =
@@ -280,12 +286,25 @@ export function buildDraftSvg(
       ? '#167869'
       : isBnd && boundaryMode === 'subtract'
         ? '#b43c4c'
-        : '#633584';
+        : tool === 'turning'
+          ? '#3b607a'
+          : '#633584';
+  const lineW = 1.8 * mpp;
+  const dashA = 6 * mpp;
+  const dashB = 4 * mpp;
+  const dotR = 3.5 * mpp;
+  const dotStroke = 1.4 * mpp;
+  const badgeR = 8 * mpp;
+  const badgeOff = 11 * mpp;
+  const badgeFont = 11 * mpp;
   const badge =
     isBnd && boundaryMode !== 'replace'
-      ? `<g transform="translate(${draftPoints[0][0] + 2.4} ${draftPoints[0][1] - 2.4})"><circle r="2.1" fill="${strokeColor}"/><text text-anchor="middle" dominant-baseline="central" font-size="3" font-weight="700" fill="#fff">${boundaryMode === 'add' ? '+' : '−'}</text></g>`
+      ? `<g transform="translate(${draftPoints[0][0] + badgeOff} ${draftPoints[0][1] - badgeOff})"><circle r="${badgeR}" fill="${strokeColor}"/><text text-anchor="middle" dominant-baseline="central" font-size="${badgeFont}" font-weight="700" fill="#fff">${boundaryMode === 'add' ? '+' : '−'}</text></g>`
       : '';
-  return `<polyline points="${points}" fill="none" stroke="${strokeColor}" stroke-width=".65" stroke-dasharray="1 1"/>${draftPoints
-    .map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r=".9" fill="${strokeColor}"/>`)
+  return `<polyline points="${points}" fill="none" stroke="${strokeColor}" stroke-width="${lineW}" stroke-dasharray="${dashA} ${dashB}"/>${draftPoints
+    .map(
+      (p) =>
+        `<circle cx="${p[0]}" cy="${p[1]}" r="${dotR}" fill="${strokeColor}" stroke="#ffffff" stroke-width="${dotStroke}"/>`
+    )
     .join('')}${badge}`;
 }

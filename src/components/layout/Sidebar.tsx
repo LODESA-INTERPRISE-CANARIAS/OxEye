@@ -580,29 +580,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       c.role !== 'logistics'
                     );
                   })
-                  .map(([k, c]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      data-place={k}
-                      className={
-                        tool === (k === 'gate' ? 'gateLine' : 'place:' + k)
-                          ? 'active'
-                          : ''
-                      }
-                      onClick={() =>
-                        setTool(k === 'gate' ? 'gateLine' : 'place:' + k)
-                      }
-                    >
-                      <span className="symbol">{ICONS[k] || '▣'}</span>
-                      <span className="catalog-meta">
-                        <b>{c.name}</b>
-                        <small>
-                          {c.w} × {c.h} m
-                        </small>
-                      </span>
-                    </button>
-                  ))}
+                  .map(([k, c]) => {
+                    const targetTool =
+                      k === 'gate'
+                        ? 'gateLine'
+                        : k === 'turning'
+                          ? 'turning'
+                          : 'place:' + k;
+                    const sizeMeta =
+                      k === 'security'
+                        ? 'Personal a pie'
+                        : k === 'turning'
+                          ? 'Polígono libre'
+                          : `${c.w} × ${c.h} m`;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        data-place={k}
+                        className={tool === targetTool ? 'active' : ''}
+                        onClick={() => setTool(targetTool)}
+                      >
+                        <span className="symbol">{ICONS[k] || '▣'}</span>
+                        <span className="catalog-meta">
+                          <b>{c.name}</b>
+                          <small>{sizeMeta}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
               </div>
               <p className="small-note">
                 Elige una pieza y pulsa en el plano. Puedes moverla, girarla y

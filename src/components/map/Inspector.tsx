@@ -512,62 +512,69 @@ export const Inspector: React.FC<InspectorProps> = ({
               </details>
 
               {!isEntrance ? (
-                <>
-                  <div className="two">
+                (item as Infrastructure).kind === 'security' ? (
+                  <p className="small-note" id="security-particle-size-note">
+                    Escala de persona a pie (mismo diámetro que el resto de
+                    partículas: {num(s.diameter || 0.5)} m).
+                  </p>
+                ) : (
+                  <>
+                    <div className="two">
+                      <label>
+                        Anchura (m)
+                        <input
+                          id="edit-width"
+                          type="number"
+                          min="0.2"
+                          max="100"
+                          step="0.1"
+                          key={`w-${item.id}-${item.width}`}
+                          defaultValue={
+                            item.width || Math.sqrt(item.area || 24)
+                          }
+                          onKeyDown={commitOnEnter}
+                          onBlur={(e) =>
+                            handlePropertyChange('width', e.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Fondo (m)
+                        <input
+                          id="edit-depth"
+                          type="number"
+                          min="0.2"
+                          max="100"
+                          step="0.1"
+                          key={`d-${item.id}-${item.depth}`}
+                          defaultValue={
+                            item.depth || Math.sqrt(item.area || 24)
+                          }
+                          onKeyDown={commitOnEnter}
+                          onBlur={(e) =>
+                            handlePropertyChange('depth', e.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
                     <label>
-                      Anchura (m)
+                      Giro (°)
                       <input
-                        id="edit-width"
+                        id="edit-rotation"
                         type="number"
-                        min="0.5"
-                        max="100"
-                        step="0.1"
-                        key={`w-${item.id}-${item.width}`}
-                        defaultValue={
-                          item.width || Math.sqrt(item.area || 24)
-                        }
+                        step="1"
+                        min="-360"
+                        max="360"
+                        key={`rot-${item.id}-${item.rotation || 0}`}
+                        defaultValue={item.rotation || 0}
                         onKeyDown={commitOnEnter}
                         onBlur={(e) =>
-                          handlePropertyChange('width', e.target.value)
+                          handlePropertyChange('rotation', e.target.value)
                         }
                       />
                     </label>
-                    <label>
-                      Fondo (m)
-                      <input
-                        id="edit-depth"
-                        type="number"
-                        min="0.5"
-                        max="100"
-                        step="0.1"
-                        key={`d-${item.id}-${item.depth}`}
-                        defaultValue={
-                          item.depth || Math.sqrt(item.area || 24)
-                        }
-                        onKeyDown={commitOnEnter}
-                        onBlur={(e) =>
-                          handlePropertyChange('depth', e.target.value)
-                        }
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    Giro (°)
-                    <input
-                      id="edit-rotation"
-                      type="number"
-                      step="1"
-                      min="-360"
-                      max="360"
-                      key={`rot-${item.id}-${item.rotation || 0}`}
-                      defaultValue={item.rotation || 0}
-                      onKeyDown={commitOnEnter}
-                      onBlur={(e) =>
-                        handlePropertyChange('rotation', e.target.value)
-                      }
-                    />
-                  </label>
-                </>
+                  </>
+                )
               ) : (
                 <>
                   <label>
@@ -1185,8 +1192,9 @@ export const Inspector: React.FC<InspectorProps> = ({
           ) : (
             isArea && (
               <p>
-                Esta superficie queda excluida del tránsito de personas en el
-                modelo.
+                {(item as {origin?: string}).origin === 'turning'
+                  ? 'Zona de maniobra de vehículos trazada en polígono libre (excluida del tránsito peatonal durante las fases activas).'
+                  : 'Esta superficie queda excluida del tránsito de personas en el modelo.'}
               </p>
             )
           )}

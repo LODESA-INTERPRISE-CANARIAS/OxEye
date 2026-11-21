@@ -176,6 +176,11 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     } | null>(null);
 
     const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+    const draftStateRef = useRef<{
+      points: Point[];
+      tool: string;
+      boundaryMode: 'replace' | 'add' | 'subtract';
+    }>({points: [], tool: 'select', boundaryMode: 'replace'});
     const [fenceAnchor, setFenceAnchor] = useState<Point | null>(null);
     const fenceChainIdRef = useRef<string | null>(null);
     const fenceCursorRef = useRef<{p: Point; shiftKey: boolean} | null>(null);
@@ -269,6 +274,22 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       if (scaleTextRef.current) {
         scaleTextRef.current.textContent = meters + ' m';
+      }
+      // Mantener los puntos de dibujo de perímetros/polígonos a tamaño constante en pantalla al hacer zoom
+      const draftEl = draftLayerRef.current;
+      const ds = draftStateRef.current;
+      if (
+        draftEl &&
+        ds.points.length &&
+        ds.tool !== 'fence:chain' &&
+        ds.tool !== 'fence:loose'
+      ) {
+        draftEl.innerHTML = buildDraftSvg(
+          ds.points,
+          ds.tool,
+          ds.boundaryMode,
+          view.w / clientW
+        );
       }
     }, [drawGrid]);
 
@@ -586,10 +607,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             }" fill-opacity=".14" stroke="#8b9852" stroke-width=".6" stroke-dasharray="2 1.2"/>`
           : '';
 
+      const selectedSet = new Set(selectedIds);
       for (const o of s.reserves) {
+        const isTurning = o.origin === 'turning';
+        const isResSel = !!(o.id && selectedSet.has(o.id));
         html += `<polygon data-id="${esc(o.id)}" points="${pts(
           o.points
-        )}" fill="#879576" fill-opacity=".12" stroke="#a7b193" stroke-width=".25"><title>${esc(
+        )}" fill="${isTurning ? '#6b8ba4' : '#879576'}" fill-opacity="${
+          isTurning ? '.2' : '.12'
+        }" stroke="${
+          isResSel ? '#4b2665' : isTurning ? '#3b607a' : '#a7b193'
+        }" stroke-width="${
+          isResSel ? '.6' : isTurning ? '.45' : '.25'
+        }"${isTurning ? ' stroke-dasharray="1.8 1"' : ''}><title>${esc(
           o.name
         )}</title></polygon>`;
       }
@@ -611,7 +641,6 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           a.points
         )}" fill="#70af9e" fill-opacity=".18" stroke="#387f82" stroke-width=".5" stroke-dasharray="2 1"/>`;
       }
-      const selectedSet = new Set(selectedIds);
       // Líneas discretas de vínculo entre una carpa y sus lastres subcomponente cuando alguno está seleccionado
       for (const b of s.infrastructure) {
         if (b.kind !== 'ballast' || !b.attachedCoverId) continue;
@@ -829,7 +858,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         panel === 'design' &&
         !proposal &&
         selectedObject &&
-        !selectedObject.locked
+        !selectedObject.locked &&
+        (selectedObject as Infrastructure).kind !== 'security'
       ) {
         const clientW = mapDivRef.current?.clientWidth || 800;
         html += transformHandles(
@@ -1011,6 +1041,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     }, [tool]);
 
     useEffect(() => {
+      draftStateRef.current = {points: draftPoints, tool, boundaryMode};
       const draftEl = draftLayerRef.current;
       if (!draftEl) return;
       if (tool === 'fence:chain' || tool === 'fence:loose') {
@@ -1021,7 +1052,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         );
         return;
       }
-      draftEl.innerHTML = buildDraftSvg(draftPoints, tool, boundaryMode);
+      const clientW = mapDivRef.current?.clientWidth || 800;
+      const mpp = viewRef.current.w / clientW;
+      draftEl.innerHTML = buildDraftSvg(draftPoints, tool, boundaryMode, mpp);
     }, [draftPoints, tool, boundaryMode, fenceAnchor, fenceLength, renderFenceDraft]);
 
     useEffect(() => {
@@ -1186,6 +1219,17 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             points: p,
             origin: 'Dibujada por el equipo',
           });
+        } else if (tool === 'turning') {
+          const count =
+            s.reserves.filter((r) => r.origin === 'turning').length + 1;
+          s.reserves.push({
+            id,
+            phaseTags: tagsForNew(),
+            name: `Maniobra de vehículos ${count}`,
+            points: p,
+            origin: 'turning',
+          });
+          createdSubsoilId = id;
         } else if (tool === 'flow') {
           s.flows ??= [];
           s.flows.push({
@@ -1273,6 +1317,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       const id = crypto.randomUUID();
       updateScene((sc) => {
+        const itemW = kind === 'security' ? sc.diameter || 0.5 : c.w;
+        const itemH = kind === 'security' ? sc.diameter || 0.5 : c.h;
         const baseObj = {
           phaseTags:
             kind === 'bin'
@@ -1283,9 +1329,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           name: c.name,
           x,
           y,
-          width: c.w,
-          depth: c.h,
-          area: c.w * c.h,
+          width: itemW,
+          depth: itemH,
+          area: itemW * itemH,
           rotation: 0,
         };
         if (kind === 'gate') {
@@ -2110,6 +2156,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                     boundary:
                       'Perímetro: Mayús añade · Ctrl resta (primer clic)',
                     reserve: 'Reservar zona',
+                    turning: 'Maniobra de vehículos: dibuja el polígono y confirma',
                     flow: 'Trazar recorrido',
                     gateLine:
                       'Dibujar acceso: marca sus dos extremos sobre el borde del perímetro',
@@ -2129,14 +2176,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       'measure',
       'boundary',
       'reserve',
+      'turning',
       'flow',
       'road',
       'xray:boundary',
       'xray:wall',
     ].includes(tool);
-    const isPolygonTool = ['boundary', 'reserve', 'xray:boundary'].includes(
-      tool
-    );
+    const isPolygonTool = [
+      'boundary',
+      'reserve',
+      'turning',
+      'xray:boundary',
+    ].includes(tool);
 
     const nightOpacity =
       daylight < 8 || daylight >= 21 ? '0.54' : daylight >= 18 ? '0.27' : '0';
