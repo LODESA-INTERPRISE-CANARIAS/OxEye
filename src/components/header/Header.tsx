@@ -1,6 +1,5 @@
 import React, {useRef} from 'react';
 import {MAPS_DATA} from '../../data/geodata';
-import {cristoAccesses} from '../../data/site-reference';
 import {downloadFile, parseImportedProject} from '../../db/repository';
 import {useProjectStore} from '../../store/useProjectStore';
 
@@ -16,11 +15,9 @@ export interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onProjectImported,
   onPauseSimulation,
-  onSceneChanged,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const project = useProjectStore((s) => s.project);
-  const activeVenue = useProjectStore((s) => s.activeVenue);
   const panel = useProjectStore((s) => s.panel);
   const saveStatusText = useProjectStore((s) => s.saveStatusText);
   const setMenuOpen = useProjectStore((s) => s.setMenuOpen);
@@ -28,7 +25,6 @@ export const Header: React.FC<HeaderProps> = ({
   const save = useProjectStore((s) => s.save);
   const showToast = useProjectStore((s) => s.showToast);
   const replaceProject = useProjectStore((s) => s.replaceProject);
-  const updateScene = useProjectStore((s) => s.updateScene);
 
   const isSimulate = panel === 'simulate';
 
@@ -81,23 +77,34 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
       <div className="header-actions">
         <button
-          id="developer-reference-button"
-          className="quiet"
-          type="button"
-          onClick={() => setActiveModal('developer-reference')}
-        >
-          Guía para programadores
-        </button>
-        <button
-          id="small-example-button"
-          className="quiet"
+          id="main-menu"
+          className="header-primary-btn header-menu-btn"
           type="button"
           onClick={() => {
             onPauseSimulation();
-            setActiveModal('small-example');
+            setMenuOpen(true);
           }}
         >
-          Cargar ejemplo operativo
+          <span aria-hidden="true">☰</span>
+          <span>Menú</span>
+        </button>
+        <button
+          id="demand"
+          className="header-primary-btn header-demand-btn"
+          type="button"
+          onClick={() => setActiveModal('demand')}
+        >
+          <span aria-hidden="true">⊞</span>
+          <span>Calcular servicios</span>
+        </button>
+        <button
+          id="inventory"
+          className="quiet"
+          type="button"
+          disabled={isSimulate}
+          onClick={() => setActiveModal('inventory')}
+        >
+          1. Inventario
         </button>
         <button
           id="risk-button"
@@ -117,52 +124,6 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setActiveModal('programme')}
         >
           Programa por días
-        </button>
-        <button
-          id="reference-access"
-          className="quiet"
-          type="button"
-          disabled={isSimulate || activeVenue !== 'cristo'}
-          onClick={() => {
-            if (activeVenue !== 'cristo') return;
-            updateScene((s) => {
-              s.entrances = cristoAccesses(MAPS_DATA.cristo);
-            }, true);
-            onSceneChanged?.();
-            showToast(
-              'Cinco accesos de referencia aplicados. Revisa las ubicaciones y las dos anchuras provisionales.'
-            );
-          }}
-        >
-          Accesos del Cristo
-        </button>
-        <button
-          id="main-menu"
-          className="quiet"
-          type="button"
-          onClick={() => {
-            onPauseSimulation();
-            setMenuOpen(true);
-          }}
-        >
-          Menú
-        </button>
-        <button
-          id="demand"
-          className="quiet"
-          type="button"
-          onClick={() => setActiveModal('demand')}
-        >
-          Calcular servicios
-        </button>
-        <button
-          id="inventory"
-          className="quiet"
-          type="button"
-          disabled={isSimulate}
-          onClick={() => setActiveModal('inventory')}
-        >
-          1. Inventario
         </button>
         <button
           id="laboratory"
@@ -198,6 +159,14 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setActiveModal('parameters')}
         >
           Ficha de producción
+        </button>
+        <button
+          id="developer-reference-button"
+          className="quiet"
+          type="button"
+          onClick={() => setActiveModal('developer-reference')}
+        >
+          Guía para programadores
         </button>
         <span
           id="save-status"
