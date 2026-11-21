@@ -237,6 +237,7 @@ export interface AnnotationItem {
   text: string;
   cell: string;
   grid: number;
+  locked?: boolean;
   phaseTags?: PhaseKey[];
 }
 

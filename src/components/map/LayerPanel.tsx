@@ -11,11 +11,13 @@ export const LayerPanel: React.FC = () => {
   const labelsVisible = useProjectStore((s) => s.labelsVisible);
   const routesVisible = useProjectStore((s) => s.routesVisible);
   const xrayVisible = useProjectStore((s) => s.xrayVisible);
+  const subsoilOnly = useProjectStore((s) => s.subsoilOnly);
   const setGridVisible = useProjectStore((s) => s.setGridVisible);
   const setGrid = useProjectStore((s) => s.setGrid);
   const setLabelsVisible = useProjectStore((s) => s.setLabelsVisible);
   const setRoutesVisible = useProjectStore((s) => s.setRoutesVisible);
   const setXrayVisible = useProjectStore((s) => s.setXrayVisible);
+  const setSubsoilOnly = useProjectStore((s) => s.setSubsoilOnly);
 
   return (
     <div
@@ -71,6 +73,15 @@ export const LayerPanel: React.FC = () => {
           onChange={(e) => setXrayVisible(e.target.checked)}
         />{' '}
         Rayos X (subsuelo)
+      </label>
+      <label className="check">
+        <input
+          id="subsoil-only"
+          type="checkbox"
+          checked={subsoilOnly}
+          onChange={(e) => setSubsoilOnly(e.target.checked)}
+        />{' '}
+        Solo ver subsuelo
       </label>
     </div>
   );

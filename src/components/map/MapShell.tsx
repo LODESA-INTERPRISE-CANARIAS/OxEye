@@ -162,6 +162,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const labelsVisible = useProjectStore((s) => s.labelsVisible);
     const routesVisible = useProjectStore((s) => s.routesVisible);
     const xrayVisible = useProjectStore((s) => s.xrayVisible);
+    const subsoilOnly = useProjectStore((s) => s.subsoilOnly);
     const daylight = useProjectStore((s) => s.daylight);
     const immersive = useProjectStore((s) => s.immersive);
     const history = useProjectStore((s) => s.history);
@@ -731,7 +732,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const selectedObject = [...s.base.booths, ...s.infrastructure].find(
         (o) => o.id === selectedId
       );
-      if (panel === 'design' && !proposal && selectedObject) {
+      if (
+        panel === 'design' &&
+        !proposal &&
+        selectedObject &&
+        !selectedObject.locked
+      ) {
         const clientW = mapDivRef.current?.clientWidth || 800;
         html += transformHandles(
           selectedObject,
@@ -1235,12 +1241,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       ];
       let resolvedId = id;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let o: any = resolvedId
-        ? allItems.find((item) => item.id === resolvedId) || null
-        : null;
+      let o: any =
+        !subsoilOnly && resolvedId
+          ? allItems.find((item) => item.id === resolvedId) || null
+          : null;
       let xrayKind: 'column' | 'wall' | 'polygon' | null = null;
       let xrayHandle: 'a' | 'b' | null = null;
-      if (panel === 'design' && xrayVisible && !o) {
+      if (panel === 'design' && (xrayVisible || subsoilOnly) && !o) {
         const subHit = resolveSubsoilPointerDown(
           targetEl,
           s,
@@ -1309,6 +1316,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
 
       const isSelectLike = tool === 'select' || tool === 'xray:select';
+
+      // Los elementos bloqueados no se mueven ni se transforman; arrastrar sobre ellos desplaza el plano
+      if (drag.o?.locked) {
+        if (isSelectLike && mapDivRef.current) {
+          const clientW = mapDivRef.current.clientWidth || 800;
+          const clientH = mapDivRef.current.clientHeight || 600;
+          viewRef.current.x = drag.view.x - (dx / clientW) * drag.view.w;
+          viewRef.current.y = drag.view.y - (dy / clientH) * drag.view.h;
+          applyView();
+        }
+        return;
+      }
 
       if (
         isSelectLike &&
@@ -1653,7 +1672,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     return (
       <>
         <div
-          className={`map-shell ${base === 'ortho' ? 'ortho' : ''}`}
+          className={`map-shell ${base === 'ortho' ? 'ortho' : ''} ${
+            subsoilOnly ? 'subsoil-only' : ''
+          }`}
           data-weather={activeWeather}
           style={
             {

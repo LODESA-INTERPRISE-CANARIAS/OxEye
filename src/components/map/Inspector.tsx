@@ -187,11 +187,34 @@ export const Inspector: React.FC<InspectorProps> = ({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const item = found as any;
+  const isLocked = !!item.locked;
   const currentTags = membership(
     item,
     isArea ? (Object.keys(phases) as PhaseKey[]) : ['event']
   );
   const coords = !isLine && !isNote ? world([item.x, item.y], m) : [0, 0];
+
+  const handleToggleLock = (checked: boolean) => {
+    updateScene((scene) => {
+      const target = [
+        ...scene.base.booths,
+        ...scene.infrastructure,
+        ...scene.entrances,
+        ...scene.annotations,
+        ...scene.roadPlans,
+        ...scene.measurements,
+        ...(scene.flows || []),
+        ...scene.reserves,
+        ...(scene.fences || []),
+        ...(scene.passages || []),
+      ].find((o) => o.id === item.id) as unknown as
+        | Record<string, unknown>
+        | undefined;
+      if (target) target.locked = checked;
+    }, true);
+    if (isBooth) onClearProposal();
+    onSceneChanged();
+  };
 
   const handlePropertyChange = (prop: string, rawValue: string) => {
     const val = prop === 'name' ? rawValue : Number(rawValue);
@@ -403,6 +426,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       id="edit-x"
                       type="number"
                       step="0.1"
+                      disabled={isLocked}
                       key={`x-${item.id}-${coords[0].toFixed(2)}`}
                       defaultValue={coords[0].toFixed(2)}
                       onKeyDown={commitOnEnter}
@@ -415,6 +439,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       id="edit-y"
                       type="number"
                       step="0.1"
+                      disabled={isLocked}
                       key={`y-${item.id}-${coords[1].toFixed(2)}`}
                       defaultValue={coords[1].toFixed(2)}
                       onKeyDown={commitOnEnter}
@@ -1042,25 +1067,6 @@ export const Inspector: React.FC<InspectorProps> = ({
         </>
       )}
 
-      {isBooth && (
-        <label className="check">
-          <input
-            type="checkbox"
-            id="lock-piece"
-            checked={!!(item as Booth).locked}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              updateScene((scene) => {
-                const b = scene.base.booths.find((st) => st.id === item.id);
-                if (b) b.locked = checked;
-              }, true);
-              onClearProposal();
-            }}
-          />{' '}
-          Fijar posición en el autoconfigurador
-        </label>
-      )}
-
       <fieldset>
         <legend>Visible durante</legend>
         {(Object.entries(phases) as Array<[PhaseKey, string]>).map(
@@ -1080,9 +1086,51 @@ export const Inspector: React.FC<InspectorProps> = ({
 
       <button
         type="button"
+        id="lock-piece"
+        aria-pressed={isLocked}
+        className={`lock-btn wide ${isLocked ? 'is-locked' : ''}`}
+        style={{marginTop: '12px'}}
+        onClick={() => handleToggleLock(!isLocked)}
+      >
+        {isLocked ? (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="4" y="11" width="16" height="10" rx="2" />
+            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+          </svg>
+        ) : (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="4" y="11" width="16" height="10" rx="2" />
+            <path d="M8 11V7a4 4 0 0 1 7.6-1.7" />
+          </svg>
+        )}
+        {isLocked ? 'Elemento bloqueado' : 'Bloquear elemento'}
+      </button>
+
+      <button
+        type="button"
         id="duplicate-object"
         className="duplicate quiet wide"
-        style={{marginTop: '12px'}}
+        style={{marginTop: '8px'}}
         onClick={handleDuplicate}
       >
         Duplicar {isNote ? 'observación' : 'elemento'}

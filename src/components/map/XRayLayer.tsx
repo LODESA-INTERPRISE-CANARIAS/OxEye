@@ -17,6 +17,7 @@ import {isXrayTool} from './selectionActions';
  */
 export const XRayLayer: React.FC = () => {
   const xrayVisible = useProjectStore((s) => s.xrayVisible);
+  const subsoilOnly = useProjectStore((s) => s.subsoilOnly);
   const panel = useProjectStore((s) => s.panel);
   const tool = useProjectStore((s) => s.tool);
   const selectedIds = useProjectStore((s) => s.selectedIds);
@@ -33,7 +34,7 @@ export const XRayLayer: React.FC = () => {
   const scene = currentScene();
   const map = currentMap();
   const subsoil = scene.subsoil;
-  const interactive = panel === 'design' && isXrayTool(tool);
+  const interactive = panel === 'design' && (isXrayTool(tool) || subsoilOnly);
   const selectedSet = new Set(selectedIds);
   const singleSelectedId = selectedIds.length === 1 ? selectedIds[0] : null;
 
@@ -205,13 +206,15 @@ export const XRayLayer: React.FC = () => {
       {walls.map((wall) => {
         const m = wallMetrics(wall, map);
         const isSel = selectedSet.has(wall.id);
-        const showHandles = panel === 'design' && singleSelectedId === wall.id;
+        const showHandles =
+          panel === 'design' && singleSelectedId === wall.id && !wall.locked;
         const thick = Math.max(0.25, wall.thickness);
         return (
           <g
             key={wall.id}
             data-id={wall.id}
             data-xray-kind="wall"
+            data-locked={wall.locked ? 'true' : undefined}
             className="xray-item xray-wall"
           >
             <title>
@@ -302,6 +305,7 @@ export const XRayLayer: React.FC = () => {
             key={col.id}
             data-id={col.id}
             data-xray-kind="column"
+            data-locked={col.locked ? 'true' : undefined}
             className="xray-item xray-column"
           >
             <title>

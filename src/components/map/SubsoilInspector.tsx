@@ -147,20 +147,21 @@ export const SubsoilInspector: React.FC<SubsoilInspectorProps> = ({
             />
           </label>
         </div>
-        <label className="check">
-          <input
-            type="checkbox"
-            id="lock-subsoil"
-            checked={!!col.locked}
-            onChange={(e) => updateCol({locked: e.target.checked})}
-          />{' '}
-          Bloquear elemento
-        </label>
+        <button
+          type="button"
+          id="lock-subsoil"
+          aria-pressed={!!col.locked}
+          className={`lock-btn wide ${col.locked ? 'is-locked' : ''}`}
+          style={{marginTop: '12px'}}
+          onClick={() => updateCol({locked: !col.locked})}
+        >
+          {col.locked ? '🔒 Elemento bloqueado' : '🔓 Bloquear elemento'}
+        </button>
         <button
           type="button"
           id="duplicate-object"
           className="duplicate quiet wide"
-          style={{marginTop: '12px'}}
+          style={{marginTop: '8px'}}
           onClick={handleDuplicate}
         >
           Duplicar columna
@@ -280,20 +281,21 @@ export const SubsoilInspector: React.FC<SubsoilInspectorProps> = ({
         <p className="small-note">
           También puedes arrastrar los dos extremos del muro sobre el plano.
         </p>
-        <label className="check">
-          <input
-            type="checkbox"
-            id="lock-subsoil"
-            checked={!!wall.locked}
-            onChange={(e) => updateWall({locked: e.target.checked})}
-          />{' '}
-          Bloquear elemento
-        </label>
+        <button
+          type="button"
+          id="lock-subsoil"
+          aria-pressed={!!wall.locked}
+          className={`lock-btn wide ${wall.locked ? 'is-locked' : ''}`}
+          style={{marginTop: '12px'}}
+          onClick={() => updateWall({locked: !wall.locked})}
+        >
+          {wall.locked ? '🔒 Elemento bloqueado' : '🔓 Bloquear elemento'}
+        </button>
         <button
           type="button"
           id="duplicate-object"
           className="duplicate quiet wide"
-          style={{marginTop: '12px'}}
+          style={{marginTop: '8px'}}
           onClick={handleDuplicate}
         >
           Duplicar muro
@@ -320,22 +322,23 @@ export const SubsoilInspector: React.FC<SubsoilInspectorProps> = ({
       </span>
       <h3>{poly.name || 'Polígono del subsuelo'}</h3>
       <span className="cell-tag">{poly.points.length} vértices</span>
-      <label className="check">
-        <input
-          type="checkbox"
-          id="lock-subsoil"
-          checked={!!poly.locked}
-          onChange={(e) => {
-            const checked = e.target.checked;
-            updateScene((sc) => {
-              const p = sc.subsoil?.polygons.find((x) => x.id === poly.id);
-              if (p) p.locked = checked;
-            }, true);
-            onSceneChanged();
-          }}
-        />{' '}
-        Bloquear polígono
-      </label>
+      <button
+        type="button"
+        id="lock-subsoil"
+        aria-pressed={!!poly.locked}
+        className={`lock-btn wide ${poly.locked ? 'is-locked' : ''}`}
+        style={{marginTop: '10px'}}
+        onClick={() => {
+          const checked = !poly.locked;
+          updateScene((sc) => {
+            const p = sc.subsoil?.polygons.find((x) => x.id === poly.id);
+            if (p) p.locked = checked;
+          }, true);
+          onSceneChanged();
+        }}
+      >
+        {poly.locked ? '🔒 Polígono bloqueado' : '🔓 Bloquear polígono'}
+      </button>
       <button
         type="button"
         id="delete-object"

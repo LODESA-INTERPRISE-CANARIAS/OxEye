@@ -63,6 +63,7 @@ export interface ProjectStoreState {
   labelsVisible: boolean;
   routesVisible: boolean;
   xrayVisible: boolean;
+  subsoilOnly: boolean;
   layerPanelOpen: boolean;
   lens: LensMode;
   daylight: number;
@@ -99,6 +100,7 @@ export interface ProjectStoreState {
   setLabelsVisible: (visible: boolean) => void;
   setRoutesVisible: (visible: boolean) => void;
   setXrayVisible: (visible: boolean) => void;
+  setSubsoilOnly: (only: boolean) => void;
   setLayerPanelOpen: (open: boolean) => void;
   setLens: (lens: LensMode) => void;
   setDaylight: (hour: number) => void;
@@ -179,6 +181,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   labelsVisible: true,
   routesVisible: true,
   xrayVisible: false,
+  subsoilOnly: false,
   layerPanelOpen: false,
   lens: 'people',
   daylight: 15,
@@ -264,6 +267,8 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   setPhase: (phase) => {
     set((state) => ({
       phase,
+      subsoilOnly: false,
+      xrayVisible: state.subsoilOnly ? false : state.xrayVisible,
       selectedId: null,
       selectedIds: [],
       tool: 'select',
@@ -339,7 +344,30 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       const nextIds = state.selectedIds.filter((id) => !subIds.has(id));
       return {
         xrayVisible: false,
+        subsoilOnly: false,
         tool: isXrayTool(state.tool) ? 'select' : state.tool,
+        selectedIds: nextIds,
+        selectedId: nextIds.length === 1 ? nextIds[0] : null,
+      };
+    });
+  },
+  setSubsoilOnly: (subsoilOnly) => {
+    set((state) => {
+      const subIds = subsoilIdsInScene(state.project.scenes[state.activeVenue]);
+      if (!subsoilOnly) {
+        const nextIds = state.selectedIds.filter((id) => !subIds.has(id));
+        return {
+          subsoilOnly: false,
+          xrayVisible: false,
+          tool: isXrayTool(state.tool) ? 'select' : state.tool,
+          selectedIds: nextIds,
+          selectedId: nextIds.length === 1 ? nextIds[0] : null,
+        };
+      }
+      const nextIds = state.selectedIds.filter((id) => subIds.has(id));
+      return {
+        subsoilOnly: true,
+        xrayVisible: true,
         selectedIds: nextIds,
         selectedId: nextIds.length === 1 ? nextIds[0] : null,
       };

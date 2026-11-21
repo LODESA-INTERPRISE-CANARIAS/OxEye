@@ -817,6 +817,11 @@ h1 {
   opacity: 1;
 }
 
+.phase-strip button[data-phase='subsoil']::before {
+  background: #c81d4e;
+  opacity: 1;
+}
+
 .phase-strip button[aria-pressed='true'] {
   background: var(--purple);
   border-color: var(--purple);

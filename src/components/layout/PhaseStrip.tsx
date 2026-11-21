@@ -25,6 +25,8 @@ export const PhaseStrip: React.FC<PhaseStripProps> = ({
 }) => {
   const phase = useProjectStore((s) => s.phase);
   const setPhase = useProjectStore((s) => s.setPhase);
+  const subsoilOnly = useProjectStore((s) => s.subsoilOnly);
+  const setSubsoilOnly = useProjectStore((s) => s.setSubsoilOnly);
   const activeVenue = useProjectStore((s) => s.activeVenue);
   const setVenue = useProjectStore((s) => s.setVenue);
   const currentScene = useProjectStore((s) => s.currentScene);
@@ -64,7 +66,7 @@ export const PhaseStrip: React.FC<PhaseStripProps> = ({
                 key={k}
                 type="button"
                 data-phase={k}
-                aria-pressed={phase === k}
+                aria-pressed={!subsoilOnly && phase === k}
                 onClick={() => {
                   setPhase(k);
                   onPhaseChanged();
@@ -73,10 +75,23 @@ export const PhaseStrip: React.FC<PhaseStripProps> = ({
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              id="phase-subsoil-only"
+              data-phase="subsoil"
+              aria-pressed={subsoilOnly}
+              onClick={() => setSubsoilOnly(!subsoilOnly)}
+            >
+              Solo subsuelo
+            </button>
           </div>
           <div className="phase-captions">
-            <small id="phase-caption">{phaseCaptions[phase]}</small>
-            {(phase === 'pre' || phase === 'post') && (
+            <small id="phase-caption">
+              {subsoilOnly
+                ? 'Solo estructura del subsuelo (perímetro, columnas, muros de carga y mapa de calor).'
+                : phaseCaptions[phase]}
+            </small>
+            {!subsoilOnly && (phase === 'pre' || phase === 'post') && (
               <small id="shift-info">
                 Ensayo logístico · trayectos esquemáticos · turno máximo de 8 h
               </small>

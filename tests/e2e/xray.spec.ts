@@ -182,4 +182,68 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
       riskDialog.locator('[data-risk-id^="subsoil-load-"]')
     ).toHaveCount(0);
   });
+
+  test('supports Solo subsuelo view and locking any element against dragging', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.locator('#game-continue').click();
+    await expect(page.locator('#drawing')).toBeVisible();
+
+    const mapBox = (await page.locator('#map').boundingBox())!;
+    const cx = mapBox.x + mapBox.width * 0.52;
+    const cy = mapBox.y + mapBox.height * 0.45;
+
+    // 1. Colocar una columna de subsuelo y activar «Solo subsuelo» desde la barra de fases
+    await page.locator('[data-action="xray:column"]').click();
+    await page.mouse.click(cx - 40, cy);
+    await expect(page.locator('#xray-layer .xray-column')).toHaveCount(1);
+
+    await page.locator('#phase-subsoil-only').click();
+    await expect(page.locator('#phase-subsoil-only')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(page.locator('.map-shell')).toHaveClass(/subsoil-only/);
+    await expect(page.locator('#scenario-layer')).toBeHidden();
+    await expect(page.locator('#xray-layer .xray-column')).toBeVisible();
+
+    // Volver a fase Evento restaura la capa de superficie y oculta el subsuelo
+    await page.locator('[data-phase="event"]').click();
+    await expect(page.locator('#phase-subsoil-only')).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    await expect(page.locator('#scenario-layer')).toBeVisible();
+    await expect(page.locator('#xray-layer .xray-column')).toHaveCount(0);
+
+    // 2. Colocar un elemento, bloquearlo con el botón verde y comprobar que no se mueve al arrastrar
+    await page.locator('[data-place="stage"]').click();
+    await page.mouse.click(cx, cy);
+    await expect(page.locator('#inspector')).toBeVisible();
+
+    const lockButton = page.locator('#lock-piece');
+    await expect(lockButton).toBeVisible();
+    await expect(lockButton).toHaveAttribute('aria-pressed', 'false');
+    await expect(lockButton).not.toHaveClass(/is-locked/);
+
+    // Guardar coordenada X inicial
+    await page.locator('.coordinate-details summary').click();
+    const initialX = await page.locator('#edit-x').inputValue();
+
+    // Bloquear elemento
+    await lockButton.click();
+    await expect(lockButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(lockButton).toHaveClass(/is-locked/);
+    await expect(page.locator('#edit-x')).toBeDisabled();
+    await expect(page.locator('.transform-controls')).toHaveCount(0);
+
+    // Intentar arrastrar el elemento bloqueado: no debe cambiar su coordenada X
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 80, cy + 40, {steps: 6});
+    await page.mouse.up();
+
+    expect(await page.locator('#edit-x').inputValue()).toBe(initialX);
+  });
 });

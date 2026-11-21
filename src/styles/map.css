@@ -367,6 +367,30 @@
   color: #154984;
 }
 
+.inspector button.lock-btn {
+  color: #1e6e3e;
+  border-color: #b4dfc4;
+  background: #edf9f1;
+}
+
+.inspector button.lock-btn:hover:not(:disabled) {
+  background: #ddf3e4;
+  border-color: #83cb9e;
+  color: #15562f;
+}
+
+.inspector button.lock-btn.is-locked {
+  color: #ffffff;
+  border-color: #1b6d3c;
+  background: #22864a;
+}
+
+.inspector button.lock-btn.is-locked:hover:not(:disabled) {
+  background: #1b6d3c;
+  border-color: #14532d;
+  color: #ffffff;
+}
+
 .inspector .cell-tag {
   display: inline-block;
   border-radius: 5px;
@@ -756,6 +780,21 @@
 
 .xray-item {
   cursor: move;
+}
+
+.xray-item[data-locked='true'] {
+  cursor: default;
+}
+
+.map-shell.subsoil-only #scenario-layer,
+.map-shell.subsoil-only #layout-preview,
+.map-shell.subsoil-only #dining-layer,
+.map-shell.subsoil-only #shift-layer,
+.map-shell.subsoil-only #people-layer,
+.map-shell.subsoil-only #annotation-layer,
+.map-shell.subsoil-only #response-layer,
+.map-shell.subsoil-only #heat-layer {
+  display: none;
 }
 
 .xray-wall-handle {
