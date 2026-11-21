@@ -758,6 +758,25 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         const sel = selectedSet.has(o.id);
         const isCover = (o as Infrastructure).role === 'cover';
         const oKind = (o as Infrastructure).kind;
+        if (oKind === 'steward') {
+          const pRadius = Number((o as Infrastructure).patrolRadius) || 25;
+          html += `<g data-id="${esc(o.id)}" class="map-item" transform="translate(${x} ${y})"><title>${esc(
+            o.name
+          )} · ${(o as Infrastructure).staff || 2} agentes · radio ${pRadius} m</title>${
+            sel
+              ? `<circle cx="0" cy="0" r="${pRadius}" fill="#14b8a6" fill-opacity=".08" stroke="#0d9488" stroke-width=".35" stroke-dasharray="1.6 1" pointer-events="none"/>`
+              : ''
+          }<circle cx="0" cy="0" r="1.1" fill="transparent"/><circle cx="0" cy="0" r=".78" fill="#0d9488" stroke="${
+            sel ? '#4b2665' : '#ffffff'
+          }" stroke-width="${sel ? '.35' : '.22'}"/><text y=".3" text-anchor="middle" font-size=".95" font-weight="700" fill="#ffffff" pointer-events="none">✦</text><text y="2.2" text-anchor="middle" font-size="1.45" fill="#0f5132" pointer-events="none">${esc(
+            o.name.split(' ').slice(0, 2).join(' ')
+          )}</text>${
+            sel
+              ? '<circle class="selection-ring" cx="0" cy="0" r="1.45"/>'
+              : ''
+          }</g>`;
+          continue;
+        }
         html += `<g data-id="${esc(
           o.id
         )}" class="map-item" transform="translate(${x} ${y}) rotate(${
@@ -898,7 +917,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         !proposal &&
         selectedObject &&
         !selectedObject.locked &&
-        (selectedObject as Infrastructure).kind !== 'security'
+        (selectedObject as Infrastructure).kind !== 'security' &&
+        (selectedObject as Infrastructure).kind !== 'steward'
       ) {
         const clientW = mapDivRef.current?.clientWidth || 800;
         html += transformHandles(
@@ -1430,8 +1450,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       const id = crypto.randomUUID();
       updateScene((sc) => {
-        const itemW = kind === 'security' ? sc.diameter || 0.5 : c.w;
-        const itemH = kind === 'security' ? sc.diameter || 0.5 : c.h;
+        const itemW =
+          kind === 'security' || kind === 'steward' ? sc.diameter || 0.5 : c.w;
+        const itemH =
+          kind === 'security' || kind === 'steward' ? sc.diameter || 0.5 : c.h;
         const baseObj = {
           phaseTags:
             kind === 'bin'
@@ -1475,7 +1497,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               : {}),
             capacity:
               kind === 'picnic' ? 6 : c.role === 'emergency' ? 1 : 10,
-            staff: c.role === 'emergency' ? 2 : 0,
+            staff: c.role === 'emergency' || kind === 'steward' ? 2 : 0,
+            ...(kind === 'steward' ? {patrolRadius: 25} : {}),
             delay:
               ({
                 fire: 90,

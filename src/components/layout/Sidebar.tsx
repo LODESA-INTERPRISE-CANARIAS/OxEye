@@ -572,7 +572,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }
                     if (catalogFilter === 'all') return true;
                     if (catalogFilter === 'services') {
-                      return c.role === 'emergency' || c.role === 'facility';
+                      return (
+                        c.role === 'emergency' ||
+                        c.role === 'facility' ||
+                        c.role === 'steward'
+                      );
                     }
                     if (catalogFilter === 'logistics') {
                       return c.role === 'logistics';
@@ -580,13 +584,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     return (
                       c.role !== 'emergency' &&
                       c.role !== 'facility' &&
-                      c.role !== 'logistics'
+                      c.role !== 'logistics' &&
+                      c.role !== 'steward'
                     );
                   })
                   .map(([k, c]) => {
                     const targetTool = 'place:' + k;
                     const sizeMeta =
-                      k === 'security'
+                      k === 'security' || k === 'steward'
                         ? 'Personal a pie'
                         : `${c.w} × ${c.h} m`;
                     return (

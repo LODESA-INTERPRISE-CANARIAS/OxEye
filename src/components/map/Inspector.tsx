@@ -512,11 +512,82 @@ export const Inspector: React.FC<InspectorProps> = ({
               </details>
 
               {!isEntrance ? (
-                (item as Infrastructure).kind === 'security' ? (
-                  <p className="small-note" id="security-particle-size-note">
-                    Escala de persona a pie (mismo diámetro que el resto de
-                    partículas: {num(s.diameter || 0.5)} m).
-                  </p>
+                (item as Infrastructure).kind === 'security' ||
+                (item as Infrastructure).kind === 'steward' ? (
+                  <>
+                    <p className="small-note" id="security-particle-size-note">
+                      Escala de persona a pie (mismo diámetro que el resto de
+                      partículas: {num(s.diameter || 0.5)} m).
+                    </p>
+                    {(item as Infrastructure).kind === 'steward' && (
+                      <fieldset id="steward-config">
+                        <legend>Personal de asistencia y orientación</legend>
+                        <div className="two">
+                          <label>
+                            Agentes asignados
+                            <input
+                              id="edit-steward-staff"
+                              type="number"
+                              min="1"
+                              max="20"
+                              step="1"
+                              disabled={isLocked}
+                              key={`swstaff-${item.id}-${(item as Infrastructure).staff ?? 2}`}
+                              defaultValue={(item as Infrastructure).staff ?? 2}
+                              onKeyDown={commitOnEnter}
+                              onBlur={(e) => {
+                                const v = Math.max(
+                                  1,
+                                  Math.min(20, Math.round(Number(e.target.value) || 2))
+                                );
+                                updateScene((scene) => {
+                                  const t = scene.infrastructure.find(
+                                    (r) => r.id === item.id
+                                  );
+                                  if (t) t.staff = v;
+                                }, true);
+                                onSceneChanged();
+                              }}
+                            />
+                          </label>
+                          <label>
+                            Radio de actuación (m)
+                            <input
+                              id="edit-steward-radius"
+                              type="number"
+                              min="5"
+                              max="150"
+                              step="5"
+                              disabled={isLocked}
+                              key={`swrad-${item.id}-${(item as Infrastructure).patrolRadius ?? 25}`}
+                              defaultValue={
+                                (item as Infrastructure).patrolRadius ?? 25
+                              }
+                              onKeyDown={commitOnEnter}
+                              onBlur={(e) => {
+                                const v = Math.max(
+                                  5,
+                                  Math.min(150, Number(e.target.value) || 25)
+                                );
+                                updateScene((scene) => {
+                                  const t = scene.infrastructure.find(
+                                    (r) => r.id === item.id
+                                  );
+                                  if (t) t.patrolRadius = v;
+                                }, true);
+                                onSceneChanged();
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <p className="small-note">
+                          Perfil independiente de policía y sanitarios: orientación,
+                          descongestión de cuellos de botella, asistencia básica y
+                          aviso temprano a emergencias.
+                        </p>
+                      </fieldset>
+                    )}
+                  </>
                 ) : (
                   <>
                     <div className="two">

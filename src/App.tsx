@@ -150,7 +150,9 @@ export const App: React.FC = () => {
     const heatEl = document.getElementById('heat-layer');
     const cornerEl = document.getElementById('incident-corner');
     if (responseEl) {
-      responseEl.innerHTML = engine ? responseSVG(engine) : '';
+      responseEl.innerHTML = engine
+        ? responseSVG(engine) + (engine.stewards?.svg() || '')
+        : '';
     }
     if (cornerEl) {
       const html = engine

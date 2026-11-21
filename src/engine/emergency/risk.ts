@@ -861,10 +861,22 @@ export function resultHTML(e: any, stopped = false): string {
     ['Atenciones completadas', served, served + abandoned],
     ['Comidas con asiento', Math.min(d.meals || 0, d.seated || 0), d.meals || 0],
   ];
+  const stewardTotal =
+    (e.stats?.stewardOriented || 0) +
+    (e.stats?.stewardDecongested || 0) +
+    (e.stats?.stewardAssisted || 0) +
+    (e.stats?.stewardPrevented || 0) +
+    (e.stats?.stewardEscalations || 0);
+  const stewardNote =
+    stewardTotal > 0
+      ? `<p><b>Personal de asistencia y orientación:</b> ${e.stats.stewardOriented || 0} orientaciones · ${e.stats.stewardDecongested || 0} descongestionamientos · ${e.stats.stewardAssisted || 0} asistencias básicas · ${(e.stats.stewardPrevented || 0) + (e.stats.stewardEscalations || 0)} prevenciones/avisos.</p>`
+      : '';
   return (
     '<section class="result-visual"><h2>' +
     (stopped ? 'Ensayo cancelado por un fallo crítico' : 'Balance del ensayo') +
-    '</h2><p>' +
+    '</h2>' +
+    stewardNote +
+    '<p>' +
     (stopped
       ? 'Los resultados son parciales. Corrige el modelo y empieza un ensayo nuevo.'
       : 'Resultados del modelo; no acreditan seguridad operativa.') +

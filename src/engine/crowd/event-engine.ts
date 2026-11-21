@@ -29,6 +29,7 @@ import {FeedbackLog} from './feedback';
 import {buildGrid, flow, rng} from './grid-flow';
 import {pickPersona} from './personas';
 import {gateMode} from './presets';
+import {StewardSystem} from './steward-system';
 import {recordMovement} from './route-traces';
 import {buildShelters, seekShelter} from './shelter';
 
@@ -121,6 +122,7 @@ export class EventEngine {
   shelters: ShelterArea[];
   emergency: EmergencyLab;
   dining: Dining;
+  stewards: StewardSystem;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   experience?: any;
   reviewRunId?: string;
@@ -195,6 +197,11 @@ export class EventEngine {
       shelterVisits: 0,
       shelterSeconds: 0,
       fenceBreaches: 0,
+      stewardOriented: 0,
+      stewardDecongested: 0,
+      stewardAssisted: 0,
+      stewardPrevented: 0,
+      stewardEscalations: 0,
     };
     this.duration = this.s.base.hours * 3600;
     const override = this.s.base.overrides?.limit;
@@ -413,6 +420,7 @@ export class EventEngine {
     this.shelters = buildShelters(this);
     this.emergency = new EmergencyLab(this);
     this.dining = new Dining(this);
+    this.stewards = new StewardSystem(this);
     this.updateHash();
     this.record();
   }
@@ -1482,6 +1490,7 @@ export class EventEngine {
     }
 
     this.emergency.update(dt);
+    this.stewards.step(dt);
     this.startServices();
     this.agents = this.agents.filter((a) => a.state !== 'gone');
     const counts = new Map<number, number>();

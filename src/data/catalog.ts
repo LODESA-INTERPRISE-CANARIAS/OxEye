@@ -57,6 +57,7 @@ export const icons: Record<string, string> = {
   ambulance: '✚',
   fire: '▣',
   security: '◈',
+  steward: '✦',
   gate: '⇄',
   cleaning: 'L',
   prep: 'A',
@@ -216,6 +217,13 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 0.5,
     h: 0.5,
     color: '#a5b8ca',
+  },
+  steward: {
+    name: 'Personal de asistencia',
+    role: 'steward',
+    w: 0.5,
+    h: 0.5,
+    color: '#14b8a6',
   },
   gate: {
     name: 'Acceso',

@@ -188,6 +188,8 @@ export interface InfrastructureItem {
   ballastRequiredMassKg?: number;
   /** ID de la carpa a la que se vincula explícitamente un lastre (opcional). */
   attachedCoverId?: string;
+  /** Radio de actuación en metros para personal de asistencia y orientación. */
+  patrolRadius?: number;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   coverGroup?: string;
