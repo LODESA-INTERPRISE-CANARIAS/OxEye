@@ -1,9 +1,98 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {downloadFile} from '../../db/repository';
 import {miniMap} from '../../engine/cartography/minimap';
+import {EventEngine} from '../../engine/crowd/event-engine';
+import {assessRisk} from '../../engine/emergency/risk';
+import {phaseScene} from '../../engine/logistics/phases';
 import {compare, type TrialResult} from '../../engine/planning/evaluator';
+import {redesign} from '../../engine/planning/layout';
 import {useProjectStore} from '../../store/useProjectStore';
-import type {Scene} from '../../types';
+import type {Scene, VenueMap} from '../../types';
+
+interface RecoveryAlternative {
+  source: Scene;
+  next: Scene;
+  beforeCritical: number;
+  beforeTitles: string[];
+  afterCritical: number;
+  afterTitles: string[];
+  desc: string;
+}
+
+function findRecoveryAlternative(
+  source: Scene,
+  map: VenueMap
+): RecoveryAlternative | null {
+  try {
+    const baseEngine = new EventEngine(phaseScene(source, 'event'));
+    const baseReport = assessRisk(source, baseEngine, {routes: true});
+    const beforeCritical = baseReport.critical.length;
+    if (!beforeCritical) return null;
+    const beforeTitles = baseReport.critical.map((i) => i.title);
+    const hasFireRouteBlock = baseReport.critical.some(
+      (i) => i.id === 'route-fire'
+    );
+
+    let best: RecoveryAlternative | null = null;
+    const evaluateCandidate = (cand: Scene, desc: string) => {
+      try {
+        const eng = new EventEngine(phaseScene(cand, 'event'));
+        const rep = assessRisk(cand, eng, {routes: true});
+        if (rep.critical.length < beforeCritical) {
+          if (!best || rep.critical.length < best.afterCritical) {
+            best = {
+              source,
+              next: cand,
+              beforeCritical,
+              beforeTitles,
+              afterCritical: rep.critical.length,
+              afterTitles: rep.critical.map((i) => i.title),
+              desc,
+            };
+          }
+        }
+      } catch {
+        // Ignorar candidatos inválidos
+      }
+    };
+
+    // 1. Probar redistribuciones automáticas con pasillos más amplios (≥ 4 m)
+    for (let strategy = 0; strategy < 4; strategy++) {
+      const proposal = redesign(source, map, {
+        onlyMove: true,
+        space: 4,
+        seed: (source.seed || 7) + strategy * 31,
+        strategy,
+      });
+      if (proposal.moves.length) {
+        const cand = structuredClone(source);
+        const byId = new Map(proposal.moves.map((m) => [m.id, m]));
+        for (const o of [...cand.base.booths, ...cand.infrastructure]) {
+          const moved = byId.get(o.id);
+          if (moved) Object.assign(o, moved);
+        }
+        evaluateCandidate(cand, proposal.reason);
+        if (best && (best as RecoveryAlternative).afterCritical === 0) {
+          return best;
+        }
+      }
+    }
+
+    // 2. Si el bloqueo es de aproximación de bomberos, probar también despliegue a pie
+    if (hasFireRouteBlock && !source.fireFootAccess) {
+      const cand = structuredClone(source);
+      cand.fireFootAccess = true;
+      evaluateCandidate(
+        cand,
+        'Habilitar despliegue a pie de bomberos desde la posición del camión'
+      );
+    }
+
+    return best;
+  } catch {
+    return null;
+  }
+}
 
 export interface ComparisonDialogProps {
   onSceneChanged: () => void;
@@ -24,10 +113,15 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
   const currentScene = useProjectStore((s) => s.currentScene);
   const currentMap = useProjectStore((s) => s.currentMap);
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
+  const setPanel = useProjectStore((s) => s.setPanel);
   const updateScene = useProjectStore((s) => s.updateScene);
+  const replaceScene = useProjectStore((s) => s.replaceScene);
+  const showToast = useProjectStore((s) => s.showToast);
 
   const isOpen = activeModal === 'comparison';
   const [statusMsg, setStatusMsg] = useState('');
+  const [recoveryResult, setRecoveryResult] =
+    useState<RecoveryAlternative | null>(null);
   const [evalResult, setEvalResult] = useState<{
     source: Scene;
     next: Scene;
@@ -53,10 +147,12 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
       if (!evaluatingRef.current) {
         evaluatingRef.current = true;
         setEvalResult(null);
+        setRecoveryResult(null);
         setStatusMsg(
           'Evaluando 15 minutos simulados por alternativa con la misma semilla…'
         );
         const source = structuredClone(currentScene());
+        const map = currentMap();
         const stamp = JSON.stringify(source);
         const site = activeVenue;
         const history = source.learning || [];
@@ -100,7 +196,16 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
             });
           })
           .catch((err) => {
-            setStatusMsg('Evaluación interrumpida: ' + (err as Error).message);
+            const recovery = findRecoveryAlternative(source, map);
+            if (recovery) {
+              setStatusMsg('');
+              setRecoveryResult(recovery);
+            } else {
+              setStatusMsg(
+                'No se pudo generar una redistribución automática sin bloqueos: ' +
+                  (err as Error).message
+              );
+            }
           })
           .finally(() => {
             evaluatingRef.current = false;
@@ -141,16 +246,97 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
       <h2>Evaluación automática de mapas</h2>
       <div id="comparison-body">
         {statusMsg && <p>{statusMsg}</p>}
-        {!evalResult && statusMsg.startsWith('Evaluación interrumpida') && (
-          <p style={{marginTop: '12px'}}>
-            <button
-              type="button"
-              className="dark"
-              onClick={() => setActiveModal('risk')}
-            >
-              Revisar riesgos y corregir bloqueos
-            </button>
-          </p>
+        {!evalResult &&
+          !recoveryResult &&
+          statusMsg.startsWith('No se pudo generar') && (
+            <p style={{marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+              <button
+                type="button"
+                className="dark"
+                onClick={() => setActiveModal('risk')}
+              >
+                Revisar riesgos y corregir bloqueos
+              </button>
+              <button
+                type="button"
+                className="quiet"
+                onClick={() => {
+                  setPanel('design');
+                  setActiveModal(null);
+                }}
+              >
+                Ir al plano a despejar pasos
+              </button>
+            </p>
+          )}
+        {recoveryResult && (
+          <>
+            <p>
+              El mapa actual tiene{' '}
+              <b>
+                {recoveryResult.beforeCritical}{' '}
+                {recoveryResult.beforeCritical === 1 ? 'bloqueo' : 'bloqueos'}
+              </b>{' '}
+              que impiden simular. Se ha encontrado una distribución alternativa
+              que{' '}
+              {recoveryResult.afterCritical === 0
+                ? 'resuelve todos los bloqueos.'
+                : `reduce los bloqueos a ${recoveryResult.afterCritical}.`}
+            </p>
+            <h3>Tu mapa original ({recoveryResult.beforeCritical} bloqueos)</h3>
+            <div
+              dangerouslySetInnerHTML={{
+                __html: miniMap(
+                  recoveryResult.source,
+                  currentScene(),
+                  currentMap()
+                ),
+              }}
+            />
+            <p className="small-note">{recoveryResult.beforeTitles.join(' · ')}</p>
+            <h3>
+              Distribución alternativa ({recoveryResult.afterCritical} bloqueos)
+            </h3>
+            <div
+              dangerouslySetInnerHTML={{
+                __html: miniMap(
+                  recoveryResult.next,
+                  currentScene(),
+                  currentMap()
+                ),
+              }}
+            />
+            <p>{recoveryResult.desc}</p>
+            {recoveryResult.afterTitles.length > 0 && (
+              <p className="small-note">
+                Pendiente: {recoveryResult.afterTitles.join(' · ')}
+              </p>
+            )}
+            <div style={{marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+              <button
+                type="button"
+                id="apply-recovery"
+                className="dark"
+                onClick={() => {
+                  replaceScene(recoveryResult.next, true);
+                  setActiveModal(null);
+                  onSceneChanged();
+                  showToast(
+                    'Distribución alternativa aplicada (Ctrl+Z para deshacer)'
+                  );
+                }}
+              >
+                Aplicar esta distribución
+              </button>
+              <button
+                type="button"
+                className="quiet"
+                onClick={() => setActiveModal('risk')}
+              >
+                Volver a riesgos
+              </button>
+            </div>
+          </>
         )}
         {evalResult && (
           <>
