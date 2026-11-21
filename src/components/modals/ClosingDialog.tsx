@@ -15,6 +15,7 @@ export interface ClosingDialogData {
   arrivals: number;
   served: number;
   abandoned: number;
+  seed?: number;
   engine?: EventEngine | null;
   emergencyReport?: Array<{
     id: string | number;
@@ -30,6 +31,7 @@ export interface ClosingDialogProps {
   data: ClosingDialogData | null;
   onPhaseChanged: () => void;
   onSceneChanged: () => void;
+  onReproduceSeed?: (seed: number) => void;
 }
 
 const timeLabel = (t: number): string =>
@@ -44,6 +46,7 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
   data,
   onPhaseChanged,
   onSceneChanged,
+  onReproduceSeed,
 }) => {
   const dlgRef = useRef<HTMLDialogElement | null>(null);
   const activeModal = useProjectStore((s) => s.activeModal);
@@ -52,6 +55,7 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
   const setPhase = useProjectStore((s) => s.setPhase);
   const setPanel = useProjectStore((s) => s.setPanel);
   const updateScene = useProjectStore((s) => s.updateScene);
+  const showToast = useProjectStore((s) => s.showToast);
 
   const isOpen = activeModal === 'closing';
 
@@ -106,6 +110,52 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
       }}
     >
       <h2>Balance de jornada</h2>
+      {!plan && (data?.seed ?? data?.engine?.s.seed) !== undefined && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            padding: '8px 10px',
+            marginBottom: '10px',
+            borderRadius: '8px',
+            background: 'var(--purple-soft)',
+            borderLeft: '3px solid var(--purple)',
+            fontSize: '0.84rem',
+          }}
+        >
+          <span>
+            <b>Semilla reproducible del ensayo:</b> #
+            {data?.seed ?? data?.engine?.s.seed}
+          </span>
+          <div style={{display: 'flex', gap: '6px', flexWrap: 'wrap'}}>
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => {
+                const seedVal = data?.seed ?? data?.engine?.s.seed ?? 2026;
+                navigator.clipboard?.writeText(String(seedVal)).catch(() => {});
+                showToast(`Semilla #${seedVal} copiada`);
+              }}
+            >
+              Copiar semilla
+            </button>
+            {onReproduceSeed && (
+              <button
+                type="button"
+                className="dark"
+                onClick={() =>
+                  onReproduceSeed(data?.seed ?? data?.engine?.s.seed ?? 2026)
+                }
+              >
+                Fijar semilla y reproducir
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div id="day-body">
         {!plan && data?.engine && (
           <>

@@ -30,6 +30,7 @@ export interface RiskDialogProps {
   customReport: RiskAssessmentReport | null;
   onClearCustomReport: () => void;
   onSceneChanged: () => void;
+  onReproduceSeed?: (seed: number) => void;
 }
 
 /**
@@ -41,10 +42,13 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
   customReport,
   onClearCustomReport,
   onSceneChanged,
+  onReproduceSeed,
 }) => {
   const dlgRef = useRef<HTMLDialogElement | null>(null);
   const activeModal = useProjectStore((s) => s.activeModal);
   const currentScene = useProjectStore((s) => s.currentScene);
+  const activeRunSeed = useProjectStore((s) => s.activeRunSeed);
+  const simSeedMode = useProjectStore((s) => s.simSeedMode);
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
   const setPanel = useProjectStore((s) => s.setPanel);
   const setTool = useProjectStore((s) => s.setTool);
@@ -351,6 +355,54 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
         </>
       )}
       <h2>Revisión de riesgos</h2>
+      {(() => {
+        const lastHistSeed = (
+          s.safetyHistory?.at(-1) as {seed?: number} | undefined
+        )?.seed;
+        const reportSeed = engine?.s.seed ?? lastHistSeed ?? activeRunSeed ?? s.seed;
+        return (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              padding: '8px 10px',
+              marginBottom: '10px',
+              borderRadius: '8px',
+              background: 'var(--purple-soft)',
+              borderLeft: '3px solid var(--purple)',
+              fontSize: '0.84rem',
+            }}
+          >
+            <span>
+              <b>Semilla del ensayo / reporte:</b> #{reportSeed}
+            </span>
+            <div style={{display: 'flex', gap: '6px', flexWrap: 'wrap'}}>
+              <button
+                type="button"
+                className="quiet"
+                onClick={() => {
+                  navigator.clipboard?.writeText(String(reportSeed)).catch(() => {});
+                  showToast(`Semilla #${reportSeed} copiada`);
+                }}
+              >
+                Copiar semilla
+              </button>
+              {onReproduceSeed && (
+                <button
+                  type="button"
+                  className="dark"
+                  onClick={() => onReproduceSeed(reportSeed)}
+                >
+                  Fijar semilla y reproducir
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       <p>
         El modelo se guarda como borrador aunque existan bloqueos. Los bloqueos
         impiden iniciar o reanudar el ensayo. Son controles internos del
@@ -640,6 +692,12 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
               JSON.stringify(
                 {
                   event: s.title,
+                  seed:
+                    engine?.s.seed ??
+                    (s.safetyHistory?.at(-1) as {seed?: number} | undefined)?.seed ??
+                    activeRunSeed ??
+                    s.seed,
+                  seedMode: simSeedMode,
                   report: baseReport,
                   history: s.safetyHistory || [],
                   hypotheses: s.riskInputs || {},

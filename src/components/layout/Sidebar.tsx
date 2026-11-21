@@ -127,6 +127,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const fenceLength = useProjectStore((s) => s.fenceLength);
   const lens = useProjectStore((s) => s.lens);
   const daylight = useProjectStore((s) => s.daylight);
+  const simSeedMode = useProjectStore((s) => s.simSeedMode);
+  const simSeedValue = useProjectStore((s) => s.simSeedValue);
+  const activeRunSeed = useProjectStore((s) => s.activeRunSeed);
+  const setSimSeedMode = useProjectStore((s) => s.setSimSeedMode);
+  const setSimSeedValue = useProjectStore((s) => s.setSimSeedValue);
+  const randomizeSimSeed = useProjectStore((s) => s.randomizeSimSeed);
   const currentScene = useProjectStore((s) => s.currentScene);
   const currentMap = useProjectStore((s) => s.currentMap);
   const revision = useProjectStore((s) => s.revision);
@@ -1144,6 +1150,114 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                     />
                   </label>
+                  <section
+                    id="sim-seed-panel"
+                    style={{
+                      marginBottom: '10px',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--line-strong)',
+                      background: 'var(--surface-subtle)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      <b style={{fontSize: '0.8rem', color: 'var(--heading)'}}>
+                        Semilla de simulación
+                      </b>
+                      <span
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          color: 'var(--purple)',
+                        }}
+                      >
+                        #{engine?.s.seed ?? activeRunSeed ?? simSeedValue}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '4px',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className={simSeedMode === 'random' ? 'dark' : 'quiet'}
+                        style={{padding: '4px 6px', fontSize: '0.75rem'}}
+                        onClick={() => setSimSeedMode('random')}
+                      >
+                        Aleatoria
+                      </button>
+                      <button
+                        type="button"
+                        className={simSeedMode === 'fixed' ? 'dark' : 'quiet'}
+                        style={{padding: '4px 6px', fontSize: '0.75rem'}}
+                        onClick={() => setSimSeedMode('fixed')}
+                      >
+                        Fija (reproducir)
+                      </button>
+                    </div>
+                    <div style={{display: 'flex', gap: '4px', alignItems: 'center'}}>
+                      <input
+                        id="sim-seed-input"
+                        type="number"
+                        min="1"
+                        max="999999999"
+                        step="1"
+                        aria-label="Semilla de simulación"
+                        value={simSeedValue}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.floor(Number(e.target.value) || 1));
+                          setSimSeedValue(v);
+                          setSimSeedMode('fixed');
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          padding: '4px 6px',
+                          fontSize: '0.8rem',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="quiet"
+                        style={{padding: '4px 7px', fontSize: '0.75rem'}}
+                        title="Generar nueva semilla"
+                        onClick={() => {
+                          const next = randomizeSimSeed();
+                          showToast(`Nueva semilla preparada: #${next}`);
+                        }}
+                      >
+                        Nueva
+                      </button>
+                      <button
+                        type="button"
+                        className="quiet"
+                        style={{padding: '4px 7px', fontSize: '0.75rem'}}
+                        title="Copiar semilla del ensayo"
+                        onClick={() => {
+                          const cur = engine?.s.seed ?? activeRunSeed ?? simSeedValue;
+                          navigator.clipboard?.writeText(String(cur)).catch(() => {});
+                          showToast(`Semilla #${cur} copiada`);
+                        }}
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                    <p className="small-note" style={{margin: '5px 0 0', fontSize: '0.72rem'}}>
+                      Mismo JSON + misma semilla = mismos fallos y acciones simultáneas.
+                    </p>
+                  </section>
                   <label>
                     <input
                       id="auto-incidents"
@@ -1747,6 +1861,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     JSON.stringify(
                       {
                         escenario: s.title,
+                        semilla: engine.s.seed,
+                        modoSemilla: simSeedMode,
                         segundos: engine.time,
                         observaciones: engine.experience.list(),
                         episodios: engine.complaints(),

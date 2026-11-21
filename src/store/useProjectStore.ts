@@ -66,6 +66,9 @@ export interface ProjectStoreState {
   labelsVisible: boolean;
   routesVisible: boolean;
   routesCurved: boolean;
+  simSeedMode: 'random' | 'fixed';
+  simSeedValue: number;
+  activeRunSeed: number | null;
   xrayVisible: boolean;
   subsoilOnly: boolean;
   layerPanelOpen: boolean;
@@ -107,6 +110,10 @@ export interface ProjectStoreState {
   setLabelsVisible: (visible: boolean) => void;
   setRoutesVisible: (visible: boolean) => void;
   setRoutesCurved: (curved: boolean) => void;
+  setSimSeedMode: (mode: 'random' | 'fixed') => void;
+  setSimSeedValue: (seed: number) => void;
+  setActiveRunSeed: (seed: number | null) => void;
+  randomizeSimSeed: () => number;
   setXrayVisible: (visible: boolean) => void;
   setSubsoilOnly: (only: boolean) => void;
   setLayerPanelOpen: (open: boolean) => void;
@@ -193,6 +200,14 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   labelsVisible: true,
   routesVisible: true,
   routesCurved: false,
+  simSeedMode: 'random',
+  simSeedValue:
+    initialLoaded.project.scenes[
+      VENUES[initialLoaded.project.active]
+        ? initialLoaded.project.active
+        : 'cristo'
+    ]?.seed || 2026,
+  activeRunSeed: null,
   xrayVisible: false,
   subsoilOnly: false,
   layerPanelOpen: false,
@@ -360,6 +375,24 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   setLabelsVisible: (labelsVisible) => set({labelsVisible}),
   setRoutesVisible: (routesVisible) => set({routesVisible}),
   setRoutesCurved: (routesCurved) => set({routesCurved}),
+  setSimSeedMode: (simSeedMode) => set({simSeedMode}),
+  setSimSeedValue: (seed) =>
+    set({
+      simSeedValue: Math.max(1, Math.floor(Math.abs(Number(seed) || 2026)) >>> 0),
+    }),
+  setActiveRunSeed: (activeRunSeed) => set({activeRunSeed}),
+  randomizeSimSeed: () => {
+    const buf = new Uint32Array(1);
+    let next = 2026;
+    if (globalThis.crypto?.getRandomValues) {
+      globalThis.crypto.getRandomValues(buf);
+      next = (buf[0] % 900000) + 100000;
+    } else {
+      next = Math.floor(100000 + Math.random() * 899999);
+    }
+    set({simSeedValue: next});
+    return next;
+  },
   setXrayVisible: (xrayVisible) => {
     set((state) => {
       if (xrayVisible) return {xrayVisible: true};

@@ -131,6 +131,10 @@ export function incidentDashboard(e: any, dismissed?: Set<string>): string {
           : ' · sin equipo externo asignado') +
         '</p><small>' +
         esc(row.note || '') +
+        '</small><small style="display:block;margin-top:4px;opacity:.8">Semilla #' +
+        esc(e.s?.seed ?? 2026) +
+        ' · inicio ' +
+        clock(row.created || 0) +
         '</small></article>'
       );
     })

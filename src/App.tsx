@@ -327,10 +327,15 @@ export const App: React.FC = () => {
       const recommendations = analyze(eng);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const em = eng.emergency as any;
+      const runSeed =
+        eng?.s.seed ??
+        useProjectStore.getState().activeRunSeed ??
+        useProjectStore.getState().currentScene().seed;
       updateScene((sc) => {
         observeIssues(sc, recommendations, eng.reviewRunId || 'run');
         sc.lastSessionReview = {
           date: new Date().toISOString(),
+          seed: runSeed,
           seconds: t,
           emergencies: emergencyReport,
           evacuation: em.evacuation?.stats,
@@ -348,6 +353,7 @@ export const App: React.FC = () => {
       arrivals: eng?.stats.arrivals || 0,
       served: eng?.stats.served || 0,
       abandoned: eng?.stats.abandoned || 0,
+      seed: eng?.s.seed ?? useProjectStore.getState().activeRunSeed ?? undefined,
       engine: eng,
       emergencyReport,
     });
@@ -371,8 +377,13 @@ export const App: React.FC = () => {
       simTargetRef.current = engineRef.current?.time || 0;
 
       const s = useProjectStore.getState().currentScene();
+      const failureSeed =
+        engineRef.current?.s.seed ??
+        useProjectStore.getState().activeRunSeed ??
+        s.seed;
       const record = {
         at: new Date().toISOString(),
+        seed: failureSeed,
         time: engineRef.current?.time || 0,
         issues,
         status: 'cancelled',
@@ -512,7 +523,18 @@ export const App: React.FC = () => {
         return;
       }
       try {
+        const st = useProjectStore.getState();
+        const runSeed =
+          st.simSeedMode === 'fixed'
+            ? st.simSeedValue || s.seed || 2026
+            : st.randomizeSimSeed();
+        st.setActiveRunSeed(runSeed);
+        updateScene((sc) => {
+          sc.seed = runSeed;
+          sc.seedMode = st.simSeedMode;
+        });
         const base = structuredClone(phaseScene(s, 'event'));
+        base.seed = runSeed;
         const eng = createEngine(base);
         if (!eng.entries.length || eng.g.area < 1) {
           showToast(
@@ -995,6 +1017,21 @@ export const App: React.FC = () => {
           resetSim();
         }}
         onSceneChanged={handleSceneChanged}
+        onReproduceSeed={(seed) => {
+          const st = useProjectStore.getState();
+          st.setSimSeedMode('fixed');
+          st.setSimSeedValue(seed);
+          updateScene((sc) => {
+            sc.seed = seed;
+            sc.seedMode = 'fixed';
+          });
+          setActiveModal(null);
+          setPanel('simulate');
+          resetSim();
+          showToast(
+            `Semilla #${seed} fijada · pulsa Iniciar para reproducir exactamente este ensayo`
+          );
+        }}
       />
       <ComparisonDialog onSceneChanged={handleSceneChanged} />
       <InfoDialog />
@@ -1004,6 +1041,22 @@ export const App: React.FC = () => {
         customReport={customRiskReport}
         onClearCustomReport={() => setCustomRiskReport(null)}
         onSceneChanged={handleSceneChanged}
+        onReproduceSeed={(seed) => {
+          const st = useProjectStore.getState();
+          st.setSimSeedMode('fixed');
+          st.setSimSeedValue(seed);
+          updateScene((sc) => {
+            sc.seed = seed;
+            sc.seedMode = 'fixed';
+          });
+          setCustomRiskReport(null);
+          setActiveModal(null);
+          setPanel('simulate');
+          resetSim();
+          showToast(
+            `Semilla #${seed} fijada · pulsa Iniciar para reproducir exactamente este fallo`
+          );
+        }}
       />
       <SmallExampleDialog
         onApplied={() => {

@@ -517,6 +517,8 @@ export interface Scene {
   maxWait: number;
   diameter: number;
   seed: number;
+  /** Modo de semilla preferido al simular ('random' genera una nueva en cada ensayo; 'fixed' reproduce `seed`). */
+  seedMode?: 'random' | 'fixed';
   offerMix: boolean;
   collisionTolerance?: number;
   variety?: number;
