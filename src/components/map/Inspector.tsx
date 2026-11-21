@@ -1194,7 +1194,9 @@ export const Inspector: React.FC<InspectorProps> = ({
               <p>
                 {(item as {origin?: string}).origin === 'turning'
                   ? 'Zona de maniobra de vehículos trazada en polígono libre (excluida del tránsito peatonal durante las fases activas).'
-                  : 'Esta superficie queda excluida del tránsito de personas en el modelo.'}
+                  : (item as {origin?: string}).origin === 'loading'
+                    ? 'Zona de carga y descarga / aparcamiento para servicios públicos trazada en polígono libre (excluida del tránsito peatonal durante las fases activas).'
+                    : 'Esta superficie queda excluida del tránsito de personas en el modelo.'}
               </p>
             )
           )}

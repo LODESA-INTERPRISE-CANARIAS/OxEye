@@ -612,22 +612,26 @@ h1 {
 
 .tool-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 8px;
 }
 
 .tool-row button {
-  height: 34px;
+  height: 32px;
+  min-width: 0;
+  width: 100%;
   font-size: 11px;
   font-weight: 700;
-  padding: 0 8px;
+  padding: 0 7px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fence-tool-panel {

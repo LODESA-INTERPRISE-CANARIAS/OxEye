@@ -566,7 +566,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <div className="catalog">
                 {Object.entries(CATALOG)
-                  .filter(([, c]) => {
+                  .filter(([k, c]) => {
+                    if (['gate', 'power', 'turning', 'loading'].includes(k)) {
+                      return false;
+                    }
                     if (catalogFilter === 'all') return true;
                     if (catalogFilter === 'services') {
                       return c.role === 'emergency' || c.role === 'facility';
@@ -581,18 +584,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     );
                   })
                   .map(([k, c]) => {
-                    const targetTool =
-                      k === 'gate'
-                        ? 'gateLine'
-                        : k === 'turning'
-                          ? 'turning'
-                          : 'place:' + k;
+                    const targetTool = 'place:' + k;
                     const sizeMeta =
                       k === 'security'
                         ? 'Personal a pie'
-                        : k === 'turning'
-                          ? 'Polígono libre'
-                          : `${c.w} × ${c.h} m`;
+                        : `${c.w} × ${c.h} m`;
                     return (
                       <button
                         key={k}
@@ -666,6 +662,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() => setTool('fence:loose')}
                 >
                   ┆ Valla suelta
+                </button>
+              </div>
+              <div
+                className="section-label"
+                style={{marginTop: '10px', marginBottom: '6px'}}
+              >
+                INFRAESTRUCTURA DEL ESPACIO
+              </div>
+              <div className="tool-row">
+                <button
+                  type="button"
+                  data-action="gateLine"
+                  data-place="gate"
+                  title="Dibujar acceso sobre el borde del perímetro"
+                  className={tool === 'gateLine' ? 'active' : ''}
+                  onClick={() => setTool('gateLine')}
+                >
+                  ⇄ Acceso
+                </button>
+                <button
+                  type="button"
+                  data-action="place:power"
+                  data-place="power"
+                  title="Colocar punto de luz / acometida"
+                  className={tool === 'place:power' ? 'active' : ''}
+                  onClick={() => setTool('place:power')}
+                >
+                  ϟ Punto de luz
+                </button>
+                <button
+                  type="button"
+                  data-action="turning"
+                  data-place="turning"
+                  title="Dibujar espacio libre de maniobra de vehículos"
+                  className={tool === 'turning' ? 'active' : ''}
+                  onClick={() => setTool('turning')}
+                >
+                  ↻ Maniobra
+                </button>
+                <button
+                  type="button"
+                  data-action="loadingZone"
+                  data-place="loading"
+                  title="Dibujar zona de carga y descarga / aparcamiento para servicios públicos"
+                  className={tool === 'loadingZone' ? 'active' : ''}
+                  onClick={() => setTool('loadingZone')}
+                >
+                  🅿 Carga / SP
                 </button>
               </div>
               {(tool === 'fence:chain' || tool === 'fence:loose') && (

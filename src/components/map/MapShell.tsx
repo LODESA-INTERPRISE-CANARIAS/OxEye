@@ -610,16 +610,28 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const selectedSet = new Set(selectedIds);
       for (const o of s.reserves) {
         const isTurning = o.origin === 'turning';
+        const isLoading = o.origin === 'loading';
         const isResSel = !!(o.id && selectedSet.has(o.id));
+        const fill = isTurning
+          ? '#6b8ba4'
+          : isLoading
+            ? '#d49b38'
+            : '#879576';
+        const stroke = isResSel
+          ? '#4b2665'
+          : isTurning
+            ? '#3b607a'
+            : isLoading
+              ? '#9e6d17'
+              : '#a7b193';
+        const dashed = isTurning || isLoading;
         html += `<polygon data-id="${esc(o.id)}" points="${pts(
           o.points
-        )}" fill="${isTurning ? '#6b8ba4' : '#879576'}" fill-opacity="${
-          isTurning ? '.2' : '.12'
-        }" stroke="${
-          isResSel ? '#4b2665' : isTurning ? '#3b607a' : '#a7b193'
-        }" stroke-width="${
-          isResSel ? '.6' : isTurning ? '.45' : '.25'
-        }"${isTurning ? ' stroke-dasharray="1.8 1"' : ''}><title>${esc(
+        )}" fill="${fill}" fill-opacity="${
+          dashed ? '.2' : '.12'
+        }" stroke="${stroke}" stroke-width="${
+          isResSel ? '.6' : dashed ? '.45' : '.25'
+        }"${dashed ? ' stroke-dasharray="1.8 1"' : ''}><title>${esc(
           o.name
         )}</title></polygon>`;
       }
@@ -1228,6 +1240,17 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             name: `Maniobra de vehículos ${count}`,
             points: p,
             origin: 'turning',
+          });
+          createdSubsoilId = id;
+        } else if (tool === 'loadingZone') {
+          const count =
+            s.reserves.filter((r) => r.origin === 'loading').length + 1;
+          s.reserves.push({
+            id,
+            phaseTags: tagsForNew(),
+            name: `Carga y descarga / Aparcamiento SP ${count}`,
+            points: p,
+            origin: 'loading',
           });
           createdSubsoilId = id;
         } else if (tool === 'flow') {
@@ -2157,6 +2180,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                       'Perímetro: Mayús añade · Ctrl resta (primer clic)',
                     reserve: 'Reservar zona',
                     turning: 'Maniobra de vehículos: dibuja el polígono y confirma',
+                    loadingZone:
+                      'Carga y descarga / aparcamiento SP: dibuja el polígono y confirma',
                     flow: 'Trazar recorrido',
                     gateLine:
                       'Dibujar acceso: marca sus dos extremos sobre el borde del perímetro',
@@ -2177,6 +2202,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       'boundary',
       'reserve',
       'turning',
+      'loadingZone',
       'flow',
       'road',
       'xray:boundary',
@@ -2186,6 +2212,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       'boundary',
       'reserve',
       'turning',
+      'loadingZone',
       'xray:boundary',
     ].includes(tool);
 

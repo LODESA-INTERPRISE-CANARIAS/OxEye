@@ -288,7 +288,9 @@ export function buildDraftSvg(
         ? '#b43c4c'
         : tool === 'turning'
           ? '#3b607a'
-          : '#633584';
+          : tool === 'loadingZone'
+            ? '#9e6d17'
+            : '#633584';
   const lineW = 1.8 * mpp;
   const dashA = 6 * mpp;
   const dashB = 4 * mpp;
