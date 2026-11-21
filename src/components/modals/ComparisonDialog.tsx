@@ -131,6 +131,9 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
     <dialog
       id="comparison"
       ref={dlgRef}
+      onClick={(e) => {
+        if (e.target === dlgRef.current) setActiveModal(null);
+      }}
       onClose={() => {
         if (isOpen) setActiveModal(null);
       }}
@@ -138,6 +141,17 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
       <h2>Evaluación automática de mapas</h2>
       <div id="comparison-body">
         {statusMsg && <p>{statusMsg}</p>}
+        {!evalResult && statusMsg.startsWith('Evaluación interrumpida') && (
+          <p style={{marginTop: '12px'}}>
+            <button
+              type="button"
+              className="dark"
+              onClick={() => setActiveModal('risk')}
+            >
+              Revisar riesgos y corregir bloqueos
+            </button>
+          </p>
+        )}
         {evalResult && (
           <>
             <p>
@@ -216,6 +230,11 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
           </>
         )}
       </div>
+      <form method="dialog" style={{marginTop: '14px'}}>
+        <button type="submit" id="comparison-close">
+          Cerrar
+        </button>
+      </form>
     </dialog>
   );
 };

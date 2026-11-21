@@ -110,7 +110,9 @@ export const PhaseStrip: React.FC<PhaseStripProps> = ({
             }}
           >
             <option value="cristo">
-              01 · {VENUES.cristo.name || 'Plaza del Cristo'}
+              {map.customLocation?.label
+                ? map.customLocation.label
+                : `01 · ${VENUES.cristo.name || 'Plaza del Cristo'}`}
             </option>
           </select>
         </label>

@@ -102,6 +102,7 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     // Step 1 of onboarding: mandatory perimeter drawing + clean vector base map (no raster tiles in plan mode)
     await expect(page.locator('#onboarding-perimeter-banner')).toBeVisible();
     await expect(page.locator('#place-title')).toContainText('Plaza de España');
+    await expect(page.locator('#venue-select option')).toContainText('Plaza de España');
     await expect(page.locator('#inventory')).toBeDisabled();
     await expect(page.locator('#base-layer image')).toHaveCount(0);
     await expect(page.locator('#base-layer polygon')).toHaveCount(1);

@@ -142,6 +142,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       snapshot: any;
       moved: boolean;
       checkpoint: boolean;
+      panOnly?: boolean;
     } | null>(null);
 
     const [draftPoints, setDraftPoints] = useState<Point[]>([]);
@@ -1181,7 +1182,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     };
 
     const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.button !== 1) return;
       const targetEl = e.target as HTMLElement;
       // Ignore pointerdown on floating UI controls inside #map
       if (
@@ -1189,6 +1190,27 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           '#inspector,#layer-panel,.zoom-pad,#draw-confirm,.director-hud,#onboarding-perimeter-banner'
         )
       ) {
+        return;
+      }
+      if (e.button === 1) {
+        e.preventDefault();
+        dragRef.current = {
+          p: getPointerCoords(e),
+          client: [e.clientX, e.clientY],
+          view: {...viewRef.current},
+          id: null,
+          o: null,
+          old: null,
+          handle: null,
+          snapshot: null,
+          moved: false,
+          checkpoint: false,
+          panOnly: true,
+        };
+        if (mapDivRef.current) {
+          mapDivRef.current.style.cursor = 'grabbing';
+          mapDivRef.current.setPointerCapture(e.pointerId);
+        }
         return;
       }
       const p = getPointerCoords(e);
@@ -1275,6 +1297,15 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const dy = e.clientY - drag.client[1];
       if (Math.hypot(dx, dy) > 3) drag.moved = true;
       if (!drag.moved) return;
+
+      if (drag.panOnly && mapDivRef.current) {
+        const clientW = mapDivRef.current.clientWidth || 800;
+        const clientH = mapDivRef.current.clientHeight || 600;
+        viewRef.current.x = drag.view.x - (dx / clientW) * drag.view.w;
+        viewRef.current.y = drag.view.y - (dy / clientH) * drag.view.h;
+        applyView();
+        return;
+      }
 
       const isSelectLike = tool === 'select' || tool === 'xray:select';
 
@@ -1409,11 +1440,15 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const d = dragRef.current;
       if (!d) return;
       dragRef.current = null;
+      if (d.panOnly && mapDivRef.current) {
+        mapDivRef.current.style.cursor = '';
+      }
       try {
         mapDivRef.current?.releasePointerCapture(e.pointerId);
       } catch {
         // Ignore if pointer capture already lost
       }
+      if (d.panOnly) return;
       const p = getPointerCoords(e);
       if (panel === 'simulate') return;
       if (d.moved) {
@@ -1633,10 +1668,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             tabIndex={0}
             role="application"
             aria-label="Plano editable. Arrastra para desplazar, rueda para ampliar. Selecciona un elemento para editar sus coordenadas."
+            onMouseDown={(e) => {
+              if (e.button === 1) e.preventDefault();
+            }}
+            onAuxClick={(e) => {
+              if (e.button === 1) e.preventDefault();
+            }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={() => {
+              if (dragRef.current?.panOnly && mapDivRef.current) {
+                mapDivRef.current.style.cursor = '';
+              }
               if (dragRef.current?.checkpoint) save();
               dragRef.current = null;
             }}

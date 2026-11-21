@@ -208,11 +208,17 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     const pos = tileToLatLon(targetTx, clampedTy, zoom);
     const lat = clampLat(pos.lat);
     const lon = ((((pos.lon + 180) % 360) + 360) % 360) - 180;
+    const isGenericLabel =
+      !value.label.trim() ||
+      value.label.startsWith('Punto seleccionado') ||
+      value.label === 'Plaza del Cristo, San Cristóbal de La Laguna';
     onChange({
       ...value,
       lat,
       lon,
-      label: `Punto seleccionado (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+      label: isGenericLabel
+        ? `Punto seleccionado (${lat.toFixed(4)}, ${lon.toFixed(4)})`
+        : value.label,
     });
   };
 
@@ -356,8 +362,19 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
             onChange({...value, sizeMeters: Number(e.target.value)})
           }
         />
+        <label className="location-zone-name-field">
+          <span>Nombre de la zona / recinto</span>
+          <input
+            id="location-zone-name"
+            type="text"
+            maxLength={100}
+            placeholder="Ej. Plaza del Tranvía, Parque García Sanabria…"
+            value={value.label}
+            onChange={(e) => onChange({...value, label: e.target.value})}
+          />
+        </label>
         <div className="location-coords-row">
-          <span className="location-label-text">{value.label}</span>
+          <span className="location-label-text">Coordenadas del centro</span>
           <code>
             {value.lat.toFixed(5)}, {value.lon.toFixed(5)}
           </code>
