@@ -1121,6 +1121,76 @@ export function validateScene(s: Scene): Scene {
       throw new Error('Trazado no válido.');
     }
   }
+  if (s.contacts !== undefined) {
+    if (!Array.isArray(s.contacts) || s.contacts.length > 500) {
+      throw new Error('Lista de contactos no válida.');
+    }
+    for (const c of s.contacts) {
+      if (
+        !c ||
+        typeof c !== 'object' ||
+        typeof c.name !== 'string' ||
+        typeof c.kind !== 'string'
+      ) {
+        throw new Error('Contacto no válido.');
+      }
+    }
+  }
+  if (s.customActivities !== undefined) {
+    if (!Array.isArray(s.customActivities) || s.customActivities.length > 200) {
+      throw new Error('Lista de actividades personalizadas no válida.');
+    }
+    const validNeeds = new Set(['roof', 'stage', 'tables', 'power', 'open']);
+    for (const a of s.customActivities) {
+      if (
+        !a ||
+        typeof a !== 'object' ||
+        typeof a.id !== 'string' ||
+        !a.id.trim() ||
+        typeof a.name !== 'string' ||
+        !a.name.trim() ||
+        typeof a.category !== 'string' ||
+        !Number.isFinite(a.minutes) ||
+        a.minutes < 5 ||
+        a.minutes > 600 ||
+        !Number.isFinite(a.cost) ||
+        a.cost < 0 ||
+        a.cost > 200000 ||
+        !Number.isFinite(a.places) ||
+        a.places < 1 ||
+        a.places > 5000 ||
+        !Number.isFinite(a.area) ||
+        a.area < 1 ||
+        a.area > 5000 ||
+        !validNeeds.has(a.need)
+      ) {
+        throw new Error('Actividad personalizada no válida.');
+      }
+    }
+  }
+  if (s.activityContacts !== undefined) {
+    if (
+      !s.activityContacts ||
+      typeof s.activityContacts !== 'object' ||
+      Array.isArray(s.activityContacts)
+    ) {
+      throw new Error('Asociación de contactos no válida.');
+    }
+    for (const [k, v] of Object.entries(s.activityContacts)) {
+      if (typeof k !== 'string' || typeof v !== 'string') {
+        throw new Error('Asociación de contactos no válida.');
+      }
+    }
+  }
+  if (s.contactKinds !== undefined) {
+    if (
+      !Array.isArray(s.contactKinds) ||
+      s.contactKinds.length > 100 ||
+      s.contactKinds.some((k) => typeof k !== 'string')
+    ) {
+      throw new Error('Tipos de actividad de contactos no válidos.');
+    }
+  }
   if (s.subsoil !== undefined) {
     const sub = s.subsoil;
     if (

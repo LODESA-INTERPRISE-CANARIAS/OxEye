@@ -2,7 +2,7 @@
  * @module engine/planning/programme
  * Multi-day activity programme catalog, local providers reference, and budget-constrained scheduler.
  */
-import type {Scene} from '../../types';
+import type {ActivityNeed, Scene} from '../../types';
 
 export interface ActivitySpec {
   id: string;
@@ -11,9 +11,13 @@ export interface ActivitySpec {
   minutes: number;
   cost: number;
   places: number;
-  need: 'roof' | 'stage' | 'tables' | 'power' | 'open';
+  need: ActivityNeed;
   area: number;
   enabled?: boolean;
+  /** ID del contacto/empresa asociado explícitamente por el usuario (nunca autogenerado). */
+  contactId?: string;
+  /** Marca que la actividad fue creada por el usuario (`scene.customActivities`). */
+  custom?: boolean;
 }
 
 export const activities: ActivitySpec[] = (

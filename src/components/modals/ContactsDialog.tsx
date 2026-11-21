@@ -1,7 +1,16 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {VENUES} from '../../data/catalog';
+import {
+  buildContactInquiryMessage,
+  buildMailtoHref,
+  buildWhatsAppHref,
+  getContactKinds,
+  mergeUniqueOptions,
+  removeContactFromScene,
+} from '../../engine/planning/contacts';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {ContactEntry} from '../../types';
+import {CustomizableSelect} from '../common/CustomizableSelect';
 
 /**
  * Modal dialog (`#contacts-dialog`) for managing provider contacts and generating mailto/WhatsApp inquiries.
@@ -11,15 +20,21 @@ export const ContactsDialog: React.FC = () => {
   const activeModal = useProjectStore((s) => s.activeModal);
   const activeVenue = useProjectStore((s) => s.activeVenue);
   const currentScene = useProjectStore((s) => s.currentScene);
+  const currentMap = useProjectStore((s) => s.currentMap);
+  const revision = useProjectStore((s) => s.revision);
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
   const updateScene = useProjectStore((s) => s.updateScene);
 
+  void revision;
   const isOpen = activeModal === 'contacts';
   const scene = currentScene();
+  const venueName =
+    currentMap().customLocation?.label || VENUES[activeVenue].name;
   const list = scene.contacts || [];
+  const kinds = getContactKinds(scene);
 
   const [name, setName] = useState('');
-  const [kind, setKind] = useState<ContactEntry['kind']>('Foodtruck');
+  const [kind, setKind] = useState<string>('Foodtruck');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
 
@@ -33,27 +48,35 @@ export const ContactsDialog: React.FC = () => {
     }
   }, [isOpen]);
 
+  const handleAddKind = (newKind: string) => {
+    updateScene((s) => {
+      s.contactKinds = mergeUniqueOptions(s.contactKinds || [], [newKind]);
+    });
+  };
+
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
     const newEntry: ContactEntry = {
-      name: name.trim(),
-      kind,
+      id: crypto.randomUUID(),
+      name: trimmedName,
+      kind: kind.trim() || 'Foodtruck',
       email: email.trim(),
       phone: phone.trim(),
     };
     updateScene((s) => {
       s.contacts = [...(s.contacts || []), newEntry];
+      s.contactKinds = mergeUniqueOptions(s.contactKinds || [], [newEntry.kind]);
     });
     setName('');
     setEmail('');
     setPhone('');
   };
 
-  const handleDelete = (idx: number) => {
+  const handleDelete = (contactId: string) => {
     updateScene((s) => {
-      const next = [...(s.contacts || [])];
-      next.splice(idx, 1);
-      s.contacts = next;
+      removeContactFromScene(s, contactId);
     });
   };
 
@@ -82,22 +105,16 @@ export const ContactsDialog: React.FC = () => {
               onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <label>
-            Actividad
-            <select
-              name="kind"
-              value={kind}
-              onChange={(e) =>
-                setKind(e.target.value as ContactEntry['kind'])
-              }
-            >
-              <option>Foodtruck</option>
-              <option>Ventorrillo</option>
-              <option>Taller</option>
-              <option>Comercio</option>
-              <option>Montaje</option>
-            </select>
-          </label>
+          <CustomizableSelect
+            id="contact-kind"
+            name="kind"
+            label="Actividad"
+            options={kinds}
+            value={kind}
+            onChange={setKind}
+            onAddOption={handleAddKind}
+            placeholder="Ej. Sonido, Animación, Seguridad…"
+          />
           <label>
             Email
             <input
@@ -119,32 +136,40 @@ export const ContactsDialog: React.FC = () => {
           <button type="submit">Añadir contacto</button>
         </form>
         <div id="contact-list">
-          {list.map((c, i) => {
-            const message = `Buenos días. Estamos estudiando la organización de ${scene.title} en ${VENUES[activeVenue].name}. Nos gustaría consultar su disponibilidad como ${c.kind}, presupuesto, necesidades de espacio y electricidad, capacidad de atención y horarios de montaje y retirada. Fechas y condiciones pendientes de concretar. Muchas gracias.`;
+          {list.map((c) => {
+            const message = buildContactInquiryMessage(
+              c,
+              scene.title,
+              venueName
+            );
             return (
-              <article key={i} className="note-card">
+              <article key={c.id} className="note-card">
                 <b>
                   {c.name} · {c.kind}
                 </b>
-                {c.email && (
-                  <a
-                    href={`mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent('Consulta de disponibilidad para evento')}&body=${encodeURIComponent(message)}`}
+                <div className="contact-card-actions">
+                  {c.email && (
+                    <a href={buildMailtoHref(c.email, message)}>
+                      Preparar correo
+                    </a>
+                  )}
+                  {c.phone && (
+                    <a
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      href={buildWhatsAppHref(c.phone, message)}
+                    >
+                      Preparar WhatsApp
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    data-delete-contact={c.id}
+                    onClick={() => handleDelete(c.id)}
                   >
-                    Preparar correo
-                  </a>
-                )}
-                {c.phone && (
-                  <a
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    href={`https://wa.me/${c.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`}
-                  >
-                    Preparar WhatsApp
-                  </a>
-                )}
-                <button type="button" onClick={() => handleDelete(i)}>
-                  Eliminar
-                </button>
+                    Eliminar
+                  </button>
+                </div>
               </article>
             );
           })}

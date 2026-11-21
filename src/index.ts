@@ -53,6 +53,7 @@ export * from './engine/logistics/companies';
 export * from './engine/logistics/phases';
 export * from './engine/logistics/shift';
 export * from './engine/planning/batch';
+export * from './engine/planning/contacts';
 export * from './engine/planning/demand';
 export * from './engine/planning/evaluator';
 export * from './engine/planning/inventory';

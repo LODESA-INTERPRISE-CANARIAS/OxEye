@@ -50,6 +50,8 @@ export const annotationsTable = sqliteTable('annotations', {
 
 /**
  * Drizzle ORM SQLite table schema for provider contacts.
+ * Each contact stores a stable UUID (`id`) used to link activities in the programme
+ * (`sceneJson.activityContacts` and `sceneJson.programme.schedule[].contactId`).
  */
 export const contactsTable = sqliteTable('contacts', {
   id: text('id').primaryKey(),

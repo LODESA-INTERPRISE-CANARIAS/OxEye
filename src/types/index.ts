@@ -318,10 +318,26 @@ export interface CompanyItem {
 
 /** Contacto de proveedor registrado en el proyecto. */
 export interface ContactItem {
+  id: string;
   name: string;
   kind: string;
   email?: string;
   phone?: string;
+}
+
+/** Recurso operativo requerido por una actividad del programa por días. */
+export type ActivityNeed = 'roof' | 'stage' | 'tables' | 'power' | 'open';
+
+/** Actividad personalizada creada por el usuario para el programa por días. */
+export interface CustomActivityItem {
+  id: string;
+  name: string;
+  category: string;
+  minutes: number;
+  cost: number;
+  places: number;
+  need: ActivityNeed;
+  area: number;
 }
 
 /** Parámetros de entrada para el cálculo de demanda de servicios. */
@@ -523,6 +539,12 @@ export interface Scene {
   >;
   lastSessionReview?: Record<string, unknown>;
   activityPrices?: Record<string, number>;
+  /** Actividades personalizadas creadas por el usuario para el programa por días. */
+  customActivities?: CustomActivityItem[];
+  /** Asociación explícita entre ID de actividad y ID de contacto guardado (`activityId -> contactId`). */
+  activityContacts?: Record<string, string>;
+  /** Tipos de actividad personalizados añadidos por el usuario en Contactos. */
+  contactKinds?: string[];
   programmeOptions?: {
     budget?: number;
     reserve?: number;

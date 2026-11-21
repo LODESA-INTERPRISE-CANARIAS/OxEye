@@ -102,8 +102,8 @@ flowchart LR
 2. **Calcular servicios**: estimación inicial de puestos, mesas, carpas, comercios y aseos a partir de 17 variables de demanda.
 3. **Inventario**: control de stock por categoría con inserción manual o propuesta automática en minimapa.
 4. **Laboratorio comparativo**: baterías de `3`, `6` o `10` diseños simulados (`15`, `30` o `60 min`, con opción de lluvia e inyección automática de emergencias) y ranking ponderado exportable.
-5. **Contactos y Empresas**: directorio de proveedores con preparación de correo/WhatsApp y asignación de lotes/recursos por empresa.
-6. **Ficha de producción**: 17 parámetros operativos y estimación en tiempo real de duración y coste salarial de turnos.
+5. **Programa por días y Contactos**: planificación multi-día con actividades propias editables, asociación opcional de empresas/contactos (incluyendo alta en línea y columna `Empresa` en el CSV), listado de proveedores priorizando los contactos guardados sobre los sugeridos, y directorio de contactos con `id` estable, tipos de actividad personalizables («Otra…») y preparación compartida de correo/WhatsApp.
+6. **Empresas y Ficha de producción**: asignación de lotes/recursos por empresa y 17 parámetros operativos con estimación en tiempo real de duración y coste salarial de turnos.
 
 </details>
 
