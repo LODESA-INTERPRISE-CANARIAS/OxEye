@@ -83,7 +83,7 @@ export function generateLayout(
     0,
     Math.min(
       opts.count,
-      150 -
+      500 -
         scene.base.booths.length -
         scene.infrastructure.length -
         scene.entrances.length

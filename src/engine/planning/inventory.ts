@@ -50,8 +50,8 @@ export function reconcile(
   const add: any[] = [];
 
   for (const [kind, count] of Object.entries(counts)) {
-    if (!Number.isInteger(count) || count < 0 || count > 150) {
-      throw new Error('Introduce cantidades enteras entre 0 y 150.');
+    if (!Number.isInteger(count) || count < 0 || count > 500) {
+      throw new Error('Introduce cantidades enteras entre 0 y 500.');
     }
     const current = [
       ...next.base.booths,
@@ -155,9 +155,9 @@ export function reconcile(
       next.infrastructure.length +
       next.entrances.length +
       next.pendingStock.length >
-    150
+    500
   ) {
-    throw new Error('El inventario admite 150 piezas en total.');
+    throw new Error('El inventario admite 500 piezas en total.');
   }
   return {scene: next, removed: remove.length, added: add.length};
 }

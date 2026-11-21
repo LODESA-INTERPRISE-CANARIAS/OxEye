@@ -429,11 +429,11 @@ export const MultiSelectionInspector: React.FC<
       onSceneChanged();
       showToast(
         skipped > 0
-          ? `${newIds.length} duplicados · límite de 150 piezas alcanzado`
+          ? `${newIds.length} duplicados · límite de 500 piezas alcanzado`
           : `${newIds.length} elementos duplicados`
       );
     } else if (skipped > 0) {
-      showToast('Límite del prototipo: 150 elementos por espacio');
+      showToast('Límite del prototipo: 500 elementos por espacio');
     }
   };
 

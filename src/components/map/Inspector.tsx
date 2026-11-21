@@ -369,7 +369,7 @@ export const Inspector: React.FC<InspectorProps> = ({
       skippedLimit = res.skippedCatalogLimit;
     }, true);
     if (skippedLimit > 0) {
-      showToast('Límite del prototipo: 150 elementos por espacio');
+      showToast('Límite del prototipo: 500 elementos por espacio');
       return;
     }
     if (newIds.length) {

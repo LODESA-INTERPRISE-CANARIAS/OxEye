@@ -3,11 +3,38 @@ import {downloadFile} from '../../db/repository';
 import {miniMap} from '../../engine/cartography/minimap';
 import {EventEngine} from '../../engine/crowd/event-engine';
 import {assessRisk} from '../../engine/emergency/risk';
+import {TOPICS} from '../../engine/experience/experience-monitor';
 import {phaseScene} from '../../engine/logistics/phases';
-import {compare, type TrialResult} from '../../engine/planning/evaluator';
+import {
+  compare,
+  computeSceneSpatialMetrics,
+  type ComparisonChange,
+  type SceneSpatialMetrics,
+  type TrialResult,
+} from '../../engine/planning/evaluator';
 import {redesign} from '../../engine/planning/layout';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {Scene, VenueMap} from '../../types';
+
+const fmt = (n: number | null | undefined, unit = ''): string => {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  const s = Number(n).toLocaleString('es-ES', {maximumFractionDigits: 2});
+  return unit ? `${s} ${unit}` : s;
+};
+
+const fmtDelta = (
+  delta: number,
+  lowerIsBetter: boolean,
+  unit = ''
+): {text: string; color: string} => {
+  if (Math.abs(delta) < 0.005) return {text: 'Sin cambio', color: '#64748b'};
+  const sign = delta > 0 ? '+' : '';
+  const good = lowerIsBetter ? delta < 0 : delta > 0;
+  const s = `${sign}${Number(delta).toLocaleString('es-ES', {
+    maximumFractionDigits: 2,
+  })}${unit ? ' ' + unit : ''}`;
+  return {text: s, color: good ? '#15803d' : '#b91c1c'};
+};
 
 interface RecoveryAlternative {
   source: Scene;
@@ -16,6 +43,9 @@ interface RecoveryAlternative {
   beforeTitles: string[];
   afterCritical: number;
   afterTitles: string[];
+  beforeSpatial: SceneSpatialMetrics;
+  afterSpatial: SceneSpatialMetrics;
+  movedCount: number;
   desc: string;
 }
 
@@ -33,8 +63,9 @@ function findRecoveryAlternative(
       (i) => i.id === 'route-fire'
     );
 
+    const beforeSpatial = computeSceneSpatialMetrics(source, map);
     let best: RecoveryAlternative | null = null;
-    const evaluateCandidate = (cand: Scene, desc: string) => {
+    const evaluateCandidate = (cand: Scene, desc: string, movedCount = 0) => {
       try {
         const eng = new EventEngine(phaseScene(cand, 'event'));
         const rep = assessRisk(cand, eng, {routes: true});
@@ -47,6 +78,9 @@ function findRecoveryAlternative(
               beforeTitles,
               afterCritical: rep.critical.length,
               afterTitles: rep.critical.map((i) => i.title),
+              beforeSpatial,
+              afterSpatial: computeSceneSpatialMetrics(cand, map),
+              movedCount,
               desc,
             };
           }
@@ -71,7 +105,7 @@ function findRecoveryAlternative(
           const moved = byId.get(o.id);
           if (moved) Object.assign(o, moved);
         }
-        evaluateCandidate(cand, proposal.reason);
+        evaluateCandidate(cand, proposal.reason, proposal.moves.length);
         if (best && (best as RecoveryAlternative).afterCritical === 0) {
           return best;
         }
@@ -128,12 +162,7 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
     seed: number;
     before: TrialResult;
     best?: {
-      change: {
-        kind: string;
-        id: string;
-        desc: string;
-        patch: Record<string, unknown>;
-      };
+      change: ComparisonChange;
       after: TrialResult;
       gain: number;
     };
@@ -170,11 +199,21 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
             const best = result.alternatives[0];
             const next = structuredClone(source);
             if (best) {
-              const target = [
-                ...next.base.booths,
-                ...next.infrastructure,
-              ].find((o) => o.id === best.change.id);
-              if (target) Object.assign(target, best.change.patch);
+              if (best.change.moves?.length) {
+                const byId = new Map(best.change.moves.map((mv) => [mv.id, mv]));
+                for (const o of [...next.base.booths, ...next.infrastructure]) {
+                  const mv = byId.get(o.id);
+                  if (mv) Object.assign(o, mv);
+                }
+              } else if (best.change.addItem) {
+                next.infrastructure.push(structuredClone(best.change.addItem));
+              } else {
+                const target = [
+                  ...next.base.booths,
+                  ...next.infrastructure,
+                ].find((o) => o.id === best.change.id);
+                if (target) Object.assign(target, best.change.patch);
+              }
             }
             updateScene((sc) => {
               sc.learning = [
@@ -216,20 +255,204 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
     }
   }, [isOpen, activeVenue, currentScene, updateScene]);
 
-  const metricsText = (r: TrialResult) =>
-    `Llegadas ${r.arrivals} · atendidos ${r.served} · abandonos ${r.abandoned} · puntuación de fallos ${r.score}`;
-
   const handleChooseBest = () => {
     if (!evalResult?.best) return;
     const best = evalResult.best;
     updateScene((sc) => {
-      const target = [...sc.base.booths, ...sc.infrastructure].find(
-        (o) => o.id === best.change.id
-      );
-      if (target) Object.assign(target, best.change.patch);
+      if (best.change.moves?.length) {
+        const byId = new Map(best.change.moves.map((mv) => [mv.id, mv]));
+        for (const o of [...sc.base.booths, ...sc.infrastructure]) {
+          const mv = byId.get(o.id);
+          if (mv) Object.assign(o, mv);
+        }
+      } else if (best.change.addItem) {
+        sc.infrastructure.push(structuredClone(best.change.addItem));
+      } else {
+        const target = [...sc.base.booths, ...sc.infrastructure].find(
+          (o) => o.id === best.change.id
+        );
+        if (target) Object.assign(target, best.change.patch);
+      }
     }, true);
     setActiveModal(null);
     onSceneChanged();
+    showToast('Propuesta aplicada al plano (Ctrl+Z para deshacer)');
+  };
+
+  const renderMetricComparison = (
+    before: TrialResult,
+    after: TrialResult,
+    change: ComparisonChange
+  ) => {
+    const allTopics = Array.from(
+      new Set([...Object.keys(before.counts), ...Object.keys(after.counts)])
+    );
+    const topicDiffs = allTopics
+      .map((k) => ({
+        key: k,
+        label: TOPICS[k] || k,
+        b: before.counts[k] || 0,
+        a: after.counts[k] || 0,
+        diff: (after.counts[k] || 0) - (before.counts[k] || 0),
+      }))
+      .filter((t) => t.b > 0 || t.a > 0);
+
+    const rows: Array<{
+      label: string;
+      b: string;
+      a: string;
+      delta: {text: string; color: string};
+    }> = [
+      {
+        label: 'Puntuación de fallos (menor = mejor)',
+        b: String(before.score),
+        a: String(after.score),
+        delta: fmtDelta(after.score - before.score, true, 'pts'),
+      },
+      {
+        label: 'Episodios de fricción detectados',
+        b: String(before.episodes),
+        a: String(after.episodes),
+        delta: fmtDelta(after.episodes - before.episodes, true),
+      },
+      {
+        label: 'Atendidos / Abandonos / Entradas bloq.',
+        b: `${before.served} / ${before.abandoned} / ${before.entryBlocked}`,
+        a: `${after.served} / ${after.abandoned} / ${after.entryBlocked}`,
+        delta: fmtDelta(
+          after.abandoned -
+            before.abandoned +
+            (after.entryBlocked - before.entryBlocked),
+          true,
+          'fallos'
+        ),
+      },
+      {
+        label: 'Espera media / Tiempo atascado',
+        b: `${before.avgWaitSec} s / ${before.stuckSeconds} s`,
+        a: `${after.avgWaitSec} s / ${after.stuckSeconds} s`,
+        delta: fmtDelta(after.avgWaitSec - before.avgWaitSec, true, 's espera'),
+      },
+      {
+        label: 'Distanciamiento mín. entre elementos',
+        b: fmt(before.spatial.minClearanceMeters, 'm'),
+        a: fmt(after.spatial.minClearanceMeters, 'm'),
+        delta:
+          before.spatial.minClearanceMeters !== null &&
+          after.spatial.minClearanceMeters !== null
+            ? fmtDelta(
+                after.spatial.minClearanceMeters -
+                  before.spatial.minClearanceMeters,
+                false,
+                'm'
+              )
+            : {text: '—', color: '#64748b'},
+      },
+      {
+        label: 'Separación media al vecino más cercano',
+        b: fmt(before.spatial.avgNearestSpacingMeters, 'm'),
+        a: fmt(after.spatial.avgNearestSpacingMeters, 'm'),
+        delta:
+          before.spatial.avgNearestSpacingMeters !== null &&
+          after.spatial.avgNearestSpacingMeters !== null
+            ? fmtDelta(
+                after.spatial.avgNearestSpacingMeters -
+                  before.spatial.avgNearestSpacingMeters,
+                false,
+                'm'
+              )
+            : {text: '—', color: '#64748b'},
+      },
+      {
+        label: 'Superficie de servicio / refugio',
+        b: `${fmt(before.spatial.serviceSurfaceM2, 'm²')} / ${fmt(before.spatial.shelterSurfaceM2, 'm²')}`,
+        a: `${fmt(after.spatial.serviceSurfaceM2, 'm²')} / ${fmt(after.spatial.shelterSurfaceM2, 'm²')}`,
+        delta: change.addedSurfaceM2
+          ? {text: `+${fmt(change.addedSurfaceM2, 'm²')} añadidos`, color: '#15803d'}
+          : {text: '0 m² añadidos', color: '#64748b'},
+      },
+    ];
+
+    const changedTopics = topicDiffs.filter((t) => t.diff !== 0);
+    const spatialSummary =
+      change.spatialKind === 'nueva_superficie'
+        ? `Añade una nueva superficie no contemplada (+${fmt(change.addedSurfaceM2, 'm²')}) para cubrir necesidades detectadas de los asistentes.`
+        : change.spatialKind === 'espaciado'
+          ? `Modifica la posición en el plano${
+              change.moveDistanceMeters
+                ? ` (${fmt(change.moveDistanceMeters, 'm')})`
+                : ''
+            } para mejorar el distanciamiento entre elementos (mín. ${fmt(before.spatial.minClearanceMeters, 'm')} → ${fmt(after.spatial.minClearanceMeters, 'm')}; media ${fmt(before.spatial.avgNearestSpacingMeters, 'm')} → ${fmt(after.spatial.avgNearestSpacingMeters, 'm')}). No añade nuevas superficies (0 m²).`
+          : `Ajuste operativo/de gestión sobre un elemento existente: no altera el distanciamiento entre elementos (mín. ${fmt(before.spatial.minClearanceMeters, 'm')}, media ${fmt(before.spatial.avgNearestSpacingMeters, 'm')}) ni añade nuevas superficies (0 m²).`;
+
+    return (
+      <div style={{margin: '10px 0 12px'}}>
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: '0.84rem',
+            marginBottom: '10px',
+          }}
+        >
+          <thead>
+            <tr style={{borderBottom: '1px solid #d8d3e3', textAlign: 'left'}}>
+              <th style={{padding: '5px 6px'}}>Métrica</th>
+              <th style={{padding: '5px 6px'}}>Original</th>
+              <th style={{padding: '5px 6px'}}>Propuesta</th>
+              <th style={{padding: '5px 6px'}}>Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label} style={{borderBottom: '1px solid #ece8f3'}}>
+                <td style={{padding: '5px 6px'}}>{r.label}</td>
+                <td style={{padding: '5px 6px'}}>{r.b}</td>
+                <td style={{padding: '5px 6px'}}>{r.a}</td>
+                <td
+                  style={{
+                    padding: '5px 6px',
+                    fontWeight: 600,
+                    color: r.delta.color,
+                  }}
+                >
+                  {r.delta.text}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div
+          style={{
+            background: '#f6f3fa',
+            borderLeft: '3px solid #57367b',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            fontSize: '0.84rem',
+            lineHeight: 1.45,
+          }}
+        >
+          <b>¿Por qué cambia la puntuación?</b>{' '}
+          {changedTopics.length > 0 ? (
+            <>
+              Variación por tipo de episodio:{' '}
+              {changedTopics
+                .map(
+                  (t) =>
+                    `${t.label} (${t.b} → ${t.a}, ${t.diff > 0 ? '+' : ''}${t.diff})`
+                )
+                .join(' · ')}
+              .
+            </>
+          ) : (
+            <>Sin variación en el conteo de episodios por categoría.</>
+          )}
+          <div style={{marginTop: '4px'}}>
+            <b>Impacto espacial y superficies:</b> {spatialSummary}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -307,6 +530,17 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
               }}
             />
             <p>{recoveryResult.desc}</p>
+            <p className="small-note">
+              <b>Distanciamiento entre elementos:</b> separación mínima{' '}
+              {fmt(recoveryResult.beforeSpatial.minClearanceMeters, 'm')} →{' '}
+              {fmt(recoveryResult.afterSpatial.minClearanceMeters, 'm')} ·
+              separación media{' '}
+              {fmt(recoveryResult.beforeSpatial.avgNearestSpacingMeters, 'm')} →{' '}
+              {fmt(recoveryResult.afterSpatial.avgNearestSpacingMeters, 'm')}
+              {recoveryResult.movedCount > 0
+                ? ` · ${recoveryResult.movedCount} elemento(s) reubicados · 0 m² añadidos.`
+                : ' · sin reubicar mobiliario.'}
+            </p>
             {recoveryResult.afterTitles.length > 0 && (
               <p className="small-note">
                 Pendiente: {recoveryResult.afterTitles.join(' · ')}
@@ -355,7 +589,6 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
                 ),
               }}
             />
-            <p>{metricsText(evalResult.before)}</p>
             {evalResult.best ? (
               <>
                 <h3>Propuesta comparada</h3>
@@ -369,8 +602,14 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
                     ),
                   }}
                 />
-                <p>{evalResult.best.change.desc}</p>
-                <p>{metricsText(evalResult.best.after)}</p>
+                <p>
+                  <b>Cambio propuesto:</b> {evalResult.best.change.desc}
+                </p>
+                {renderMetricComparison(
+                  evalResult.before,
+                  evalResult.best.after,
+                  evalResult.best.change
+                )}
                 <b>
                   {evalResult.best.gain > 0
                     ? `Mejora medida de ${evalResult.best.gain} puntos`
@@ -380,10 +619,19 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
                 </b>
               </>
             ) : (
-              <p>
-                Sin cambios candidatos para los fallos observados en este
-                intervalo.
-              </p>
+              <>
+                <p>
+                  Llegadas {evalResult.before.arrivals} · atendidos{' '}
+                  {evalResult.before.served} · abandonos{' '}
+                  {evalResult.before.abandoned} · episodios{' '}
+                  {evalResult.before.episodes} · puntuación{' '}
+                  {evalResult.before.score}.
+                </p>
+                <p>
+                  Sin cambios candidatos para los fallos observados en este
+                  intervalo.
+                </p>
+              </>
             )}
             <p>
               El historial de este recinto prioriza los tipos de cambio que

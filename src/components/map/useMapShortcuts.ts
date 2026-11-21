@@ -135,13 +135,13 @@ export function useMapShortcuts(
           onSceneChanged();
           state.showToast(
             skippedLimit > 0
-              ? `${pastedIds.length} pegados · límite de 150 piezas alcanzado`
+              ? `${pastedIds.length} pegados · límite de 500 piezas alcanzado`
               : pastedIds.length === 1
                 ? 'Elemento pegado'
                 : `${pastedIds.length} elementos pegados`
           );
         } else if (skippedLimit > 0) {
-          state.showToast('Límite del prototipo: 150 elementos por espacio');
+          state.showToast('Límite del prototipo: 500 elementos por espacio');
         }
         return;
       }

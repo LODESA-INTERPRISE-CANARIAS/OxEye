@@ -364,7 +364,7 @@ describe('Multi-Selection, Clipboard & Locked Rules', () => {
     expect(scene.base.booths.some((b) => b.id === boothId)).toBe(true);
     expect(scene.subsoil.columns.some((c) => c.id === 'sub-col-1')).toBe(false);
 
-    // 150 catalog item cap
+    // 500 catalog item cap
     while (
       scene.base.booths.length +
         scene.infrastructure.length +

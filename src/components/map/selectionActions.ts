@@ -59,7 +59,7 @@ export interface DeleteResult {
 }
 
 /** Límite máximo de piezas del catálogo (puestos + infraestructura + accesos) por recinto. */
-export const CATALOG_ITEM_LIMIT = 150;
+export const CATALOG_ITEM_LIMIT = 500;
 
 const CATALOG_COLLECTIONS: ReadonlySet<CollectionKey> = new Set([
   'booths',

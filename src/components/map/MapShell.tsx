@@ -1468,9 +1468,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const m = currentMap();
       if (
         s.base.booths.length + s.infrastructure.length + s.entrances.length >=
-        150
+        500
       ) {
-        showToast('Límite del prototipo: 150 elementos por espacio');
+        showToast('Límite del prototipo: 500 elementos por espacio');
         return;
       }
       const itemOverlapsInterestZone = (

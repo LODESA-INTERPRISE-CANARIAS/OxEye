@@ -81,7 +81,7 @@ export const InventoryDialog: React.FC<InventoryDialogProps> = ({
   const handleAdjust = (key: string, delta: number) => {
     setCounts((prev) => ({
       ...prev,
-      [key]: Math.max(0, Math.min(150, (prev[key] || 0) + delta)),
+      [key]: Math.max(0, Math.min(500, (prev[key] || 0) + delta)),
     }));
     setDraft(null);
     setAutoCandidate(null);
@@ -218,7 +218,7 @@ export const InventoryDialog: React.FC<InventoryDialogProps> = ({
                   name={k}
                   type="number"
                   min="0"
-                  max="150"
+                  max="500"
                   step="1"
                   value={counts[k] ?? 0}
                   onChange={(e) => {

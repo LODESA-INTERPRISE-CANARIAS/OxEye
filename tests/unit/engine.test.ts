@@ -55,7 +55,7 @@ describe('Demand & Inventory Planning', () => {
     expect(plan.occupied).toBe(200);
   });
 
-  it('reconciles inventory quantities and respects the 150-element cap', () => {
+  it('reconciles inventory quantities and respects the 500-element cap', () => {
     configure(MAPS_DATA);
     const scene = initialScene('cristo', MAPS_DATA.cristo, CARTO_DATA);
     validateScene(scene);
