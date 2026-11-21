@@ -38,8 +38,10 @@ export interface CatalogEntry {
   w: number;
   h: number;
   color: string;
-  /** Indica si la pieza se considera carga pesada frente a zonas de calor del subsuelo. */
+  /** Indica si la pieza se considera elemento pesado por defecto frente al subsuelo. */
   heavyLoad?: boolean;
+  /** Masa inicial en kg para piezas con cálculo de carga superficial (p. ej. lastres). */
+  defaultMassKg?: number;
 }
 
 /** Iconos simbólicos por tipo o rol de pieza. */
@@ -49,6 +51,7 @@ export const icons: Record<string, string> = {
   stage: '▱',
   rest: '▥',
   cover: '⌂',
+  ballast: '⛁',
   toilet: 'WC',
   medical: '✚',
   ambulance: '✚',
@@ -159,7 +162,16 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 10,
     h: 10,
     color: '#bdd4c0',
+    heavyLoad: false,
+  },
+  ballast: {
+    name: 'Lastre / contrapeso',
+    role: 'logistics',
+    w: 1,
+    h: 1,
+    color: '#7c8594',
     heavyLoad: true,
+    defaultMassKg: 500,
   },
   toilet: {
     name: 'Aseos',

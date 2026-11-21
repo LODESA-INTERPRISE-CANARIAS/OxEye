@@ -42,8 +42,9 @@ export function buildGrid(
   const obstacles = s.reserves.map((r) => toMeters(r.points));
   const footprints = [
     ...s.base.booths,
-    ...s.infrastructure.filter((o) =>
-      ['facility', 'furniture'].includes(o.role || '')
+    ...s.infrastructure.filter(
+      (o) =>
+        ['facility', 'furniture'].includes(o.role || '') || o.kind === 'ballast'
     ),
   ].map((b) => rect(b, m));
   const segments = opts?.ignoreFences

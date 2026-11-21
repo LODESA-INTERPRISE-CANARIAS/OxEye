@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
+import {evaluateAllCoverBallasts} from '../planning/ballast';
 import {demandPlan} from '../planning/demand';
 import {evaluateHeavyLoadConflicts} from '../subsoil/heat';
 import {RESPONSE_PROFILES, responseRoute} from './response-model';
@@ -86,6 +87,13 @@ export function safetyFingerprint(s: Scene): string {
     'labCapacity',
     'labTime',
     'heavyLoad',
+    'massKg',
+    'supportAreaM2',
+    'tentMassKg',
+    'ballastSpanMeters',
+    'ballastsPerSpan',
+    'ballastRequiredMassKg',
+    'attachedCoverId',
   ];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const objects = (a?: any[]) =>
@@ -112,6 +120,7 @@ export function safetyFingerprint(s: Scene): string {
     riskInputs: s.riskInputs,
     demand: s.demandInputs,
     subsoil: s.subsoil,
+    groups: s.groups,
   });
 }
 
@@ -443,13 +452,41 @@ export function assessRisk(
           .map((src) => `«${src.name}»`)
           .join(', ') || 'el subsuelo';
       const supportPct = Math.round(conflict.support * 100);
+      const loadTag =
+        typeof conflict.surfaceLoadKgM2 === 'number'
+          ? ` (${Math.round(conflict.surfaceLoadKgM2)} kg/m²)`
+          : '';
       add(
         'subsoil-load-' + conflict.itemId,
         conflict.level,
         conflict.level === 'critical'
-          ? `Carga pesada sobre forjado sin apoyo: ${conflict.itemName}`
-          : `Carga pesada con apoyo parcial en subsuelo: ${conflict.itemName}`,
-        `Pisa el forjado de ${areaSummary} fuera del radio de apoyo de pilares y muros de carga (apoyo mínimo ${supportPct} %). Reubica la pieza fuera del garaje, acércala a un pilar, muro interior o muro perimetral, o desmarca «Carga pesada» si no aplica.`
+          ? `Elemento pesado sobre forjado sin apoyo: ${conflict.itemName}${loadTag}`
+          : `Elemento pesado con apoyo parcial en subsuelo: ${conflict.itemName}${loadTag}`,
+        `Pisa el forjado de ${areaSummary} fuera del radio de apoyo de pilares y muros de carga (apoyo mínimo ${supportPct} %). Reubica la pieza fuera del garaje, acércala a un pilar, muro interior o muro perimetral, o revisa su carga superficial. El umbral de 500 kg/m² es orientativo y no certifica seguridad estructural.`
+      );
+    }
+  }
+
+  if (venueMap) {
+    const coverBallasts = evaluateAllCoverBallasts(s, venueMap);
+    for (const {cover, status} of coverBallasts) {
+      if (!status.configured || status.complete) continue;
+      const parts: string[] = [];
+      if (status.missingCount > 0) {
+        parts.push(
+          `faltan ${status.missingCount} lastre(s) (${status.linkedCount}/${status.requiredCount} vinculados para ${status.spansCount} tramos de ${status.spanMeters} m)`
+        );
+      }
+      if (status.underMassBallasts.length > 0) {
+        parts.push(
+          `${status.underMassBallasts.length} lastre(s) por debajo de ${status.requiredMassPerUnitKg} kg`
+        );
+      }
+      add(
+        'ballast-missing-' + cover.id,
+        'warning',
+        `Dotación de lastres incompleta en ${cover.name}`,
+        `${parts.join(' · ')}. Coloca o agrupa (Ctrl+G) los lastres requeridos por la ficha del fabricante y comprueba su masa.`
       );
     }
   }

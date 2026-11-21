@@ -1,4 +1,8 @@
 import {useEffect} from 'react';
+import {
+  groupSelection,
+  ungroupTopLevel,
+} from '../../engine/cartography/groups';
 import {useProjectStore} from '../../store/useProjectStore';
 import {
   copyItemsFromScene,
@@ -10,6 +14,8 @@ import {
 /**
  * Hook global de atajos de teclado para el lienzo:
  * - `Ctrl+C` / `Ctrl+V`: copiar y pegar selección (única o múltiple)
+ * - `Ctrl+G`: agrupar elementos seleccionados (soporta niveles anidados)
+ * - `Mayús+G` (o `Ctrl+Mayús+G`): deshacer el último nivel de agrupación
  * - `Supr` (`Delete`): eliminar selección respetando elementos `locked`
  * - `Ctrl+Z` / `Ctrl+Y` (y `Ctrl+Shift+Z`): deshacer / rehacer
  *
@@ -40,6 +46,48 @@ export function useMapShortcuts(
         if (state.panel === 'simulate') return;
         e.preventDefault();
         onUndoRedo(true);
+        return;
+      }
+
+      // Agrupar selección (Ctrl+G)
+      if (mod && !e.shiftKey && key === 'g') {
+        if (state.panel !== 'design' || state.selectedIds.length < 2) return;
+        e.preventDefault();
+        let memberLeafIds: string[] = [];
+        state.updateScene((sc) => {
+          const res = groupSelection(sc, state.selectedIds);
+          if (res) memberLeafIds = res.memberLeafIds;
+        }, true);
+        if (memberLeafIds.length) {
+          state.setSelectedIds(memberLeafIds);
+          onSceneChanged();
+          state.showToast(
+            `Agrupados ${memberLeafIds.length} elementos · Mayús+G para desagrupar`
+          );
+        } else {
+          state.showToast('Selecciona al menos dos elementos o subgrupos distintos');
+        }
+        return;
+      }
+
+      // Desagrupar último nivel (Mayús+G o Ctrl+Mayús+G)
+      if (e.shiftKey && key === 'g') {
+        if (state.panel !== 'design' || !state.selectedIds.length) return;
+        e.preventDefault();
+        let remainingLeafIds: string[] = [];
+        let dissolved = 0;
+        state.updateScene((sc) => {
+          const res = ungroupTopLevel(sc, state.selectedIds);
+          if (res) {
+            dissolved = res.dissolvedGroupIds.length;
+            remainingLeafIds = res.remainingLeafIds;
+          }
+        }, true);
+        if (dissolved > 0) {
+          state.setSelectedIds(remainingLeafIds);
+          onSceneChanged();
+          state.showToast('Último nivel de agrupación deshecho');
+        }
         return;
       }
 

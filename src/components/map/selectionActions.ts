@@ -5,6 +5,7 @@
  * los elementos colocables del plano, incluido el subsuelo («Rayos X»).
  */
 import {cellAt, world} from '../../engine/cartography/geometry';
+import {pruneGroupsAfterDelete} from '../../engine/cartography/groups';
 import {emptySubsoil} from '../../engine/subsoil/heat';
 import type {
   ActivePanel,
@@ -354,6 +355,15 @@ export function deleteItemsFromScene(
     return result;
   }
   const idSet = new Set(ids);
+  // Al eliminar una carpa, eliminar también sus lastres subcomponente no bloqueados
+  for (const r of scene.infrastructure) {
+    if (r.kind === 'ballast' && r.attachedCoverId && idSet.has(r.attachedCoverId)) {
+      const parentCover = scene.infrastructure.find((c) => c.id === r.attachedCoverId);
+      if (parentCover && !parentCover.locked && !r.locked) {
+        idSet.add(r.id);
+      }
+    }
+  }
   let touchedFlows = false;
 
   for (const key of ALL_COLLECTIONS) {
@@ -377,6 +387,9 @@ export function deleteItemsFromScene(
   }
   if (touchedFlows) {
     scene.corridors = structuredClone(scene.flows || []);
+  }
+  if (result.deletedIds.length) {
+    pruneGroupsAfterDelete(scene, result.deletedIds);
   }
   return result;
 }

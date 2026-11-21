@@ -12,6 +12,19 @@ import {
 } from '../../engine/cartography/spawns';
 import {membership, phases} from '../../engine/logistics/phases';
 import {
+  rotateItemsRigid,
+  snapshotGroupTransform,
+} from '../../engine/cartography/groups';
+import {
+  addBallastSubcomponentsToCover,
+  coverSubcomponentBallastIds,
+  effectiveSupportAreaM2,
+  evaluateCoverBallast,
+  HEAVY_LOAD_THRESHOLD_KG_M2,
+  meetsHeavyLoadThreshold,
+  surfaceLoadKgM2,
+} from '../../engine/planning/ballast';
+import {
   evaluateItemSubsoilHeat,
   isHeavyLoadItem,
 } from '../../engine/subsoil/heat';
@@ -231,7 +244,7 @@ export const Inspector: React.FC<InspectorProps> = ({
       prop !== 'name' &&
       (!Number.isFinite(val) ||
         (['width', 'depth'].includes(prop) &&
-          (Number(val) < 0.5 || Number(val) > 100)) ||
+          (Number(val) < 0.2 || Number(val) > 100)) ||
         (prop === 'x' && (Number(val) < 0 || Number(val) > m.widthMeters)) ||
         (prop === 'y' && (Number(val) < 0 || Number(val) > m.heightMeters)))
     ) {
@@ -257,7 +270,27 @@ export const Inspector: React.FC<InspectorProps> = ({
       let v: string | number = val;
       if (prop === 'x') v = (Number(val) / m.widthMeters) * 100;
       if (prop === 'y') v = (Number(val) / m.heightMeters) * 100;
+      const prevArea =
+        typeof target.width === 'number' && typeof target.depth === 'number'
+          ? target.width * target.depth
+          : 0;
+      const prevRotation = Number(target.rotation) || 0;
       target[prop] = v;
+      if (prop === 'rotation' && target.role === 'cover') {
+        const subIds = coverSubcomponentBallastIds(scene, String(target.id));
+        if (subIds.length) {
+          const snaps = snapshotGroupTransform(scene, subIds);
+          const deltaDeg = (Number(v) || 0) - prevRotation;
+          rotateItemsRigid(
+            scene,
+            subIds,
+            snaps,
+            world([Number(target.x), Number(target.y)], m),
+            deltaDeg,
+            m
+          );
+        }
+      }
       if (
         isEntrance &&
         (prop === 'x' || prop === 'y') &&
@@ -273,7 +306,22 @@ export const Inspector: React.FC<InspectorProps> = ({
         }
       }
       if (typeof target.width === 'number' && typeof target.depth === 'number') {
-        target.area = target.width * target.depth;
+        const nextArea = target.width * target.depth;
+        target.area = nextArea;
+        if (
+          target.kind === 'ballast' &&
+          (prop === 'width' || prop === 'depth')
+        ) {
+          const curSupport = Number(target.supportAreaM2);
+          if (
+            !Number.isFinite(curSupport) ||
+            curSupport <= 0 ||
+            Math.abs(curSupport - prevArea) < 0.01
+          ) {
+            target.supportAreaM2 = Math.round(nextArea * 100) / 100;
+          }
+          target.heavyLoad = meetsHeavyLoadThreshold(target);
+        }
       }
     }, true);
     onSceneChanged();
@@ -1145,6 +1193,393 @@ export const Inspector: React.FC<InspectorProps> = ({
         </>
       )}
 
+      {!isNote && !isLine && !isEntrance && (item as Infrastructure).kind === 'ballast' && (
+        (() => {
+          const ballast = item as Infrastructure;
+          const parentCover = ballast.attachedCoverId
+            ? s.infrastructure.find((r) => r.id === ballast.attachedCoverId)
+            : undefined;
+          const supportArea = effectiveSupportAreaM2(ballast);
+          const loadKgM2 = surfaceLoadKgM2(ballast);
+          const updateBallast = (
+            patch: Partial<
+              Pick<Infrastructure, 'massKg' | 'supportAreaM2' | 'attachedCoverId'>
+            >
+          ) => {
+            updateScene((scene) => {
+              const target = scene.infrastructure.find((r) => r.id === ballast.id);
+              if (!target) return;
+              Object.assign(target, patch);
+              if ('massKg' in patch || 'supportAreaM2' in patch) {
+                target.heavyLoad = meetsHeavyLoadThreshold(target);
+              }
+            }, true);
+            onSceneChanged();
+          };
+          return (
+            <fieldset className="ballast-fieldset" id="ballast-properties">
+              <legend>Lastre / contrapeso</legend>
+              {parentCover && (
+                <div className="small-note" id="ballast-parent-cover" style={{marginBottom: '8px'}}>
+                  <p>
+                    Subcomponente de <b>{parentCover.name}</b> (se mueve con la
+                    carpa; editable aquí de forma independiente).
+                  </p>
+                  <div className="two" style={{marginTop: '4px'}}>
+                    <button
+                      type="button"
+                      id="select-parent-cover"
+                      className="quiet"
+                      onClick={() => setSelectedIds([parentCover.id])}
+                    >
+                      Ir a la carpa
+                    </button>
+                    <button
+                      type="button"
+                      id="detach-ballast"
+                      className="quiet"
+                      onClick={() => {
+                        updateBallast({attachedCoverId: undefined});
+                        showToast('Lastre desvinculado de la carpa');
+                      }}
+                    >
+                      Desvincular
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="two">
+                <label>
+                  Masa (kg)
+                  <input
+                    id="edit-ballast-mass"
+                    type="number"
+                    min="1"
+                    max="50000"
+                    step="10"
+                    disabled={isLocked}
+                    key={`bmass-${ballast.id}-${ballast.massKg ?? 500}`}
+                    defaultValue={ballast.massKg ?? 500}
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value);
+                      if (!Number.isFinite(v) || v <= 0 || v > 50000) {
+                        showToast('Masa válida: entre 1 y 50.000 kg');
+                        return;
+                      }
+                      if (v !== ballast.massKg) updateBallast({massKg: v});
+                    }}
+                  />
+                </label>
+                <label>
+                  Superficie apoyo (m²)
+                  <input
+                    id="edit-ballast-area"
+                    type="number"
+                    min="0.05"
+                    max="100"
+                    step="0.05"
+                    disabled={isLocked}
+                    key={`barea-${ballast.id}-${supportArea.toFixed(2)}`}
+                    defaultValue={Number(supportArea.toFixed(2))}
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value);
+                      if (!Number.isFinite(v) || v < 0.05 || v > 100) {
+                        showToast('Superficie válida: entre 0,05 y 100 m²');
+                        return;
+                      }
+                      updateBallast({supportAreaM2: v});
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="small-note" id="ballast-surface-load">
+                Carga superficial transmitida al suelo:{' '}
+                <b>
+                  {loadKgM2 !== null
+                    ? `${Math.round(loadKgM2).toLocaleString('es-ES')} kg/m²`
+                    : '—'}
+                </b>
+                {loadKgM2 !== null && loadKgM2 >= HEAVY_LOAD_THRESHOLD_KG_M2
+                  ? ` (≥ ${HEAVY_LOAD_THRESHOLD_KG_M2} kg/m²)`
+                  : ''}
+              </p>
+            </fieldset>
+          );
+        })()
+      )}
+
+      {!isNote && !isLine && !isEntrance && (item as Infrastructure).role === 'cover' && (
+        (() => {
+          const cover = item as Infrastructure;
+          const st = evaluateCoverBallast(cover, s, m);
+          const updateCover = (
+            patch: Partial<
+              Pick<
+                Infrastructure,
+                | 'tentMassKg'
+                | 'ballastSpanMeters'
+                | 'ballastsPerSpan'
+                | 'ballastRequiredMassKg'
+              >
+            >
+          ) => {
+            updateScene((scene) => {
+              const target = scene.infrastructure.find((r) => r.id === cover.id);
+              if (target) Object.assign(target, patch);
+            }, true);
+            onSceneChanged();
+          };
+          return (
+            <fieldset className="ballast-fieldset" id="cover-ballast-config">
+              <legend>Dotación de lastres (carpa)</legend>
+              <label>
+                Peso propio de la carpa (kg, separado)
+                <input
+                  id="edit-tent-mass"
+                  type="number"
+                  min="0"
+                  max="50000"
+                  step="10"
+                  disabled={isLocked}
+                  key={`tmass-${cover.id}-${cover.tentMassKg ?? ''}`}
+                  defaultValue={cover.tentMassKg ?? ''}
+                  placeholder="Opcional"
+                  onKeyDown={commitOnEnter}
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      updateCover({tentMassKg: undefined});
+                      return;
+                    }
+                    const v = Number(raw);
+                    if (!Number.isFinite(v) || v < 0 || v > 50000) return;
+                    updateCover({tentMassKg: v});
+                  }}
+                />
+              </label>
+              <div className="two">
+                <label>
+                  Cada tramo X (m)
+                  <input
+                    id="edit-ballast-span"
+                    type="number"
+                    min="0.5"
+                    max="100"
+                    step="0.5"
+                    disabled={isLocked}
+                    key={`bspan-${cover.id}-${cover.ballastSpanMeters ?? ''}`}
+                    defaultValue={cover.ballastSpanMeters ?? ''}
+                    placeholder="Según ficha"
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      if (!raw) {
+                        updateCover({ballastSpanMeters: undefined});
+                        return;
+                      }
+                      const v = Number(raw);
+                      if (!Number.isFinite(v) || v < 0.5 || v > 100) {
+                        showToast('Tramo válido: entre 0,5 y 100 m');
+                        return;
+                      }
+                      updateCover({ballastSpanMeters: v});
+                    }}
+                  />
+                </label>
+                <label>
+                  Lastres / tramo
+                  <input
+                    id="edit-ballasts-per-span"
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="1"
+                    disabled={isLocked}
+                    key={`bper-${cover.id}-${cover.ballastsPerSpan ?? ''}`}
+                    defaultValue={cover.ballastsPerSpan ?? ''}
+                    placeholder="Ej. 2"
+                    onKeyDown={commitOnEnter}
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      if (!raw) {
+                        updateCover({ballastsPerSpan: undefined});
+                        return;
+                      }
+                      const v = Math.round(Number(raw));
+                      if (!Number.isFinite(v) || v < 0 || v > 50) return;
+                      updateCover({ballastsPerSpan: v});
+                    }}
+                  />
+                </label>
+              </div>
+              <label>
+                Masa mínima por lastre (kg, ficha técnica)
+                <input
+                  id="edit-ballast-req-mass"
+                  type="number"
+                  min="0"
+                  max="50000"
+                  step="10"
+                  disabled={isLocked}
+                  key={`breq-${cover.id}-${cover.ballastRequiredMassKg ?? ''}`}
+                  defaultValue={cover.ballastRequiredMassKg ?? ''}
+                  placeholder="Opcional"
+                  onKeyDown={commitOnEnter}
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      updateCover({ballastRequiredMassKg: undefined});
+                      return;
+                    }
+                    const v = Number(raw);
+                    if (!Number.isFinite(v) || v < 0 || v > 50000) return;
+                    updateCover({ballastRequiredMassKg: v});
+                  }}
+                />
+              </label>
+              <div className="two" style={{marginTop: '8px'}}>
+                <button
+                  type="button"
+                  id="add-cover-ballast"
+                  className="quiet"
+                  disabled={isLocked}
+                  onClick={() => {
+                    let created: string[] = [];
+                    updateScene((scene) => {
+                      const target = scene.infrastructure.find(
+                        (r) => r.id === cover.id
+                      );
+                      if (!target) return;
+                      created = addBallastSubcomponentsToCover(target, scene, m, 1);
+                    }, true);
+                    if (created.length) {
+                      onSceneChanged();
+                      showToast('Lastre añadido como subcomponente de la carpa');
+                    }
+                  }}
+                >
+                  + Añadir lastre
+                </button>
+                {st.configured && st.missingCount > 0 && (
+                  <button
+                    type="button"
+                    id="generate-missing-ballasts"
+                    className="quiet"
+                    disabled={isLocked}
+                    onClick={() => {
+                      let created: string[] = [];
+                      updateScene((scene) => {
+                        const target = scene.infrastructure.find(
+                          (r) => r.id === cover.id
+                        );
+                        if (!target) return;
+                        created = addBallastSubcomponentsToCover(
+                          target,
+                          scene,
+                          m,
+                          st.missingCount
+                        );
+                      }, true);
+                      if (created.length) {
+                        onSceneChanged();
+                        showToast(
+                          `${created.length} lastre(s) generados en la carpa`
+                        );
+                      }
+                    }}
+                  >
+                    Generar {st.missingCount} faltantes
+                  </button>
+                )}
+              </div>
+              {st.linkedBallasts.length > 0 && (
+                <ul
+                  id="cover-ballast-list"
+                  className="multi-select-summary"
+                  style={{marginTop: '8px'}}
+                >
+                  {st.linkedBallasts.map((b) => {
+                    const load = surfaceLoadKgM2(b);
+                    return (
+                      <li key={b.id}>
+                        <button
+                          type="button"
+                          className="quiet"
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '0.78rem',
+                            textAlign: 'left',
+                          }}
+                          onClick={() => setSelectedIds([b.id])}
+                        >
+                          {b.name} · {b.massKg ?? 500} kg
+                          {load !== null ? ` (${Math.round(load)} kg/m²)` : ''}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger quiet"
+                          aria-label={`Eliminar ${b.name}`}
+                          style={{padding: '2px 6px', fontSize: '0.75rem'}}
+                          onClick={() => {
+                            updateScene((scene) => {
+                              deleteItemsFromScene(scene, [b.id], panel);
+                            }, true);
+                            onSceneChanged();
+                          }}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div id="cover-ballast-summary" className="small-note" style={{marginTop: '8px'}}>
+                {st.configured ? (
+                  <p>
+                    Necesarios: <b>{st.requiredCount}</b> ({st.spansCount}{' '}
+                    {st.spansCount === 1 ? 'tramo' : 'tramos'} de {num(st.spanMeters)} m
+                    {' × '}
+                    {st.ballastsPerSpan}) · Vinculados: <b>{st.linkedCount}</b>
+                  </p>
+                ) : (
+                  <p>
+                    Configura tramo y lastres/tramo según la ficha del fabricante
+                    (vinculados ahora: <b>{st.linkedCount}</b>).
+                  </p>
+                )}
+                <p>
+                  Peso carpa: <b>{st.tentMassKg > 0 ? `${st.tentMassKg} kg` : '—'}</b> ·
+                  Lastres: <b>{st.totalBallastMassKg} kg</b> · Máx. al suelo:{' '}
+                  <b>
+                    {st.maxBallastSurfaceLoadKgM2 > 0
+                      ? `${Math.round(st.maxBallastSurfaceLoadKgM2)} kg/m²`
+                      : '—'}
+                  </b>
+                </p>
+              </div>
+              {st.configured && !st.complete && (
+                <p className="warning" id="cover-ballast-warning">
+                  {st.missingCount > 0
+                    ? `⚠ Faltan ${st.missingCount} lastre(s) (${st.linkedCount}/${st.requiredCount} vinculados).`
+                    : ''}
+                  {st.underMassBallasts.length > 0
+                    ? ` ⚠ ${st.underMassBallasts.length} lastre(s) por debajo de ${st.requiredMassPerUnitKg} kg.`
+                    : ''}
+                </p>
+              )}
+              <p className="small-note">
+                La separación y la masa deben proceder de la ficha del fabricante
+                o del cálculo técnico. El umbral de 500 kg/m² no valida la
+                seguridad del montaje.
+              </p>
+            </fieldset>
+          );
+        })()
+      )}
+
       {!isNote && !isLine && !isEntrance && (
         <>
           <label className="check">
@@ -1164,8 +1599,14 @@ export const Inspector: React.FC<InspectorProps> = ({
                 onSceneChanged();
               }}
             />{' '}
-            Carga pesada (restricción de subsuelo)
+            Elemento pesado (umbral revisión ≥ {HEAVY_LOAD_THRESHOLD_KG_M2} kg/m²)
           </label>
+          {(item as Infrastructure).kind === 'ballast' && (
+            <p className="small-note">
+              Umbral orientativo de revisión del proyecto (no es un límite
+              estructural certificado).
+            </p>
+          )}
           {(() => {
             if (!isHeavyLoadItem(item) || !s.subsoil) return null;
             const conflict = evaluateItemSubsoilHeat(item, s.subsoil, m);

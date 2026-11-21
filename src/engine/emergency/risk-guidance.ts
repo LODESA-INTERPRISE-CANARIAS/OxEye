@@ -90,6 +90,34 @@ export function resolveRiskGuide(issue: RiskIssue, scene: Scene): RiskGuide {
     };
   }
 
+  // 1b. Dotación de lastres incompleta en una carpa
+  if (id.startsWith('ballast-missing-')) {
+    const coverId = id.slice('ballast-missing-'.length);
+    return {
+      icon: '⛁',
+      cause:
+        'La carpa tiene configurada una dotación de lastres según ficha técnica y el número o masa de los lastres vinculados es inferior al requerido.',
+      steps: [
+        'Coloca elementos «Lastre / contrapeso» desde el catálogo (Logística) junto a la carpa.',
+        'Ajusta su masa (kg) y superficie de apoyo según la ficha del fabricante.',
+        'Selecciona los lastres y la carpa y pulsa Ctrl+G para agruparlos y moverlos juntos.',
+      ],
+      actions: [
+        {
+          label: 'Seleccionar carpa',
+          kind: 'select-item',
+          itemId: coverId,
+          primary: true,
+        },
+        {
+          label: 'Colocar lastre / contrapeso',
+          kind: 'switch-tool',
+          tool: 'place:ballast',
+        },
+      ],
+    };
+  }
+
   // 2. Vehículo con capacidad > 1
   if (id.startsWith('vehicle-capacity-')) {
     const itemId = id.slice('vehicle-capacity-'.length);

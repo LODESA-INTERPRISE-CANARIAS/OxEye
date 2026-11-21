@@ -135,6 +135,10 @@ export interface BoothItem {
   close?: number;
   locked?: boolean;
   heavyLoad?: boolean;
+  /** Masa propia del elemento en kg (opcional). */
+  massKg?: number;
+  /** Superficie de apoyo sobre el suelo en m² (opcional; por defecto width × depth). */
+  supportAreaM2?: number;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   sound?: SoundConfig;
@@ -170,6 +174,20 @@ export interface InfrastructureItem {
   benchWidth?: number;
   locked?: boolean;
   heavyLoad?: boolean;
+  /** Masa propia del elemento en kg (opcional). */
+  massKg?: number;
+  /** Superficie de apoyo sobre el suelo en m² (opcional; por defecto width × depth). */
+  supportAreaM2?: number;
+  /** Peso propio de la carpa en kg (mantenido separado de sus lastres y de la carga al suelo). */
+  tentMassKg?: number;
+  /** Longitud de tramo (m) según ficha del fabricante para calcular la dotación de lastres de una carpa. */
+  ballastSpanMeters?: number;
+  /** Número de lastres necesarios por cada tramo de `ballastSpanMeters` m. */
+  ballastsPerSpan?: number;
+  /** Masa mínima requerida por lastre (kg) según ficha técnica del fabricante (opcional). */
+  ballastRequiredMassKg?: number;
+  /** ID de la carpa a la que se vincula explícitamente un lastre (opcional). */
+  attachedCoverId?: string;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   coverGroup?: string;
@@ -420,6 +438,16 @@ export interface BaseScenarioConfig {
   booths: BoothItem[];
 }
 
+/** Grupo jerárquico de elementos del plano (p. ej. lastres agrupados entre sí y luego con una carpa). */
+export interface ElementGroup {
+  id: string;
+  name?: string;
+  /** IDs de hijos directos (elementos del plano o subgrupos). */
+  memberIds: string[];
+  /** ID del grupo padre si este grupo está anidado dentro de otro. */
+  parentGroupId?: string;
+}
+
 /** Escena completa de un recinto dentro del proyecto. */
 export interface Scene {
   version: number;
@@ -459,6 +487,8 @@ export interface Scene {
   annotations: AnnotationItem[];
   infrastructure: InfrastructureItem[];
   entrances: EntranceItem[];
+  /** Grupos jerárquicos de elementos (Ctrl+G / Mayús+G). */
+  groups?: ElementGroup[];
   subsoil?: SubsoilStructure;
   pendingStock?: Array<BoothItem | InfrastructureItem | EntranceItem>;
   companies?: CompanyItem[];

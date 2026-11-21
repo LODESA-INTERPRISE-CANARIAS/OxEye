@@ -62,6 +62,19 @@ export function objectSkin(
             .join('')
         )
         .join('');
+  } else if (kind === 'ballast') {
+    const r = Math.min(w, h) * 0.16;
+    content =
+      `<rect x="${-w * 0.42}" y="${-h * 0.42}" width="${w * 0.84}" height="${
+        h * 0.84
+      }" rx=".12" fill="none" stroke="#2c3440" stroke-width=".12"/>` +
+      `<line x1="${-w * 0.36}" y1="${-h * 0.36}" x2="${w * 0.36}" y2="${
+        h * 0.36
+      }" stroke="#3e4959" stroke-width=".1"/>` +
+      `<line x1="${w * 0.36}" y1="${-h * 0.36}" x2="${-w * 0.36}" y2="${
+        h * 0.36
+      }" stroke="#3e4959" stroke-width=".1"/>` +
+      `<circle cx="0" cy="0" r="${r}" fill="#e2e8f0" stroke="#2c3440" stroke-width=".12"/>`;
   } else if (kind === 'stage') {
     content =
       `<rect x="${-w * 0.45}" y="${h * 0.3}" width="${w * 0.9}" height="${

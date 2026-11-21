@@ -27,6 +27,16 @@ import {
   polylineLength,
   world,
 } from '../../engine/cartography/geometry';
+import {
+  expandSelectionToGroups,
+  groupBoundingBoxMeters,
+  type GroupTransformSnapshot,
+  resolveGroupLeafIds,
+  rotateItemsRigid,
+  snapshotGroupTransform,
+  topGroupOf,
+  translateItemsRigid,
+} from '../../engine/cartography/groups';
 import {objectSkin} from '../../engine/cartography/object-skin';
 import {
   generateCoherentSpawns,
@@ -45,6 +55,7 @@ import {
   phases,
 } from '../../engine/logistics/phases';
 import {insertStock} from '../../engine/planning/inventory';
+import {coverSubcomponentBallastIds} from '../../engine/planning/ballast';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   Booth,
@@ -148,6 +159,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       xrayHandle?: 'a' | 'b' | null;
       fenceHandle?: 'a' | 'b' | null;
       fencesSnapshot?: GeometryTrace[] | null;
+      groupLeafIds?: string[] | null;
+      groupSnapshots?: Map<string, GroupTransformSnapshot> | null;
+      subBallastIds?: string[] | null;
+      subBallastSnapshots?: Map<string, GroupTransformSnapshot> | null;
+      groupRotate?: boolean;
+      groupPivot?: Point | null;
+      groupStartAngle?: number;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       snapshot: any;
       moved: boolean;
@@ -592,6 +610,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         )}" fill="#70af9e" fill-opacity=".18" stroke="#387f82" stroke-width=".5" stroke-dasharray="2 1"/>`;
       }
       const selectedSet = new Set(selectedIds);
+      // Líneas discretas de vínculo entre una carpa y sus lastres subcomponente cuando alguno está seleccionado
+      for (const b of s.infrastructure) {
+        if (b.kind !== 'ballast' || !b.attachedCoverId) continue;
+        const parentCover = s.infrastructure.find(
+          (c) => c.id === b.attachedCoverId
+        );
+        if (!parentCover) continue;
+        if (!selectedSet.has(b.id) && !selectedSet.has(parentCover.id)) continue;
+        const [bx, by] = world([b.x, b.y], m);
+        const [cx, cy] = world([parentCover.x, parentCover.y], m);
+        html += `<line x1="${cx}" y1="${cy}" x2="${bx}" y2="${by}" stroke="#57367b" stroke-opacity=".45" stroke-width=".3" stroke-dasharray=".8 .6" pointer-events="none"/>`;
+      }
       for (const f of s.fences || []) {
         const isSel = !!(f.id && selectedSet.has(f.id));
         const fPts = (f.points || []).map((q) => world(q, m));
@@ -805,6 +835,17 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           m,
           clientW / viewRef.current.w
         );
+      } else if (panel === 'design' && !proposal && selectedIds.length > 1) {
+        const box = groupBoundingBoxMeters(s, selectedIds, m);
+        if (box) {
+          const pad = 1.1;
+          const bx = box.minX - pad;
+          const by = box.minY - pad;
+          const bw = box.maxX - box.minX + pad * 2;
+          const bh = box.maxY - box.minY + pad * 2;
+          const handleY = by - 3.2;
+          html += `<g class="group-transform-controls"><rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx=".8" fill="none" stroke="#57367b" stroke-width=".45" stroke-dasharray="1.4 .8" pointer-events="none"/><line x1="${box.cx}" y1="${by}" x2="${box.cx}" y2="${handleY}" stroke="#57367b" stroke-width=".35" pointer-events="none"/><circle data-group-rotate="true" cx="${box.cx}" cy="${handleY}" r="1.25" fill="#fff" stroke="#57367b" stroke-width=".42" style="cursor:grab"><title>Girar grupo</title></circle></g>`;
+        }
       }
 
       scenEl.innerHTML = html;
@@ -1258,9 +1299,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             maxRatePerHour: 0,
           });
         } else if (c.role) {
+          const defaultMass =
+            kind === 'ballast' ? (c.defaultMassKg ?? 500) : undefined;
+          const defaultArea = c.w * c.h;
           sc.infrastructure.push({
             ...baseObj,
             role: c.role,
+            ...(kind === 'ballast' && defaultMass !== undefined
+              ? {
+                  massKg: defaultMass,
+                  supportAreaM2: defaultArea,
+                  heavyLoad: defaultMass / defaultArea >= 500,
+                }
+              : {}),
             capacity:
               kind === 'picnic' ? 6 : c.role === 'emergency' ? 1 : 10,
             staff: c.role === 'emergency' ? 2 : 0,
@@ -1397,7 +1448,62 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           ? targetEl.closest<HTMLElement>('[data-handle]')?.dataset.handle ||
             null
           : null;
+      const isGroupRotate =
+        panel === 'design' &&
+        selectedIds.length > 1 &&
+        !!targetEl.closest<HTMLElement>('[data-group-rotate]');
+      if (isGroupRotate) {
+        const box = groupBoundingBoxMeters(s, selectedIds, m);
+        if (box) {
+          const startAngle =
+            (Math.atan2(p[1] - box.cy, p[0] - box.cx) * 180) / Math.PI;
+          dragRef.current = {
+            p,
+            client: [e.clientX, e.clientY],
+            view: {...viewRef.current},
+            id: null,
+            o: null,
+            old: null,
+            handle: null,
+            groupLeafIds: [...selectedIds],
+            groupSnapshots: snapshotGroupTransform(s, selectedIds),
+            groupRotate: true,
+            groupPivot: [box.cx, box.cy],
+            groupStartAngle: startAngle,
+            snapshot: null,
+            moved: false,
+            checkpoint: false,
+          };
+          mapDivRef.current?.setPointerCapture(e.pointerId);
+          return;
+        }
+      }
       const isFenceTarget = !!(o && (s.fences || []).includes(o));
+      const isMovableObject = !!(
+        o &&
+        (s.base.booths.includes(o) || s.infrastructure.includes(o))
+      );
+      let groupLeafIds: string[] | null = null;
+      let subBallastIds: string[] | null = null;
+      if (isMovableObject && resolvedId) {
+        if (o.role === 'cover') {
+          const subs = coverSubcomponentBallastIds(s, resolvedId);
+          if (subs.length) subBallastIds = subs;
+        }
+        if (!handle) {
+          const topGrp = topGroupOf(s.groups, resolvedId);
+          if (topGrp) {
+            groupLeafIds = resolveGroupLeafIds(s.groups, topGrp.id);
+          } else if (
+            selectedIds.length > 1 &&
+            selectedIds.includes(resolvedId)
+          ) {
+            groupLeafIds = expandSelectionToGroups(s, selectedIds);
+          } else if (subBallastIds?.length) {
+            groupLeafIds = [resolvedId, ...subBallastIds];
+          }
+        }
+      }
       dragRef.current = {
         p,
         client: [e.clientX, e.clientY],
@@ -1413,6 +1519,14 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         xrayHandle,
         fenceHandle,
         fencesSnapshot: isFenceTarget ? structuredClone(s.fences || []) : null,
+        groupLeafIds,
+        groupSnapshots: groupLeafIds
+          ? snapshotGroupTransform(s, groupLeafIds)
+          : null,
+        subBallastIds,
+        subBallastSnapshots: subBallastIds
+          ? snapshotGroupTransform(s, subBallastIds)
+          : null,
         snapshot: o ? structuredClone(o) : null,
         moved: false,
         checkpoint: false,
@@ -1573,8 +1687,90 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         );
         if (patch) {
           Object.assign(drag.o, patch);
+          if (
+            drag.handle === 'rotate' &&
+            drag.subBallastIds?.length &&
+            drag.subBallastSnapshots
+          ) {
+            const s = currentScene();
+            const deltaDeg =
+              (Number(patch.rotation) || 0) -
+              (Number(drag.snapshot.rotation) || 0);
+            rotateItemsRigid(
+              s,
+              drag.subBallastIds,
+              drag.subBallastSnapshots,
+              world([drag.o.x, drag.o.y], m),
+              deltaDeg,
+              m
+            );
+          }
           drawScenario();
         }
+        return;
+      }
+
+      if (
+        isSelectLike &&
+        drag.groupRotate &&
+        drag.groupLeafIds &&
+        drag.groupSnapshots &&
+        drag.groupPivot &&
+        panel === 'design'
+      ) {
+        const s = currentScene();
+        const rawAngle =
+          (Math.atan2(p[1] - drag.groupPivot[1], p[0] - drag.groupPivot[0]) *
+            180) /
+          Math.PI;
+        let delta = rawAngle - (drag.groupStartAngle || 0);
+        if (e.shiftKey) delta = Math.round(delta / 15) * 15;
+        if (!drag.checkpoint) {
+          checkpoint();
+          drag.checkpoint = true;
+          onSceneChanged();
+        }
+        rotateItemsRigid(
+          s,
+          drag.groupLeafIds,
+          drag.groupSnapshots,
+          drag.groupPivot,
+          delta,
+          m
+        );
+        drawScenario();
+        return;
+      }
+
+      if (
+        isSelectLike &&
+        drag.groupLeafIds &&
+        drag.groupLeafIds.length > 1 &&
+        drag.groupSnapshots &&
+        panel === 'design'
+      ) {
+        const s = currentScene();
+        if (!drag.checkpoint) {
+          checkpoint();
+          drag.checkpoint = true;
+          onSceneChanged();
+        }
+        translateItemsRigid(
+          s,
+          drag.groupLeafIds,
+          drag.groupSnapshots,
+          p[0] - drag.p[0],
+          p[1] - drag.p[1],
+          m
+        );
+        // Si es una carpa arrastrada con sus subcomponentes (sin grupo Ctrl+G), mantener seleccionada la carpa
+        const isCoverWithSubsOnly =
+          drag.o?.role === 'cover' &&
+          drag.id &&
+          !topGroupOf(s.groups, drag.id) &&
+          selectedIds.length <= 1;
+        setSelectedIds(isCoverWithSubsOnly ? [drag.id] : drag.groupLeafIds);
+        drawScenario();
         return;
       }
 
@@ -1649,9 +1845,32 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         return;
       }
       if (tool === 'select' || tool === 'xray:select') {
-        if (e.shiftKey && d.id) toggleSelectedId(d.id);
-        else if (d.id) setSelectedIds([d.id]);
-        else if (!e.shiftKey) setSelectedIds([]);
+        const s = currentScene();
+        if (e.shiftKey && d.id) {
+          const topGrp = topGroupOf(s.groups, d.id);
+          if (topGrp) {
+            const leafIds = resolveGroupLeafIds(s.groups, topGrp.id);
+            const allSelected = leafIds.every((lid) =>
+              selectedIds.includes(lid)
+            );
+            if (allSelected) {
+              setSelectedIds(
+                selectedIds.filter((sid) => !leafIds.includes(sid))
+              );
+            } else {
+              setSelectedIds([...new Set([...selectedIds, ...leafIds])]);
+            }
+          } else {
+            toggleSelectedId(d.id);
+          }
+        } else if (d.id) {
+          const topGrp = topGroupOf(s.groups, d.id);
+          setSelectedIds(
+            topGrp ? resolveGroupLeafIds(s.groups, topGrp.id) : [d.id]
+          );
+        } else if (!e.shiftKey) {
+          setSelectedIds([]);
+        }
         return;
       }
       const m = currentMap();

@@ -1,5 +1,14 @@
 import React from 'react';
 import {cellAt, world} from '../../engine/cartography/geometry';
+import {
+  groupBoundingBoxMeters,
+  groupDepthForId,
+  groupSelection,
+  hasGroupInSelection,
+  rotateItemsRigid,
+  snapshotGroupTransform,
+  ungroupTopLevel,
+} from '../../engine/cartography/groups';
 import {rotateWall, wallMetrics} from '../../engine/subsoil/heat';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
@@ -449,9 +458,74 @@ export const MultiSelectionInspector: React.FC<
     }
   };
 
+  const isGrouped = hasGroupInSelection(scene, selectedIds);
+  const maxGroupDepth = selectedIds.reduce(
+    (max, id) => Math.max(max, groupDepthForId(scene.groups, id)),
+    0
+  );
+  const groupBox = groupBoundingBoxMeters(scene, selectedIds, map);
+
+  const handleGroup = () => {
+    let memberLeafIds: string[] = [];
+    updateScene((sc) => {
+      const res = groupSelection(sc, selectedIds);
+      if (res) memberLeafIds = res.memberLeafIds;
+    }, true);
+    if (memberLeafIds.length) {
+      setSelectedIds(memberLeafIds);
+      onSceneChanged();
+      showToast(`Agrupados ${memberLeafIds.length} elementos · Mayús+G para desagrupar`);
+    } else {
+      showToast('Estos elementos ya forman un mismo grupo');
+    }
+  };
+
+  const handleUngroup = () => {
+    let remaining: string[] = [];
+    let dissolved = 0;
+    updateScene((sc) => {
+      const res = ungroupTopLevel(sc, selectedIds);
+      if (res) {
+        dissolved = res.dissolvedGroupIds.length;
+        remaining = res.remainingLeafIds;
+      }
+    }, true);
+    if (dissolved > 0) {
+      setSelectedIds(remaining);
+      onSceneChanged();
+      showToast('Último nivel de agrupación deshecho');
+    }
+  };
+
+  const handleRotateGroup = (deltaDeg: number) => {
+    if (!Number.isFinite(deltaDeg) || deltaDeg === 0 || !groupBox) return;
+    let rotated = false;
+    updateScene((sc) => {
+      const snaps = snapshotGroupTransform(sc, selectedIds);
+      rotated = rotateItemsRigid(
+        sc,
+        selectedIds,
+        snaps,
+        [groupBox.cx, groupBox.cy],
+        deltaDeg,
+        map
+      );
+    }, true);
+    if (rotated) {
+      onSceneChanged();
+      showToast(`Conjunto girado ${deltaDeg}°`);
+    } else {
+      showToast('No se pudo girar: revisa bloqueos o límites del plano');
+    }
+  };
+
   return (
     <>
-      <span className="eyebrow">SELECCIÓN MÚLTIPLE</span>
+      <span className="eyebrow">
+        {isGrouped
+          ? `GRUPO · NIVEL ${maxGroupDepth}`
+          : 'SELECCIÓN MÚLTIPLE'}
+      </span>
       <h3 id="multi-select-title">{selectedIds.length} elementos seleccionados</h3>
       <ul className="multi-select-summary">
         {[...counts.entries()].map(([col, n]) => (
@@ -468,6 +542,50 @@ export const MultiSelectionInspector: React.FC<
             ? 'elemento bloqueado (protegido al eliminar).'
             : 'elementos bloqueados (protegidos al eliminar).'}
         </p>
+      )}
+      {panel === 'design' && groupBox && (
+        <div className="two" style={{marginTop: '8px'}}>
+          <button
+            type="button"
+            id="rotate-group-ccw"
+            className="quiet"
+            onClick={() => handleRotateGroup(-15)}
+          >
+            ↺ −15°
+          </button>
+          <button
+            type="button"
+            id="rotate-group-cw"
+            className="quiet"
+            onClick={() => handleRotateGroup(15)}
+          >
+            ↻ +15°
+          </button>
+        </div>
+      )}
+      {panel === 'design' && (
+        <>
+          <button
+            type="button"
+            id="group-selection"
+            className="quiet wide"
+            style={{marginTop: '8px'}}
+            onClick={handleGroup}
+          >
+            Agrupar selección (Ctrl+G)
+          </button>
+          {isGrouped && (
+            <button
+              type="button"
+              id="ungroup-selection"
+              className="quiet wide"
+              style={{marginTop: '8px'}}
+              onClick={handleUngroup}
+            >
+              Desagrupar último nivel (Mayús+G)
+            </button>
+          )}
+        </>
       )}
       <button
         type="button"

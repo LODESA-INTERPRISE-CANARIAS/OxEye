@@ -5,6 +5,10 @@
  * de carga, y cálculo del mapa de calor estructural normalizado `[0, 1]`.
  */
 import {CATALOG} from '../../data/catalog';
+import {
+  HEAVY_LOAD_THRESHOLD_KG_M2,
+  surfaceLoadKgM2,
+} from '../planning/ballast';
 import type {
   BoothItem,
   InfrastructureItem,
@@ -290,24 +294,39 @@ export interface StructuralLoadConflict {
   heat: number;
   /** Nivel mínimo de apoyo estructural encontrado bajo la huella (`0` a `1`). */
   support: number;
+  /** Carga superficial calculada en kg/m² si la pieza declara masa y superficie. */
+  surfaceLoadKgM2?: number;
   level: 'critical' | 'warning';
   sources: StructuralHeatSource[];
 }
 
 /**
- * Determina si un puesto o infraestructura se considera carga pesada frente al subsuelo.
- * Respeta la marca explícita `item.heavyLoad` y, si no está definida, consulta el catálogo.
+ * Determina si un puesto o infraestructura se considera elemento pesado frente al subsuelo.
+ *
+ * Prioridad:
+ * 1. Marca explícita `item.heavyLoad` (editada o calculada al cambiar masa/superficie).
+ * 2. Carga superficial calculada `massKg / supportAreaM2 >= 500 kg/m²` (umbral de revisión).
+ * 3. Valor por defecto del catálogo (`CATALOG[kind/type/role].heavyLoad`).
  *
  * @param item - Puesto o elemento de infraestructura.
- * @returns `true` si la pieza se clasifica como carga pesada.
+ * @returns `true` si la pieza se clasifica como elemento pesado.
  */
 export function isHeavyLoadItem(item: {
   kind?: string;
   type?: string;
   role?: string;
   heavyLoad?: boolean;
+  massKg?: number;
+  width?: number;
+  depth?: number;
+  area?: number;
+  supportAreaM2?: number;
 }): boolean {
   if (typeof item.heavyLoad === 'boolean') return item.heavyLoad;
+  const computedLoad = surfaceLoadKgM2(item);
+  if (computedLoad !== null) {
+    return computedLoad >= HEAVY_LOAD_THRESHOLD_KG_M2;
+  }
   const byKind = item.kind ? CATALOG[item.kind] : undefined;
   if (byKind && typeof byKind.heavyLoad === 'boolean') return byKind.heavyLoad;
   const byType = item.type ? CATALOG[item.type] : undefined;
@@ -377,11 +396,13 @@ export function evaluateItemSubsoilHeat(
 
   const unsupported = Math.max(0, Math.min(1, 1 - minSupport));
   const sources = [...polySources.values()].sort((a, b) => b.heat - a.heat);
+  const load = surfaceLoadKgM2(item);
   return {
     itemId: item.id,
     itemName: item.name,
     heat: unsupported,
     support: minSupport,
+    ...(load !== null ? {surfaceLoadKgM2: load} : {}),
     level:
       minSupport < SUBSOIL_SUPPORT_THRESHOLDS.warning ? 'critical' : 'warning',
     sources,

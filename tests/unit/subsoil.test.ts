@@ -388,7 +388,25 @@ describe('Heavy Load Structural Risk Assessment', () => {
   it('classifies heavy loads by catalog defaults and respects explicit heavyLoad override', () => {
     expect(isHeavyLoadItem({kind: 'stage', type: 'stage'})).toBe(true);
     expect(isHeavyLoadItem({kind: 'food', type: 'food'})).toBe(true);
-    expect(isHeavyLoadItem({kind: 'cover', role: 'cover'})).toBe(true);
+    expect(isHeavyLoadItem({kind: 'cover', role: 'cover'})).toBe(false);
+    expect(
+      isHeavyLoadItem({
+        kind: 'ballast',
+        role: 'logistics',
+        massKg: 500,
+        width: 1,
+        depth: 1,
+      })
+    ).toBe(true);
+    expect(
+      isHeavyLoadItem({
+        kind: 'ballast',
+        role: 'logistics',
+        massKg: 400,
+        width: 1,
+        depth: 1,
+      })
+    ).toBe(false);
     expect(isHeavyLoadItem({kind: 'fire', role: 'emergency'})).toBe(true);
     expect(isHeavyLoadItem({kind: 'craft', type: 'commerce'})).toBe(false);
     expect(isHeavyLoadItem({kind: 'picnic', role: 'furniture'})).toBe(false);

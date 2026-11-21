@@ -1255,5 +1255,20 @@ export function validateScene(s: Scene): Scene {
       }
     }
   }
+  if (s.groups !== undefined) {
+    if (!Array.isArray(s.groups) || s.groups.length > 300) {
+      throw new Error('Agrupaciones de elementos no válidas.');
+    }
+    for (const g of s.groups) {
+      if (
+        !g ||
+        typeof g.id !== 'string' ||
+        !Array.isArray(g.memberIds) ||
+        g.memberIds.some((id) => typeof id !== 'string')
+      ) {
+        throw new Error('Grupo de elementos no válido.');
+      }
+    }
+  }
   return s;
 }

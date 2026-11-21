@@ -174,7 +174,7 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     const riskDialog = page.locator('#risk-dialog');
     await expect(riskDialog).toBeVisible();
     await expect(riskDialog).toContainText(
-      'Carga pesada sobre forjado sin apoyo: Escenario'
+      'Elemento pesado sobre forjado sin apoyo: Escenario'
     );
     await expect(riskDialog).toContainText('Perímetro del subsuelo');
     await expect(
