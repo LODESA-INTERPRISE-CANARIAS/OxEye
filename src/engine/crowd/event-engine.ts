@@ -28,6 +28,11 @@ import {yieldForPriority} from '../emergency/priority';
 import {FeedbackLog} from './feedback';
 import {buildGrid, flow, rng} from './grid-flow';
 import {pickPersona} from './personas';
+import {
+  buildRouteNetwork,
+  routeBranchBias,
+  type RouteNetwork,
+} from '../cartography/route-network';
 import {gateMode} from './presets';
 import {StewardSystem} from './steward-system';
 import {recordMovement} from './route-traces';
@@ -84,6 +89,7 @@ export class EventEngine {
   closing: boolean;
   flowCache: Map<number, Int32Array>;
   fenceSegments: Array<{id: string; name: string; a: Point; b: Point}>;
+  routeNetwork: RouteNetwork;
   rebelGrid: NavigationGrid | null;
   rebelFlowCache: Map<number, Int32Array>;
   agents: Agent[];
@@ -163,6 +169,10 @@ export class EventEngine {
     this.closing = false;
     this.flowCache = new Map();
     this.fenceSegments = fenceSegmentsMeters(this.s.fences || [], this.g.m);
+    this.routeNetwork = buildRouteNetwork(
+      [...(this.s.flows || []), ...(this.s.roadPlans || [])],
+      this.g.m
+    );
     this.rebelGrid = null;
     this.rebelFlowCache = new Map();
     this.agents = [];
@@ -1101,8 +1111,18 @@ export class EventEngine {
     const k = this.g.index(a.x, a.y);
     if (k < 0 || field[k] < 0) return null;
     if (k === goal) return destination;
+    const hasRoutes = this.routeNetwork.edges.length > 0;
+    const cellScore = (u: number): number => {
+      if (!hasRoutes) return field[u];
+      const pt = this.g.point(u);
+      const dens = this.hashDensity(u);
+      return (
+        field[u] +
+        routeBranchBias(pt, this.routeNetwork, dens, a.speed || 1.25, this.s.diameter || 0.5)
+      );
+    };
     const rank = (u: number, v: number): number =>
-      field[u] - field[v] ||
+      cellScore(u) - cellScore(v) ||
       Math.abs(
         Math.atan2(this.g.point(u)[1] - a.y, this.g.point(u)[0] - a.x) -
           (a.heading || 0)

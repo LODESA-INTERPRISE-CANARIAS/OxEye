@@ -43,6 +43,11 @@ import {
 } from '../../engine/cartography/groups';
 import {objectSkin} from '../../engine/cartography/object-skin';
 import {
+  buildRouteNetwork,
+  routePathD,
+  snapRoutePoint,
+} from '../../engine/cartography/route-network';
+import {
   generateCoherentSpawns,
   normalizeAccessFlows,
   snapEntranceToPerimeter,
@@ -203,6 +208,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const gridVisible = useProjectStore((s) => s.gridVisible);
     const labelsVisible = useProjectStore((s) => s.labelsVisible);
     const routesVisible = useProjectStore((s) => s.routesVisible);
+    const routesCurved = useProjectStore((s) => s.routesCurved);
     const xrayVisible = useProjectStore((s) => s.xrayVisible);
     const subsoilOnly = useProjectStore((s) => s.subsoilOnly);
     const daylight = useProjectStore((s) => s.daylight);
@@ -638,28 +644,51 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           o.name
         )}</title></polygon>`;
       }
-      if (routesVisible) {
-        for (const o of s.flows || []) {
-          const isFlowSel = !!(o.id && selectedSet.has(o.id));
-          const flowPts = (o.points || []).map((q) => world(q, m));
-          const midPt = flowPts[Math.floor(flowPts.length / 2)];
-          const fPtsAttr = flowPts.map((q) => q.join(',')).join(' ');
-          html += `<g data-id="${esc(o.id)}" class="emergency-corridor"><title>${esc(
-            o.name || 'Corredor de emergencias'
-          )} · ${num(o.width || 3.5)} m</title><polyline points="${fPtsAttr}" fill="none" stroke="#dc2626" stroke-opacity="${
-            isFlowSel ? '.34' : '.2'
-          }" stroke-width="${
-            o.width || 3.5
-          }" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${fPtsAttr}" fill="none" stroke="#ffffff" stroke-opacity=".85" stroke-width=".95" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/><polyline points="${fPtsAttr}" fill="none" stroke="${
-            isFlowSel ? '#991b1b' : '#dc2626'
-          }" stroke-width=".48" stroke-dasharray="1.8 1.2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>${
-            midPt
-              ? `<circle cx="${midPt[0]}" cy="${midPt[1]}" r="1.25" fill="#dc2626" stroke="#ffffff" stroke-width=".25" pointer-events="none"/><text x="${midPt[0]}" y="${
-                  midPt[1] + 0.45
-                }" text-anchor="middle" font-size="1.4" font-weight="700" fill="#ffffff" pointer-events="none">✚</text>`
-              : ''
-          }</g>`;
-        }
+      if (routesVisible && (s.flows || []).length) {
+        const flowList = s.flows || [];
+        const net = buildRouteNetwork(flowList, m);
+        // Capa 1: gálibo muy sutil unificado (opacidad en el <g> para fusionar ramales sin manchas)
+        const bands = flowList
+          .map((o) => {
+            const d = routePathD(
+              (o.points || []).map((q) => world(q, m)),
+              o.curved ?? routesCurved
+            );
+            return `<path data-id="${esc(o.id)}" d="${d}" fill="none" stroke="#b91c1c" stroke-width="${Math.min(
+              o.width || 3.5,
+              2.2
+            )}" stroke-linecap="round" stroke-linejoin="round"><title>${esc(
+              o.name || 'Corredor de emergencias'
+            )} · ${num(o.width || 3.5)} m</title></path>`;
+          })
+          .join('');
+        // Capa 2: trazo principal fino, discreto y nítido (con área táctil transparente para seleccionar fácil)
+        const lines = flowList
+          .map((o) => {
+            const isFlowSel = !!(o.id && selectedSet.has(o.id));
+            const d = routePathD(
+              (o.points || []).map((q) => world(q, m)),
+              o.curved ?? routesCurved
+            );
+            return `<path data-id="${esc(o.id)}" d="${d}" fill="none" stroke="transparent" stroke-width="1.8"/><path d="${d}" fill="none" stroke="#ffffff" stroke-opacity=".42" stroke-width="${
+              isFlowSel ? '.56' : '.42'
+            }" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/><path data-id="${esc(o.id)}" d="${d}" fill="none" stroke="${
+              isFlowSel ? '#991b1b' : '#b91c1c'
+            }" stroke-opacity="${isFlowSel ? '.92' : '.68'}" stroke-width="${
+              isFlowSel ? '.38' : '.26'
+            }" stroke-dasharray="1.35 .95" stroke-linecap="round" stroke-linejoin="round"><title>${esc(
+              o.name || 'Corredor de emergencias'
+            )} · ${num(o.width || 3.5)} m</title></path>`;
+          })
+          .join('');
+        // Capa 3: nodos de ramal discretos y limpios
+        const junctionHubs = net.junctions
+          .map(
+            (jn) =>
+              `<circle cx="${jn.point[0]}" cy="${jn.point[1]}" r=".4" fill="#ffffff" fill-opacity=".9" stroke="#b91c1c" stroke-opacity=".78" stroke-width=".2" pointer-events="none"><title>Ramal / bifurcación (${jn.degree} ramas)</title></circle>`
+          )
+          .join('');
+        html += `<g class="emergency-corridors-network"><g opacity=".09" pointer-events="none">${bands}</g>${lines}${junctionHubs}</g>`;
       }
       for (const a of (s.passages || []).filter(
         (r) => r.origin === 'boundary-add'
@@ -902,12 +931,46 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           o.name
         )} · ${num(w)} m${shareTag}</text></g>`;
       }
-      for (const o of s.roadPlans || []) {
-        html += `<polyline data-id="${esc(o.id)}" points="${pts(
-          o.points
-        )}" fill="none" stroke="#b96858" stroke-width="1.2" stroke-dasharray="2 1.2"><title>${esc(
-          o.name
-        )}</title></polyline>`;
+      if ((s.roadPlans || []).length) {
+        const roadList = s.roadPlans || [];
+        const roadNet = buildRouteNetwork(roadList, m);
+        const roadBands = roadList
+          .map((o) => {
+            const d = routePathD(
+              (o.points || []).map((q) => world(q, m)),
+              o.curved ?? routesCurved
+            );
+            return `<path data-id="${esc(o.id)}" d="${d}" fill="none" stroke="#9a4f40" stroke-width="${Math.min(
+              o.width || 3.2,
+              2.0
+            )}" stroke-linecap="round" stroke-linejoin="round"><title>${esc(
+              o.name
+            )}</title></path>`;
+          })
+          .join('');
+        const roadLines = roadList
+          .map((o) => {
+            const isRoadSel = !!(o.id && selectedSet.has(o.id));
+            const d = routePathD(
+              (o.points || []).map((q) => world(q, m)),
+              o.curved ?? routesCurved
+            );
+            return `<path data-id="${esc(o.id)}" d="${d}" fill="none" stroke="transparent" stroke-width="1.8"/><path data-id="${esc(o.id)}" d="${d}" fill="none" stroke="#9a4f40" stroke-opacity="${
+              isRoadSel ? '.9' : '.65'
+            }" stroke-width="${
+              isRoadSel ? '.5' : '.36'
+            }" stroke-dasharray="1.6 1" stroke-linecap="round" stroke-linejoin="round"><title>${esc(
+              o.name
+            )}</title></path>`;
+          })
+          .join('');
+        const roadHubs = roadNet.junctions
+          .map(
+            (jn) =>
+              `<circle cx="${jn.point[0]}" cy="${jn.point[1]}" r=".38" fill="#ffffff" fill-opacity=".9" stroke="#9a4f40" stroke-opacity=".75" stroke-width=".2" pointer-events="none"><title>Ramal vial (${jn.degree} ramas)</title></circle>`
+          )
+          .join('');
+        html += `<g class="road-plans-network"><g opacity=".08" pointer-events="none">${roadBands}</g>${roadLines}${roadHubs}</g>`;
       }
 
       const selectedObject = [...s.base.booths, ...s.infrastructure].find(
@@ -1018,6 +1081,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       showAlternative,
       base,
       routesVisible,
+      routesCurved,
       selectedId,
       selectedIds,
       previewCorrection,
@@ -2315,7 +2379,15 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                 : 'Sustituir perímetro'
           );
         }
-        setDraftPoints((prev) => [...prev, p]);
+        let nextDraftPt = p;
+        if (tool === 'flow' || tool === 'road') {
+          const s = currentScene();
+          const existing =
+            tool === 'flow' ? s.flows || [] : s.roadPlans || [];
+          const snap = snapRoutePoint(p, existing, m, 1.8);
+          nextDraftPt = snap.point;
+        }
+        setDraftPoints((prev) => [...prev, nextDraftPt]);
       }
     };
 

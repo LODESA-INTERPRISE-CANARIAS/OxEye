@@ -6,6 +6,7 @@ import type {
   ResponseProfile,
   VehiclePose,
 } from '../../types';
+import {routeBranchBias} from '../cartography/route-network';
 import {flow, segmentDistance} from '../crowd/grid-flow';
 import {gateAllowsAuthority} from './priority';
 import {EmergencyLab, INCIDENTS} from './emergency-lab';
@@ -281,9 +282,21 @@ export function responseRoute(
       .neighbors(k)
       .filter((nIdx: number) => free[nIdx] && field[nIdx] >= 0 && field[nIdx] < field[k])
       .sort((a: number, b: number) => {
-        const scoreA = field[a] - (inEmergencyCorridor(g.point(a)) ? 0.45 : 0);
-        const scoreB = field[b] - (inEmergencyCorridor(g.point(b)) ? 0.45 : 0);
-        return scoreA - scoreB;
+        const ptA = g.point(a);
+        const ptB = g.point(b);
+        const densA = e.hashDensity ? e.hashDensity(a) : 0;
+        const densB = e.hashDensity ? e.hashDensity(b) : 0;
+        const biasA = e.routeNetwork
+          ? routeBranchBias(ptA, e.routeNetwork, densA, profile.speed, profile.width)
+          : inEmergencyCorridor(ptA)
+            ? -0.45
+            : 0;
+        const biasB = e.routeNetwork
+          ? routeBranchBias(ptB, e.routeNetwork, densB, profile.speed, profile.width)
+          : inEmergencyCorridor(ptB)
+            ? -0.45
+            : 0;
+        return field[a] + biasA - (field[b] + biasB);
       })[0];
     if (n === undefined) break;
     k = n;

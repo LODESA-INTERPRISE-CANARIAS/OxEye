@@ -251,6 +251,8 @@ export interface GeometryTrace {
   chainId?: string;
   /** Si es `true` en una zona libre (`origin === 'interest-zone'`), atrae público como área de interés. */
   interestZone?: boolean;
+  /** Si es `true` en una ruta (`flows` o `roadPlans`), suaviza los giros con una curva Bézier ligera. */
+  curved?: boolean;
   locked?: boolean;
   phaseTags?: PhaseKey[];
 }

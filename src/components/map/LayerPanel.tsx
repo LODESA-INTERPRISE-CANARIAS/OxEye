@@ -10,12 +10,14 @@ export const LayerPanel: React.FC = () => {
   const grid = useProjectStore((s) => s.grid);
   const labelsVisible = useProjectStore((s) => s.labelsVisible);
   const routesVisible = useProjectStore((s) => s.routesVisible);
+  const routesCurved = useProjectStore((s) => s.routesCurved);
   const xrayVisible = useProjectStore((s) => s.xrayVisible);
   const subsoilOnly = useProjectStore((s) => s.subsoilOnly);
   const setGridVisible = useProjectStore((s) => s.setGridVisible);
   const setGrid = useProjectStore((s) => s.setGrid);
   const setLabelsVisible = useProjectStore((s) => s.setLabelsVisible);
   const setRoutesVisible = useProjectStore((s) => s.setRoutesVisible);
+  const setRoutesCurved = useProjectStore((s) => s.setRoutesCurved);
   const setXrayVisible = useProjectStore((s) => s.setXrayVisible);
   const setSubsoilOnly = useProjectStore((s) => s.setSubsoilOnly);
 
@@ -64,6 +66,15 @@ export const LayerPanel: React.FC = () => {
           onChange={(e) => setRoutesVisible(e.target.checked)}
         />{' '}
         Recorridos orientativos
+      </label>
+      <label className="check">
+        <input
+          id="routes-curved"
+          type="checkbox"
+          checked={routesCurved}
+          onChange={(e) => setRoutesCurved(e.target.checked)}
+        />{' '}
+        Curvas suaves en rutas (Bézier)
       </label>
       <label className="check">
         <input

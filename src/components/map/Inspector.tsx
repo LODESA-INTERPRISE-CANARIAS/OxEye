@@ -130,6 +130,10 @@ export const Inspector: React.FC<InspectorProps> = ({
   const isFence = found
     ? (s.fences || []).some((f) => f.id === found.id)
     : false;
+  const isRouteLine = found
+    ? (s.flows || []).some((f) => f.id === found.id) ||
+      (s.roadPlans || []).some((r) => r.id === found.id)
+    : false;
 
   const [noteText, setNoteText] = useState('');
 
@@ -1260,6 +1264,57 @@ export const Inspector: React.FC<InspectorProps> = ({
                 </>
               );
             })()
+          ) : isRouteLine ? (
+            <>
+              <label>
+                Anchura útil del ramal (m)
+                <input
+                  id="edit-route-width"
+                  type="number"
+                  min="1"
+                  max="20"
+                  step="0.5"
+                  disabled={isLocked}
+                  key={`rw-${item.id}-${item.width ?? 3.5}`}
+                  defaultValue={item.width ?? 3.5}
+                  onKeyDown={commitOnEnter}
+                  onBlur={(e) => {
+                    const v = Math.max(1, Math.min(20, Number(e.target.value) || 3.5));
+                    updateScene((scene) => {
+                      const target = [
+                        ...(scene.flows || []),
+                        ...(scene.roadPlans || []),
+                      ].find((r) => r.id === item.id);
+                      if (target) target.width = v;
+                    }, true);
+                    onSceneChanged();
+                  }}
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  id="edit-route-curved"
+                  checked={!!(item as {curved?: boolean}).curved}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    updateScene((scene) => {
+                      const target = [
+                        ...(scene.flows || []),
+                        ...(scene.roadPlans || []),
+                      ].find((r) => r.id === item.id);
+                      if (target) target.curved = checked;
+                    }, true);
+                    onSceneChanged();
+                  }}
+                />{' '}
+                Suavizar giros con curva Bézier ligera
+              </label>
+              <p className="small-note">
+                Las rutas que coinciden o se cruzan se unen automáticamente como
+                ramales (decisión según caudal, anchura y velocidad objetiva).
+              </p>
+            </>
           ) : (item as {origin?: string}).origin === 'interest-zone' ? (
             <>
               <p>

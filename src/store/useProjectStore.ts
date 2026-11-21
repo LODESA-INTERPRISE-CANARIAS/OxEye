@@ -65,6 +65,7 @@ export interface ProjectStoreState {
   gridVisible: boolean;
   labelsVisible: boolean;
   routesVisible: boolean;
+  routesCurved: boolean;
   xrayVisible: boolean;
   subsoilOnly: boolean;
   layerPanelOpen: boolean;
@@ -105,6 +106,7 @@ export interface ProjectStoreState {
   setGridVisible: (visible: boolean) => void;
   setLabelsVisible: (visible: boolean) => void;
   setRoutesVisible: (visible: boolean) => void;
+  setRoutesCurved: (curved: boolean) => void;
   setXrayVisible: (visible: boolean) => void;
   setSubsoilOnly: (only: boolean) => void;
   setLayerPanelOpen: (open: boolean) => void;
@@ -190,6 +192,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   gridVisible: true,
   labelsVisible: true,
   routesVisible: true,
+  routesCurved: false,
   xrayVisible: false,
   subsoilOnly: false,
   layerPanelOpen: false,
@@ -356,6 +359,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   setGridVisible: (gridVisible) => set({gridVisible}),
   setLabelsVisible: (labelsVisible) => set({labelsVisible}),
   setRoutesVisible: (routesVisible) => set({routesVisible}),
+  setRoutesCurved: (routesCurved) => set({routesCurved}),
   setXrayVisible: (xrayVisible) => {
     set((state) => {
       if (xrayVisible) return {xrayVisible: true};
