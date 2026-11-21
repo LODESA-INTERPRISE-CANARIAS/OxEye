@@ -454,6 +454,18 @@ export interface ElementGroup {
   parentGroupId?: string;
 }
 
+/** Condiciones editables de tiempos de respuesta externa (referencia Tenerife). */
+export interface ResponseConditions {
+  /** Tiempo base de detección del riesgo y aviso al 1-1-2 / sala (segundos). */
+  detectionSec: number;
+  /** Desplazamiento externo Bomberos de Tenerife desde Parque La Laguna/SC (segundos). */
+  fireExternalSec: number;
+  /** Desplazamiento externo Policía Local / Nacional desde comisaría (segundos). */
+  policeExternalSec: number;
+  /** Desplazamiento externo SUC / Ambulancia 1-1-2 Canarias (segundos). */
+  medicalExternalSec: number;
+}
+
 /** Escena completa de un recinto dentro del proyecto. */
 export interface Scene {
   version: number;
@@ -462,6 +474,7 @@ export interface Scene {
   preset?: string;
   presetRevision?: number;
   experienceRevision?: number;
+  responseConditions?: ResponseConditions;
   eventDate?: string;
   startDate?: string;
   endDate?: string;

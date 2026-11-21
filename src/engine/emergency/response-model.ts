@@ -3,9 +3,58 @@ import type {
   EmergencyIncident,
   Infrastructure,
   Point,
+  ResponseConditions,
   ResponseProfile,
   VehiclePose,
 } from '../../types';
+
+/**
+ * Tiempos de respuesta externa orientativos para el Área Metropolitana de Tenerife
+ * (San Cristóbal de La Laguna / Santa Cruz), editables por el usuario.
+ */
+export const DEFAULT_TENERIFE_RESPONSE_CONDITIONS: ResponseConditions = {
+  detectionSec: 45,
+  fireExternalSec: 420,
+  policeExternalSec: 360,
+  medicalExternalSec: 480,
+};
+
+export function resolveResponseConditions(
+  rc?: Partial<ResponseConditions> | null
+): ResponseConditions {
+  const clampSec = (v: unknown, def: number, min: number, max: number) => {
+    const n = Number(v);
+    return Number.isFinite(n)
+      ? Math.max(min, Math.min(max, Math.round(n)))
+      : def;
+  };
+  return {
+    detectionSec: clampSec(
+      rc?.detectionSec,
+      DEFAULT_TENERIFE_RESPONSE_CONDITIONS.detectionSec,
+      5,
+      600
+    ),
+    fireExternalSec: clampSec(
+      rc?.fireExternalSec,
+      DEFAULT_TENERIFE_RESPONSE_CONDITIONS.fireExternalSec,
+      30,
+      3600
+    ),
+    policeExternalSec: clampSec(
+      rc?.policeExternalSec,
+      DEFAULT_TENERIFE_RESPONSE_CONDITIONS.policeExternalSec,
+      30,
+      3600
+    ),
+    medicalExternalSec: clampSec(
+      rc?.medicalExternalSec,
+      DEFAULT_TENERIFE_RESPONSE_CONDITIONS.medicalExternalSec,
+      30,
+      3600
+    ),
+  };
+}
 import {routeBranchBias} from '../cartography/route-network';
 import {flow, segmentDistance} from '../crowd/grid-flow';
 import {gateAllowsAuthority} from './priority';
@@ -465,38 +514,117 @@ export class ResponseSimulation extends EmergencyLab {
           )
     );
     if (!candidates.length) {
-      const reserve = this.resources().find(
+      const rc = resolveResponseConditions(e.s.responseConditions);
+      const externalTravelSec =
+        kind === 'fire'
+          ? rc.fireExternalSec
+          : kind === 'security' || kind === 'patrol'
+            ? rc.policeExternalSec
+            : rc.medicalExternalSec;
+      const totalExternalSec = rc.detectionSec + externalTravelSec;
+
+      let reserve = this.resources().find(
         (r) =>
           r.reserve === true &&
           r.active === false &&
           r.kind === kind &&
           (r.staff || 0) >= p.staff
       );
-      if (reserve && !this.incoming.has(reserve.id)) {
-        this.incoming.set(
-          reserve.id,
-          e.time + Math.max(30, e.s.reinforcementDelay ?? 600)
-        );
+
+      // Siempre debe existir un refuerzo externo disponible desde el spawn más cercano
+      const spawns = (e.s.entrances || []).filter(
+        (g: {role?: string; phases?: {event?: string}}) =>
+          (g.phases?.event || g.role || 'both') !== 'closed'
+      );
+      const bestSpawn =
+        spawns
+          .slice()
+          .sort(
+            (
+              a: {x: number; y: number; spawnType?: string},
+              b: {x: number; y: number; spawnType?: string}
+            ) => {
+              const vehA =
+                a.spawnType === 'vehicle' || a.spawnType === 'mixed' ? -25 : 0;
+              const vehB =
+                b.spawnType === 'vehicle' || b.spawnType === 'mixed' ? -25 : 0;
+              return (
+                dist(
+                  [(a.x * e.g.m.widthMeters) / 100, (a.y * e.g.m.heightMeters) / 100],
+                  row.point!
+                ) +
+                vehA -
+                (dist(
+                  [(b.x * e.g.m.widthMeters) / 100, (b.y * e.g.m.heightMeters) / 100],
+                  row.point!
+                ) +
+                  vehB)
+              );
+            }
+          )[0] || null;
+
+      if (!reserve && bestSpawn) {
+        const externalId = `ext-${kind}-${Math.round(e.time)}-${this.resources().length + 1}`;
+        const labelMap: Record<string, string> = {
+          fire: 'Refuerzo Bomberos Tenerife',
+          patrol: 'Refuerzo Patrulla Policial',
+          security: 'Refuerzo Policía a pie',
+          ambulance: 'Refuerzo Ambulancia SUC',
+          medical: 'Refuerzo Sanitario SUC',
+        };
+        reserve = {
+          id: externalId,
+          name: labelMap[kind] || `Refuerzo externo (${kind})`,
+          kind,
+          role: 'emergency',
+          x: bestSpawn.x,
+          y: bestSpawn.y,
+          width: p.width,
+          depth: p.length,
+          area: p.width * p.length,
+          capacity: 1,
+          staff: Math.max(2, p.staff),
+          delay: 0,
+          handling: kind === 'fire' ? 360 : kind === 'medical' ? 180 : 120,
+          reserve: true,
+          active: false,
+          phaseTags: ['event'],
+        };
+        e.s.infrastructure.push(reserve);
       }
+
+      if (reserve && !this.incoming.has(reserve.id)) {
+        this.incoming.set(reserve.id, e.time + totalExternalSec);
+      }
+
+      const etaMin = Math.floor(totalExternalSec / 60);
+      const etaRem = totalExternalSec % 60;
+      const etaLabel =
+        etaMin > 0
+          ? `${etaMin} min${etaRem ? ` ${etaRem} s` : ''}`
+          : `${etaRem} s`;
+      const hasOnSite = this.resources().some(
+        (r) =>
+          r.kind === kind &&
+          r.active !== false &&
+          !r.reserve &&
+          (r.staff || 0) >= p.staff
+      );
+
       row.status = 'waiting';
       row.reinforcements ??= {
         requestedAt: e.time,
         status: reserve
-          ? 'Refuerzo de reserva movilizado en el ensayo'
-          : 'Solicitud simulada · falta dotación compatible',
+          ? `Refuerzo externo movilizado desde ${bestSpawn?.name || 'acceso'} (llegada ≈ ${etaLabel})`
+          : 'Solicitud simulada · falta acceso abierto para refuerzo',
       };
       row.note =
-        (this.resources().some(
-          (r) =>
-            r.kind === kind && r.active !== false && (r.staff || 0) >= p.staff
-        )
-          ? 'Servicio sobrepasado: todos los equipos de ' +
-            kind +
-            ' están ocupados. '
-          : 'Sin dotación operativa de ' + kind + '. ') +
+        (hasOnSite
+          ? `Servicio en recinto sobrepasado (todos los equipos de ${kind} ocupados). `
+          : `Sin dotación fija de ${kind} en recinto. `) +
         (reserve
-          ? 'Refuerzo de reserva solicitado; aún no está disponible.'
-          : 'No existe un refuerzo compatible configurado.');
+          ? `Refuerzo externo desde central en camino por ${bestSpawn?.name || 'spawn'} (detección ${rc.detectionSec} s + traslado ≈ ${etaLabel}).`
+          : 'Abre al menos un acceso para permitir la entrada de refuerzos externos.');
       return;
     }
     const resource = candidates.sort(

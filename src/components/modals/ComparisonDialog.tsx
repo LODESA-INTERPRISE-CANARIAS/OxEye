@@ -396,7 +396,7 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
           }}
         >
           <thead>
-            <tr style={{borderBottom: '1px solid #d8d3e3', textAlign: 'left'}}>
+            <tr style={{borderBottom: '1px solid var(--line-strong)', textAlign: 'left'}}>
               <th style={{padding: '5px 6px'}}>Métrica</th>
               <th style={{padding: '5px 6px'}}>Original</th>
               <th style={{padding: '5px 6px'}}>Propuesta</th>
@@ -405,7 +405,7 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.label} style={{borderBottom: '1px solid #ece8f3'}}>
+              <tr key={r.label} style={{borderBottom: '1px solid var(--line)'}}>
                 <td style={{padding: '5px 6px'}}>{r.label}</td>
                 <td style={{padding: '5px 6px'}}>{r.b}</td>
                 <td style={{padding: '5px 6px'}}>{r.a}</td>
@@ -424,8 +424,9 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
         </table>
         <div
           style={{
-            background: '#f6f3fa',
-            borderLeft: '3px solid #57367b',
+            background: 'var(--purple-soft)',
+            borderLeft: '3px solid var(--purple)',
+            color: 'var(--ink)',
             padding: '8px 10px',
             borderRadius: '6px',
             fontSize: '0.84rem',
