@@ -12,6 +12,7 @@ import {configure, initialScene} from '../engine/crowd/presets';
 import {smallExample} from '../engine/crowd/small-example';
 import {addResponseExample} from '../engine/emergency/response-example';
 import {assessRisk} from '../engine/emergency/risk';
+import type {SpatialCorrectionProposal} from '../engine/planning/spatial-assistant';
 import type {ClipboardPayload} from '../components/map/selectionActions';
 import {isXrayTool, subsoilIdsInScene} from '../components/map/selectionActions';
 import type {
@@ -73,6 +74,7 @@ export interface ProjectStoreState {
   menuOpen: boolean;
   activeModal: ActiveModal;
   lastEvaluationModal: 'risk' | 'comparison' | null;
+  previewCorrection: SpatialCorrectionProposal | null;
   onboardingStage: OnboardingStage;
   tutorialActive: boolean;
   saveStatusText: string;
@@ -112,6 +114,7 @@ export interface ProjectStoreState {
   setMenuOpen: (open: boolean) => void;
   setActiveModal: (modal: ActiveModal) => void;
   setLastEvaluationModal: (modal: 'risk' | 'comparison' | null) => void;
+  setPreviewCorrection: (proposal: SpatialCorrectionProposal | null) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
   setTutorialActive: (active: boolean) => void;
   showToast: (msg: string, tone?: 'default' | 'error') => void;
@@ -196,6 +199,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   menuOpen: true,
   activeModal: null,
   lastEvaluationModal: null,
+  previewCorrection: null,
   onboardingStage:
     (initialLoaded.project.scenes[
       VENUES[initialLoaded.project.active]
@@ -423,6 +427,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       };
     }),
   setLastEvaluationModal: (lastEvaluationModal) => set({lastEvaluationModal}),
+  setPreviewCorrection: (previewCorrection) => set({previewCorrection}),
 
   setOnboardingStage: (onboardingStage) => set({onboardingStage}),
   setTutorialActive: (tutorialActive) => set({tutorialActive}),

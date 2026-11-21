@@ -196,6 +196,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const base = useProjectStore((s) => s.base);
     const tool = useProjectStore((s) => s.tool);
     const selectedIds = useProjectStore((s) => s.selectedIds);
+    const previewCorrection = useProjectStore((s) => s.previewCorrection);
     const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
     const grid = useProjectStore((s) => s.grid);
     const fenceLength = useProjectStore((s) => s.fenceLength);
@@ -939,6 +940,36 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
       }
 
+      if (previewCorrection && previewCorrection.moves.length) {
+        const allPlaced = [...s.base.booths, ...s.infrastructure];
+        for (const mv of previewCorrection.moves) {
+          const orig = allPlaced.find((o) => o.id === mv.itemId);
+          if (!orig) continue;
+          const oArea = (orig as Booth).area || 24;
+          const w = orig.width || Math.sqrt(oArea);
+          const h = orig.depth || Math.sqrt(oArea);
+          const [fx, fy] = world([mv.fromX, mv.fromY], m);
+          const [tx, ty] = world([mv.toX, mv.toY], m);
+          const tag =
+            mv.distanceMeters >= 0.1
+              ? `${num(mv.distanceMeters)} m`
+              : `↻ ${mv.deltaRotationDeg}°`;
+          html += `<g class="spatial-correction-preview" pointer-events="none"><rect x="${
+            -w / 2
+          }" y="${-h / 2}" width="${w}" height="${h}" rx=".4" fill="none" stroke="#dc2626" stroke-width=".6" stroke-dasharray="1.1 .7" transform="translate(${fx} ${fy}) rotate(${
+            mv.fromRotation
+          })"/><rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx=".4" fill="#10b981" fill-opacity=".28" stroke="#059669" stroke-width=".65" stroke-dasharray="1.4 .7" transform="translate(${tx} ${ty}) rotate(${
+            mv.toRotation
+          })"/><line x1="${fx}" y1="${fy}" x2="${tx}" y2="${ty}" stroke="#059669" stroke-width=".55" stroke-dasharray="1 .6"/><circle cx="${tx}" cy="${ty}" r=".6" fill="#059669" stroke="#ffffff" stroke-width=".2"/><text x="${
+            (fx + tx) / 2
+          }" y="${
+            (fy + ty) / 2 - 1.2
+          }" text-anchor="middle" font-size="1.8" font-weight="700" fill="#047857" paint-order="stroke" stroke="#ffffff" stroke-width=".55">${esc(
+            tag
+          )}</text></g>`;
+        }
+      }
+
       scenEl.innerHTML = html;
 
       if (proposal && showAlternative) {
@@ -989,6 +1020,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       routesVisible,
       selectedId,
       selectedIds,
+      previewCorrection,
       panel,
       drawAnnotations,
     ]);

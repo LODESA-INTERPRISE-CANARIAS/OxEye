@@ -22,6 +22,7 @@ import {type LayoutOptions, redesign} from '../../engine/planning/layout';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {LensMode, PhaseKey, PolygonElement} from '../../types';
 import {PostSimDiagnosticsView} from '../modals/PostSimDiagnosticsView';
+import {SpatialAssistantPanel} from '../review/SpatialAssistantPanel';
 
 export interface ProposalState {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1601,6 +1602,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Evaluar y comparar mapas
               </button>
             </section>
+            <SpatialAssistantPanel
+              engine={engine}
+              onSceneChanged={onSceneChanged}
+            />
             <section className="panel-section">
               <div className="section-label">
                 OBSERVACIONES DE VISITANTES
