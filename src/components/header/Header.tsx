@@ -47,8 +47,8 @@ export const Header: React.FC<HeaderProps> = ({
       setMenuOpen(false);
       onProjectImported();
       showToast('Proyecto abierto. Puedes deshacer la importación.');
-    } catch (err) {
-      showToast('No se ha importado: ' + (err as Error).message);
+    } catch {
+      showToast('El archivo importado no es un modelo válido', 'error');
     }
     e.target.value = '';
   };

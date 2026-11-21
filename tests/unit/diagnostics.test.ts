@@ -6,6 +6,7 @@ import {smallExample} from '../../src/engine/crowd/small-example';
 import {addResponseExample} from '../../src/engine/emergency/response-example';
 import {ResponseSimulation} from '../../src/engine/emergency/response-model';
 import {resolveRiskGuide} from '../../src/engine/emergency/risk-guidance';
+import {shift} from '../../src/engine/logistics/shift';
 import {
   buildPostSimDiagnostics,
   type IncidentCategoryKey,
@@ -307,5 +308,53 @@ describe('Post-Simulation Satisfaction & Guided Diagnostics', () => {
     expect(ev!.status).toBe('assigned');
     expect(ev!.note).toContain('silbato');
     expect(resp.social.stats.dispersed).toBeGreaterThan(0);
+  });
+
+  it('applies custom workDays hours functionally to shift() limit and pending-hours alerts', () => {
+    configure(MAPS_DATA);
+    const map = MAPS_DATA.cristo;
+    const scene = initialScene('cristo', map, CARTO_DATA);
+    scene.workDays = [
+      {
+        id: 'pre-1',
+        name: 'Montaje escenario',
+        kind: 'pre',
+        date: '2026-12-18',
+        from: '08:00',
+        to: '14:00',
+        hours: 6,
+      },
+      {
+        id: 'pre-2',
+        name: 'Montaje puestos',
+        kind: 'pre',
+        date: '2026-12-19',
+        from: '08:00',
+        to: '13:00',
+        hours: 5,
+      },
+      {
+        id: 'post-1',
+        name: 'Recogida exprés',
+        kind: 'post',
+        date: '2026-12-21',
+        from: '08:00',
+        to: '08:30',
+        hours: 0.5,
+      },
+    ];
+
+    const prePlan = shift(scene, map, 'pre');
+    expect(prePlan.limit).toBe(11 * 3600);
+    expect(prePlan.days).toBe(2);
+
+    const postPlan = shift(scene, map, 'post');
+    expect(postPlan.limit).toBe(0.5 * 3600);
+    expect(postPlan.days).toBe(1);
+    if (postPlan.total > postPlan.limit) {
+      expect(
+        postPlan.alerts.some((a) => a.includes('Recogida exprés'))
+      ).toBe(true);
+    }
   });
 });

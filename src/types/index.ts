@@ -194,6 +194,20 @@ export interface AnnotationItem {
 /** Operación booleana secuencial de un polígono del perímetro de subsuelo. */
 export type SubsoilPolygonOp = 'add' | 'subtract';
 
+/** Tipo operativo de una jornada planificada en el calendario del evento. */
+export type WorkDayKind = 'pre' | 'event' | 'post';
+
+/** Jornada operativa con nombre, fase, fecha y horario (montaje, evento o recogida y limpieza). */
+export interface WorkShiftDay {
+  id: string;
+  name: string;
+  kind: WorkDayKind;
+  date: string;
+  from: string;
+  to: string;
+  hours: number;
+}
+
 /** Polígono con operación ordenada (`add` o `subtract`) que compone el perímetro del subsuelo. */
 export interface SubsoilPolygon {
   id: string;
@@ -473,6 +487,7 @@ export interface Scene {
   directorLog?: Array<{time: number; text: string}>;
   progressByPhase?: Partial<Record<PhaseKey, string[]>>;
   shiftDays?: Partial<Record<PhaseKey, number>>;
+  workDays?: WorkShiftDay[];
   learning?: Array<{kind: string; gain: number}>;
   lastAudit?: Record<string, unknown>;
   serviceRoute?: GeometryTrace;

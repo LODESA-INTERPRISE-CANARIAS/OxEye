@@ -249,28 +249,43 @@ export function parseImportedProject(
   currentProject: ProjectFile,
   maps: Record<VenueKey, VenueMap>
 ): ProjectFile {
-  const p = JSON.parse(text);
-  if (p.format === 'ojo-de-buey') {
-    if (p.version !== 1) {
-      throw new Error('Versión de proyecto no compatible');
+  let p: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('JSON raíz inválido');
     }
+    p = parsed as Record<string, unknown>;
+  } catch {
+    throw new Error(
+      'El archivo subido no se corresponde con un modelo de OxEye (JSON no válido).'
+    );
+  }
+  if (p.format === 'ojo-de-buey') {
+    if (p.version !== 1 || !p.scenes || typeof p.scenes !== 'object') {
+      throw new Error(
+        'El archivo subido no se corresponde con un modelo compatible de OxEye.'
+      );
+    }
+    const scenes = p.scenes as Record<VenueKey, ProjectFile['scenes'][VenueKey]>;
+    const pMaps = p.maps as Record<VenueKey, VenueMap> | undefined;
     for (const k of Object.keys(VENUES) as VenueKey[]) {
-      validateScene(p.scenes[k]);
+      validateScene(scenes[k]);
       if (
-        JSON.stringify(p.maps?.[k]?.bbox) !== JSON.stringify(maps[k].bbox)
+        JSON.stringify(pMaps?.[k]?.bbox) !== JSON.stringify(maps[k].bbox)
       ) {
         throw new Error(
           'La extensión cartográfica de este archivo es diferente.'
         );
       }
     }
-    return p as ProjectFile;
+    return p as unknown as ProjectFile;
   } else {
-    let old = p.scenario || p;
-    const siteKey = old.site as VenueKey;
-    if (!ORIGINAL[siteKey] || !VENUES[siteKey]) {
+    let old = (p.scenario || p) as ProjectFile['scenes'][VenueKey];
+    const siteKey = old?.site as VenueKey;
+    if (!siteKey || !ORIGINAL[siteKey] || !VENUES[siteKey]) {
       throw new Error(
-        'Formato no reconocido. Usa un proyecto Ojo de Buey o un escenario del Cristo/La Vega del ZIP.'
+        'El archivo subido no se corresponde con un modelo de los que se usan en OxEye.'
       );
     }
     old = remapScene(old, ORIGINAL[siteKey], maps[siteKey]);

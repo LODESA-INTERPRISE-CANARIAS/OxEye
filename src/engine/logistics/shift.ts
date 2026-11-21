@@ -394,6 +394,20 @@ export function shift(
   void dock;
   void crewPos;
   const total = Math.max(cleanTime, truckTime, crewTime);
+  const phaseWorkDays = (scene.workDays || []).filter(
+    d => d.kind === phase && Number.isFinite(d.hours) && d.hours > 0,
+  );
+  const configuredHours = phaseWorkDays.length
+    ? phaseWorkDays.reduce((sum, d) => sum + clamp(d.hours, 0.5, 12, 8), 0)
+    : clamp(scene.hoursLimit, 0.5, 8, 8);
+  const limitSeconds = 3600 * configuredHours;
+  if (phaseWorkDays.length && total > limitSeconds) {
+    const missingH = ((total - limitSeconds) / 3600).toFixed(1);
+    const names = phaseWorkDays.map(d => `${d.name} (${d.hours} h)`).join(', ');
+    alerts.add(
+      `Faltan ${missingH} h para completar el trabajo dentro de las jornadas planificadas: ${names}.`,
+    );
+  }
   return {
     installed,
     required: structures.length,
@@ -402,13 +416,13 @@ export function shift(
     stores,
     total,
     team: crew,
-    limit: 3600 * clamp(scene.hoursLimit, 0.5, 8, 8),
+    limit: limitSeconds,
     phase,
     capacity,
     binWalk,
     trips,
     alerts: [...alerts],
-    days,
+    days: phaseWorkDays.length || days,
     night,
   };
 }

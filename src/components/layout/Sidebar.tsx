@@ -735,6 +735,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="section-label">
               JORNADA LOGÍSTICA <small>{phase === 'pre' ? 'MONTAJE' : 'DESMONTAJE'}</small>
             </div>
+            {(s.workDays || []).filter((d) => d.kind === phase).length > 0 && (
+              <div className="planned-shifts-box">
+                <small>
+                  <b>Jornadas planificadas:</b>{' '}
+                  {(s.workDays || [])
+                    .filter((d) => d.kind === phase)
+                    .map((d) => `${d.name} (${d.date} · ${d.hours} h)`)
+                    .join(' · ')}
+                </small>
+              </div>
+            )}
             {phase === 'post' && (
               <label className="form-label">
                 Jornada

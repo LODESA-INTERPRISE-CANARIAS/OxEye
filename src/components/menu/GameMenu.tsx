@@ -6,6 +6,23 @@ import {
   goalChart,
 } from '../../engine/director/director-logic';
 import {useProjectStore} from '../../store/useProjectStore';
+import type {WorkDayKind, WorkShiftDay} from '../../types';
+
+const shiftDateByDays = (isoDate: string, delta: number): string => {
+  const d = new Date(isoDate + 'T12:00:00Z');
+  if (Number.isNaN(d.getTime())) return isoDate;
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+};
+
+const computeShiftHours = (from: string, to: string): number => {
+  const [fh, fm] = from.split(':').map(Number);
+  const [th, tm] = to.split(':').map(Number);
+  if (![fh, fm, th, tm].every(Number.isFinite)) return 0;
+  let diff = th + tm / 60 - (fh + fm / 60);
+  if (diff <= 0) diff += 24;
+  return Math.round(diff * 10) / 10;
+};
 
 export interface GameMenuProps {
   onResume: () => void;
@@ -30,14 +47,52 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const [screen, setScreen] = useState<MenuScreen>('main');
   const [step, setStep] = useState(0);
   const [wizardError, setWizardError] = useState('');
-  const [settings, setSettings] = useState({
+  const today = new Date().toISOString().slice(0, 10);
+  const [settings, setSettings] = useState<{
+    name: string;
+    startDate: string;
+    endDate: string;
+    from: string;
+    to: string;
+    goals: string[];
+    example: boolean;
+    workDays: WorkShiftDay[];
+    smartGoal: {
+      specific: string;
+      metric: string;
+      target: string;
+      feasible: string;
+      relevant: string;
+      deadline: string;
+    };
+  }>({
     name: 'Navidad en el Cristo',
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: new Date().toISOString().slice(0, 10),
+    startDate: today,
+    endDate: today,
     from: '10:00',
     to: '14:00',
     goals: ['family', 'local', 'comfort'],
     example: true,
+    workDays: [
+      {
+        id: 'wd-pre-1',
+        name: 'Montaje previo',
+        kind: 'pre',
+        date: shiftDateByDays(today, -1),
+        from: '08:00',
+        to: '16:00',
+        hours: 8,
+      },
+      {
+        id: 'wd-post-1',
+        name: 'Recogida y limpieza',
+        kind: 'post',
+        date: shiftDateByDays(today, 1),
+        from: '08:00',
+        to: '16:00',
+        hours: 8,
+      },
+    ],
     smartGoal: {
       specific: '',
       metric: '',
@@ -96,6 +151,20 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
           settings.from,
           settings.to
         );
+        for (const wd of settings.workDays) {
+          if (!wd.name.trim()) {
+            throw new Error('Escribe un nombre para cada jornada añadida.');
+          }
+          if (!wd.date) {
+            throw new Error(`Indica la fecha de «${wd.name}».`);
+          }
+          const hrs = computeShiftHours(wd.from, wd.to);
+          if (hrs < 0.5 || hrs > 12) {
+            throw new Error(
+              `El horario de «${wd.name}» debe durar entre 0,5 y 12 horas.`
+            );
+          }
+        }
       }
       if (step === 3 && !settings.goals.length) {
         throw new Error('Selecciona al menos un objetivo.');
@@ -107,7 +176,16 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
           settings.from,
           settings.to
         );
-        createFromWizard({...settings, ...schedule});
+        const normalizedWorkDays = settings.workDays.map((wd) => ({
+          ...wd,
+          name: wd.name.trim(),
+          hours: computeShiftHours(wd.from, wd.to),
+        }));
+        createFromWizard({
+          ...settings,
+          ...schedule,
+          workDays: normalizedWorkDays,
+        });
         setScreen('main');
         onResume();
         return;
@@ -242,34 +320,37 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
 
       {screen === 'exit' && (
         <main className="game-card">
-          <h1>Partida guardada</h1>
+          <h1>Sesión guardada</h1>
           <p>
             Puedes cerrar esta pestaña. Exporta una copia para trasladar el
             proyecto a otro equipo.
           </p>
-          <button
-            type="button"
-            id="game-export"
-            onClick={() => {
-              save();
-              downloadFile(
-                'Ojo_de_Buey_Proyecto.json',
-                JSON.stringify(project, null, 2)
-              );
-              showToast(
-                'Proyecto exportado con los tres espacios y sus observaciones.'
-              );
-            }}
-          >
-            Exportar proyecto
-          </button>
-          <button
-            type="button"
-            id="game-back"
-            onClick={() => setScreen('main')}
-          >
-            Volver
-          </button>
+          <div className="game-exit-actions">
+            <button
+              type="button"
+              id="game-export"
+              className="game-primary"
+              onClick={() => {
+                save();
+                downloadFile(
+                  'Ojo_de_Buey_Proyecto.json',
+                  JSON.stringify(project, null, 2)
+                );
+                showToast(
+                  'Proyecto exportado con los tres espacios y sus observaciones.'
+                );
+              }}
+            >
+              Exportar proyecto
+            </button>
+            <button
+              type="button"
+              id="game-back"
+              onClick={() => setScreen('main')}
+            >
+              Volver
+            </button>
+          </div>
         </main>
       )}
 
@@ -472,9 +553,156 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                     />
                   </label>
                 </div>
+                <div className="wizard-shifts">
+                  <div className="wizard-shifts-head">
+                    <b>Jornadas de montaje, recogida y limpieza</b>
+                    <button
+                      type="button"
+                      id="wizard-add-shift"
+                      className="wizard-add-shift-btn"
+                      onClick={() => {
+                        const idx = settings.workDays.length + 1;
+                        setSettings((prev) => ({
+                          ...prev,
+                          workDays: [
+                            ...prev.workDays,
+                            {
+                              id: crypto.randomUUID(),
+                              name: `Jornada ${idx} · montaje/recogida`,
+                              kind: 'pre',
+                              date: shiftDateByDays(prev.startDate, -1),
+                              from: '08:00',
+                              to: '14:00',
+                              hours: 6,
+                            },
+                          ],
+                        }));
+                      }}
+                    >
+                      + Añadir jornada
+                    </button>
+                  </div>
+                  {settings.workDays.length === 0 ? (
+                    <p className="wizard-shifts-empty">
+                      Sin jornadas específicas: se usará un turno genérico de 8 h
+                      por fase.
+                    </p>
+                  ) : (
+                    <div className="wizard-shifts-list">
+                      {settings.workDays.map((wd) => {
+                        const hrs = computeShiftHours(wd.from, wd.to);
+                        const updateWd = (patch: Partial<WorkShiftDay>) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            workDays: prev.workDays.map((item) => {
+                              if (item.id !== wd.id) return item;
+                              const next = {...item, ...patch};
+                              next.hours = computeShiftHours(next.from, next.to);
+                              return next;
+                            }),
+                          }));
+                        return (
+                          <div key={wd.id} className="wizard-shift-card">
+                            <div className="wizard-shift-top">
+                              <label className="wizard-shift-field">
+                                <span>Nombre</span>
+                                <input
+                                  type="text"
+                                  aria-label="Nombre de la jornada"
+                                  placeholder="Ej. Montaje escenario"
+                                  maxLength={80}
+                                  value={wd.name}
+                                  onChange={(e) =>
+                                    updateWd({name: e.target.value})
+                                  }
+                                />
+                              </label>
+                              <label className="wizard-shift-field">
+                                <span>Fase</span>
+                                <select
+                                  aria-label="Tipo de jornada"
+                                  value={wd.kind}
+                                  onChange={(e) =>
+                                    updateWd({
+                                      kind: e.target.value as WorkDayKind,
+                                    })
+                                  }
+                                >
+                                  <option value="pre">Montaje (Pre)</option>
+                                  <option value="post">
+                                    Recogida y limpieza (Post)
+                                  </option>
+                                </select>
+                              </label>
+                              <div className="wizard-shift-meta">
+                                <span className="wizard-shift-hours">
+                                  {hrs} h
+                                </span>
+                                <button
+                                  type="button"
+                                  className="wizard-shift-remove"
+                                  aria-label={`Eliminar ${wd.name}`}
+                                  title="Eliminar jornada"
+                                  onClick={() =>
+                                    setSettings((prev) => ({
+                                      ...prev,
+                                      workDays: prev.workDays.filter(
+                                        (item) => item.id !== wd.id
+                                      ),
+                                    }))
+                                  }
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                            <div className="wizard-shift-bottom">
+                              <label className="wizard-shift-field">
+                                <span>Fecha</span>
+                                <input
+                                  type="date"
+                                  aria-label="Fecha de la jornada"
+                                  value={wd.date}
+                                  onChange={(e) =>
+                                    updateWd({date: e.target.value})
+                                  }
+                                />
+                              </label>
+                              <label className="wizard-shift-field">
+                                <span>Inicio</span>
+                                <input
+                                  type="time"
+                                  aria-label="Hora de inicio"
+                                  step="1800"
+                                  value={wd.from}
+                                  onChange={(e) =>
+                                    updateWd({from: e.target.value})
+                                  }
+                                />
+                              </label>
+                              <label className="wizard-shift-field">
+                                <span>Fin</span>
+                                <input
+                                  type="time"
+                                  aria-label="Hora de fin"
+                                  step="1800"
+                                  value={wd.to}
+                                  onChange={(e) =>
+                                    updateWd({to: e.target.value})
+                                  }
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <p>
-                  El montaje y el desmontaje disponen de sus propios turnos de
-                  hasta ocho horas.
+                  Las horas de cada jornada de montaje y recogida determinan el
+                  tiempo disponible real en los turnos logísticos y su cálculo de
+                  costes.
                 </p>
               </>
             )}
@@ -523,6 +751,19 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                   <dd>
                     {settings.from} — {settings.to}
                   </dd>
+                  {settings.workDays.length > 0 && (
+                    <>
+                      <dt>Jornadas logísticas</dt>
+                      <dd>
+                        {settings.workDays
+                          .map(
+                            (wd) =>
+                              `${wd.name} (${wd.kind === 'pre' ? 'Montaje' : 'Recogida'} · ${wd.date} · ${computeShiftHours(wd.from, wd.to)} h)`
+                          )
+                          .join(' · ')}
+                      </dd>
+                    </>
+                  )}
                   <dt>Objetivos</dt>
                   <dd>
                     {settings.goals

@@ -6,9 +6,16 @@ import {useProjectStore} from '../../store/useProjectStore';
  */
 export const Toast: React.FC = () => {
   const toastMessage = useProjectStore((s) => s.toastMessage);
+  const toastTone = useProjectStore((s) => s.toastTone);
 
   return (
-    <div id="toast" role="status" aria-live="polite" hidden={!toastMessage}>
+    <div
+      id="toast"
+      className={toastTone === 'error' ? 'is-error' : ''}
+      role={toastTone === 'error' ? 'alert' : 'status'}
+      aria-live={toastTone === 'error' ? 'assertive' : 'polite'}
+      hidden={!toastMessage}
+    >
       {toastMessage || ''}
     </div>
   );

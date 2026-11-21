@@ -23,6 +23,7 @@ import type {
   UserPreferences,
   VenueKey,
   VenueMap,
+  WorkShiftDay,
 } from '../types';
 
 export type ActiveModal =
@@ -64,6 +65,7 @@ export interface ProjectStoreState {
   activeModal: ActiveModal;
   saveStatusText: string;
   toastMessage: string | null;
+  toastTone: 'default' | 'error';
   history: string[];
   future: string[];
   preferences: UserPreferences;
@@ -95,7 +97,7 @@ export interface ProjectStoreState {
   toggleImmersive: () => void;
   setMenuOpen: (open: boolean) => void;
   setActiveModal: (modal: ActiveModal) => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, tone?: 'default' | 'error') => void;
   clearToast: () => void;
   checkpoint: () => void;
   undo: (isRedo?: boolean) => void;
@@ -124,6 +126,7 @@ export interface ProjectStoreState {
     start: number;
     hours: number;
     endTime: string;
+    workDays?: WorkShiftDay[];
   }) => void;
 }
 
@@ -160,6 +163,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   activeModal: null,
   saveStatusText: 'Guardado en este navegador',
   toastMessage: null,
+  toastTone: 'default',
   history: [],
   future: [],
   preferences: initialPrefs,
@@ -321,17 +325,17 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   setActiveModal: (activeModal) => set({activeModal}),
 
-  showToast: (msg) => {
+  showToast: (msg, tone = 'default') => {
     if (toastTimeout) clearTimeout(toastTimeout);
-    set({toastMessage: msg});
+    set({toastMessage: msg, toastTone: tone});
     toastTimeout = setTimeout(() => {
-      set({toastMessage: null});
+      set({toastMessage: null, toastTone: 'default'});
     }, 4200);
   },
 
   clearToast: () => {
     if (toastTimeout) clearTimeout(toastTimeout);
-    set({toastMessage: null});
+    set({toastMessage: null, toastTone: 'default'});
   },
 
   checkpoint: () => {
@@ -461,6 +465,11 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       next.corridors = [];
       next.fences = [];
     }
+    const workDays = config.workDays || [];
+    const preDays = workDays.filter((d) => d.kind === 'pre');
+    const postDays = workDays.filter((d) => d.kind === 'post');
+    const firstLogHours =
+      preDays[0]?.hours || postDays[0]?.hours || next.hoursLimit || 8;
     Object.assign(next, {
       title: config.name,
       eventDays: config.eventDays,
@@ -470,6 +479,12 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       eventGoals: config.goals,
       smartGoal: config.smartGoal,
       stockIntroShown: true,
+      workDays,
+      shiftDays: {
+        pre: Math.max(1, preDays.length),
+        post: Math.max(1, postDays.length),
+      },
+      hoursLimit: Math.max(0.5, Math.min(8, firstLogHours)),
     });
     if (config.example) {
       Object.assign(next, addResponseExample(smallExample(next)));
