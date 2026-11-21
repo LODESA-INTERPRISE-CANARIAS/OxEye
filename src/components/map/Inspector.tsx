@@ -1,6 +1,9 @@
 import React, {useEffect, useState} from 'react';
 import {cellAt, inside, world} from '../../engine/cartography/geometry';
-import {normalizeAccessFlows} from '../../engine/cartography/spawns';
+import {
+  normalizeAccessFlows,
+  snapPointToPerimeter,
+} from '../../engine/cartography/spawns';
 import {membership, phases} from '../../engine/logistics/phases';
 import {
   evaluateItemSubsoilHeat,
@@ -223,6 +226,20 @@ export const Inspector: React.FC<InspectorProps> = ({
       if (prop === 'x') v = (Number(val) / m.widthMeters) * 100;
       if (prop === 'y') v = (Number(val) / m.heightMeters) * 100;
       target[prop] = v;
+      if (
+        isEntrance &&
+        (prop === 'x' || prop === 'y') &&
+        scene.boundary.length >= 3
+      ) {
+        const entX = Number(target.x);
+        const entY = Number(target.y);
+        const snap = snapPointToPerimeter(world([entX, entY], m), scene, m);
+        if (snap) {
+          target.x = snap.percentPoint[0];
+          target.y = snap.percentPoint[1];
+          target.gateAngle = snap.gateAngle;
+        }
+      }
       if (typeof target.width === 'number' && typeof target.depth === 'number') {
         target.area = target.width * target.depth;
       }
@@ -502,6 +519,11 @@ export const Inspector: React.FC<InspectorProps> = ({
                       }
                     />
                   </label>
+                  <p className="small-note" style={{margin: '4px 0 8px'}}>
+                    Acceso acoplado al borde del perímetro: la dirección de las
+                    flechas de entrada y salida se orienta automáticamente según
+                    el interior y exterior del recinto.
+                  </p>
                   <label>
                     Uso del acceso
                     <select

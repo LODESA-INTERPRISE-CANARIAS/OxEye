@@ -24,6 +24,8 @@ import {objectSkin} from '../../engine/cartography/object-skin';
 import {
   generateCoherentSpawns,
   normalizeAccessFlows,
+  snapEntranceToPerimeter,
+  snapPointToPerimeter,
 } from '../../engine/cartography/spawns';
 import {
   transformHandles,
@@ -641,18 +643,6 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         const dx = (Math.cos(angle) * w) / 2;
         const dy = (Math.sin(angle) * w) / 2;
         const role = o.phases?.event || o.role || 'both';
-        const symbol =
-          role === 'in'
-            ? '↓'
-            : role === 'out'
-              ? '↑'
-              : role === 'closed'
-                ? '×'
-                : role === 'emergency'
-                  ? 'E'
-                  : role === 'free'
-                    ? '⇄'
-                    : '↕';
         const spawnType = o.spawnType || 'pedestrian';
         const strokeColor =
           spawnType === 'vehicle'
@@ -673,6 +663,40 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           fm && fm.canEnter && fm.entrySharePct > 0
             ? ` · ${Math.round(fm.entrySharePct)}%`
             : '';
+        // Calcula normal hacia el INTERIOR del perímetro para orientar flechas entrada/salida
+        const snapInfo = snapPointToPerimeter([x, y], s, m);
+        const [nx, ny] = snapInfo
+          ? snapInfo.inwardNormal
+          : [-Math.sin(angle), Math.cos(angle)];
+        const px = -ny;
+        const py = nx;
+        const arrowHalf = 2.6;
+        const headLen = 1.25;
+        const headW = 0.85;
+        const buildHead = (tipX: number, tipY: number, dirX: number, dirY: number) =>
+          `M${tipX - dirX * headLen + px * headW},${tipY - dirY * headLen + py * headW}L${tipX},${tipY}L${tipX - dirX * headLen - px * headW},${tipY - dirY * headLen - py * headW}`;
+        const outX = x - nx * arrowHalf;
+        const outY = y - ny * arrowHalf;
+        const inX = x + nx * arrowHalf;
+        const inY = y + ny * arrowHalf;
+        let dirGraphic = '';
+        if (role === 'closed') {
+          dirGraphic = `<text x="${x}" y="${y + 1}" text-anchor="middle" fill="#a83232" stroke="white" stroke-width=".6" paint-order="stroke" font-size="3.4" font-weight="700">×</text>`;
+        } else {
+          let arrowPath = `M${outX},${outY}L${inX},${inY}`;
+          if (role === 'in') {
+            // Flecha apuntando hacia el INTERIOR del perímetro
+            arrowPath += buildHead(inX, inY, nx, ny);
+          } else if (role === 'out') {
+            // Flecha apuntando hacia el EXTERIOR del perímetro
+            arrowPath += buildHead(outX, outY, -nx, -ny);
+          } else {
+            // Doble flecha (entrada y salida / acceso libre)
+            arrowPath +=
+              buildHead(inX, inY, nx, ny) + buildHead(outX, outY, -nx, -ny);
+          }
+          dirGraphic = `<path d="${arrowPath}" fill="none" stroke="white" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/><path d="${arrowPath}" fill="none" stroke="${textColor}" stroke-width=".6" stroke-linecap="round" stroke-linejoin="round"/>`;
+        }
         const isEntSel = selectedSet.has(o.id);
         html += `<g data-id="${esc(o.id)}" class="map-item">${
           isEntSel
@@ -688,12 +712,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           x + dx
         }" cy="${
           y + dy
-        }" r=".5" fill="#fff" stroke="${strokeColor}" stroke-width=".2"/><text x="${x}" y="${
-          y + 0.8
-        }" text-anchor="middle" fill="${textColor}" stroke="white" stroke-width=".5" paint-order="stroke" font-size="3.4" transform="rotate(${
-          o.gateAngle || 0
-        } ${x} ${y})">${symbol}</text><text x="${x}" y="${
-          y + 4
+        }" r=".5" fill="#fff" stroke="${strokeColor}" stroke-width=".2"/>${dirGraphic}<text x="${x}" y="${
+          y + 4.4
         }" text-anchor="middle" font-size="1.55" fill="${textColor}" paint-order="stroke" stroke="white" stroke-width=".6">[${typeTag}] ${esc(
           o.name
         )} · ${num(w)} m${shareTag}</text></g>`;
@@ -919,15 +939,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           const a = draftPoints[0];
           const b = draftPoints[draftPoints.length - 1];
           const w = Math.hypot(b[0] - a[0], b[1] - a[1]);
-          const [x, y] = percent([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], m);
+          const mid: Point = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          const snap = snapPointToPerimeter(mid, s, m);
+          if (!snap) {
+            return;
+          }
           s.entrances.push({
             id,
             name: 'Acceso',
             kind: 'gate',
-            x,
-            y,
-            clearWidth: w,
-            gateAngle: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI,
+            x: snap.percentPoint[0],
+            y: snap.percentPoint[1],
+            clearWidth: Math.min(w, Math.max(0.5, snap.edgeLength)),
+            gateAngle: snap.gateAngle,
             role: 'both',
             phases: {event: 'both'},
             phaseTags: tagsForNew(),
@@ -978,6 +1002,11 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                   veh: generated.filter((e) => e.spawnType === 'vehicle').length,
                 };
               }
+            } else {
+              // Mantiene todos los accesos existentes acoplados al nuevo borde del perímetro
+              s.entrances = s.entrances.map((ent) =>
+                snapEntranceToPerimeter(ent, s, m)
+              );
             }
           }
         } else if (tool === 'reserve') {
@@ -1054,7 +1083,25 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       const c = CATALOG[kind];
       if (!c) return;
-      const [x, y] = percent(p, m);
+      let [x, y] = percent(p, m);
+      let gateSnapAngle = 0;
+      if (kind === 'gate') {
+        const snap = snapPointToPerimeter(p, s, m);
+        if (!snap) {
+          showToast(
+            'Define primero un perímetro para poder colocar accesos en su borde.'
+          );
+          return;
+        }
+        if (snap.dist > 22) {
+          showToast(
+            'Los accesos solo pueden colocarse pegados al borde de un perímetro.'
+          );
+          return;
+        }
+        [x, y] = snap.percentPoint;
+        gateSnapAngle = snap.gateAngle;
+      }
       const id = crypto.randomUUID();
       updateScene((sc) => {
         const baseObj = {
@@ -1077,7 +1124,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             ...baseObj,
             role: 'both',
             clearWidth: 4,
+            gateAngle: gateSnapAngle,
             phases: {event: 'both'},
+            spawnType: 'pedestrian',
+            entryWeight: 20,
+            exitWeight: 20,
+            maxRatePerHour: 0,
           });
         } else if (c.role) {
           sc.infrastructure.push({
@@ -1313,17 +1365,26 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
         setSelectedId(drag.id);
         const s = currentScene();
-        drag.o.x = Math.max(
-          0,
-          Math.min(100, drag.old[0] + ((p[0] - drag.p[0]) / m.widthMeters) * 100)
-        );
-        drag.o.y = Math.max(
-          0,
-          Math.min(
-            100,
-            drag.old[1] + ((p[1] - drag.p[1]) / m.heightMeters) * 100
-          )
-        );
+        if (s.entrances.includes(drag.o)) {
+          const snap = snapPointToPerimeter(p, s, m);
+          if (snap) {
+            drag.o.x = snap.percentPoint[0];
+            drag.o.y = snap.percentPoint[1];
+            drag.o.gateAngle = snap.gateAngle;
+          }
+        } else {
+          drag.o.x = Math.max(
+            0,
+            Math.min(100, drag.old[0] + ((p[0] - drag.p[0]) / m.widthMeters) * 100)
+          );
+          drag.o.y = Math.max(
+            0,
+            Math.min(
+              100,
+              drag.old[1] + ((p[1] - drag.p[1]) / m.heightMeters) * 100
+            )
+          );
+        }
         if (s.annotations.includes(drag.o)) {
           drag.o.cell = cellAt(
             world([drag.o.x, drag.o.y], m),
@@ -1383,9 +1444,27 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         const s = currentScene();
         const obj = (s.pendingStock || []).find((o) => o.id === stockId);
         if (obj) {
-          const [x, y] = percent(p, m);
+          let [x, y] = percent(p, m);
+          let extraGate: Record<string, unknown> = {};
+          if (obj.kind === 'gate' || obj.inventoryKind === 'gate') {
+            const snap = snapPointToPerimeter(p, s, m);
+            if (!snap) {
+              showToast(
+                'Define primero un perímetro para poder colocar accesos en su borde.'
+              );
+              return;
+            }
+            if (snap.dist > 22) {
+              showToast(
+                'Los accesos solo pueden colocarse pegados al borde de un perímetro.'
+              );
+              return;
+            }
+            [x, y] = snap.percentPoint;
+            extraGate = {gateAngle: snap.gateAngle};
+          }
           updateScene((sc) => {
-            insertStock(sc, {...obj, x, y});
+            insertStock(sc, {...obj, x, y, ...extraGate});
           }, true);
           setTool('select');
           setSelectedId(obj.id);
@@ -1421,6 +1500,22 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         setTool('xray:select');
         setSelectedIds([colId]);
         onSceneChanged();
+      } else if (tool === 'gateLine') {
+        const s = currentScene();
+        const snap = snapPointToPerimeter(p, s, m);
+        if (!snap) {
+          showToast(
+            'Define primero un perímetro para poder colocar accesos en su borde.'
+          );
+          return;
+        }
+        if (snap.dist > 22) {
+          showToast(
+            'Los accesos solo pueden crearse pegados al borde de un perímetro.'
+          );
+          return;
+        }
+        setDraftPoints((prev) => [...prev, snap.point]);
       } else {
         if (
           (tool === 'boundary' || tool === 'xray:boundary') &&
@@ -1487,7 +1582,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                       'Perímetro: Mayús añade · Ctrl resta (primer clic)',
                     reserve: 'Reservar zona',
                     flow: 'Trazar recorrido',
-                    gateLine: 'Dibujar acceso: marca sus dos extremos',
+                    gateLine:
+                      'Dibujar acceso: marca sus dos extremos sobre el borde del perímetro',
                     road: 'Propuesta vial',
                     'xray:boundary':
                       'Perímetro subsuelo: Mayús añade (+) · Ctrl resta (−)',

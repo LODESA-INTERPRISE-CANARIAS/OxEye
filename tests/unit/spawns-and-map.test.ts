@@ -12,6 +12,8 @@ import {
 import {
   generateCoherentSpawns,
   normalizeAccessFlows,
+  snapEntranceToPerimeter,
+  snapPointToPerimeter,
 } from '../../src/engine/cartography/spawns';
 import {EventEngine} from '../../src/engine/crowd/event-engine';
 import {
@@ -290,6 +292,61 @@ describe('Coherent Spawns & Per-Access Flow Distribution', () => {
     const exitsA = postExit.find((r) => r.id === 'gate-heavy-in')!.exits;
     const exitsB = postExit.find((r) => r.id === 'gate-light-in')!.exits;
     expect(exitsB).toBeGreaterThan(exitsA);
+  });
+
+  it('clips entrances strictly to perimeter edges and orients inward normals accurately on all 4 sides', () => {
+    const map = buildCustomMapMetadata({
+      lat: 28.4903,
+      lon: -16.3133,
+      label: 'Cuadrado prueba',
+      sizeMeters: 200,
+    });
+    // Square perimeter from 20%..80% (40m..160m)
+    const sceneStub = {
+      boundary: [
+        [20, 20],
+        [80, 20],
+        [80, 80],
+        [20, 80],
+      ] as Point2D[],
+      passages: [],
+    };
+
+    // Top edge (y=40m): inward must point DOWN (+y)
+    const topSnap = snapPointToPerimeter([100, 35], sceneStub, map)!;
+    expect(topSnap.point[1]).toBeCloseTo(40, 2);
+    expect(topSnap.inwardNormal[0]).toBeCloseTo(0, 3);
+    expect(topSnap.inwardNormal[1]).toBeCloseTo(1, 3);
+    const topRad = (topSnap.gateAngle * Math.PI) / 180;
+    expect(-Math.sin(topRad)).toBeCloseTo(topSnap.inwardNormal[0], 2);
+    expect(Math.cos(topRad)).toBeCloseTo(topSnap.inwardNormal[1], 2);
+
+    // Right edge (x=160m): inward must point LEFT (-x)
+    const rightSnap = snapPointToPerimeter([168, 100], sceneStub, map)!;
+    expect(rightSnap.point[0]).toBeCloseTo(160, 2);
+    expect(rightSnap.inwardNormal[0]).toBeCloseTo(-1, 3);
+    expect(rightSnap.inwardNormal[1]).toBeCloseTo(0, 3);
+
+    // Bottom edge (y=160m): inward must point UP (-y)
+    const bottomSnap = snapPointToPerimeter([100, 170], sceneStub, map)!;
+    expect(bottomSnap.point[1]).toBeCloseTo(160, 2);
+    expect(bottomSnap.inwardNormal[0]).toBeCloseTo(0, 3);
+    expect(bottomSnap.inwardNormal[1]).toBeCloseTo(-1, 3);
+
+    // Left edge (x=40m): inward must point RIGHT (+x)
+    const leftSnap = snapPointToPerimeter([32, 100], sceneStub, map)!;
+    expect(leftSnap.point[0]).toBeCloseTo(40, 2);
+    expect(leftSnap.inwardNormal[0]).toBeCloseTo(1, 3);
+    expect(leftSnap.inwardNormal[1]).toBeCloseTo(0, 3);
+
+    // snapEntranceToPerimeter pulls a detached entrance onto the nearest edge
+    const clipped = snapEntranceToPerimeter(
+      {id: 'g-float', name: 'Acceso', x: 50, y: 15, role: 'in'},
+      sceneStub,
+      map
+    );
+    expect(clipped.y).toBeCloseTo(20, 2);
+    expect(clipped.gateAngle).toBeCloseTo(topSnap.gateAngle, 1);
   });
 
   it('flags missing perimeter cleanly in assessRisk without throwing', () => {

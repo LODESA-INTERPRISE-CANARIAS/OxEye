@@ -11,10 +11,201 @@ import type {
   EntranceItem,
   MapMetadata,
   Point2D,
+  Scene,
   SpawnKind,
 } from '../../types';
 import {classifyOsmHighway} from './custom-map';
-import {gateMode, localPoint, percent, world} from './geometry';
+import {gateMode, inside, localPoint, percent, world} from './geometry';
+
+/** Resultado de acoplar (clip) un punto o acceso al borde más cercano del perímetro operativo. */
+export interface PerimeterSnapResult {
+  /** Punto acoplado en metros locales `[x, y]`. */
+  point: Point2D;
+  /** Punto acoplado en porcentaje del plano `[0..100, 0..100]`. */
+  percentPoint: Point2D;
+  /** Extremo A de la arista del perímetro en metros locales. */
+  edgeA: Point2D;
+  /** Extremo B de la arista del perímetro en metros locales. */
+  edgeB: Point2D;
+  /** Longitud de la arista del perímetro en metros. */
+  edgeLength: number;
+  /** Distancia original desde el punto consultado hasta el borde del perímetro (m). */
+  dist: number;
+  /**
+   * Ángulo de la línea del acceso (grados) orientado de forma coherente para que
+   * la normal `+90°` (`[-sin θ, cos θ]`) apunte siempre hacia el INTERIOR del perímetro.
+   */
+  gateAngle: number;
+  /** Vector normal unitario que apunta estrictamente hacia el INTERIOR del perímetro. */
+  inwardNormal: Point2D;
+}
+
+/**
+ * Recopila todos los polígonos válidos del perímetro operativo (`boundary` y ampliaciones
+ * `boundary-add`) en coordenadas locales en metros.
+ */
+export function collectPerimeterPolygons(
+  scene: Pick<Scene, 'boundary' | 'passages'>,
+  map: MapMetadata
+): Point2D[][] {
+  const polys: Point2D[][] = [];
+  if (scene.boundary && scene.boundary.length >= 3) {
+    polys.push(scene.boundary.map((p) => world(p, map)));
+  }
+  for (const pass of scene.passages || []) {
+    if (pass.origin === 'boundary-add' && pass.points && pass.points.length >= 3) {
+      polys.push(pass.points.map((p) => world(p, map)));
+    }
+  }
+  return polys;
+}
+
+/**
+ * Comprueba si un punto en metros locales se encuentra dentro de alguno de los
+ * polígonos del perímetro operativo.
+ */
+export function pointInOperationalPerimeter(
+  pointM: Point2D,
+  polys: Point2D[][]
+): boolean {
+  return polys.some((poly) => inside(pointM, poly));
+}
+
+/**
+ * Determina el vector normal unitario que apunta hacia el INTERIOR del perímetro
+ * en un punto situado sobre la arista `edgeA → edgeB`, y devuelve el `gateAngle`
+ * (grados) orientado de modo que `[-sin(gateAngle), cos(gateAngle)] === inwardNormal`.
+ */
+export function resolveInwardNormal(
+  pointM: Point2D,
+  edgeA: Point2D,
+  edgeB: Point2D,
+  polys: Point2D[][]
+): {gateAngle: number; inwardNormal: Point2D} {
+  const dx = edgeB[0] - edgeA[0];
+  const dy = edgeB[1] - edgeA[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const tx = dx / len;
+  const ty = dy / len;
+
+  // n1 corresponde a rotar +90° en coordenadas SVG (+x derecha, +y abajo): [-ty, tx]
+  const n1: Point2D = [-ty, tx];
+  const n2: Point2D = [ty, -tx];
+
+  let inward: Point2D = n1;
+  let resolved = false;
+  for (const eps of [0.5, 1.5, 0.15, 3.0]) {
+    const in1 = pointInOperationalPerimeter(
+      [pointM[0] + n1[0] * eps, pointM[1] + n1[1] * eps],
+      polys
+    );
+    const in2 = pointInOperationalPerimeter(
+      [pointM[0] + n2[0] * eps, pointM[1] + n2[1] * eps],
+      polys
+    );
+    if (in1 !== in2) {
+      inward = in1 ? n1 : n2;
+      resolved = true;
+      break;
+    }
+  }
+  if (!resolved && polys.length) {
+    // Respaldo: apuntar hacia el centroide del primer polígono
+    const poly = polys[0];
+    const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+    const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+    const dot1 = (cx - pointM[0]) * n1[0] + (cy - pointM[1]) * n1[1];
+    inward = dot1 >= 0 ? n1 : n2;
+  }
+
+  // Si inward === n1 ([-ty, tx]), usamos dirección (tx, ty); si es n2, invertimos (-tx, -ty)
+  const useFlipped = inward[0] * n1[0] + inward[1] * n1[1] < 0;
+  const angleRad = useFlipped ? Math.atan2(-ty, -tx) : Math.atan2(ty, tx);
+  const gateAngle = Math.round(((angleRad * 180) / Math.PI) * 10) / 10;
+
+  return {gateAngle, inwardNormal: inward};
+}
+
+/**
+ * Acopla (clip) un punto en metros locales al borde más cercano del perímetro operativo
+ * y calcula su orientación e interior/exterior. Devuelve `null` si no existe perímetro.
+ */
+export function snapPointToPerimeter(
+  pointM: Point2D,
+  scene: Pick<Scene, 'boundary' | 'passages'>,
+  map: MapMetadata
+): PerimeterSnapResult | null {
+  const polys = collectPerimeterPolygons(scene, map);
+  if (!polys.length) return null;
+
+  let best: {
+    point: Point2D;
+    edgeA: Point2D;
+    edgeB: Point2D;
+    edgeLength: number;
+    dist: number;
+  } | null = null;
+
+  for (const poly of polys) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const edgeLength = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (edgeLength < 0.2) continue;
+      const proj = projectOnSegment(pointM, a, b);
+      if (!best || proj.dist < best.dist) {
+        best = {
+          point: proj.point,
+          edgeA: a,
+          edgeB: b,
+          edgeLength,
+          dist: proj.dist,
+        };
+      }
+    }
+  }
+  if (!best) return null;
+
+  const {gateAngle, inwardNormal} = resolveInwardNormal(
+    best.point,
+    best.edgeA,
+    best.edgeB,
+    polys
+  );
+  const pct = percent(best.point, map);
+  return {
+    point: best.point,
+    percentPoint: [
+      Math.max(0.5, Math.min(99.5, pct[0])),
+      Math.max(0.5, Math.min(99.5, pct[1])),
+    ],
+    edgeA: best.edgeA,
+    edgeB: best.edgeB,
+    edgeLength: best.edgeLength,
+    dist: best.dist,
+    gateAngle,
+    inwardNormal,
+  };
+}
+
+/**
+ * Devuelve una copia de `entrance` acoplada al borde más cercano del perímetro operativo
+ * con sus coordenadas `(x, y)` y su ángulo `gateAngle` actualizados hacia el interior.
+ */
+export function snapEntranceToPerimeter(
+  entrance: EntranceItem,
+  scene: Pick<Scene, 'boundary' | 'passages'>,
+  map: MapMetadata
+): EntranceItem {
+  const snap = snapPointToPerimeter(world([entrance.x, entrance.y], map), scene, map);
+  if (!snap) return entrance;
+  return {
+    ...entrance,
+    x: snap.percentPoint[0],
+    y: snap.percentPoint[1],
+    gateAngle: snap.gateAngle,
+  };
+}
 
 /** Resumen normalizado del flujo configurado para un acceso individual. */
 export interface AccessFlowMetrics {
@@ -127,20 +318,23 @@ function collectStreets(
 }
 
 /**
- * Extrae las aristas del polígono de perímetro en metros locales.
+ * Extrae las aristas del polígono de perímetro en metros locales, orientando cada
+ * `angleDeg` de modo que `+90°` apunte siempre al INTERIOR del polígono.
  */
 function boundaryEdges(
   polyM: Point2D[]
 ): Array<{a: Point2D; b: Point2D; angleDeg: number; len: number}> {
   const edges: Array<{a: Point2D; b: Point2D; angleDeg: number; len: number}> =
     [];
+  const polys = [polyM];
   for (let i = 0; i < polyM.length; i++) {
     const a = polyM[i];
     const b = polyM[(i + 1) % polyM.length];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (len < 1) continue;
-    const angleDeg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
-    edges.push({a, b, angleDeg, len});
+    const mid: Point2D = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const {gateAngle} = resolveInwardNormal(mid, a, b, polys);
+    edges.push({a, b, angleDeg: gateAngle, len});
   }
   return edges;
 }
