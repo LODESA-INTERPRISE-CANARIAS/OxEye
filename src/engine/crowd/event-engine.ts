@@ -268,7 +268,39 @@ export class EventEngine {
         close: o.close ?? this.s.base.hours,
       }));
 
-    this.stations = [...this.s.base.booths, ...activity].map(
+      const interestZones = (this.s.passages || [])
+        .filter(
+          (r) =>
+            r.origin === 'interest-zone' &&
+            r.interestZone !== false &&
+            Array.isArray(r.points) &&
+            r.points.length >= 3
+        )
+        .map((r) => {
+          const cx =
+            r.points.reduce((sum, pt) => sum + pt[0], 0) / r.points.length;
+          const cy =
+            r.points.reduce((sum, pt) => sum + pt[1], 0) / r.points.length;
+          return {
+            id: r.id || crypto.randomUUID(),
+            name: r.name || 'Zona de interés',
+            type: 'rest' as BoothType,
+            x: cx,
+            y: cy,
+            width: 2,
+            depth: 2,
+            area: 4,
+            rotation: 0,
+            labCapacity: 18,
+            labTime: 3,
+            price: 0,
+            interest: 1,
+            open: 0,
+            close: this.s.base.hours,
+          };
+        });
+
+      this.stations = [...this.s.base.booths, ...activity, ...interestZones].map(
       (b: Record<string, any>) => {
       const a =
         (((b.facing ?? (b.rotation || 0) + 90) * Math.PI) / 180);

@@ -290,7 +290,11 @@ export function buildDraftSvg(
           ? '#3b607a'
           : tool === 'loadingZone'
             ? '#9e6d17'
-            : '#633584';
+            : tool === 'interestZone'
+              ? '#0f766e'
+              : tool === 'flow'
+                ? '#dc2626'
+                : '#633584';
   const lineW = 1.8 * mpp;
   const dashA = 6 * mpp;
   const dashB = 4 * mpp;

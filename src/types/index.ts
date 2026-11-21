@@ -247,6 +247,8 @@ export interface GeometryTrace {
   fenceKind?: 'chain' | 'loose';
   /** Identificador compartido de cadena para vallas trazadas con la herramienta encadenada. */
   chainId?: string;
+  /** Si es `true` en una zona libre (`origin === 'interest-zone'`), atrae público como área de interés. */
+  interestZone?: boolean;
   locked?: boolean;
   phaseTags?: PhaseKey[];
 }

@@ -757,6 +757,9 @@ export function redesign(
     .map((o) => rect(o, map))
     .concat(
       scene.reserves.map((o) => coords(o.points)),
+      (scene.passages || [])
+        .filter((o) => o.origin === 'interest-zone')
+        .map((o) => coords(o.points)),
       scene.entrances.map((o) => rect({...o, width: 5, depth: 5}, map))
     );
 

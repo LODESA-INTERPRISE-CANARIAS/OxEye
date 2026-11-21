@@ -8,16 +8,22 @@ import {useProjectStore} from '../../store/useProjectStore';
  */
 export const WorkspaceBar: React.FC = () => {
   const activeVenue = useProjectStore((s) => s.activeVenue);
+  const currentScene = useProjectStore((s) => s.currentScene);
   const currentMap = useProjectStore((s) => s.currentMap);
   const revision = useProjectStore((s) => s.revision);
   const base = useProjectStore((s) => s.base);
   const layerPanelOpen = useProjectStore((s) => s.layerPanelOpen);
+  const lastEvaluationModal = useProjectStore((s) => s.lastEvaluationModal);
   const setBase = useProjectStore((s) => s.setBase);
   const setLayerPanelOpen = useProjectStore((s) => s.setLayerPanelOpen);
+  const setActiveModal = useProjectStore((s) => s.setActiveModal);
 
   void revision;
+  const s = currentScene();
   const m = currentMap();
   const customLoc = m.customLocation;
+  const returnModal =
+    lastEvaluationModal || (s.lastAudit ? 'comparison' : null);
 
   return (
     <div className="workspace-bar">
@@ -49,6 +55,17 @@ export const WorkspaceBar: React.FC = () => {
           Ortofoto
         </button>
       </div>
+      {returnModal && (
+        <button
+          id="return-last-evaluation"
+          className="quiet"
+          type="button"
+          title="Volver a la última evaluación para revisar fallos o adaptar correcciones"
+          onClick={() => setActiveModal(returnModal)}
+        >
+          ↩ Última evaluación
+        </button>
+      )}
       <button
         id="layers"
         className="quiet"

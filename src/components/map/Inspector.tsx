@@ -1189,6 +1189,31 @@ export const Inspector: React.FC<InspectorProps> = ({
                 </>
               );
             })()
+          ) : (item as {origin?: string}).origin === 'interest-zone' ? (
+            <>
+              <p>
+                Perímetro transitable por el público en el que no se pueden
+                colocar elementos de la escena.
+              </p>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  id="edit-interest-zone"
+                  checked={(item as {interestZone?: boolean}).interestZone !== false}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    updateScene((scene) => {
+                      const target = (scene.passages || []).find(
+                        (r) => r.id === item.id
+                      );
+                      if (target) target.interestZone = checked;
+                    }, true);
+                    onSceneChanged();
+                  }}
+                />{' '}
+                Considerar como zona de interés (atrae público)
+              </label>
+            </>
           ) : (
             isArea && (
               <p>

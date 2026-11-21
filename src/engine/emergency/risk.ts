@@ -11,6 +11,7 @@ import type {
   Scene,
   VenueKey,
 } from '../../types';
+import {inside, rect, world} from '../cartography/geometry';
 import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
 import {evaluateAllCoverBallasts} from '../planning/ballast';
@@ -468,6 +469,37 @@ export function assessRisk(
   }
 
   if (venueMap) {
+    const interestZones = (s.passages || []).filter(
+      (r) => r.origin === 'interest-zone' && r.points.length >= 3
+    );
+    if (interestZones.length) {
+      const zonePolys = interestZones.map((z) => ({
+        name: z.name || 'Zona libre / interés',
+        pts: z.points.map((pt) => world(pt, venueMap)),
+      }));
+      for (const item of [
+        ...s.base.booths,
+        ...s.infrastructure.filter((r) => r.active !== false),
+      ]) {
+        const corners = rect(item as unknown as Record<string, unknown>, venueMap);
+        const center = world([item.x, item.y], venueMap);
+        const samples: Point[] = [center, ...corners];
+        const hit = zonePolys.find(
+          (z) =>
+            samples.some((pt) => inside(pt, z.pts)) ||
+            z.pts.some((pt) => inside(pt, corners))
+        );
+        if (hit) {
+          add(
+            'interest-zone-' + item.id,
+            'critical',
+            `Elemento colocado sobre zona libre / de interés: ${item.name}`,
+            `«${item.name}» invade «${hit.name}», que debe permanecer libre de mobiliario. Desplaza la pieza fuera de la zona.`
+          );
+        }
+      }
+    }
+
     const coverBallasts = evaluateAllCoverBallasts(s, venueMap);
     for (const {cover, status} of coverBallasts) {
       if (!status.configured || status.complete) continue;

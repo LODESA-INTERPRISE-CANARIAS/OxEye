@@ -6,7 +6,7 @@ import type {
   ResponseProfile,
   VehiclePose,
 } from '../../types';
-import {flow} from '../crowd/grid-flow';
+import {flow, segmentDistance} from '../crowd/grid-flow';
 import {gateAllowsAuthority} from './priority';
 import {EmergencyLab, INCIDENTS} from './emergency-lab';
 import {Evacuation} from './evacuation';
@@ -250,13 +250,41 @@ export function responseRoute(
   if (!field) {
     return {error: 'No existe un corredor conectado con la anchura de ensayo.'};
   }
+  // Corredores de emergencias sugeridos (`s.flows` / `s.corridors`): se priorizan
+  // cuando acercan al destino, y el vehículo/equipo sigue navegando con autonomía al terminarlos.
+  const corridorLines = [
+    ...(e.s?.flows || []),
+    ...(e.s?.corridors || []),
+  ]
+    .filter((l: {points?: Point[]}) => Array.isArray(l.points) && l.points.length >= 2)
+    .map((l: {points: Point[]; width?: number}) => ({
+      pts: l.points.map(
+        ([px, py]): Point => [(px * g.m.widthMeters) / 100, (py * g.m.heightMeters) / 100]
+      ),
+      halfW: Math.max(1.5, (l.width || 3) / 2),
+    }));
+  const inEmergencyCorridor = (pt: Point): boolean => {
+    for (const c of corridorLines) {
+      for (let idx = 1; idx < c.pts.length; idx++) {
+        if (segmentDistance(pt, c.pts[idx - 1], c.pts[idx]) <= c.halfW) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   let k = start;
   let p: Point[] | null = [origin, g.point(k)];
   for (let i = 0; i < free.length && k !== target; i++) {
     const n = g
       .neighbors(k)
       .filter((nIdx: number) => free[nIdx] && field[nIdx] >= 0 && field[nIdx] < field[k])
-      .sort((a: number, b: number) => field[a] - field[b])[0];
+      .sort((a: number, b: number) => {
+        const scoreA = field[a] - (inEmergencyCorridor(g.point(a)) ? 0.45 : 0);
+        const scoreB = field[b] - (inEmergencyCorridor(g.point(b)) ? 0.45 : 0);
+        return scoreA - scoreB;
+      })[0];
     if (n === undefined) break;
     k = n;
     p.push(g.point(k));

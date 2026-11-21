@@ -177,17 +177,18 @@ export const App: React.FC = () => {
       const k = Math.floor(x / 3) + ',' + Math.floor(y / 3);
       bins.set(k, (bins.get(k) || 0) + values[i]);
     }
-    const rows = [...bins].sort((a, b) => b[1] - a[1]).slice(0, 3500);
-    const max = Math.max(1, ...rows.map((r) => r[1]));
-    heatEl.innerHTML = rows
-      .map(([k, v]) => {
-        const [x, y] = k.split(',').map(Number);
-        const t = Math.min(1, Math.log1p(v) / Math.log1p(max));
-        return `<rect x="${x * 3}" y="${y * 3}" width="3" height="3" rx=".7" fill="${
-          t > 0.8 ? '#db6145' : t > 0.5 ? '#e7aa52' : '#a9bd68'
-        }" opacity="${0.15 + t * 0.55}"/>`;
-      })
-      .join('');
+      const rows = [...bins].sort((a, b) => b[1] - a[1]).slice(0, 3500);
+      const max = Math.max(1, ...rows.map((r) => r[1]));
+      // Criterio semáforo para análisis de congestión de flujos: verde (fluido) → ámbar (medio) → rojo (congestión)
+      heatEl.innerHTML = rows
+        .map(([k, v]) => {
+          const [x, y] = k.split(',').map(Number);
+          const t = Math.min(1, Math.log1p(v) / Math.log1p(max));
+          const color =
+            t > 0.72 ? '#dc2626' : t > 0.42 ? '#eab308' : '#16a34a';
+          return `<rect x="${x * 3}" y="${y * 3}" width="3" height="3" rx=".7" fill="${color}" opacity="${0.22 + t * 0.52}"/>`;
+        })
+        .join('');
   }, []);
 
   useEffect(() => {

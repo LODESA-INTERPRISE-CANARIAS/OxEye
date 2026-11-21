@@ -22,9 +22,11 @@ import {
 import {
   cellAt,
   column,
+  inside,
   localPoint,
   percent,
   polylineLength,
+  rect,
   world,
 } from '../../engine/cartography/geometry';
 import {
@@ -637,13 +639,25 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       if (routesVisible) {
         for (const o of s.flows || []) {
-          html += `<polyline data-id="${esc(o.id)}" points="${pts(
-            o.points
-          )}" fill="none" stroke="#739eac" stroke-opacity=".25" stroke-width="${
-            o.width || 3
-          }"/><polyline points="${pts(
-            o.points
-          )}" fill="none" stroke="#588996" stroke-width=".4" stroke-dasharray="1.5 1.2" pointer-events="none"/>`;
+          const isFlowSel = !!(o.id && selectedSet.has(o.id));
+          const flowPts = (o.points || []).map((q) => world(q, m));
+          const midPt = flowPts[Math.floor(flowPts.length / 2)];
+          const fPtsAttr = flowPts.map((q) => q.join(',')).join(' ');
+          html += `<g data-id="${esc(o.id)}" class="emergency-corridor"><title>${esc(
+            o.name || 'Corredor de emergencias'
+          )} · ${num(o.width || 3.5)} m</title><polyline points="${fPtsAttr}" fill="none" stroke="#dc2626" stroke-opacity="${
+            isFlowSel ? '.34' : '.2'
+          }" stroke-width="${
+            o.width || 3.5
+          }" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${fPtsAttr}" fill="none" stroke="#ffffff" stroke-opacity=".85" stroke-width=".95" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/><polyline points="${fPtsAttr}" fill="none" stroke="${
+            isFlowSel ? '#991b1b' : '#dc2626'
+          }" stroke-width=".48" stroke-dasharray="1.8 1.2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>${
+            midPt
+              ? `<circle cx="${midPt[0]}" cy="${midPt[1]}" r="1.25" fill="#dc2626" stroke="#ffffff" stroke-width=".25" pointer-events="none"/><text x="${midPt[0]}" y="${
+                  midPt[1] + 0.45
+                }" text-anchor="middle" font-size="1.4" font-weight="700" fill="#ffffff" pointer-events="none">✚</text>`
+              : ''
+          }</g>`;
         }
       }
       for (const a of (s.passages || []).filter(
@@ -652,6 +666,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         html += `<polygon data-id="${esc(a.id)}" points="${pts(
           a.points
         )}" fill="#70af9e" fill-opacity=".18" stroke="#387f82" stroke-width=".5" stroke-dasharray="2 1"/>`;
+      }
+      for (const a of (s.passages || []).filter(
+        (r) => r.origin === 'interest-zone'
+      )) {
+        const isZoneSel = !!(a.id && selectedSet.has(a.id));
+        const isInterest = a.interestZone !== false;
+        html += `<polygon data-id="${esc(a.id)}" points="${pts(
+          a.points
+        )}" fill="${isInterest ? '#0d9488' : '#38bdf8'}" fill-opacity=".15" stroke="${
+          isZoneSel ? '#4b2665' : isInterest ? '#0f766e' : '#0284c7'
+        }" stroke-width="${isZoneSel ? '.65' : '.45'}" stroke-dasharray="1.4 .8"><title>${esc(
+          a.name
+        )}${isInterest ? ' · Zona de interés' : ' · Paso libre sin mobiliario'}</title></polygon>`;
       }
       // Líneas discretas de vínculo entre una carpa y sus lastres subcomponente cuando alguno está seleccionado
       for (const b of s.infrastructure) {
@@ -1253,13 +1280,26 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             origin: 'loading',
           });
           createdSubsoilId = id;
+        } else if (tool === 'interestZone') {
+          s.passages ??= [];
+          const count =
+            s.passages.filter((r) => r.origin === 'interest-zone').length + 1;
+          s.passages.push({
+            id,
+            phaseTags: tagsForNew(),
+            name: `Zona libre / interés ${count}`,
+            points: p,
+            origin: 'interest-zone',
+            interestZone: true,
+          });
+          createdSubsoilId = id;
         } else if (tool === 'flow') {
           s.flows ??= [];
           s.flows.push({
             id,
             phaseTags: tagsForNew(),
-            name: 'Paso peatonal propuesto',
-            width: 3,
+            name: 'Corredor de emergencias',
+            width: 3.5,
             points: p,
           });
           s.corridors = structuredClone(s.flows);
@@ -1317,9 +1357,59 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         showToast('Límite del prototipo: 150 elementos por espacio');
         return;
       }
+      const itemOverlapsInterestZone = (
+        candidate: {
+          x: number;
+          y: number;
+          width?: number;
+          depth?: number;
+          area?: number;
+          rotation?: number;
+        },
+        sceneObj: ReturnType<typeof currentScene>
+      ): boolean => {
+        const zones = (sceneObj.passages || []).filter(
+          (r) => r.origin === 'interest-zone' && r.points.length >= 3
+        );
+        if (!zones.length) return false;
+        const corners = rect(candidate as Record<string, unknown>, m);
+        const center = world([candidate.x, candidate.y], m);
+        const samples: Point[] = [center, ...corners];
+        for (let i = 0; i < corners.length; i++) {
+          const a = corners[i];
+          const b = corners[(i + 1) % corners.length];
+          samples.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+        }
+        return zones.some((z) => {
+          const zMeters = z.points.map((pt) => world(pt, m));
+          return (
+            samples.some((pt) => inside(pt, zMeters)) ||
+            zMeters.some((pt) => inside(pt, corners))
+          );
+        });
+      };
+
       const c = CATALOG[kind];
       if (!c) return;
       let [x, y] = percent(p, m);
+      if (
+        kind !== 'gate' &&
+        itemOverlapsInterestZone(
+          {
+            x,
+            y,
+            width: kind === 'security' ? s.diameter || 0.5 : c.w,
+            depth: kind === 'security' ? s.diameter || 0.5 : c.h,
+            rotation: 0,
+          },
+          s
+        )
+      ) {
+        showToast(
+          'No se pueden colocar elementos dentro de una zona libre / de interés.'
+        );
+        return;
+      }
       let gateSnapAngle = 0;
       if (kind === 'gate') {
         const snap = snapPointToPerimeter(p, s, m);
@@ -1866,17 +1956,42 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             drag.o.gateAngle = snap.gateAngle;
           }
         } else {
-          drag.o.x = Math.max(
+          const nextX = Math.max(
             0,
             Math.min(100, drag.old[0] + ((p[0] - drag.p[0]) / m.widthMeters) * 100)
           );
-          drag.o.y = Math.max(
+          const nextY = Math.max(
             0,
             Math.min(
               100,
               drag.old[1] + ((p[1] - drag.p[1]) / m.heightMeters) * 100
             )
           );
+          const isSurfacePiece =
+            s.base.booths.includes(drag.o) || s.infrastructure.includes(drag.o);
+          const interestZones = isSurfacePiece
+            ? (s.passages || []).filter(
+                (r) => r.origin === 'interest-zone' && r.points.length >= 3
+              )
+            : [];
+          let blockedByZone = false;
+          if (interestZones.length) {
+            const candidate = {...drag.o, x: nextX, y: nextY};
+            const corners = rect(candidate as Record<string, unknown>, m);
+            const center = world([nextX, nextY], m);
+            const samples: Point[] = [center, ...corners];
+            blockedByZone = interestZones.some((z) => {
+              const zMeters = z.points.map((pt) => world(pt, m));
+              return (
+                samples.some((pt) => inside(pt, zMeters)) ||
+                zMeters.some((pt) => inside(pt, corners))
+              );
+            });
+          }
+          if (!blockedByZone) {
+            drag.o.x = nextX;
+            drag.o.y = nextY;
+          }
         }
         if (s.annotations.includes(drag.o)) {
           drag.o.cell = cellAt(
@@ -1982,6 +2097,29 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             }
             [x, y] = snap.percentPoint;
             extraGate = {gateAngle: snap.gateAngle};
+          } else {
+            const zones = (s.passages || []).filter(
+              (r) => r.origin === 'interest-zone' && r.points.length >= 3
+            );
+            if (zones.length) {
+              const cand = {...obj, x, y};
+              const corners = rect(cand as unknown as Record<string, unknown>, m);
+              const center = world([x, y], m);
+              const samples: Point[] = [center, ...corners];
+              const overlaps = zones.some((z) => {
+                const zMeters = z.points.map((pt) => world(pt, m));
+                return (
+                  samples.some((pt) => inside(pt, zMeters)) ||
+                  zMeters.some((pt) => inside(pt, corners))
+                );
+              });
+              if (overlaps) {
+                showToast(
+                  'No se pueden colocar elementos dentro de una zona libre / de interés.'
+                );
+                return;
+              }
+            }
           }
           updateScene((sc) => {
             insertStock(sc, {...obj, x, y, ...extraGate});
@@ -2179,10 +2317,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                     boundary:
                       'Perímetro: Mayús añade · Ctrl resta (primer clic)',
                     reserve: 'Reservar zona',
+                    interestZone:
+                      'Zona libre / interés: dibuja el polígono y confirma',
                     turning: 'Maniobra de vehículos: dibuja el polígono y confirma',
                     loadingZone:
                       'Carga y descarga / aparcamiento SP: dibuja el polígono y confirma',
-                    flow: 'Trazar recorrido',
+                    flow: 'Corredor de emergencias: traza el camino sugerido',
                     gateLine:
                       'Dibujar acceso: marca sus dos extremos sobre el borde del perímetro',
                     road: 'Propuesta vial',
@@ -2201,6 +2341,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       'measure',
       'boundary',
       'reserve',
+      'interestZone',
       'turning',
       'loadingZone',
       'flow',
@@ -2211,6 +2352,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const isPolygonTool = [
       'boundary',
       'reserve',
+      'interestZone',
       'turning',
       'loadingZone',
       'xray:boundary',

@@ -633,11 +633,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 <button
                   type="button"
+                  data-action="interestZone"
+                  title="Perímetro transitable sin mobiliario (opcionalmente zona de interés)"
+                  className={tool === 'interestZone' ? 'active' : ''}
+                  onClick={() => setTool('interestZone')}
+                >
+                  ◇ Zona libre
+                </button>
+                <button
+                  type="button"
                   data-action="flow"
+                  title="Trazar corredor sugerido para servicios de emergencia"
                   className={tool === 'flow' ? 'active' : ''}
                   onClick={() => setTool('flow')}
                 >
-                  ⌁ Paso peatonal
+                  ⌁ Corredor emerg.
                 </button>
                 <button
                   type="button"
@@ -735,9 +745,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
               <button
                 type="button"
+                id="add-manual-spawn-btn"
+                className={`quiet wide ${tool === 'gateLine' ? 'active' : ''}`}
+                style={{marginTop: '8px'}}
+                disabled={!s.boundary || s.boundary.length < 3}
+                onClick={() => setTool('gateLine')}
+              >
+                + Añadir spawn / acceso manual
+              </button>
+              <button
+                type="button"
                 id="detect-spawns-btn"
                 className="quiet wide"
-                style={{marginTop: '8px'}}
+                style={{marginTop: '6px', opacity: 0.85, fontSize: '11px'}}
                 disabled={!s.boundary || s.boundary.length < 3}
                 onClick={() => {
                   const generated = generateCoherentSpawns(
@@ -747,7 +767,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   );
                   if (!generated.length) {
                     showToast(
-                      'Define primero un perímetro válido para detectar accesos.'
+                      'No se detectaron calles en el borde; dibuja los accesos manualmente sobre el perímetro.'
                     );
                     return;
                   }
@@ -761,17 +781,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     (e) => e.spawnType === 'vehicle'
                   ).length;
                   showToast(
-                    `Detectados ${generated.length} accesos desde las vías (${ped} peatonales, ${veh} vehiculares).`
+                    `${generated.length} accesos sugeridos (${ped} peatonales, ${veh} vehiculares).`
                   );
                   onSceneChanged();
                 }}
               >
-                ⌖ Detectar accesos desde vías
+                Detectar accesos desde vías (opcional)
               </button>
               <p className="small-note">
-                Genera spawns peatonales y vehiculares coherentes con las calles
-                que cruzan o bordean el perímetro. Haz clic en cualquier acceso
-                para ajustar su porcentaje, frecuencia y volumen.
+                Configura los spawns manualmente sobre el borde del perímetro y
+                haz clic en cualquiera para ajustar tipo, porcentaje, frecuencia
+                y volumen.
               </p>
 
               <div className="section-label" style={{marginTop: '18px'}}>

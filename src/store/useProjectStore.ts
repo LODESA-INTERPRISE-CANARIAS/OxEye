@@ -71,6 +71,7 @@ export interface ProjectStoreState {
   immersive: boolean;
   menuOpen: boolean;
   activeModal: ActiveModal;
+  lastEvaluationModal: 'risk' | 'comparison' | null;
   onboardingStage: OnboardingStage;
   tutorialActive: boolean;
   saveStatusText: string;
@@ -109,6 +110,7 @@ export interface ProjectStoreState {
   toggleImmersive: () => void;
   setMenuOpen: (open: boolean) => void;
   setActiveModal: (modal: ActiveModal) => void;
+  setLastEvaluationModal: (modal: 'risk' | 'comparison' | null) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
   setTutorialActive: (active: boolean) => void;
   showToast: (msg: string, tone?: 'default' | 'error') => void;
@@ -191,6 +193,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   immersive: false,
   menuOpen: true,
   activeModal: null,
+  lastEvaluationModal: null,
   onboardingStage:
     (initialLoaded.project.scenes[
       VENUES[initialLoaded.project.active]
@@ -409,8 +412,15 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       ) {
         return state;
       }
-      return {activeModal};
+      return {
+        activeModal,
+        lastEvaluationModal:
+          activeModal === 'risk' || activeModal === 'comparison'
+            ? activeModal
+            : state.lastEvaluationModal,
+      };
     }),
+  setLastEvaluationModal: (lastEvaluationModal) => set({lastEvaluationModal}),
 
   setOnboardingStage: (onboardingStage) => set({onboardingStage}),
   setTutorialActive: (tutorialActive) => set({tutorialActive}),
