@@ -3,6 +3,7 @@
  * Pre-flight risk assessment, Poisson medical demand tail, live critical failure checks, and trial result summaries.
  */
 import {MAPS_DATA} from '../../data/geodata';
+import {MAPS} from '../../data/venue-maps';
 import type {
   EmergencyIncident,
   Infrastructure,
@@ -252,6 +253,14 @@ export function assessRisk(
     }
   }
 
+  if (!s.boundary || s.boundary.length < 3) {
+    add(
+      'boundary',
+      'critical',
+      'Perímetro operativo pendiente de definir',
+      'Delimita el área operativa del evento sobre el mapa (mínimo 3 puntos) antes de configurar inventario o simular.'
+    );
+  }
   if ((s.pendingStock || []).length) {
     add(
       'pending',
@@ -410,7 +419,7 @@ export function assessRisk(
     }
   }
 
-  const venueMap = MAPS_DATA[s.site as VenueKey];
+  const venueMap = MAPS[s.site] || MAPS_DATA[s.site as VenueKey];
   if (venueMap && s.subsoil) {
     const loadConflicts = evaluateHeavyLoadConflicts(s, venueMap);
     for (const conflict of loadConflicts) {

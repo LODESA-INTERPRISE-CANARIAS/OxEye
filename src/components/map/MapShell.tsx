@@ -9,6 +9,10 @@ import React, {
 import {CATALOG} from '../../data/catalog';
 import {CARTO_DATA, ORTHO_IMAGES} from '../../data/geodata';
 import {
+  computeMapTiles,
+  fetchOsmVectorContext,
+} from '../../engine/cartography/custom-map';
+import {
   cellAt,
   column,
   localPoint,
@@ -17,6 +21,10 @@ import {
   world,
 } from '../../engine/cartography/geometry';
 import {objectSkin} from '../../engine/cartography/object-skin';
+import {
+  generateCoherentSpawns,
+  normalizeAccessFlows,
+} from '../../engine/cartography/spawns';
 import {
   transformHandles,
   transformObject,
@@ -158,13 +166,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const currentScene = useProjectStore((s) => s.currentScene);
     const currentMap = useProjectStore((s) => s.currentMap);
     const revision = useProjectStore((s) => s.revision);
+    const onboardingStage = useProjectStore((s) => s.onboardingStage);
 
     const setTool = useProjectStore((s) => s.setTool);
     const setSelectedId = useProjectStore((s) => s.setSelectedId);
     const setSelectedIds = useProjectStore((s) => s.setSelectedIds);
     const toggleSelectedId = useProjectStore((s) => s.toggleSelectedId);
     const setPanel = useProjectStore((s) => s.setPanel);
+    const setActiveModal = useProjectStore((s) => s.setActiveModal);
+    const setOnboardingStage = useProjectStore((s) => s.setOnboardingStage);
+    const setCustomMapVectors = useProjectStore((s) => s.setCustomMapVectors);
     const toggleImmersive = useProjectStore((s) => s.toggleImmersive);
+    const hydratedCustomMapRef = useRef<string | null>(null);
     const updateScene = useProjectStore((s) => s.updateScene);
     const checkpoint = useProjectStore((s) => s.checkpoint);
     const save = useProjectStore((s) => s.save);
@@ -238,6 +251,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const fit = useCallback(() => {
       const s = currentScene();
       const m = currentMap();
+      if (!s.boundary || s.boundary.length < 3) {
+        const pad = Math.max(16, m.widthMeters * 0.05);
+        viewRef.current = {
+          x: -pad,
+          y: -pad,
+          w: m.widthMeters + pad * 2,
+          h: m.heightMeters + pad * 2,
+        };
+        aspect();
+        applyView();
+        return;
+      }
       const pts = s.boundary.map((p) => world(p, m));
       const xs = pts.map((p) => p[0]);
       const ys = pts.map((p) => p[1]);
@@ -281,24 +306,14 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const baseEl = baseLayerRef.current;
       if (!baseEl) return;
       const m = currentMap();
-      const ps = (points: Point[]) =>
-        points.map((p) => localPoint(p, m).join(',')).join(' ');
       let html = `<rect x="-2000" y="-2000" width="5000" height="5000" fill="#edf0e5"/><rect width="${m.widthMeters}" height="${m.heightMeters}" fill="url(#paper)"/>`;
-      const features = CARTO_DATA.features.filter((f) =>
-        f.points.some((p) => {
-          const [x, y] = localPoint(p, m);
-          return (
-            x >= -30 &&
-            y >= -30 &&
-            x <= m.widthMeters + 30 &&
-            y <= m.heightMeters + 30
-          );
-        })
-      );
-      if (base === 'ortho') {
-        html += `<image href="${ORTHO_IMAGES[activeVenue]}" width="${m.widthMeters}" height="${m.heightMeters}"/>`;
-      } else {
-        for (const f of features) {
+
+      const renderVectorFeatures = (
+        vecFeatures: Array<{tags: Record<string, string>; points: Point[]}>
+      ): string => {
+        const ptsStr = (pts: Point[]) => pts.map((p) => p.join(',')).join(' ');
+        let svg = '';
+        for (const f of vecFeatures) {
           const t = f.tags;
           if (
             t.leisure === 'park' ||
@@ -308,22 +323,30 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             t.leisure === 'garden' ||
             t.natural === 'wood'
           ) {
-            html += `<polygon points="${ps(f.points)}" fill="${
+            svg += `<polygon points="${ptsStr(f.points)}" fill="${
               t.leisure === 'park' ? '#dbe4c9' : '#d2dfbe'
             }" stroke="#c6d3b2" stroke-width=".35"/>`;
           }
           if (t.natural === 'water') {
-            html += `<polygon points="${ps(f.points)}" fill="#b8d4d1" stroke="#8fb8b5" stroke-width=".4"/>`;
+            svg += `<polygon points="${ptsStr(f.points)}" fill="#b8d4d1" stroke="#8fb8b5" stroke-width=".4"/>`;
           }
           if (
             t.leisure === 'pitch' ||
             t.leisure === 'track' ||
             t.leisure === 'playground'
           ) {
-            html += `<polygon points="${ps(f.points)}" fill="#d4dcc4" stroke="#b7c4a5" stroke-width=".5"/>`;
+            svg += `<polygon points="${ptsStr(f.points)}" fill="#d4dcc4" stroke="#b7c4a5" stroke-width=".5"/>`;
+          }
+          if (
+            t.place === 'square' ||
+            (t.highway === 'pedestrian' && t.area === 'yes')
+          ) {
+            svg += `<polygon points="${ptsStr(f.points)}" fill="#ebede2" stroke="#cfd5c3" stroke-width=".45"/>`;
           }
         }
-        for (const f of features.filter((feat) => feat.tags.highway)) {
+        for (const f of vecFeatures.filter(
+          (feat) => feat.tags.highway && feat.tags.area !== 'yes'
+        )) {
           const t = f.tags;
           const foot = [
             'footway',
@@ -339,24 +362,30 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             : t.highway === 'service'
               ? 4
               : 7;
-          html += `<polyline points="${ps(f.points)}" fill="none" stroke="${
+          svg += `<polyline points="${ptsStr(f.points)}" fill="none" stroke="${
             foot ? '#f5f5e9' : '#cdd3c5'
-          }" stroke-width="${w + 1}" stroke-linejoin="round" stroke-linecap="round"/><polyline points="${ps(
+          }" stroke-width="${w + 1}" stroke-linejoin="round" stroke-linecap="round"/><polyline points="${ptsStr(
             f.points
           )}" fill="none" stroke="${
             foot ? '#f8f7ed' : '#fafbf5'
           }" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`;
         }
-        for (const f of features.filter((feat) => feat.tags.building)) {
-          html += `<polygon points="${ps(f.points)}" fill="#d7dccf" stroke="#bac5b0" stroke-width=".45"/>`;
+        for (const f of vecFeatures.filter((feat) => feat.tags.building)) {
+          svg += `<polygon points="${ptsStr(f.points)}" fill="#d7dccf" stroke="#bac5b0" stroke-width=".45"/>`;
         }
-      }
-      if (labelsVisible) {
+        return svg;
+      };
+
+      const renderStreetLabels = (
+        vecFeatures: Array<{tags: Record<string, string>; points: Point[]}>
+      ): string => {
+        if (!labelsVisible) return '';
+        let svg = '';
         const names = new Map<string, {pts: Point[]; d: number}>();
-        for (const f of features.filter(
+        for (const f of vecFeatures.filter(
           (feat) => feat.tags.highway && feat.tags.name
         )) {
-          const pts = f.points.map((p) => localPoint(p, m));
+          const pts = f.points;
           const d = polylineLength(pts);
           const nameKey = f.tags.name!;
           if (d > (names.get(nameKey)?.d || 0)) {
@@ -382,11 +411,73 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           const y = (a[1] + b[1]) / 2;
           let angle = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
           if (angle > 90 || angle < -90) angle += 180;
-          html += `<text class="street-label" transform="translate(${x} ${y}) rotate(${angle})" text-anchor="middle" font-size="2.1" dy="-.8">${esc(name)}</text>`;
+          svg += `<text class="street-label" transform="translate(${x} ${y}) rotate(${angle})" text-anchor="middle" font-size="2.1" dy="-.8">${esc(name)}</text>`;
         }
+        return svg;
+      };
+
+      if (m.customLocation) {
+        const cl = m.customLocation;
+        const hasVector = (cl.features?.length || 0) > 0;
+        html += `<defs><clipPath id="custom-square-clip"><rect x="0" y="0" width="${m.widthMeters}" height="${m.heightMeters}"/></clipPath></defs>`;
+        html += '<g clip-path="url(#custom-square-clip)">';
+        if (base === 'ortho') {
+          const tiles = computeMapTiles(cl.lat, cl.lon, cl.sizeMeters, 'ortho');
+          for (const t of tiles) {
+            html += `<image href="${esc(t.url)}" x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" preserveAspectRatio="none"/>`;
+          }
+          if (hasVector) {
+            html += renderStreetLabels(cl.features!);
+          }
+        } else if (hasVector) {
+          // Plano vectorial editorial limpio (idéntico al estilo de Plaza del Cristo)
+          html += renderVectorFeatures(cl.features!);
+          html += renderStreetLabels(cl.features!);
+        } else {
+          // Respaldo limpio sin iconos ni etiquetas comerciales si aún no hay geometría vectorial
+          const tiles = computeMapTiles(cl.lat, cl.lon, cl.sizeMeters, 'plan');
+          for (const t of tiles) {
+            const cleanUrl = `https://a.basemaps.cartocdn.com/light_nolabels/${t.z}/${t.tx}/${t.ty}.png`;
+            html += `<image href="${esc(cleanUrl)}" x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" preserveAspectRatio="none" opacity="0.85"/>`;
+          }
+        }
+        html += '</g>';
+        // Marco del área cuadrada operativa y cruz central de referencia
+        const cx = m.widthMeters / 2;
+        const cy = m.heightMeters / 2;
+        html += `<rect x="0" y="0" width="${m.widthMeters}" height="${m.heightMeters}" fill="none" stroke="#4b2665" stroke-width="1.1" stroke-dasharray="4 2.5"/>`;
+        if (onboardingStage === 'perimeter') {
+          html += `<g opacity=".7" pointer-events="none"><line x1="${cx - 6}" y1="${cy}" x2="${cx + 6}" y2="${cy}" stroke="#4b2665" stroke-width=".6"/><line x1="${cx}" y1="${cy - 6}" x2="${cx}" y2="${cy + 6}" stroke="#4b2665" stroke-width=".6"/><circle cx="${cx}" cy="${cy}" r="2.2" fill="#e4cfa2" stroke="#4b2665" stroke-width=".6"/></g>`;
+        }
+        baseEl.innerHTML = html;
+        return;
       }
+
+      const localFeatures = CARTO_DATA.features
+        .filter((f) =>
+          f.points.some((p) => {
+            const [x, y] = localPoint(p, m);
+            return (
+              x >= -30 &&
+              y >= -30 &&
+              x <= m.widthMeters + 30 &&
+              y <= m.heightMeters + 30
+            );
+          })
+        )
+        .map((f) => ({
+          tags: f.tags,
+          points: f.points.map((p) => localPoint(p, m)),
+        }));
+
+      if (base === 'ortho') {
+        html += `<image href="${ORTHO_IMAGES[activeVenue]}" width="${m.widthMeters}" height="${m.heightMeters}"/>`;
+      } else {
+        html += renderVectorFeatures(localFeatures);
+      }
+      html += renderStreetLabels(localFeatures);
       baseEl.innerHTML = html;
-    }, [currentMap, base, activeVenue, labelsVisible]);
+    }, [currentMap, base, activeVenue, labelsVisible, onboardingStage]);
 
     const drawAnnotations = useCallback(() => {
       const annEl = annotationLayerRef.current;
@@ -449,9 +540,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
 
       const pts = (p: Point[]) => p.map((q) => world(q, m).join(',')).join(' ');
-      let html = `<polygon points="${pts(s.boundary)}" fill="${
-        base === 'plan' ? '#e3ebba' : '#e5ebc0'
-      }" fill-opacity=".14" stroke="#8b9852" stroke-width=".6" stroke-dasharray="2 1.2"/>`;
+      let html =
+        s.boundary && s.boundary.length >= 3
+          ? `<polygon points="${pts(s.boundary)}" fill="${
+              base === 'plan' ? '#e3ebba' : '#e5ebc0'
+            }" fill-opacity=".14" stroke="#8b9852" stroke-width=".6" stroke-dasharray="2 1.2"/>`
+          : '';
 
       for (const o of s.reserves) {
         html += `<polygon data-id="${esc(o.id)}" points="${pts(
@@ -534,6 +628,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             : ''
         }</g>`;
       }
+      const flowMetrics = new Map(
+        normalizeAccessFlows(s.entrances, s.base.arrivals).map((fm) => [
+          fm.id,
+          fm,
+        ])
+      );
       for (const o of s.entrances) {
         const [x, y] = world([o.x, o.y], m);
         const w = o.clearWidth || 4;
@@ -553,6 +653,26 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                   : role === 'free'
                     ? '⇄'
                     : '↕';
+        const spawnType = o.spawnType || 'pedestrian';
+        const strokeColor =
+          spawnType === 'vehicle'
+            ? '#b8682a'
+            : spawnType === 'mixed'
+              ? '#644099'
+              : '#5374a0';
+        const textColor =
+          spawnType === 'vehicle'
+            ? '#8c4916'
+            : spawnType === 'mixed'
+              ? '#4b2665'
+              : '#294d80';
+        const typeTag =
+          spawnType === 'vehicle' ? 'VEH' : spawnType === 'mixed' ? 'MIX' : 'PEA';
+        const fm = flowMetrics.get(o.id);
+        const shareTag =
+          fm && fm.canEnter && fm.entrySharePct > 0
+            ? ` · ${Math.round(fm.entrySharePct)}%`
+            : '';
         const isEntSel = selectedSet.has(o.id);
         html += `<g data-id="${esc(o.id)}" class="map-item">${
           isEntSel
@@ -562,21 +682,21 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           x - dx
         }" y1="${y - dy}" x2="${x + dx}" y2="${
           y + dy
-        }" stroke="#5374a0" stroke-width=".9"/><circle cx="${x - dx}" cy="${
+        }" stroke="${strokeColor}" stroke-width=".95"/><circle cx="${x - dx}" cy="${
           y - dy
-        }" r=".5" fill="#fff" stroke="#5374a0" stroke-width=".2"/><circle cx="${
+        }" r=".5" fill="#fff" stroke="${strokeColor}" stroke-width=".2"/><circle cx="${
           x + dx
         }" cy="${
           y + dy
-        }" r=".5" fill="#fff" stroke="#5374a0" stroke-width=".2"/><text x="${x}" y="${
+        }" r=".5" fill="#fff" stroke="${strokeColor}" stroke-width=".2"/><text x="${x}" y="${
           y + 0.8
-        }" text-anchor="middle" fill="#294d80" stroke="white" stroke-width=".5" paint-order="stroke" font-size="3.4" transform="rotate(${
+        }" text-anchor="middle" fill="${textColor}" stroke="white" stroke-width=".5" paint-order="stroke" font-size="3.4" transform="rotate(${
           o.gateAngle || 0
         } ${x} ${y})">${symbol}</text><text x="${x}" y="${
           y + 4
-        }" text-anchor="middle" font-size="1.6" fill="#294d80" paint-order="stroke" stroke="white" stroke-width=".6">${esc(
+        }" text-anchor="middle" font-size="1.55" fill="${textColor}" paint-order="stroke" stroke="white" stroke-width=".6">[${typeTag}] ${esc(
           o.name
-        )} · ${num(w)} m</text></g>`;
+        )} · ${num(w)} m${shareTag}</text></g>`;
       }
       for (const o of s.roadPlans || []) {
         html += `<polyline data-id="${esc(o.id)}" points="${pts(
@@ -666,7 +786,38 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     useEffect(() => {
       drawBase();
       drawGrid();
-    }, [drawBase, drawGrid, activeVenue, base, labelsVisible, gridVisible, grid]);
+    }, [
+      drawBase,
+      drawGrid,
+      activeVenue,
+      base,
+      labelsVisible,
+      gridVisible,
+      grid,
+      revision,
+    ]);
+
+    // Si se abre un escenario personalizado antiguo o guardado sin capa vectorial,
+    // genera automáticamente su versión vectorial limpia una sola vez y la persiste.
+    useEffect(() => {
+      const m = currentMap();
+      const cl = m.customLocation;
+      if (!cl || (cl.features && cl.features.length > 0)) return;
+      if (hydratedCustomMapRef.current === m.source) return;
+      hydratedCustomMapRef.current = m.source;
+      let cancelled = false;
+      fetchOsmVectorContext(cl.lat, cl.lon, cl.sizeMeters, 9000)
+        .then(({streets, features}) => {
+          if (cancelled || !features.length) return;
+          setCustomMapVectors(streets, features);
+        })
+        .catch(() => {
+          // Mantiene el respaldo limpio si no hay conexión
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [currentMap, activeVenue, revision, setCustomMapVectors]);
 
     useEffect(() => {
       drawScenario();
@@ -745,6 +896,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const p = draftPoints.map((pt) => percent(pt, m));
       const id = crypto.randomUUID();
       let createdSubsoilId: string | null = null;
+      const completingOnboardingPerimeter =
+        tool === 'boundary' && onboardingStage === 'perimeter';
+      let detectedSummary: {total: number; ped: number; veh: number} | null =
+        null;
       updateScene((s) => {
         if (tool === 'xray:boundary') {
           createdSubsoilId = commitSubsoilBoundary(
@@ -776,9 +931,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             role: 'both',
             phases: {event: 'both'},
             phaseTags: tagsForNew(),
+            spawnType: 'pedestrian',
+            entryWeight: 20,
+            exitWeight: 20,
+            maxRatePerHour: 0,
           });
         } else if (tool === 'boundary') {
-          if (boundaryModeRef.current === 'add') {
+          if (boundaryModeRef.current === 'add' && !completingOnboardingPerimeter) {
             s.passages ??= [];
             s.passages.push({
               id,
@@ -786,7 +945,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               points: p,
               origin: 'boundary-add',
             });
-          } else if (boundaryModeRef.current === 'subtract') {
+          } else if (
+            boundaryModeRef.current === 'subtract' &&
+            !completingOnboardingPerimeter
+          ) {
             s.reserves.push({
               id,
               name: 'Área restada del perímetro',
@@ -802,6 +964,21 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             s.reserves = s.reserves.filter(
               (r) => r.origin !== 'boundary-subtract'
             );
+            if (completingOnboardingPerimeter || !s.entrances.length) {
+              const generated = generateCoherentSpawns(
+                p,
+                m,
+                m.customLocation ? undefined : CARTO_DATA
+              );
+              if (generated.length) {
+                s.entrances = generated;
+                detectedSummary = {
+                  total: generated.length,
+                  ped: generated.filter((e) => e.spawnType !== 'vehicle').length,
+                  veh: generated.filter((e) => e.spawnType === 'vehicle').length,
+                };
+              }
+            }
           }
         } else if (tool === 'reserve') {
           s.reserves.push({
@@ -838,6 +1015,26 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
       }, true);
       setDraftPoints([]);
+      if (completingOnboardingPerimeter) {
+        setOnboardingStage('inventory');
+        setTool('select');
+        setActiveModal('inventory');
+        if (detectedSummary) {
+          const sum = detectedSummary as {
+            total: number;
+            ped: number;
+            veh: number;
+          };
+          showToast(
+            `Perímetro definido y ${sum.total} accesos detectados (${sum.ped} peatonales, ${sum.veh} vehiculares). Define ahora el inventario.`
+          );
+        } else {
+          showToast('Perímetro definido. Ahora configura el inventario del evento.');
+        }
+        setTimeout(() => fit(), 40);
+        onSceneChanged();
+        return;
+      }
       const wasXray = tool.startsWith('xray:');
       setTool(wasXray ? 'xray:select' : 'select');
       if (createdSubsoilId) setSelectedIds([createdSubsoilId]);
@@ -937,7 +1134,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       // Ignore pointerdown on floating UI controls inside #map
       if (
         targetEl.closest(
-          '#inspector,#layer-panel,.zoom-pad,#draw-confirm,.director-hud'
+          '#inspector,#layer-panel,.zoom-pad,#draw-confirm,.director-hud,#onboarding-perimeter-banner'
         )
       ) {
         return;
@@ -1250,8 +1447,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'Escape') {
-        setTool('select');
-        setSelectedId(null);
+        if (onboardingStage === 'perimeter') {
+          setDraftPoints([]);
+        } else {
+          setTool('select');
+          setSelectedId(null);
+        }
       }
       if (e.key === 'Enter' && draftPoints.length) {
         finishDraw();
@@ -1315,6 +1516,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const sunOpacity = daylight >= 9 && daylight <= 17 ? '0.22' : '0.05';
 
     const isSimulate = panel === 'simulate';
+    const isOnboardingPerimeter = onboardingStage === 'perimeter';
 
     return (
       <>
@@ -1403,7 +1605,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               className={tool === 'select' ? 'active' : ''}
               title="Seleccionar y mover"
               aria-label="Seleccionar y mover"
-              disabled={isSimulate}
+              disabled={isSimulate || isOnboardingPerimeter}
               onClick={() => setTool('select')}
             >
               ↖
@@ -1414,7 +1616,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               className={tool === 'measure' ? 'active' : ''}
               title="Medir distancias"
               aria-label="Medir distancias"
-              disabled={isSimulate}
+              disabled={isSimulate || isOnboardingPerimeter}
               onClick={() => setTool('measure')}
             >
               ↔
@@ -1425,7 +1627,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               className={tool === 'note' ? 'active' : ''}
               title="Añadir observación"
               aria-label="Añadir observación"
-              disabled={isSimulate}
+              disabled={isSimulate || isOnboardingPerimeter}
               onClick={() => setTool('note')}
             >
               ⊕
@@ -1436,7 +1638,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               id="undo"
               title="Deshacer"
               aria-label="Deshacer"
-              disabled={isSimulate || !history.length}
+              disabled={isSimulate || isOnboardingPerimeter || !history.length}
               onClick={() => onUndoRedo(false)}
             >
               ↶
@@ -1446,12 +1648,30 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               id="redo"
               title="Rehacer"
               aria-label="Rehacer"
-              disabled={isSimulate || !future.length}
+              disabled={isSimulate || isOnboardingPerimeter || !future.length}
               onClick={() => onUndoRedo(true)}
             >
               ↷
             </button>
           </div>
+
+          {isOnboardingPerimeter && (
+            <div
+              id="onboarding-perimeter-banner"
+              className="onboarding-perimeter-banner"
+              role="status"
+            >
+              <span className="onboarding-step-pill">PASO 1 DE 2</span>
+              <div>
+                <b>Delimita el perímetro operativo del evento sobre el mapa</b>
+                <span>
+                  Marca al menos 3 vértices sobre el plano y pulsa «Terminar».
+                  Después se detectarán los accesos peatonales y vehiculares y
+                  pasarás al inventario.
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="map-top-note">
             <span className="live-dot" />{' '}
@@ -1528,10 +1748,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               className="quiet"
               onClick={() => {
                 setDraftPoints([]);
-                setTool('select');
+                if (!isOnboardingPerimeter) {
+                  setTool('select');
+                }
               }}
             >
-              Cancelar
+              {isOnboardingPerimeter ? 'Reiniciar trazo' : 'Cancelar'}
             </button>
           </div>
 

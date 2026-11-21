@@ -78,9 +78,37 @@ export function createDefaultProject(): ProjectFile {
     version: 1,
     format: 'ojo-de-buey',
     active: 'cristo',
-    maps: MAPS_DATA,
+    maps: structuredClone(MAPS_DATA),
     scenes,
   };
+}
+
+/**
+ * Valida si un mapa personalizado guardado o importado tiene una geometría cartográfica íntegra.
+ */
+function isValidCustomMap(m: VenueMap | undefined): boolean {
+  if (!m?.customLocation) return false;
+  const cl = m.customLocation;
+  return (
+    Array.isArray(m.bbox) &&
+    m.bbox.length === 4 &&
+    m.bbox.every((v) => Number.isFinite(v)) &&
+    Number.isFinite(m.widthMeters) &&
+    m.widthMeters >= 100 &&
+    m.widthMeters <= 2000 &&
+    Number.isFinite(m.heightMeters) &&
+    m.heightMeters >= 100 &&
+    m.heightMeters <= 2000 &&
+    Number.isFinite(cl.lat) &&
+    cl.lat >= -85 &&
+    cl.lat <= 85 &&
+    Number.isFinite(cl.lon) &&
+    cl.lon >= -180 &&
+    cl.lon <= 180 &&
+    Number.isFinite(cl.sizeMeters) &&
+    cl.sizeMeters >= 100 &&
+    cl.sizeMeters <= 2000
+  );
 }
 
 /**
@@ -101,10 +129,10 @@ export function loadProjectFromStorage(): {
     if (saved?.format === 'ojo-de-buey' && saved.version === 1) {
       for (const k of Object.keys(VENUES) as VenueKey[]) {
         validateScene(saved.scenes[k]);
-        if (
-          JSON.stringify(saved.maps[k].bbox) !==
-          JSON.stringify(MAPS_DATA[k].bbox)
-        ) {
+        const sameBase =
+          JSON.stringify(saved.maps?.[k]?.bbox) ===
+          JSON.stringify(MAPS_DATA[k].bbox);
+        if (!sameBase && !isValidCustomMap(saved.maps?.[k])) {
           throw new Error('La base ha cambiado');
         }
         for (const [i, f] of (saved.scenes[k].fences || []).entries()) {
@@ -112,6 +140,7 @@ export function loadProjectFromStorage(): {
           f.name ??= 'Valla ' + (i + 1);
         }
       }
+      configure(saved.maps);
       return {project: saved, hasSaved: true};
     }
   } catch {
@@ -271,14 +300,15 @@ export function parseImportedProject(
     const pMaps = p.maps as Record<VenueKey, VenueMap> | undefined;
     for (const k of Object.keys(VENUES) as VenueKey[]) {
       validateScene(scenes[k]);
-      if (
-        JSON.stringify(pMaps?.[k]?.bbox) !== JSON.stringify(maps[k].bbox)
-      ) {
+      const sameBase =
+        JSON.stringify(pMaps?.[k]?.bbox) === JSON.stringify(maps[k].bbox);
+      if (!sameBase && !isValidCustomMap(pMaps?.[k])) {
         throw new Error(
           'La extensión cartográfica de este archivo es diferente.'
         );
       }
     }
+    if (pMaps) configure(pMaps);
     return p as unknown as ProjectFile;
   } else {
     let old = (p.scenario || p) as ProjectFile['scenes'][VenueKey];

@@ -19,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const project = useProjectStore((s) => s.project);
   const panel = useProjectStore((s) => s.panel);
+  const onboardingStage = useProjectStore((s) => s.onboardingStage);
   const saveStatusText = useProjectStore((s) => s.saveStatusText);
   const setMenuOpen = useProjectStore((s) => s.setMenuOpen);
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   const replaceProject = useProjectStore((s) => s.replaceProject);
 
   const isSimulate = panel === 'simulate';
+  const isLockedPerimeter = onboardingStage === 'perimeter';
 
   const handleExport = () => {
     save();
@@ -92,6 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="demand"
           className="header-primary-btn header-demand-btn"
           type="button"
+          disabled={isLockedPerimeter}
           onClick={() => setActiveModal('demand')}
         >
           <span aria-hidden="true">⊞</span>
@@ -101,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="inventory"
           className="quiet"
           type="button"
-          disabled={isSimulate}
+          disabled={isSimulate || isLockedPerimeter}
           onClick={() => setActiveModal('inventory')}
         >
           1. Inventario
@@ -110,6 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="risk-button"
           className="quiet"
           type="button"
+          disabled={isLockedPerimeter}
           onClick={() => {
             onPauseSimulation();
             setActiveModal('risk');
@@ -121,6 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="programme"
           className="quiet"
           type="button"
+          disabled={isLockedPerimeter}
           onClick={() => setActiveModal('programme')}
         >
           Programa por días
@@ -129,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="laboratory"
           className="quiet"
           type="button"
-          disabled={isSimulate}
+          disabled={isSimulate || isLockedPerimeter}
           onClick={() => setActiveModal('laboratory')}
         >
           Comparar diseños
@@ -138,6 +143,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="contacts"
           className="quiet"
           type="button"
+          disabled={isLockedPerimeter}
           onClick={() => setActiveModal('contacts')}
         >
           Contactos
@@ -146,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="organizations"
           className="quiet"
           type="button"
-          disabled={isSimulate}
+          disabled={isSimulate || isLockedPerimeter}
           onClick={() => setActiveModal('org')}
         >
           Empresas y recursos
@@ -155,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="settings"
           className="quiet"
           type="button"
-          disabled={isSimulate}
+          disabled={isSimulate || isLockedPerimeter}
           onClick={() => setActiveModal('parameters')}
         >
           Ficha de producción

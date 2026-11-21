@@ -24,7 +24,43 @@ export type WeatherKind = 'sun' | 'cloud' | 'rain' | 'wind';
 /** Coordenada bidimensional `[x, y]`. */
 export type Point2D = [number, number];
 
-/** Metadatos georreferenciados de un recinto en proyección UTM 28N (EPSG:32628). */
+/** Clasificación de infraestructura / tránsito admitido en un punto de aparición (spawn). */
+export type SpawnKind = 'pedestrian' | 'vehicle' | 'mixed';
+
+/** Vía vectorial simplificada obtenida de OpenStreetMap para un emplazamiento personalizado. */
+export interface CustomMapStreet {
+  name: string;
+  highway: string;
+  kind: 'pedestrian' | 'vehicle';
+  /** Puntos en coordenadas locales en metros `[x, y]` respecto a la esquina superior izquierda del mapa. */
+  points: Point2D[];
+}
+
+/** Geometría vectorial simplificada de OpenStreetMap en metros locales para el plano vectorial limpio. */
+export interface CustomMapFeature {
+  id: string;
+  tags: Record<string, string>;
+  /** Puntos en coordenadas locales en metros `[x, y]` respecto a la esquina superior izquierda del mapa. */
+  points: Point2D[];
+}
+
+/** Configuración de un emplazamiento personalizado elegido directamente sobre un mapa real. */
+export interface CustomLocationConfig {
+  /** Latitud WGS84 del centro de la escena. */
+  lat: number;
+  /** Longitud WGS84 del centro de la escena. */
+  lon: number;
+  /** Nombre o dirección descriptiva del emplazamiento. */
+  label: string;
+  /** Lado del área cuadrada operativa en metros (desde el centro hacia afuera: `±sizeMeters / 2`). */
+  sizeMeters: number;
+  /** Vías reales obtenidas de OpenStreetMap dentro del cuadrado operativo. */
+  streets?: CustomMapStreet[];
+  /** Capas vectoriales limpias (edificios, vías, parques, agua) obtenidas de OpenStreetMap. */
+  features?: CustomMapFeature[];
+}
+
+/** Metadatos georreferenciados de un recinto en proyección UTM 28N (EPSG:32628) o local métrica. */
 export interface MapMetadata {
   bbox: [number, number, number, number];
   widthMeters: number;
@@ -38,6 +74,7 @@ export interface MapMetadata {
   w?: number;
   h?: number;
   ppm?: number;
+  customLocation?: CustomLocationConfig;
   features?: Array<{
     kind: string;
     name: string;
@@ -167,6 +204,18 @@ export interface EntranceItem {
   locked?: boolean;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
+  /** Tipo de tránsito admitido en este punto de aparición (peatonal, vehicular o mixto). */
+  spawnType?: SpawnKind;
+  /** Peso o porcentaje relativo de flujo de entrada (0–100). */
+  entryWeight?: number;
+  /** Peso o porcentaje relativo de flujo de salida (0–100). */
+  exitWeight?: number;
+  /** Volumen máximo horario de tránsito en este acceso (pers/h; 0 = sin límite específico). */
+  maxRatePerHour?: number;
+  /** Frecuencia objetivo de aparición en segundos (opcional). */
+  frequencySec?: number;
+  /** Nombre de la calle o vía real sobre la que se sitúa el punto de aparición. */
+  streetName?: string;
 }
 
 /** Trazo poligonal o polilínea en el plano (reservas, pasillos, vallas, mediciones, viales). */

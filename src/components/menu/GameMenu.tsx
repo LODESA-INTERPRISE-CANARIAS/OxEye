@@ -1,12 +1,21 @@
 import React, {useState} from 'react';
 import {downloadFile} from '../../db/repository';
 import {
+  DEFAULT_MAP_CENTER,
+  fetchOsmVectorContext,
+} from '../../engine/cartography/custom-map';
+import {
   eventGoals,
   eventSchedule,
   goalChart,
 } from '../../engine/director/director-logic';
 import {useProjectStore} from '../../store/useProjectStore';
-import type {WorkDayKind, WorkShiftDay} from '../../types';
+import type {
+  CustomLocationConfig,
+  WorkDayKind,
+  WorkShiftDay,
+} from '../../types';
+import {LocationPicker} from './LocationPicker';
 
 const shiftDateByDays = (isoDate: string, delta: number): string => {
   const d = new Date(isoDate + 'T12:00:00Z');
@@ -47,9 +56,12 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const [screen, setScreen] = useState<MenuScreen>('main');
   const [step, setStep] = useState(0);
   const [wizardError, setWizardError] = useState('');
+  const [creatingModel, setCreatingModel] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const [settings, setSettings] = useState<{
     name: string;
+    locationMode: 'cristo' | 'custom';
+    customLocation: CustomLocationConfig;
     startDate: string;
     endDate: string;
     from: string;
@@ -67,6 +79,13 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     };
   }>({
     name: 'Navidad en el Cristo',
+    locationMode: 'cristo',
+    customLocation: {
+      lat: DEFAULT_MAP_CENTER.lat,
+      lon: DEFAULT_MAP_CENTER.lon,
+      label: DEFAULT_MAP_CENTER.label,
+      sizeMeters: DEFAULT_MAP_CENTER.sizeMeters,
+    },
     startDate: today,
     endDate: today,
     from: '10:00',
@@ -120,8 +139,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     }
   };
 
-  const handleWizardSubmit = (e: React.FormEvent) => {
+  const handleWizardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creatingModel) return;
     setWizardError('');
     try {
       if (step === 0) {
@@ -181,10 +201,27 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
           name: wd.name.trim(),
           hours: computeShiftHours(wd.from, wd.to),
         }));
+        let customLoc: CustomLocationConfig | undefined;
+        if (settings.locationMode === 'custom') {
+          setCreatingModel(true);
+          const {streets, features} = await fetchOsmVectorContext(
+            settings.customLocation.lat,
+            settings.customLocation.lon,
+            settings.customLocation.sizeMeters,
+            6000
+          );
+          customLoc = {
+            ...settings.customLocation,
+            streets,
+            features,
+          };
+          setCreatingModel(false);
+        }
         createFromWizard({
           ...settings,
           ...schedule,
           workDays: normalizedWorkDays,
+          customLocation: customLoc,
         });
         setScreen('main');
         onResume();
@@ -192,6 +229,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
       }
       setStep((s) => s + 1);
     } catch (err) {
+      setCreatingModel(false);
       setWizardError((err as Error).message);
     }
   };
@@ -452,14 +490,67 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
 
             {step === 1 && (
               <>
-                <button
-                  type="button"
-                  className="map-choice"
-                  aria-pressed="true"
-                >
-                  <b>Plaza del Cristo</b>
-                  <span>La Laguna · espacio inicial del prototipo</span>
-                </button>
+                <div className="location-mode-grid">
+                  <button
+                    type="button"
+                    id="location-mode-cristo"
+                    className={`map-choice ${settings.locationMode === 'cristo' ? 'is-selected' : ''}`}
+                    aria-pressed={settings.locationMode === 'cristo'}
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        locationMode: 'cristo',
+                      }))
+                    }
+                  >
+                    <b>Plaza del Cristo</b>
+                    <span>La Laguna · espacio de referencia</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="location-mode-custom"
+                    className={`map-choice ${settings.locationMode === 'custom' ? 'is-selected' : ''}`}
+                    aria-pressed={settings.locationMode === 'custom'}
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        locationMode: 'custom',
+                        example: false,
+                        name:
+                          prev.name === 'Navidad en el Cristo'
+                            ? 'Mi evento personalizado'
+                            : prev.name,
+                      }))
+                    }
+                  >
+                    <b>Elegir en el mapa real</b>
+                    <span>Centro libre y área cuadrada editable</span>
+                  </button>
+                </div>
+
+                {settings.locationMode === 'custom' && (
+                  <LocationPicker
+                    value={settings.customLocation}
+                    onChange={(nextLoc) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        customLocation: nextLoc,
+                      }))
+                    }
+                    onLabelPicked={(shortName) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        name:
+                          !prev.name.trim() ||
+                          prev.name === 'Mi evento personalizado' ||
+                          prev.name === 'Navidad en el Cristo'
+                            ? `Evento en ${shortName}`
+                            : prev.name,
+                      }))
+                    }
+                  />
+                )}
+
                 <label>
                   Nombre del modelo
                   <input
@@ -472,24 +563,35 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                     }
                   />
                 </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    id="wizard-example"
-                    checked={settings.example}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        example: e.target.checked,
-                      }))
-                    }
-                  />{' '}
-                  Usar el ejemplo de Navidad como base
-                </label>
-                <p>
-                  El ejemplo incluye puestos, mesas, cubiertas y accesos que
-                  podrás ajustar en el inventario.
-                </p>
+                {settings.locationMode === 'cristo' ? (
+                  <>
+                    <label>
+                      <input
+                        type="checkbox"
+                        id="wizard-example"
+                        checked={settings.example}
+                        onChange={(e) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            example: e.target.checked,
+                          }))
+                        }
+                      />{' '}
+                      Usar el ejemplo de Navidad como base
+                    </label>
+                    <p>
+                      Tras elegir la zona, primero delimitarás el perímetro
+                      operativo sobre el mapa y después confirmarás el
+                      inventario.
+                    </p>
+                  </>
+                ) : (
+                  <p>
+                    El punto seleccionado actuará como centro de la escena. Al
+                    entrar, primero dibujarás el perímetro del evento y luego
+                    definirás el inventario.
+                  </p>
+                )}
               </>
             )}
 
@@ -740,7 +842,11 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
               <>
                 <dl>
                   <dt>Ubicación</dt>
-                  <dd>Plaza del Cristo</dd>
+                  <dd>
+                    {settings.locationMode === 'custom'
+                      ? `${settings.customLocation.label} · ${settings.customLocation.sizeMeters} × ${settings.customLocation.sizeMeters} m`
+                      : 'Plaza del Cristo'}
+                  </dd>
                   <dt>Modelo</dt>
                   <dd>{settings.name}</dd>
                   <dt>Fechas</dt>
@@ -793,10 +899,16 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
               >
                 {step ? 'Anterior' : 'Menú principal'}
               </button>
-              <button className="game-primary" type="submit">
-                {step === 4
-                  ? 'Crear modelo y preparar inventario'
-                  : 'Siguiente'}
+              <button
+                className="game-primary"
+                type="submit"
+                disabled={creatingModel}
+              >
+                {creatingModel
+                  ? 'Preparando cartografía…'
+                  : step === 4
+                    ? 'Crear modelo y delimitar perímetro'
+                    : 'Siguiente'}
               </button>
             </div>
           </form>

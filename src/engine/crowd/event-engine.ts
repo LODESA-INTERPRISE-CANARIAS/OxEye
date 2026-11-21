@@ -97,6 +97,16 @@ export class EventEngine {
   capacity: number;
   waypoints: number[];
   entries: Array<Entrance & {cell: number; field: Int32Array}>;
+  entryStats: Map<
+    string,
+    {
+      arrivals: number;
+      exits: number;
+      capped: number;
+      hourBucket: number;
+      hourCount: number;
+    }
+  >;
   stations: SimStation[];
   coverLoad: Map<string, number>;
   hourly: number[];
@@ -206,6 +216,13 @@ export class EventEngine {
       }))
       .filter((e) => e.cell >= 0)
       .map((e) => ({...e, field: flow(this.g, e.cell)}));
+
+    this.entryStats = new Map(
+      this.entries.map((e) => [
+        e.id,
+        {arrivals: 0, exits: 0, capped: 0, hourBucket: 0, hourCount: 0},
+      ])
+    );
 
     for (let i = 0; i < 48; i++) {
       for (let j = 0; j < 80; j++) {
@@ -566,14 +583,57 @@ export class EventEngine {
       this.stats.technical++;
       return;
     }
-    const incoming = this.entries.filter((e) =>
+    const allIncoming = this.entries.filter((e) =>
       ['in', 'both', 'free'].includes(gateMode(e))
     );
-    if (!incoming.length) {
+    if (!allIncoming.length) {
       this.stats.entryBlocked++;
       return;
     }
-    const entry = incoming[Math.floor(this.random() * incoming.length)];
+    const pedIncoming = allIncoming.filter((e) => e.spawnType !== 'vehicle');
+    const pool = pedIncoming.length ? pedIncoming : allIncoming;
+    const hourBucket = Math.floor(this.time / 3600);
+    const eligible = pool.filter((e) => {
+      const cap = Math.max(0, Number(e.maxRatePerHour) || 0);
+      if (!cap) return true;
+      const st = this.entryStats.get(e.id);
+      if (!st) return true;
+      if (st.hourBucket !== hourBucket) {
+        st.hourBucket = hourBucket;
+        st.hourCount = 0;
+      }
+      if (st.hourCount >= cap) {
+        st.capped++;
+        return false;
+      }
+      return true;
+    });
+    if (!eligible.length) {
+      this.stats.entryBlocked++;
+      return;
+    }
+    const hasWeights = eligible.some((e) => Number.isFinite(e.entryWeight));
+    let entry = eligible[0];
+    if (!hasWeights) {
+      entry = eligible[Math.floor(this.random() * eligible.length)];
+    } else {
+      const weights = eligible.map((e) =>
+        Number.isFinite(e.entryWeight) ? Math.max(0, Number(e.entryWeight)) : 1
+      );
+      const totalW = weights.reduce((acc, w) => acc + w, 0);
+      if (totalW <= 0) {
+        entry = eligible[Math.floor(this.random() * eligible.length)];
+      } else {
+        let pick = this.random() * totalW;
+        for (let i = 0; i < eligible.length; i++) {
+          pick -= weights[i];
+          if (pick <= 0) {
+            entry = eligible[i];
+            break;
+          }
+        }
+      }
+    }
     const p = this.g.point(entry.cell);
     let point: Point | null = null;
     for (let i = 0; i < 35; i++) {
@@ -590,6 +650,15 @@ export class EventEngine {
       this.stats.entryBlocked++;
       this.pain('acceso', entry.cell, entry.name);
       return;
+    }
+    const st = this.entryStats.get(entry.id);
+    if (st) {
+      if (st.hourBucket !== hourBucket) {
+        st.hourBucket = hourBucket;
+        st.hourCount = 0;
+      }
+      st.arrivals++;
+      st.hourCount++;
     }
     const profile = this.pickProfile();
     const persona = pickPersona(profile, this.random, this.s.variety ?? 1);
@@ -784,20 +853,70 @@ export class EventEngine {
 
   exit(a: Agent): void {
     const cell = this.g.index(a.x, a.y);
-    const options = this.entries
+    const reachable = this.entries
       .filter(
         (e) =>
           ['out', 'both', 'free'].includes(gateMode(e)) && e.field[cell] >= 0
       )
       .sort((x, y) => x.field[cell] - y.field[cell]);
-    if (!options.length) {
+    if (!reachable.length) {
       a.state = 'trapped';
       this.pain('sin_salida', cell, '', a, a.stuck || 0);
       return;
     }
+    const pedExits = reachable.filter((e) => e.spawnType !== 'vehicle');
+    const options = pedExits.length ? pedExits : reachable;
+    const hasCustomExitWeights = options.some((e) =>
+      Number.isFinite(e.exitWeight)
+    );
+    let chosen = options[0];
+    if (hasCustomExitWeights && options.length > 1) {
+      const scores = options.map((e) => {
+        const w = Number.isFinite(e.exitWeight)
+          ? Math.max(0, Number(e.exitWeight))
+          : 10;
+        const dist = Math.max(0, e.field[cell]);
+        return w / (1 + dist * 0.015);
+      });
+      const total = scores.reduce((acc, v) => acc + v, 0);
+      if (total > 0) {
+        let pick = this.random() * total;
+        for (let i = 0; i < options.length; i++) {
+          pick -= scores[i];
+          if (pick <= 0) {
+            chosen = options[i];
+            break;
+          }
+        }
+      }
+    }
     a.state = 'exit';
-    a.target = options[0].id;
+    a.target = chosen.id;
     a.stuck = 0;
+    const st = this.entryStats.get(chosen.id);
+    if (st) st.exits++;
+  }
+
+  /** Devuelve el recuento acumulado de entradas, salidas y saturaciones por acceso. */
+  accessFlowSummary(): Array<{
+    id: string;
+    name: string;
+    spawnType: string;
+    arrivals: number;
+    exits: number;
+    capped: number;
+  }> {
+    return this.entries.map((e) => {
+      const st = this.entryStats.get(e.id);
+      return {
+        id: e.id,
+        name: e.name,
+        spawnType: e.spawnType || 'pedestrian',
+        arrivals: st?.arrivals || 0,
+        exits: st?.exits || 0,
+        capped: st?.capped || 0,
+      };
+    });
   }
 
   depart(a: Agent): void {

@@ -8,16 +8,28 @@ import {useProjectStore} from '../../store/useProjectStore';
  */
 export const WorkspaceBar: React.FC = () => {
   const activeVenue = useProjectStore((s) => s.activeVenue);
+  const currentMap = useProjectStore((s) => s.currentMap);
+  const revision = useProjectStore((s) => s.revision);
   const base = useProjectStore((s) => s.base);
   const layerPanelOpen = useProjectStore((s) => s.layerPanelOpen);
   const setBase = useProjectStore((s) => s.setBase);
   const setLayerPanelOpen = useProjectStore((s) => s.setLayerPanelOpen);
 
+  void revision;
+  const m = currentMap();
+  const customLoc = m.customLocation;
+
   return (
     <div className="workspace-bar">
       <div>
-        <b id="place-title">{VENUES[activeVenue].name}</b>
-        <span id="place-sub">{VENUES[activeVenue].tag}</span>
+        <b id="place-title">
+          {customLoc ? customLoc.label : VENUES[activeVenue].name}
+        </b>
+        <span id="place-sub">
+          {customLoc
+            ? `${customLoc.sizeMeters} × ${customLoc.sizeMeters} m · área cuadrada personalizada`
+            : VENUES[activeVenue].tag}
+        </span>
       </div>
       <div className="segmented" aria-label="Base cartográfica">
         <button

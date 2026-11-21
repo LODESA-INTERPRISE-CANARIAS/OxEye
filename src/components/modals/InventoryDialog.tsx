@@ -25,9 +25,11 @@ export const InventoryDialog: React.FC<InventoryDialogProps> = ({
   const dlgRef = useRef<HTMLDialogElement | null>(null);
   const activeModal = useProjectStore((s) => s.activeModal);
   const activeVenue = useProjectStore((s) => s.activeVenue);
+  const onboardingStage = useProjectStore((s) => s.onboardingStage);
   const currentScene = useProjectStore((s) => s.currentScene);
   const currentMap = useProjectStore((s) => s.currentMap);
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
+  const setOnboardingStage = useProjectStore((s) => s.setOnboardingStage);
   const replaceScene = useProjectStore((s) => s.replaceScene);
   const updateScene = useProjectStore((s) => s.updateScene);
   const setPhase = useProjectStore((s) => s.setPhase);
@@ -104,6 +106,9 @@ export const InventoryDialog: React.FC<InventoryDialogProps> = ({
     setPhase('event');
     setSelectedId(null);
     setTool('select');
+    if (onboardingStage === 'inventory') {
+      setOnboardingStage('none');
+    }
     setActiveModal(null);
     onSceneCommitted();
   };
@@ -135,14 +140,28 @@ export const InventoryDialog: React.FC<InventoryDialogProps> = ({
       id="inventory-dialog"
       ref={dlgRef}
       onClose={() => {
+        if (onboardingStage === 'inventory') {
+          setOnboardingStage('none');
+        }
         if (isOpen) setActiveModal(null);
       }}
     >
       <div id="inventory-body">
+        {onboardingStage === 'inventory' && (
+          <div className="onboarding-step-banner" id="onboarding-inventory-step">
+            <b>Paso 2 de 2 · Define el inventario del evento</b>
+            <span>
+              El perímetro operativo y los accesos iniciales ya están listos.
+              Ajusta las piezas que necesitas para pasar a la edición libre del
+              plano.
+            </span>
+          </div>
+        )}
         <h2>1. Lo que tengo</h2>
         <p>
-          {VENUES[activeVenue].name} · Cantidades totales del proyecto. Los
-          elementos retirados se indican antes de confirmar.
+          {currentMap().customLocation?.label || VENUES[activeVenue].name} ·
+          Cantidades totales del proyecto. Los elementos retirados se indican
+          antes de confirmar.
         </p>
         {(() => {
           const legacy = currentScene().infrastructure.filter((o) =>

@@ -1,8 +1,9 @@
 import React, {useRef, useState} from 'react';
 import {CATALOG, ICONS} from '../../data/catalog';
-import {MAPS_DATA} from '../../data/geodata';
+import {CARTO_DATA, MAPS_DATA} from '../../data/geodata';
 import {downloadFile, exportNotesCSV} from '../../db/repository';
 import {cellAt, polylineLength, world} from '../../engine/cartography/geometry';
+import {generateCoherentSpawns} from '../../engine/cartography/spawns';
 import type {EventEngine} from '../../engine/crowd/event-engine';
 import {
   applyLiveArrivals,
@@ -127,6 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const currentScene = useProjectStore((s) => s.currentScene);
   const currentMap = useProjectStore((s) => s.currentMap);
   const revision = useProjectStore((s) => s.revision);
+  const onboardingStage = useProjectStore((s) => s.onboardingStage);
 
   const setTool = useProjectStore((s) => s.setTool);
   const setSelectedId = useProjectStore((s) => s.setSelectedId);
@@ -315,6 +317,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div id="panel-content">
         {panel === 'design' && (
           <>
+            {onboardingStage === 'perimeter' && (
+              <section className="panel-section sidebar-onboarding-lock">
+                <div className="section-label">PASO 1 DE 2 · PERÍMETRO</div>
+                <p className="small-note">
+                  Delimita primero el área operativa directamente sobre el mapa
+                  (mínimo 3 puntos) y pulsa <b>Terminar</b>. Después se abrirá
+                  el inventario para pasar a la edición habitual.
+                </p>
+              </section>
+            )}
+            <div
+              className={
+                onboardingStage === 'perimeter' ? 'sidebar-locked-body' : ''
+              }
+            >
             <section className="panel-section">
               <div className="section-label">
                 1. INVENTARIO{' '}
@@ -627,9 +644,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ⇢ Propuesta vial
                 </button>
               </div>
+              <button
+                type="button"
+                id="detect-spawns-btn"
+                className="quiet wide"
+                style={{marginTop: '8px'}}
+                disabled={!s.boundary || s.boundary.length < 3}
+                onClick={() => {
+                  const generated = generateCoherentSpawns(
+                    s.boundary,
+                    m,
+                    m.customLocation ? undefined : CARTO_DATA
+                  );
+                  if (!generated.length) {
+                    showToast(
+                      'Define primero un perímetro válido para detectar accesos.'
+                    );
+                    return;
+                  }
+                  updateScene((sc) => {
+                    sc.entrances = generated;
+                  }, true);
+                  const ped = generated.filter(
+                    (e) => e.spawnType !== 'vehicle'
+                  ).length;
+                  const veh = generated.filter(
+                    (e) => e.spawnType === 'vehicle'
+                  ).length;
+                  showToast(
+                    `Detectados ${generated.length} accesos desde las vías (${ped} peatonales, ${veh} vehiculares).`
+                  );
+                  onSceneChanged();
+                }}
+              >
+                ⌖ Detectar accesos desde vías
+              </button>
               <p className="small-note">
-                Trazados libres. Los viales son anotaciones de planificación; no
-                se simulan vehículos.
+                Genera spawns peatonales y vehiculares coherentes con las calles
+                que cruzan o bordean el perímetro. Haz clic en cualquier acceso
+                para ajustar su porcentaje, frecuencia y volumen.
               </p>
 
               <div className="section-label" style={{marginTop: '18px'}}>
@@ -727,6 +780,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Configurar responsables y recursos
               </button>
             </section>
+            </div>
           </>
         )}
 

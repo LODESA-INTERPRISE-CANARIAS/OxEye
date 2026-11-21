@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {cellAt, inside, world} from '../../engine/cartography/geometry';
+import {normalizeAccessFlows} from '../../engine/cartography/spawns';
 import {membership, phases} from '../../engine/logistics/phases';
 import {
   evaluateItemSubsoilHeat,
@@ -13,6 +14,7 @@ import type {
   Entrance,
   Infrastructure,
   PhaseKey,
+  SpawnKind,
   SubsoilColumn,
   SubsoilPolygon,
   SubsoilWall,
@@ -531,6 +533,174 @@ export const Inspector: React.FC<InspectorProps> = ({
                       <option value="free">Acceso libre</option>
                     </select>
                   </label>
+                  {(() => {
+                    const ent = item as Entrance;
+                    const flowList = normalizeAccessFlows(
+                      s.entrances,
+                      s.base.arrivals
+                    );
+                    const fm = flowList.find((x) => x.id === ent.id);
+                    const spawnType: SpawnKind = ent.spawnType || 'pedestrian';
+                    const entryW = Number.isFinite(ent.entryWeight)
+                      ? Number(ent.entryWeight)
+                      : Math.round(fm?.entrySharePct ?? 25);
+                    const exitW = Number.isFinite(ent.exitWeight)
+                      ? Number(ent.exitWeight)
+                      : Math.round(fm?.exitSharePct ?? 25);
+                    const maxRate = Math.max(
+                      0,
+                      Number(ent.maxRatePerHour) || 0
+                    );
+                    const updateEntrance = (patch: Partial<Entrance>) => {
+                      updateScene((scene) => {
+                        const g = scene.entrances.find(
+                          (en) => en.id === ent.id
+                        );
+                        if (g) Object.assign(g, patch);
+                      }, true);
+                      onSceneChanged();
+                    };
+                    return (
+                      <div className="spawn-flow-card" id="spawn-flow-card">
+                        <div className="spawn-flow-head">
+                          <b>Flujo de entrada y salida (Spawn)</b>
+                          {ent.streetName && (
+                            <span className="spawn-street-chip">
+                              {ent.streetName}
+                            </span>
+                          )}
+                        </div>
+                        <label>
+                          Tipo de infraestructura / tráfico
+                          <select
+                            id="edit-spawnType"
+                            value={spawnType}
+                            onChange={(e) =>
+                              updateEntrance({
+                                spawnType: e.target.value as SpawnKind,
+                              })
+                            }
+                          >
+                            <option value="pedestrian">
+                              Peatonal (acceso a pie)
+                            </option>
+                            <option value="vehicle">
+                              Vehicular (calle / vía de circulación)
+                            </option>
+                            <option value="mixed">
+                              Mixto (peatones y vehículos)
+                            </option>
+                          </select>
+                        </label>
+                        <div className="spawn-flow-slider-group">
+                          <div className="spawn-flow-slider-head">
+                            <span>Flujo de entrada</span>
+                            <b id="readout-entry-share">
+                              {fm ? Math.round(fm.entrySharePct) : 0} % del
+                              total
+                            </b>
+                          </div>
+                          <input
+                            id="edit-entryWeight"
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={entryW}
+                            disabled={!fm?.canEnter}
+                            onChange={(e) =>
+                              updateEntrance({
+                                entryWeight: Number(e.target.value),
+                              })
+                            }
+                          />
+                          <div className="spawn-flow-bar">
+                            <span
+                              style={{
+                                width: `${Math.min(100, fm?.entrySharePct || 0)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="spawn-flow-slider-group">
+                          <div className="spawn-flow-slider-head">
+                            <span>Flujo de salida</span>
+                            <b id="readout-exit-share">
+                              {fm ? Math.round(fm.exitSharePct) : 0} % del total
+                            </b>
+                          </div>
+                          <input
+                            id="edit-exitWeight"
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={exitW}
+                            disabled={!fm?.canExit}
+                            onChange={(e) =>
+                              updateEntrance({
+                                exitWeight: Number(e.target.value),
+                              })
+                            }
+                          />
+                          <div className="spawn-flow-bar is-exit">
+                            <span
+                              style={{
+                                width: `${Math.min(100, fm?.exitSharePct || 0)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <label>
+                          Volumen máximo de tránsito (pers/h · 0 = sin tope)
+                          <input
+                            id="edit-maxRatePerHour"
+                            type="number"
+                            min="0"
+                            max="10000"
+                            step="10"
+                            key={`mrh-${ent.id}-${maxRate}`}
+                            defaultValue={maxRate}
+                            onKeyDown={commitOnEnter}
+                            onBlur={(e) => {
+                              const v = Math.max(
+                                0,
+                                Math.min(10000, Number(e.target.value) || 0)
+                              );
+                              updateEntrance({maxRatePerHour: v});
+                            }}
+                          />
+                        </label>
+                        {fm && (
+                          <div className="spawn-flow-stats">
+                            <div>
+                              <span>Volumen estimado</span>
+                              <b id="readout-entry-volume">
+                                {Math.round(fm.effectiveArrivalsPerHour)} pers/h
+                              </b>
+                            </div>
+                            <div>
+                              <span>Frecuencia media</span>
+                              <b id="readout-entry-freq">
+                                {Number.isFinite(fm.frequencySec)
+                                  ? fm.frequencySec >= 60
+                                    ? `1 cada ${(fm.frequencySec / 60).toFixed(1)} min`
+                                    : `1 cada ${Math.max(1, Math.round(fm.frequencySec))} s`
+                                  : 'Sin entradas'}
+                              </b>
+                            </div>
+                          </div>
+                        )}
+                        {fm?.isCapped && (
+                          <p className="warning">
+                            Tope activo: la demanda ({Math.round(fm.rawArrivalsPerHour)}{' '}
+                            pers/h) supera el máximo configurado (
+                            {fm.maxRatePerHour} pers/h).
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="authority-group">
                     <span className="authority-title">
                       ¿Están las autoridades recomendadas a usar este acceso?

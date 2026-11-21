@@ -7,7 +7,8 @@ import {
   savePreferences,
   saveProjectToStorage,
 } from '../db/repository';
-import {initialScene} from '../engine/crowd/presets';
+import {buildCustomMapMetadata} from '../engine/cartography/custom-map';
+import {configure, initialScene} from '../engine/crowd/presets';
 import {smallExample} from '../engine/crowd/small-example';
 import {addResponseExample} from '../engine/emergency/response-example';
 import {assessRisk} from '../engine/emergency/risk';
@@ -16,6 +17,9 @@ import {isXrayTool, subsoilIdsInScene} from '../components/map/selectionActions'
 import type {
   ActivePanel,
   BaseLayerMode,
+  CustomLocationConfig,
+  CustomMapFeature,
+  CustomMapStreet,
   LensMode,
   PhaseFilter,
   ProjectFile,
@@ -25,6 +29,8 @@ import type {
   VenueMap,
   WorkShiftDay,
 } from '../types';
+
+export type OnboardingStage = 'none' | 'perimeter' | 'inventory';
 
 export type ActiveModal =
   | null
@@ -63,6 +69,7 @@ export interface ProjectStoreState {
   immersive: boolean;
   menuOpen: boolean;
   activeModal: ActiveModal;
+  onboardingStage: OnboardingStage;
   saveStatusText: string;
   toastMessage: string | null;
   toastTone: 'default' | 'error';
@@ -97,11 +104,16 @@ export interface ProjectStoreState {
   toggleImmersive: () => void;
   setMenuOpen: (open: boolean) => void;
   setActiveModal: (modal: ActiveModal) => void;
+  setOnboardingStage: (stage: OnboardingStage) => void;
   showToast: (msg: string, tone?: 'default' | 'error') => void;
   clearToast: () => void;
   checkpoint: () => void;
   undo: (isRedo?: boolean) => void;
   updateScene: (updater: (scene: Scene) => void, recordCheckpoint?: boolean) => void;
+  setCustomMapVectors: (
+    streets: CustomMapStreet[],
+    features: CustomMapFeature[]
+  ) => void;
   replaceScene: (scene: Scene, recordCheckpoint?: boolean) => void;
   replaceProject: (project: ProjectFile, recordCheckpoint?: boolean) => void;
   save: () => void;
@@ -127,12 +139,14 @@ export interface ProjectStoreState {
     hours: number;
     endTime: string;
     workDays?: WorkShiftDay[];
+    customLocation?: CustomLocationConfig;
   }) => void;
 }
 
 let toastTimeout: ReturnType<typeof setTimeout> | undefined;
 
 const initialLoaded = loadProjectFromStorage();
+configure(initialLoaded.project.maps);
 const initialPrefs = loadPreferences();
 
 /**
@@ -146,7 +160,14 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   panel: 'design',
   phase: 'event',
   base: 'plan',
-  tool: 'select',
+  tool:
+    (initialLoaded.project.scenes[
+      VENUES[initialLoaded.project.active]
+        ? initialLoaded.project.active
+        : 'cristo'
+    ]?.boundary?.length || 0) < 3
+      ? 'boundary'
+      : 'select',
   selectedId: null,
   selectedIds: [],
   clipboard: null,
@@ -161,6 +182,14 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   immersive: false,
   menuOpen: true,
   activeModal: null,
+  onboardingStage:
+    (initialLoaded.project.scenes[
+      VENUES[initialLoaded.project.active]
+        ? initialLoaded.project.active
+        : 'cristo'
+    ]?.boundary?.length || 0) < 3
+      ? 'perimeter'
+      : 'none',
   saveStatusText: 'Guardado en este navegador',
   toastMessage: null,
   toastTone: 'default',
@@ -176,7 +205,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   currentMap: () => {
     const state = get();
-    return MAPS_DATA[state.activeVenue];
+    return state.project.maps[state.activeVenue] || MAPS_DATA[state.activeVenue];
   },
 
   setVenue: (venue) => {
@@ -199,6 +228,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   setPanel: (panel) => {
     set((state) => {
+      if (state.onboardingStage === 'perimeter' && panel !== 'design') {
+        return state;
+      }
       if (panel === 'simulate') {
         return {
           panel,
@@ -239,6 +271,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   setTool: (tool) => {
     set((state) => {
+      if (state.onboardingStage === 'perimeter' && tool !== 'boundary') {
+        return state;
+      }
       if (state.panel === 'simulate' && tool !== 'select') return state;
       if (isXrayTool(tool) && state.panel !== 'design') return state;
       const keepSelection = tool === 'select' || tool === 'xray:select';
@@ -323,7 +358,19 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     set({menuOpen});
   },
 
-  setActiveModal: (activeModal) => set({activeModal}),
+  setActiveModal: (activeModal) =>
+    set((state) => {
+      if (
+        state.onboardingStage === 'perimeter' &&
+        activeModal !== null &&
+        activeModal !== 'info'
+      ) {
+        return state;
+      }
+      return {activeModal};
+    }),
+
+  setOnboardingStage: (onboardingStage) => set({onboardingStage}),
 
   showToast: (msg, tone = 'default') => {
     if (toastTimeout) clearTimeout(toastTimeout);
@@ -355,6 +402,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     to.push(JSON.stringify(state.project));
     const popped = from.pop()!;
     const nextProject = JSON.parse(popped) as ProjectFile;
+    configure(nextProject.maps);
     const nextVenue = VENUES[nextProject.active]
       ? nextProject.active
       : 'cristo';
@@ -396,6 +444,26 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     });
   },
 
+  setCustomMapVectors: (streets, features) => {
+    const state = get();
+    const curMap = state.project.maps[state.activeVenue];
+    if (!curMap?.customLocation) return;
+    const nextProject = structuredClone(state.project);
+    const targetMap = nextProject.maps[state.activeVenue];
+    if (!targetMap?.customLocation) return;
+    targetMap.customLocation.streets = structuredClone(streets);
+    targetMap.customLocation.features = structuredClone(features);
+    configure(nextProject.maps);
+    const ok = saveProjectToStorage(nextProject);
+    set({
+      project: nextProject,
+      saveStatusText: ok
+        ? 'Guardado en este navegador'
+        : 'Sin guardar · exporta el proyecto',
+      revision: state.revision + 1,
+    });
+  },
+
   replaceScene: (scene, recordCheckpoint = false) => {
     if (recordCheckpoint) get().checkpoint();
     const state = get();
@@ -417,14 +485,19 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   replaceProject: (project, recordCheckpoint = false) => {
     if (recordCheckpoint) get().checkpoint();
     const state = get();
-    const nextVenue = VENUES[project.active] ? project.active : 'cristo';
-    const ok = saveProjectToStorage(project);
+    const cloned = structuredClone(project);
+    configure(cloned.maps);
+    const nextVenue = VENUES[cloned.active] ? cloned.active : 'cristo';
+    const ok = saveProjectToStorage(cloned);
+    const needsPerimeter =
+      (cloned.scenes[nextVenue]?.boundary?.length || 0) < 3;
     set({
-      project: structuredClone(project),
+      project: cloned,
       activeVenue: nextVenue,
       selectedId: null,
       selectedIds: [],
-      tool: 'select',
+      tool: needsPerimeter ? 'boundary' : 'select',
+      onboardingStage: needsPerimeter ? 'perimeter' : 'none',
       saveStatusText: ok
         ? 'Guardado en este navegador'
         : 'Sin guardar · exporta el proyecto',
@@ -457,14 +530,36 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   createFromWizard: (config) => {
     get().checkpoint();
     const state = get();
-    const next = initialScene('cristo', MAPS_DATA.cristo, CARTO_DATA);
-    if (!config.example) {
+    const nextProject = structuredClone(state.project);
+    const isCustom = !!config.customLocation;
+    const targetMap = isCustom
+      ? buildCustomMapMetadata(config.customLocation!)
+      : structuredClone(MAPS_DATA.cristo);
+    nextProject.maps.cristo = targetMap;
+    configure(nextProject.maps);
+
+    const next = initialScene('cristo', targetMap, isCustom ? {
+      crs: targetMap.crs,
+      retrieved: targetMap.retrieved,
+      source: targetMap.source,
+      attribution: targetMap.attribution,
+      features: [],
+    } : CARTO_DATA);
+
+    const useExample = !isCustom && config.example;
+    if (!useExample) {
       next.base.booths = [];
       next.infrastructure = [];
+      next.entrances = [];
       next.flows = [];
       next.corridors = [];
       next.fences = [];
+      next.reserves = [];
+      next.passages = [];
     }
+    // El primer paso obligatorio tras elegir la zona es delimitar el perímetro operativo sobre el mapa.
+    next.boundary = [];
+
     const workDays = config.workDays || [];
     const preDays = workDays.filter((d) => d.kind === 'pre');
     const postDays = workDays.filter((d) => d.kind === 'post');
@@ -486,11 +581,12 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       },
       hoursLimit: Math.max(0.5, Math.min(8, firstLogHours)),
     });
-    if (config.example) {
+    if (useExample) {
       Object.assign(next, addResponseExample(smallExample(next)));
+      next.boundary = [];
     }
     if (
-      config.example &&
+      useExample &&
       !next.infrastructure.some((o) => o.kind === 'security')
     ) {
       const g = next.entrances[0];
@@ -526,7 +622,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       music: config.goals.includes('music') ? 35 : 15,
       walker: config.goals.includes('comfort') ? 30 : 15,
     };
-    const nextProject = structuredClone(state.project);
+    next.safetyReview = assessRisk(next);
     nextProject.scenes.cristo = next;
     nextProject.active = 'cristo';
     saveProjectToStorage(nextProject);
@@ -538,9 +634,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       panel: 'design',
       selectedId: null,
       selectedIds: [],
-      tool: 'select',
+      tool: 'boundary',
+      onboardingStage: 'perimeter',
       menuOpen: false,
-      activeModal: 'inventory',
+      activeModal: null,
       revision: state.revision + 1,
     });
   },

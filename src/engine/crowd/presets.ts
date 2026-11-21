@@ -993,7 +993,10 @@ export function validateScene(s: Scene): Scene {
             v <= 200
         )
     );
-  if (!validPoints(s.boundary) || s.boundary.length < 3) {
+  if (
+    !Array.isArray(s.boundary) ||
+    (s.boundary.length > 0 && (!validPoints(s.boundary) || s.boundary.length < 3))
+  ) {
     throw new Error('El perímetro no es válido.');
   }
   for (const a of [
@@ -1032,6 +1035,20 @@ export function validateScene(s: Scene): Scene {
         ) {
           throw new Error('Dimensión no válida.');
         }
+      }
+    }
+  }
+  for (const e of s.entrances) {
+    if (
+      e.spawnType !== undefined &&
+      !['pedestrian', 'vehicle', 'mixed'].includes(e.spawnType)
+    ) {
+      throw new Error('Tipo de acceso no válido.');
+    }
+    for (const k of ['entryWeight', 'exitWeight', 'maxRatePerHour'] as const) {
+      const v = e[k];
+      if (v !== undefined && (!Number.isFinite(v) || v < 0 || v > 100000)) {
+        throw new Error('Flujo de acceso fuera de rango.');
       }
     }
   }

@@ -8,6 +8,7 @@ import type {ActivePanel} from '../../types';
  */
 export const NavigationRail: React.FC = () => {
   const panel = useProjectStore((s) => s.panel);
+  const onboardingStage = useProjectStore((s) => s.onboardingStage);
   const setPanel = useProjectStore((s) => s.setPanel);
 
   const items: Array<{id: ActivePanel; icon: string; label: string}> = [
@@ -25,6 +26,7 @@ export const NavigationRail: React.FC = () => {
           className={panel === item.id ? 'active' : ''}
           data-panel={item.id}
           title={item.label}
+          disabled={onboardingStage === 'perimeter' && item.id !== 'design'}
           onClick={() => setPanel(item.id)}
         >
           <span>{item.icon}</span>
