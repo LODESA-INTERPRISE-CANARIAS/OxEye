@@ -1,6 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {PlainLanguageEnhancer} from './components/common/PlainLanguageEnhancer';
 import {Toast} from './components/common/Toast';
+import {TutorialOverlay} from './components/common/TutorialOverlay';
 import {Header} from './components/header/Header';
 import {NavigationRail} from './components/layout/NavigationRail';
 import {PhaseStrip} from './components/layout/PhaseStrip';
@@ -1015,6 +1016,7 @@ export const App: React.FC = () => {
       />
 
       <PlainLanguageEnhancer />
+      <TutorialOverlay />
       <Toast />
       </div>
     </>

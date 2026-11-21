@@ -68,6 +68,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     to: string;
     goals: string[];
     example: boolean;
+    startTutorial: boolean;
     workDays: WorkShiftDay[];
     smartGoal: {
       specific: string;
@@ -92,6 +93,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     to: '14:00',
     goals: ['family', 'local', 'comfort'],
     example: true,
+    startTutorial: false,
     workDays: [
       {
         id: 'wd-pre-1',
@@ -222,6 +224,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
           ...schedule,
           workDays: normalizedWorkDays,
           customLocation: customLoc,
+          startTutorial: settings.startTutorial,
         });
         setScreen('main');
         onResume();
@@ -592,6 +595,30 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                     definirás el inventario.
                   </p>
                 )}
+
+                <div className="wizard-tutorial-card">
+                  <label className="wizard-tutorial-toggle">
+                    <input
+                      type="checkbox"
+                      id="wizard-tutorial"
+                      checked={settings.startTutorial}
+                      onChange={(e) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          startTutorial: e.target.checked,
+                        }))
+                      }
+                    />
+                    <span>
+                      <b>Iniciar tutorial guiado al crear el proyecto</b>
+                      <small>
+                        Visita guiada paso a paso por los elementos básicos del
+                        plano, fases, herramientas y simulación, previo a todo
+                        lo demás.
+                      </small>
+                    </span>
+                  </label>
+                </div>
               </>
             )}
 
@@ -875,6 +902,12 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                     {settings.goals
                       .map((k) => eventGoals.find((g) => g[0] === k)?.[1])
                       .join(' · ')}
+                  </dd>
+                  <dt>Tutorial inicial</dt>
+                  <dd>
+                    {settings.startTutorial
+                      ? 'Activado (visita guiada antes de empezar)'
+                      : 'Desactivado'}
                   </dd>
                 </dl>
                 <p>

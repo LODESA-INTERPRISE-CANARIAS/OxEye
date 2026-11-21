@@ -1028,6 +1028,149 @@ dialog p {
   margin-top: 6px;
 }
 
+/* Visita guiada (Tutorial spotlight + tarjeta flotante) */
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  pointer-events: none;
+}
+
+.tour-backdrop-full {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 12, 36, 0.56);
+  pointer-events: auto;
+}
+
+.tour-spot {
+  position: fixed;
+  border-radius: 10px;
+  border: 2px solid #e4cfa2;
+  box-shadow:
+    0 0 0 9999px rgba(24, 12, 36, 0.58),
+    0 0 0 4px rgba(228, 207, 162, 0.32);
+  pointer-events: none;
+  transition:
+    top 0.24s ease,
+    left 0.24s ease,
+    width 0.24s ease,
+    height 0.24s ease;
+}
+
+.tour-coach {
+  position: fixed;
+  z-index: 2210;
+  pointer-events: auto;
+  background: #fffef9;
+  color: var(--ink);
+  border: 1px solid #cbb8de;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 16px 42px rgba(29, 14, 43, 0.34);
+  transition:
+    top 0.22s ease,
+    left 0.22s ease;
+}
+
+.tour-coach.is-paused {
+  width: min(310px, calc(100vw - 24px));
+  border-left: 4px solid var(--purple);
+}
+
+.tour-coach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tour-coach-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--purple);
+  text-transform: uppercase;
+}
+
+.tour-close-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tour-close-btn:hover {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+.tour-coach h3 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 19px;
+  font-weight: normal;
+  line-height: 1.2;
+  color: var(--purple-dark);
+  margin: 4px 0 8px;
+}
+
+.tour-coach p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.tour-directive {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #b5542d;
+  margin-bottom: 12px;
+}
+
+.tour-progress-dots {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.tour-progress-dots span {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: #e8dff2;
+  transition: background-color 0.2s ease;
+}
+
+.tour-progress-dots span.is-done {
+  background: #b99bd6;
+}
+
+.tour-progress-dots span.is-active {
+  background: var(--purple);
+}
+
+.tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tour-actions button {
+  padding: 7px 13px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
 @media (max-width: 640px) {
   .programme-inline-grid {
     grid-template-columns: 1fr;

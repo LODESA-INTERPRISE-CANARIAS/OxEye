@@ -70,6 +70,7 @@ export interface ProjectStoreState {
   menuOpen: boolean;
   activeModal: ActiveModal;
   onboardingStage: OnboardingStage;
+  tutorialActive: boolean;
   saveStatusText: string;
   toastMessage: string | null;
   toastTone: 'default' | 'error';
@@ -105,6 +106,7 @@ export interface ProjectStoreState {
   setMenuOpen: (open: boolean) => void;
   setActiveModal: (modal: ActiveModal) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
+  setTutorialActive: (active: boolean) => void;
   showToast: (msg: string, tone?: 'default' | 'error') => void;
   clearToast: () => void;
   checkpoint: () => void;
@@ -140,6 +142,7 @@ export interface ProjectStoreState {
     endTime: string;
     workDays?: WorkShiftDay[];
     customLocation?: CustomLocationConfig;
+    startTutorial?: boolean;
   }) => void;
 }
 
@@ -190,6 +193,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     ]?.boundary?.length || 0) < 3
       ? 'perimeter'
       : 'none',
+  tutorialActive: false,
   saveStatusText: 'Guardado en este navegador',
   toastMessage: null,
   toastTone: 'default',
@@ -371,6 +375,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     }),
 
   setOnboardingStage: (onboardingStage) => set({onboardingStage}),
+  setTutorialActive: (tutorialActive) => set({tutorialActive}),
 
   showToast: (msg, tone = 'default') => {
     if (toastTimeout) clearTimeout(toastTimeout);
@@ -636,6 +641,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       selectedIds: [],
       tool: 'boundary',
       onboardingStage: 'perimeter',
+      tutorialActive: !!config.startTutorial,
       menuOpen: false,
       activeModal: null,
       revision: state.revision + 1,

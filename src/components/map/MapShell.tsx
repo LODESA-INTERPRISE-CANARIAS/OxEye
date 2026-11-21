@@ -170,6 +170,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const currentMap = useProjectStore((s) => s.currentMap);
     const revision = useProjectStore((s) => s.revision);
     const onboardingStage = useProjectStore((s) => s.onboardingStage);
+    const tutorialActive = useProjectStore((s) => s.tutorialActive);
 
     const setTool = useProjectStore((s) => s.setTool);
     const setSelectedId = useProjectStore((s) => s.setSelectedId);
@@ -1795,7 +1796,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             </button>
           </div>
 
-          {isOnboardingPerimeter && (
+          {isOnboardingPerimeter && !tutorialActive && (
             <div
               id="onboarding-perimeter-banner"
               className="onboarding-perimeter-banner"
