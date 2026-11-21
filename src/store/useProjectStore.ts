@@ -59,6 +59,7 @@ export interface ProjectStoreState {
   selectedIds: string[];
   clipboard: ClipboardPayload | null;
   grid: number;
+  fenceLength: number;
   gridVisible: boolean;
   labelsVisible: boolean;
   routesVisible: boolean;
@@ -96,6 +97,7 @@ export interface ProjectStoreState {
   clearSelection: () => void;
   setClipboard: (clipboard: ClipboardPayload | null) => void;
   setGrid: (grid: number) => void;
+  setFenceLength: (length: number) => void;
   setGridVisible: (visible: boolean) => void;
   setLabelsVisible: (visible: boolean) => void;
   setRoutesVisible: (visible: boolean) => void;
@@ -177,6 +179,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   selectedIds: [],
   clipboard: null,
   grid: 10,
+  fenceLength: 3.5,
   gridVisible: true,
   labelsVisible: true,
   routesVisible: true,
@@ -334,6 +337,13 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   setClipboard: (clipboard) => set({clipboard}),
 
   setGrid: (grid) => set({grid}),
+  setFenceLength: (length) =>
+    set({
+      fenceLength: Math.max(
+        0.5,
+        Math.min(10, Math.round((Number(length) || 3.5) * 100) / 100)
+      ),
+    }),
   setGridVisible: (gridVisible) => set({gridVisible}),
   setLabelsVisible: (labelsVisible) => set({labelsVisible}),
   setRoutesVisible: (routesVisible) => set({routesVisible}),

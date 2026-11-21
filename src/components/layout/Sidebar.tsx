@@ -123,6 +123,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const phase = useProjectStore((s) => s.phase);
   const tool = useProjectStore((s) => s.tool);
   const grid = useProjectStore((s) => s.grid);
+  const fenceLength = useProjectStore((s) => s.fenceLength);
   const lens = useProjectStore((s) => s.lens);
   const daylight = useProjectStore((s) => s.daylight);
   const currentScene = useProjectStore((s) => s.currentScene);
@@ -131,6 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const onboardingStage = useProjectStore((s) => s.onboardingStage);
 
   const setTool = useProjectStore((s) => s.setTool);
+  const setFenceLength = useProjectStore((s) => s.setFenceLength);
   const setSelectedId = useProjectStore((s) => s.setSelectedId);
   const [catalogFilter, setCatalogFilter] = useState<
     'all' | 'event' | 'services' | 'logistics'
@@ -643,7 +645,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   ⇢ Propuesta vial
                 </button>
+                <button
+                  type="button"
+                  data-action="fence:chain"
+                  className={tool === 'fence:chain' ? 'active' : ''}
+                  onClick={() => setTool('fence:chain')}
+                >
+                  ⫼ Vallas encadenadas
+                </button>
+                <button
+                  type="button"
+                  data-action="fence:loose"
+                  className={tool === 'fence:loose' ? 'active' : ''}
+                  onClick={() => setTool('fence:loose')}
+                >
+                  ┆ Valla suelta
+                </button>
               </div>
+              {(tool === 'fence:chain' || tool === 'fence:loose') && (
+                <div className="fence-tool-panel" id="fence-tool-panel">
+                  <label className="form-label" style={{margin: 0}}>
+                    Largo de valla (m)
+                    <input
+                      id="fence-length-input"
+                      type="number"
+                      min={0.5}
+                      max={10}
+                      step={0.5}
+                      value={fenceLength}
+                      onChange={(e) => setFenceLength(Number(e.target.value))}
+                    />
+                  </label>
+                  <p className="small-note" style={{marginTop: '6px'}}>
+                    {tool === 'fence:chain'
+                      ? 'Haz clic para fijar el inicio y encadenar tramos. Mantén Mayús para ángulos de 15°. Esc, Enter o doble clic terminan.'
+                      : 'Haz clic para fijar el inicio y orienta la valla con el cursor. Mantén Mayús para ángulos de 15°.'}
+                  </p>
+                </div>
+              )}
               <button
                 type="button"
                 id="detect-spawns-btn"

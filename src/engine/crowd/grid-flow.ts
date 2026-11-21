@@ -28,7 +28,11 @@ export function rng(seed: number): () => number {
  * @param cell - Cell edge length in meters (defaults to `0.75`).
  * @returns Constructed navigation grid with index, point, neighbors, and nearest queries.
  */
-export function buildGrid(s: Scene, cell = 0.75): NavigationGrid {
+export function buildGrid(
+  s: Scene,
+  cell = 0.75,
+  opts?: {ignoreFences?: boolean}
+): NavigationGrid {
   const m = MAPS[s.site];
   const w = Math.ceil(m.widthMeters / cell);
   const h = Math.ceil(m.heightMeters / cell);
@@ -42,10 +46,12 @@ export function buildGrid(s: Scene, cell = 0.75): NavigationGrid {
       ['facility', 'furniture'].includes(o.role || '')
     ),
   ].map((b) => rect(b, m));
-  const segments = s.fences.flatMap((f) => {
-    const pts = toMeters(f.points);
-    return pts.slice(1).map((p, i) => [pts[i], p] as [Point, Point]);
-  });
+  const segments = opts?.ignoreFences
+    ? []
+    : (s.fences || []).flatMap((f) => {
+        const pts = toMeters(f.points);
+        return pts.slice(1).map((p, i) => [pts[i], p] as [Point, Point]);
+      });
   const free = new Uint8Array(w * h);
   let count = 0;
 

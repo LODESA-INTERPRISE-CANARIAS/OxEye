@@ -72,6 +72,13 @@ export const INCIDENTS: Record<
     duration: 90,
     question: '¿Se protege el paso y se solicita su retirada?',
   },
+  fence_breach: {
+    name: 'Intento de saltar valla',
+    service: 'security',
+    duration: 120,
+    question:
+      '¿Hay vigilancia, señalización o un paso cercano que evite que los asistentes salten la valla?',
+  },
 };
 
 /**
@@ -245,6 +252,40 @@ export class EmergencyLab {
         }
       }
     }
+    return row;
+  }
+
+  /**
+   * Inyecta una incidencia asociada a un agente concreto (por ejemplo, intento de saltar una valla)
+   * reutilizando el flujo estándar de aviso, demora y respuesta de autoridades.
+   */
+  injectAtAgent(
+    type: string,
+    agent: {id: number; x: number; y: number; state?: string; target?: string | null},
+    detail?: string
+  ): EmergencyIncident | null {
+    const e = this.e;
+    const spec = INCIDENTS[type];
+    if (!spec || this.events.length >= 100 || e.finished) return null;
+    const rawCell = e.g.index(agent.x, agent.y);
+    const anchor =
+      rawCell >= 0 && e.g.free[rawCell]
+        ? rawCell
+        : e.g.nearest(agent.x, agent.y, 6);
+    if (anchor < 0) return null;
+    const row: EmergencyIncident = {
+      id: this.next++,
+      type,
+      name: detail ? `${spec.name} (${detail})` : spec.name,
+      created: e.time,
+      cell: anchor,
+      point: e.g.point(anchor),
+      agentId: agent.id,
+      status: 'pending',
+      question: spec.question,
+      fenceName: detail,
+    };
+    this.events.push(row);
     return row;
   }
 

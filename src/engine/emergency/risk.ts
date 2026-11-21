@@ -18,11 +18,24 @@ import {evaluateHeavyLoadConflicts} from '../subsoil/heat';
 import {RESPONSE_PROFILES, responseRoute} from './response-model';
 import {gateAllowsAuthority} from './priority';
 
+export interface RiskIssueMeta {
+  kind?: string;
+  resourceId?: string;
+  resourceName?: string;
+  targetId?: string;
+  targetName?: string;
+  unreachableNames?: string[];
+  reason?: 'start_blocked' | 'no_corridor' | 'narrow_turn';
+  requiredWidth?: number;
+  errorDetail?: string;
+}
+
 export interface RiskIssue {
   id: string;
   level: 'critical' | 'warning';
   title: string;
   action: string;
+  meta?: RiskIssueMeta;
 }
 
 export interface RiskStatisticalReport {
@@ -160,8 +173,9 @@ export function assessRisk(
     id: string,
     level: 'critical' | 'warning',
     title: string,
-    action: string
-  ) => issues.push({id, level, title, action});
+    action: string,
+    meta?: RiskIssueMeta
+  ) => issues.push({id, level, title, action, ...(meta ? {meta} : {})});
 
   const resources = s.infrastructure.filter((r) => r.role === 'emergency');
   if (
@@ -468,11 +482,26 @@ export function assessRisk(
         );
       }
     }
-    const targets: Point[] = [
-      ...engine.entries.map((g) => engine.g.point(g.cell)),
+    const serviceLabels: Record<string, string> = {
+      medical: 'equipo sanitario',
+      ambulance: 'ambulancia',
+      security: 'seguridad a pie',
+      patrol: 'coche policial',
+      fire: 'bomberos',
+    };
+    const targets: Array<{id: string; name: string; point: Point}> = [
+      ...engine.entries.map((g) => ({
+        id: g.id,
+        name: g.name || 'Acceso',
+        point: engine.g.point(g.cell),
+      })),
       ...engine.stations
         .filter((t) => t.cell >= 0)
-        .map((t) => engine.g.point(t.cell)),
+        .map((t) => ({
+          id: t.id || '',
+          name: t.name || 'Actividad',
+          point: engine.g.point(t.cell),
+        })),
     ];
     for (const kind of [...new Set([response, security, ...vehicleKinds])]) {
       const profileKey =
@@ -486,9 +515,12 @@ export function assessRisk(
       const pool = resources.filter(
         (r) => r.kind === kind && resourceSlots(s, r) > 0
       );
-      let inaccessible = 0;
+      if (!pool.length) continue;
+      const unreachableTargets: Array<{id: string; name: string; error: string}> =
+        [];
+      let requiredWidth = profile.width + 0.3;
       for (const target of targets) {
-        if (!pool.length) break;
+        let lastError = '';
         const reachable = pool.some((r) => {
           const origin: Point = [
             (r.x * engine.g.m.widthMeters) / 100,
@@ -500,10 +532,11 @@ export function assessRisk(
             width: vehicle ? r.width || profile.width : profile.width,
             length: vehicle ? r.depth || profile.length : profile.length,
           };
+          requiredWidth = Math.round((pr.width + 0.3) * 10) / 10;
           let route = responseRoute(
             engine,
             origin,
-            target,
+            target.point,
             pr,
             pr.length / 2 + 1
           );
@@ -511,22 +544,57 @@ export function assessRisk(
             route = responseRoute(
               engine,
               origin,
-              target,
+              target.point,
               {...pr, width: 0.9, length: 1.8, speed: 0.85},
               2
             );
           }
+          if (route.error) lastError = route.error;
           return !route.error;
         });
-        if (!reachable) inaccessible++;
+        if (!reachable) {
+          unreachableTargets.push({
+            id: target.id,
+            name: target.name,
+            error: lastError,
+          });
+        }
       }
-      if (inaccessible) {
-        add(
-          'route-' + kind,
-          'critical',
-          'Hay ' + inaccessible + ' puntos de actividad sin aproximación de ' + kind,
-          'Reubica el equipo o abre un corredor. Se comprueba la geometría simplificada del modelo, no una ruta homologada.'
-        );
+      if (unreachableTargets.length) {
+        const primaryResource = pool[0];
+        const firstTarget = unreachableTargets[0];
+        const svcLabel = serviceLabels[kind] || kind;
+        const errLower = firstTarget.error.toLowerCase();
+        const reason: RiskIssueMeta['reason'] = errLower.includes('posición inicial')
+          ? 'start_blocked'
+          : errLower.includes('giro') || errLower.includes('huella')
+            ? 'narrow_turn'
+            : 'no_corridor';
+        const sampleNames = unreachableTargets
+          .slice(0, 3)
+          .map((t) => `«${t.name}»`)
+          .join(', ');
+        const title =
+          unreachableTargets.length === 1
+            ? `Sin aproximación de ${svcLabel} hacia «${firstTarget.name}»`
+            : `${unreachableTargets.length} puntos sin aproximación de ${svcLabel} (${sampleNames})`;
+        const action =
+          reason === 'start_blocked'
+            ? `«${primaryResource.name}» está sobre un obstáculo o sin espacio libre en su posición inicial (necesita ~${requiredWidth} m despejados). Reubícalo sobre un paso libre.`
+            : reason === 'narrow_turn'
+              ? `El giro o estrechamiento hacia ${sampleNames} es inferior al ancho/radio de «${primaryResource.name}» (${requiredWidth} m). Ensancha el paso o suaviza el giro.`
+              : `No hay corredor continuo de ${requiredWidth} m entre «${primaryResource.name}» y ${sampleNames}. Separa puestos, mesas o vallas en medio.`;
+        add('route-' + kind, 'critical', title, action, {
+          kind,
+          resourceId: primaryResource.id,
+          resourceName: primaryResource.name,
+          targetId: firstTarget.id,
+          targetName: firstTarget.name,
+          unreachableNames: unreachableTargets.map((t) => t.name),
+          reason,
+          requiredWidth,
+          errorDetail: firstTarget.error,
+        });
       }
     }
   }

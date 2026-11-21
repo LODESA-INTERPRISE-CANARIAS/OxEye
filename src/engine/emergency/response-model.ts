@@ -82,7 +82,9 @@ export function serviceLoad(emergency: any): ServiceLoadRow[] {
         ) &&
         (q.type === 'fire'
           ? 'fire'
-          : ['orientation', 'obstacle', 'conflict'].includes(q.type)
+          : ['orientation', 'obstacle', 'conflict', 'fence_breach'].includes(
+                q.type
+              )
             ? emergency.e.s.policeMode || 'security'
             : q.responseMode === 'ambulance'
               ? 'ambulance'
@@ -348,15 +350,41 @@ export class ResponseSimulation extends EmergencyLab {
         : type === 'fire'
           ? 'grave'
           : 'moderada';
-      row.responseMode = ['fire', 'conflict', 'orientation', 'obstacle'].includes(
-        type
-      )
+      row.responseMode = [
+        'fire',
+        'conflict',
+        'orientation',
+        'obstacle',
+        'fence_breach',
+      ].includes(type)
         ? type === 'fire'
           ? 'fire'
           : this.e.s.policeMode || 'security'
         : this.e.s.responseMode || 'firstaid';
       row.phase = 'alert';
       if (type === 'fire') this.fire.start(row);
+      row.model = 'Hipótesis editable · no protocolo validado';
+      row.afterReportStatus = row.status;
+      row.status = 'unreported';
+      row.reporters = [];
+    }
+    return row;
+  }
+
+  override injectAtAgent(
+    type: string,
+    agent: {id: number; x: number; y: number; state?: string; target?: string | null},
+    detail?: string
+  ): EmergencyIncident | null {
+    const row = super.injectAtAgent(type, agent, detail);
+    if (row) {
+      row.severity = type === 'fence_breach' ? 'moderada' : 'leve';
+      row.responseMode = ['conflict', 'orientation', 'obstacle', 'fence_breach'].includes(
+        type
+      )
+        ? this.e.s.policeMode || 'security'
+        : this.e.s.responseMode || 'firstaid';
+      row.phase = 'alert';
       row.model = 'Hipótesis editable · no protocolo validado';
       row.afterReportStatus = row.status;
       row.status = 'unreported';
@@ -530,6 +558,7 @@ export class ResponseSimulation extends EmergencyLab {
     );
     const isOfficerIntervention =
       row.type === 'conflict' ||
+      row.type === 'fence_breach' ||
       ['security', 'patrol'].includes(row.responseMode || '');
     if (startBlockers.length > 0) {
       if (isOfficerIntervention) {
@@ -892,9 +921,11 @@ export class ResponseSimulation extends EmergencyLab {
           row.note =
             row.type === 'fire'
               ? 'Dotación desplegada: contención y extinción durante el tiempo configurado.'
-              : row.type === 'conflict'
-                ? 'Separación de asistentes y control de la incidencia durante el tiempo configurado.'
-                : 'Atención sanitaria durante el tiempo configurado.';
+              : row.type === 'fence_breach'
+                ? 'Seguridad controla el intento de salto de valla y reconduce al asistente.'
+                : row.type === 'conflict'
+                  ? 'Separación de asistentes y control de la incidencia durante el tiempo configurado.'
+                  : 'Atención sanitaria durante el tiempo configurado.';
         }
       }
       if (

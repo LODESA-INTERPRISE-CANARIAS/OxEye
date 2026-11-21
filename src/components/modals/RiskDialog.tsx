@@ -1,7 +1,10 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {downloadFile} from '../../db/repository';
+import {percent} from '../../engine/cartography/geometry';
 import {EventEngine} from '../../engine/crowd/event-engine';
+import {buildGrid} from '../../engine/crowd/grid-flow';
 import {
+  RESPONSE_PROFILES,
   ResponseSimulation,
 } from '../../engine/emergency/response-model';
 import {
@@ -114,11 +117,12 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
 
   const handleRecheckRoutes = () => {
     try {
-      const e = new EventEngine(phaseScene(s, 'event'));
+      const latest = currentScene();
+      const e = new EventEngine(phaseScene(latest, 'event'));
       e.reviewRunId = crypto.randomUUID();
       e.emergency = new ResponseSimulation(e);
       e.experience = new ExperienceMonitor(e);
-      setRouteReport(assessRisk(s, e, {routes: true}));
+      setRouteReport(assessRisk(latest, e, {routes: true}));
     } catch (err) {
       showToast((err as Error).message);
     }
@@ -235,6 +239,83 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
             sc.dryStaff = Math.min(10, Number(sc.dryStaff || 1) + 1);
           }, true);
           showToast('Personal de secado incrementado (+1 operario).');
+        } else if (act.fixType === 'enable-fire-foot-access') {
+          updateScene((sc) => {
+            sc.fireFootAccess = true;
+          }, true);
+          showToast(
+            'Despliegue a pie de bomberos habilitado. Comprobando rutas…'
+          );
+          onClearCustomReport();
+          onSceneChanged();
+          setTimeout(() => handleRecheckRoutes(), 0);
+          return;
+        } else if (
+          act.fixType === 'relocate-emergency-resource' &&
+          act.itemId
+        ) {
+          let movedName = '';
+          updateScene((sc) => {
+            const target = sc.infrastructure.find((o) => o.id === act.itemId);
+            if (!target) return;
+            const evScene = phaseScene(sc, 'event');
+            const g = buildGrid(evScene);
+            const originX = (target.x * g.m.widthMeters) / 100;
+            const originY = (target.y * g.m.heightMeters) / 100;
+            const profile =
+              RESPONSE_PROFILES[target.kind] || RESPONSE_PROFILES.firstaid;
+            const clearR =
+              Math.max(
+                profile.width,
+                ['fire', 'ambulance', 'patrol'].includes(target.kind)
+                  ? target.width || profile.width
+                  : profile.width
+              ) /
+                2 +
+              0.25;
+            let bestK = -1;
+            let bestDist = Infinity;
+            for (let k = 0; k < g.free.length; k++) {
+              if (!g.free[k]) continue;
+              const p = g.point(k);
+              let clear = true;
+              for (let i = 0; i < 8; i++) {
+                const ang = (i * Math.PI) / 4;
+                const j = g.index(
+                  p[0] + clearR * Math.cos(ang),
+                  p[1] + clearR * Math.sin(ang)
+                );
+                if (j < 0 || !g.free[j]) {
+                  clear = false;
+                  break;
+                }
+              }
+              if (!clear) continue;
+              const d = Math.hypot(p[0] - originX, p[1] - originY);
+              if (d < bestDist) {
+                bestDist = d;
+                bestK = k;
+              }
+            }
+            if (bestK >= 0) {
+              const [nx, ny] = percent(g.point(bestK), g.m);
+              target.x = nx;
+              target.y = ny;
+              movedName = target.name;
+            }
+          }, true);
+          if (movedName) {
+            showToast(
+              `«${movedName}» reubicado en el punto despejado más cercano.`
+            );
+            onClearCustomReport();
+            onSceneChanged();
+            setTimeout(() => handleRecheckRoutes(), 0);
+            return;
+          }
+          showToast(
+            'No se encontró un espacio libre cercano; abre un pasillo más ancho en el plano.'
+          );
         }
         onClearCustomReport();
         setRouteReport(null);

@@ -24,7 +24,9 @@ export type RiskQuickFixType =
   | 'fit-overbook-capacity'
   | 'enable-trained'
   | 'add-dry-staff'
-  | 'clear-heavy-load';
+  | 'clear-heavy-load'
+  | 'relocate-emergency-resource'
+  | 'enable-fire-foot-access';
 
 /** Botón de acción guiada asociado a un `RiskIssue`. */
 export interface RiskGuideAction {
@@ -222,27 +224,92 @@ export function resolveRiskGuide(issue: RiskIssue, scene: Scene): RiskGuide {
 
   // 7. Ruta bloqueada para equipos de emergencia
   if (id.startsWith('route-')) {
+    const meta = issue.meta;
+    const kind = meta?.kind || id.slice('route-'.length);
+    const resObj =
+      (meta?.resourceId &&
+        scene.infrastructure.find((r) => r.id === meta.resourceId)) ||
+      scene.infrastructure.find(
+        (r) => r.role === 'emergency' && r.kind === kind && r.active !== false
+      );
+    const resId = meta?.resourceId || resObj?.id;
+    const resName = meta?.resourceName || resObj?.name || 'el equipo';
+    const targetId = meta?.targetId;
+    const targetName = meta?.targetName;
+    const widthTxt = meta?.requiredWidth ? `${meta.requiredWidth} m` : '3,5 m';
+    const isStartBlocked = meta?.reason === 'start_blocked';
+    const isNarrowTurn = meta?.reason === 'narrow_turn';
+
+    const cause = isStartBlocked
+      ? `«${resName}» está colocado sobre un obstáculo, valla o fuera del área libre (necesita al menos ${widthTxt} despejados en su posición inicial).`
+      : isNarrowTurn
+        ? `El recorrido entre «${resName}» y ${targetName ? `«${targetName}»` : 'un punto de actividad'} tiene un giro o estrechamiento menor de ${widthTxt}.`
+        : `No existe un corredor libre de ${widthTxt} que conecte «${resName}» con ${targetName ? `«${targetName}»` : 'al menos un punto de actividad'}.`;
+
+    const steps = isStartBlocked
+      ? [
+          `Usa «Reubicar «${resName}» en zona despejada» para situarlo automáticamente en el paso libre más cercano.`,
+          `Si prefieres elegir tú el lugar, selecciona «${resName}» en el plano y arrástralo a una zona abierta dentro del perímetro.`,
+        ]
+      : [
+          targetName
+            ? `Selecciona «${targetName}» en el plano y separa los puestos, mesas picnic o vallas que cortan el paso (deja ≥ ${widthTxt} libres).`
+            : `Ensancha los pasillos principales separando puestos, mesas picnic o vallas (deja ≥ ${widthTxt} libres).`,
+          `También puedes seleccionar «${resName}» y acercarlo a un corredor despejado${kind === 'fire' && !scene.fireFootAccess ? ', o permitir el despliegue a pie de bomberos' : ''}.`,
+        ];
+
+    const actions: RiskGuideAction[] = [];
+    if (isStartBlocked && resId) {
+      actions.push({
+        label: `Reubicar «${resName}» en zona despejada`,
+        kind: 'quick-fix',
+        fixType: 'relocate-emergency-resource',
+        itemId: resId,
+        primary: true,
+      });
+    } else if (targetId && targetName) {
+      actions.push({
+        label: `Ir a «${targetName}» en el plano`,
+        kind: 'select-item',
+        itemId: targetId,
+        primary: true,
+      });
+    }
+    if (resId) {
+      actions.push({
+        label: `Seleccionar «${resName}»`,
+        kind: 'select-item',
+        itemId: resId,
+        primary: actions.length === 0,
+      });
+      if (!isStartBlocked) {
+        actions.push({
+          label: `Reubicar «${resName}» en paso libre`,
+          kind: 'quick-fix',
+          fixType: 'relocate-emergency-resource',
+          itemId: resId,
+        });
+      }
+    }
+    if (kind === 'fire' && !scene.fireFootAccess) {
+      actions.push({
+        label: 'Permitir despliegue a pie de bomberos',
+        kind: 'quick-fix',
+        fixType: 'enable-fire-foot-access',
+      });
+    }
+    actions.push({
+      label: 'Comparar distribución alternativa',
+      kind: 'open-modal',
+      modal: 'comparison',
+      primary: actions.length === 0,
+    });
+
     return {
-      icon: '🛣️',
-      cause:
-        'Un equipo o vehículo de emergencias no cabe en un estrechamiento, giro o pasillo entre su posición actual y una zona de actividad.',
-      steps: [
-        'Ensancha los pasillos principales separando puestos, mesas picnic o vallas (deja ≥ 3,5–4 m para vehículos).',
-        'Reubica el recurso de emergencias más cerca de un acceso despejado o usa el comparador para ensayar una alternativa.',
-      ],
-      actions: [
-        {
-          label: 'Ir al plano a despejar pasos',
-          kind: 'focus-panel',
-          panel: 'design',
-          primary: true,
-        },
-        {
-          label: 'Comparar distribución alternativa',
-          kind: 'open-modal',
-          modal: 'comparison',
-        },
-      ],
+      icon: isStartBlocked ? '📍' : '🛣️',
+      cause,
+      steps,
+      actions,
     };
   }
 

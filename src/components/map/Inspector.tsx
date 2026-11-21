@@ -1,6 +1,12 @@
 import React, {useEffect, useState} from 'react';
 import {cellAt, inside, world} from '../../engine/cartography/geometry';
 import {
+  fenceChainAnchors,
+  fenceMetrics,
+  rotateFenceChainByAngle,
+  updateFenceGeometry,
+} from '../../engine/cartography/fences';
+import {
   normalizeAccessFlows,
   snapPointToPerimeter,
 } from '../../engine/cartography/spawns';
@@ -107,6 +113,9 @@ export const Inspector: React.FC<InspectorProps> = ({
     : false;
   const isEntrance = found
     ? s.entrances.some((e) => e.id === found.id)
+    : false;
+  const isFence = found
+    ? (s.fences || []).some((f) => f.id === found.id)
     : false;
 
   const [noteText, setNoteText] = useState('');
@@ -1014,6 +1023,117 @@ export const Inspector: React.FC<InspectorProps> = ({
                 </p>
               )}
             </>
+          ) : isFence ? (
+            (() => {
+              const fm = fenceMetrics(item, m);
+              const anchors = fenceChainAnchors(item, s.fences || [], m);
+              const bothAnchored = anchors.anchorA && anchors.anchorB;
+              const oneAnchored = anchors.anchorA !== anchors.anchorB;
+              const handleFenceGeom = (patch: {
+                length?: number;
+                angleDeg?: number;
+              }) => {
+                if (
+                  patch.length !== undefined &&
+                  (!Number.isFinite(patch.length) ||
+                    patch.length < 0.5 ||
+                    patch.length > 10)
+                ) {
+                  showToast('El largo de la valla debe estar entre 0,5 y 10 m');
+                  return;
+                }
+                if (
+                  patch.angleDeg !== undefined &&
+                  (!Number.isFinite(patch.angleDeg) ||
+                    patch.angleDeg < -360 ||
+                    patch.angleDeg > 360)
+                ) {
+                  showToast('Ángulo válido: entre -360° y 360°');
+                  return;
+                }
+                updateScene((scene) => {
+                  const fences = scene.fences || [];
+                  const target = fences.find((f) => f.id === item.id);
+                  if (!target) return;
+                  if (
+                    patch.angleDeg !== undefined &&
+                    (anchors.anchorA || anchors.anchorB)
+                  ) {
+                    const updates = rotateFenceChainByAngle(
+                      structuredClone(fences),
+                      item.id,
+                      m,
+                      patch.angleDeg
+                    );
+                    for (const f of fences) {
+                      const nextPts = f.id ? updates.get(f.id) : undefined;
+                      if (nextPts) f.points = nextPts;
+                    }
+                    return;
+                  }
+                  target.points = updateFenceGeometry(
+                    target,
+                    m,
+                    patch,
+                    anchors
+                  );
+                }, true);
+                onSceneChanged();
+              };
+              return (
+                <>
+                  <span className="cell-tag">
+                    {item.fenceKind === 'chain'
+                      ? 'Valla encadenada'
+                      : item.fenceKind === 'loose'
+                        ? 'Valla suelta'
+                        : 'Valla'}
+                    {' · '}CELDA {cellAt(fm.mid, grid)}
+                  </span>
+                  <div className="two">
+                    <label>
+                      Largo (m)
+                      <input
+                        id="edit-fence-length"
+                        type="number"
+                        min="0.5"
+                        max="10"
+                        step="0.1"
+                        disabled={isLocked || bothAnchored}
+                        key={`flen-${item.id}-${fm.length.toFixed(2)}`}
+                        defaultValue={fm.length.toFixed(2)}
+                        onKeyDown={commitOnEnter}
+                        onBlur={(e) =>
+                          handleFenceGeom({length: Number(e.target.value)})
+                        }
+                      />
+                    </label>
+                    <label>
+                      Ángulo (°)
+                      <input
+                        id="edit-fence-angle"
+                        type="number"
+                        min="-360"
+                        max="360"
+                        step="1"
+                        disabled={isLocked}
+                        key={`fang-${item.id}-${Math.round(fm.angleDeg)}`}
+                        defaultValue={Math.round(fm.angleDeg)}
+                        onKeyDown={commitOnEnter}
+                        onBlur={(e) =>
+                          handleFenceGeom({angleDeg: Number(e.target.value)})
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="small-note">
+                    {bothAnchored || oneAnchored
+                      ? 'Arrastra el cuerpo para mover toda la cadena junta, o arrastra un extremo blanco para rotar desde ese anclaje junto con los tramos conectados.'
+                      : 'Las vallas que se tocan o solapan forman una barrera continua en la simulación.'}
+                  </p>
+                </>
+              );
+            })()
           ) : (
             isArea && (
               <p>

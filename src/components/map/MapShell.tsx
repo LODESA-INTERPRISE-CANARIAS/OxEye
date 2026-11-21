@@ -13,6 +13,13 @@ import {
   fetchOsmVectorContext,
 } from '../../engine/cartography/custom-map';
 import {
+  computeFixedFenceEnd,
+  fenceMetrics,
+  rotateFenceChainBranch,
+  snapFencePoint,
+  translateFenceChain,
+} from '../../engine/cartography/fences';
+import {
   cellAt,
   column,
   localPoint,
@@ -41,6 +48,7 @@ import {insertStock} from '../../engine/planning/inventory';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   Booth,
+  GeometryTrace,
   Infrastructure,
   PhaseKey,
   Point,
@@ -138,6 +146,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       handle: string | null;
       xrayKind?: 'column' | 'wall' | 'polygon' | null;
       xrayHandle?: 'a' | 'b' | null;
+      fenceHandle?: 'a' | 'b' | null;
+      fencesSnapshot?: GeometryTrace[] | null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       snapshot: any;
       moved: boolean;
@@ -146,6 +156,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     } | null>(null);
 
     const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+    const [fenceAnchor, setFenceAnchor] = useState<Point | null>(null);
+    const fenceChainIdRef = useRef<string | null>(null);
+    const fenceCursorRef = useRef<{p: Point; shiftKey: boolean} | null>(null);
     const [boundaryMode, setBoundaryMode] = useState<
       'replace' | 'add' | 'subtract'
     >('replace');
@@ -158,6 +171,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const selectedIds = useProjectStore((s) => s.selectedIds);
     const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
     const grid = useProjectStore((s) => s.grid);
+    const fenceLength = useProjectStore((s) => s.fenceLength);
     const gridVisible = useProjectStore((s) => s.gridVisible);
     const labelsVisible = useProjectStore((s) => s.labelsVisible);
     const routesVisible = useProjectStore((s) => s.routesVisible);
@@ -579,15 +593,62 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       const selectedSet = new Set(selectedIds);
       for (const f of s.fences || []) {
-        html += `<g data-id="${esc(f.id)}"><title>${esc(
-          f.name || 'Valla'
-        )}</title><polyline points="${pts(
-          f.points
-        )}" fill="none" stroke="transparent" stroke-width="3"/><polyline points="${pts(
-          f.points
-        )}" fill="none" stroke="${
-          f.id && selectedSet.has(f.id) ? '#e18f2f' : '#806e55'
-        }" stroke-width=".6"/></g>`;
+        const isSel = !!(f.id && selectedSet.has(f.id));
+        const fPts = (f.points || []).map((q) => world(q, m));
+        const ptsAttr = fPts.map((q) => q.join(',')).join(' ');
+        const posts: string[] = [];
+        for (let i = 1; i < fPts.length; i++) {
+          const a = fPts[i - 1];
+          const b = fPts[i];
+          const segLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          const steps = Math.max(1, Math.round(segLen / 1.75));
+          for (let k = 0; k <= steps; k++) {
+            const t = k / steps;
+            const px = a[0] + (b[0] - a[0]) * t;
+            const py = a[1] + (b[1] - a[1]) * t;
+            const isEnd = k === 0 || k === steps;
+            posts.push(
+              `<circle cx="${px}" cy="${py}" r="${isEnd ? 0.34 : 0.22}" fill="${
+                isSel ? '#c49a45' : '#6c3e1e'
+              }" stroke="#fff" stroke-width=".12"/>`
+            );
+          }
+        }
+        const fm = fenceMetrics(f, m);
+        const showFenceHandles =
+          panel === 'design' &&
+          !proposal &&
+          isSel &&
+          !f.locked &&
+          fPts.length >= 2;
+        const handlesSvg = showFenceHandles
+          ? `<g class="fence-handles"><circle data-fence-handle="a" data-fence-id="${esc(
+              f.id
+            )}" cx="${fPts[0][0]}" cy="${
+              fPts[0][1]
+            }" r="1.1" fill="transparent" class="fence-handle"/><circle data-fence-handle="a" data-fence-id="${esc(
+              f.id
+            )}" cx="${fPts[0][0]}" cy="${
+              fPts[0][1]
+            }" r=".56" fill="#ffffff" stroke="#d97706" stroke-width=".28" class="fence-handle"/><circle data-fence-handle="b" data-fence-id="${esc(
+              f.id
+            )}" cx="${fPts[fPts.length - 1][0]}" cy="${
+              fPts[fPts.length - 1][1]
+            }" r="1.1" fill="transparent" class="fence-handle"/><circle data-fence-handle="b" data-fence-id="${esc(
+              f.id
+            )}" cx="${fPts[fPts.length - 1][0]}" cy="${
+              fPts[fPts.length - 1][1]
+            }" r=".56" fill="#ffffff" stroke="#d97706" stroke-width=".28" class="fence-handle"/></g>`
+          : '';
+        html += `<g data-id="${esc(f.id)}" class="map-fence" data-locked="${
+          f.locked ? 'true' : 'false'
+        }"><title>${esc(f.name || 'Valla')} · ${num(fm.length)} m</title><polyline points="${ptsAttr}" fill="none" stroke="transparent" stroke-width="3"/>${
+          isSel
+            ? `<polyline points="${ptsAttr}" fill="none" stroke="#c49a45" stroke-width="1.35" stroke-opacity=".55" stroke-linecap="round"/>`
+            : ''
+        }<polyline points="${ptsAttr}" fill="none" stroke="${
+          isSel ? '#d97706' : '#9e5b2c'
+        }" stroke-width=".58" stroke-linecap="round"/><polyline points="${ptsAttr}" fill="none" stroke="#f7dfb4" stroke-width=".26" stroke-dasharray=".8 .6" stroke-linecap="butt"/>${posts.join('')}${handlesSvg}</g>`;
       }
       for (const o of [...s.base.booths, ...s.infrastructure]) {
         const [x, y] = world([o.x, o.y], m);
@@ -851,8 +912,57 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       drawScenario();
     }, [drawScenario, revision, selectedIds, phase, proposal, showAlternative, routesVisible]);
 
+    const renderFenceDraft = useCallback(
+      (anchor: Point | null, cursor: Point | null, shiftKey: boolean) => {
+        const draftEl = draftLayerRef.current;
+        if (!draftEl) return;
+        if (tool !== 'fence:chain' && tool !== 'fence:loose') return;
+        const s = currentScene();
+        const m = currentMap();
+        const fences = s.fences || [];
+        if (!cursor) {
+          draftEl.innerHTML = anchor
+            ? `<circle cx="${anchor[0]}" cy="${anchor[1]}" r=".55" fill="#d97706" stroke="#fff" stroke-width=".18"/>`
+            : '';
+          return;
+        }
+        if (!anchor) {
+          const snap = snapFencePoint(cursor, fences, m);
+          const pt = snap.point;
+          draftEl.innerHTML = snap.snapped
+            ? `<circle cx="${pt[0]}" cy="${pt[1]}" r=".9" fill="none" stroke="#16a34a" stroke-width=".26" stroke-dasharray=".6 .35"/><circle cx="${pt[0]}" cy="${pt[1]}" r=".38" fill="#16a34a"/>`
+            : `<circle cx="${pt[0]}" cy="${pt[1]}" r=".35" fill="#d97706" fill-opacity=".75" stroke="#fff" stroke-width=".14"/>`;
+          return;
+        }
+        const {end, angleDeg, snapped} = computeFixedFenceEnd(
+          anchor,
+          cursor,
+          fenceLength,
+          shiftKey,
+          fences,
+          m
+        );
+        const midX = (anchor[0] + end[0]) / 2;
+        const midY = (anchor[1] + end[1]) / 2;
+        const dist = Math.hypot(end[0] - anchor[0], end[1] - anchor[1]);
+        draftEl.innerHTML = `<g class="fence-ghost" pointer-events="none"><line x1="${anchor[0]}" y1="${anchor[1]}" x2="${end[0]}" y2="${end[1]}" stroke="#d97706" stroke-width=".62" stroke-opacity=".75" stroke-dasharray="1.1 .65" stroke-linecap="round"/><circle cx="${anchor[0]}" cy="${anchor[1]}" r=".42" fill="#d97706" stroke="#fff" stroke-width=".14"/><circle cx="${end[0]}" cy="${end[1]}" r=".42" fill="${
+          snapped ? '#16a34a' : '#d97706'
+        }" stroke="#fff" stroke-width=".14"/>${
+          snapped
+            ? `<circle cx="${end[0]}" cy="${end[1]}" r=".95" fill="none" stroke="#16a34a" stroke-width=".24"/>`
+            : ''
+        }<text x="${midX}" y="${midY - 1.1}" text-anchor="middle" font-size="1.9" font-weight="700" fill="#9a4a12" paint-order="stroke" stroke="#fff" stroke-width=".6">${num(
+          dist
+        )} m · ${Math.round(angleDeg)}°${shiftKey ? ' (15°)' : ''}</text></g>`;
+      },
+      [tool, fenceLength, currentScene, currentMap]
+    );
+
     useEffect(() => {
       setDraftPoints([]);
+      setFenceAnchor(null);
+      fenceChainIdRef.current = null;
+      fenceCursorRef.current = null;
       boundaryModeRef.current = 'replace';
       setBoundaryMode('replace');
     }, [tool]);
@@ -860,8 +970,16 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     useEffect(() => {
       const draftEl = draftLayerRef.current;
       if (!draftEl) return;
+      if (tool === 'fence:chain' || tool === 'fence:loose') {
+        renderFenceDraft(
+          fenceAnchor,
+          fenceCursorRef.current?.p || null,
+          !!fenceCursorRef.current?.shiftKey
+        );
+        return;
+      }
       draftEl.innerHTML = buildDraftSvg(draftPoints, tool, boundaryMode);
-    }, [draftPoints, tool, boundaryMode]);
+    }, [draftPoints, tool, boundaryMode, fenceAnchor, fenceLength, renderFenceDraft]);
 
     useEffect(() => {
       const mapEl = mapDivRef.current;
@@ -1263,11 +1381,23 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           xrayHandle = subHit.handle || null;
         }
       }
+      const fenceHandleEl =
+        panel === 'design'
+          ? targetEl.closest<HTMLElement>('[data-fence-handle]')
+          : null;
+      const fenceHandle =
+        (fenceHandleEl?.dataset.fenceHandle as 'a' | 'b' | undefined) || null;
+      const fenceHandleId = fenceHandleEl?.dataset.fenceId || null;
+      if (fenceHandle && fenceHandleId) {
+        resolvedId = fenceHandleId;
+        o = (s.fences || []).find((f) => f.id === fenceHandleId) || null;
+      }
       const handle =
         panel === 'design'
           ? targetEl.closest<HTMLElement>('[data-handle]')?.dataset.handle ||
             null
           : null;
+      const isFenceTarget = !!(o && (s.fences || []).includes(o));
       dragRef.current = {
         p,
         client: [e.clientX, e.clientY],
@@ -1281,6 +1411,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         handle,
         xrayKind,
         xrayHandle,
+        fenceHandle,
+        fencesSnapshot: isFenceTarget ? structuredClone(s.fences || []) : null,
         snapshot: o ? structuredClone(o) : null,
         moved: false,
         checkpoint: false,
@@ -1298,6 +1430,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         coordsSpanRef.current.textContent = `E ${num(m.bbox[0] + p[0])} · N ${num(
           m.bbox[3] - p[1]
         )} / UTM 28N`;
+      }
+      if (tool === 'fence:chain' || tool === 'fence:loose') {
+        fenceCursorRef.current = {p, shiftKey: e.shiftKey};
+        renderFenceDraft(fenceAnchor, p, e.shiftKey);
       }
       const drag = dragRef.current;
       if (!drag) return;
@@ -1361,6 +1497,40 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         drag.snapshot?.points &&
         drag.id
       ) {
+        const s = currentScene();
+        const isFenceDrag = (s.fences || []).includes(drag.o);
+        if (isFenceDrag && drag.fencesSnapshot) {
+          const updates = drag.fenceHandle
+            ? rotateFenceChainBranch(
+                drag.fencesSnapshot,
+                drag.id,
+                drag.fenceHandle,
+                m,
+                p,
+                e.shiftKey
+              )
+            : translateFenceChain(
+                drag.fencesSnapshot,
+                drag.id,
+                m,
+                p[0] - drag.p[0],
+                p[1] - drag.p[1]
+              );
+          if (updates.size > 0) {
+            if (!drag.checkpoint) {
+              checkpoint();
+              drag.checkpoint = true;
+              onSceneChanged();
+            }
+            for (const f of s.fences || []) {
+              const nextPts = f.id ? updates.get(f.id) : undefined;
+              if (nextPts) f.points = nextPts;
+            }
+            setSelectedId(drag.id);
+            drawScenario();
+          }
+          return;
+        }
         if (!drag.checkpoint) {
           checkpoint();
           drag.checkpoint = true;
@@ -1555,6 +1725,72 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         setTool('xray:select');
         setSelectedIds([colId]);
         onSceneChanged();
+      } else if (tool === 'fence:chain' || tool === 'fence:loose') {
+        const s = currentScene();
+        // Doble clic en vallas encadenadas termina la cadena sin colocar el segmento fantasma
+        if (tool === 'fence:chain' && fenceAnchor && e.detail >= 2) {
+          setFenceAnchor(null);
+          fenceChainIdRef.current = null;
+          setTool('select');
+          return;
+        }
+        if (!fenceAnchor) {
+          const snap = snapFencePoint(p, s.fences || [], m);
+          setFenceAnchor(snap.point);
+          if (tool === 'fence:chain') {
+            fenceChainIdRef.current = crypto.randomUUID();
+          }
+          fenceCursorRef.current = {p, shiftKey: e.shiftKey};
+          renderFenceDraft(snap.point, p, e.shiftKey);
+          return;
+        }
+        const {end} = computeFixedFenceEnd(
+          fenceAnchor,
+          p,
+          fenceLength,
+          e.shiftKey,
+          s.fences || [],
+          m
+        );
+        const clampedEnd: Point = [
+          Math.max(0, Math.min(m.widthMeters, end[0])),
+          Math.max(0, Math.min(m.heightMeters, end[1])),
+        ];
+        if (
+          Math.hypot(clampedEnd[0] - fenceAnchor[0], clampedEnd[1] - fenceAnchor[1]) <
+          0.45
+        ) {
+          showToast('La valla debe medir al menos 0,5 metros.');
+          return;
+        }
+        const fenceId = crypto.randomUUID();
+        const isChain = tool === 'fence:chain';
+        const chainId = isChain
+          ? fenceChainIdRef.current || crypto.randomUUID()
+          : undefined;
+        if (isChain && !fenceChainIdRef.current) {
+          fenceChainIdRef.current = chainId || null;
+        }
+        updateScene((sc) => {
+          sc.fences ??= [];
+          sc.fences.push({
+            id: fenceId,
+            name: `Valla ${sc.fences.length + 1}`,
+            points: [percent(fenceAnchor, m), percent(clampedEnd, m)],
+            phaseTags: tagsForNew(),
+            fenceKind: isChain ? 'chain' : 'loose',
+            ...(chainId ? {chainId} : {}),
+          });
+        }, true);
+        if (isChain) {
+          setFenceAnchor(clampedEnd);
+          renderFenceDraft(clampedEnd, p, e.shiftKey);
+        } else {
+          setFenceAnchor(null);
+          setTool('select');
+          setSelectedId(fenceId);
+        }
+        onSceneChanged();
       } else if (tool === 'gateLine') {
         const s = currentScene();
         const snap = snapPointToPerimeter(p, s, m);
@@ -1599,13 +1835,25 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       if (e.key === 'Escape') {
         if (onboardingStage === 'perimeter') {
           setDraftPoints([]);
+        } else if (tool === 'fence:chain' || tool === 'fence:loose') {
+          setFenceAnchor(null);
+          fenceChainIdRef.current = null;
+          setTool('select');
         } else {
           setTool('select');
           setSelectedId(null);
         }
       }
-      if (e.key === 'Enter' && draftPoints.length) {
-        finishDraw();
+      if (e.key === 'Enter') {
+        if (tool === 'fence:chain' || tool === 'fence:loose') {
+          setFenceAnchor(null);
+          fenceChainIdRef.current = null;
+          setTool('select');
+          return;
+        }
+        if (draftPoints.length) {
+          finishDraw();
+        }
       }
       if (
         ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
@@ -1640,6 +1888,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                     gateLine:
                       'Dibujar acceso: marca sus dos extremos sobre el borde del perímetro',
                     road: 'Propuesta vial',
+                    'fence:chain': `Vallas encadenadas (${num(fenceLength)} m) · clic coloca · Esc/Enter/doble clic termina`,
+                    'fence:loose': `Valla suelta (${num(fenceLength)} m) · clic inicio y dirección`,
                     'xray:boundary':
                       'Perímetro subsuelo: Mayús añade (+) · Ctrl resta (−)',
                     'xray:column': 'Colocar columna en el subsuelo',
@@ -1699,6 +1949,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onDoubleClick={() => {
+              if (tool === 'fence:chain' && fenceAnchor) {
+                setFenceAnchor(null);
+                fenceChainIdRef.current = null;
+                setTool('select');
+              }
+            }}
             onPointerCancel={() => {
               if (dragRef.current?.panOnly && mapDivRef.current) {
                 mapDivRef.current.style.cursor = '';
@@ -1876,7 +2133,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           <div
             id="draw-confirm"
             className="draw-confirm"
-            hidden={!isDrawingTool}
+            hidden={
+              !isDrawingTool &&
+              !(tool === 'fence:chain' && fenceAnchor !== null)
+            }
           >
             {(tool === 'boundary' || tool === 'xray:boundary') && (
               <span
@@ -1891,16 +2151,30 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               </span>
             )}
             <span id="draw-message">
-              {draftPoints.length
-                ? `${draftPoints.length} puntos · ${num(polylineLength(draftPoints))} m`
-                : 'Marca puntos en el plano'}
+              {tool === 'fence:chain'
+                ? `Cadena de vallas (${num(fenceLength)} m) · Esc, Enter o doble clic para terminar`
+                : draftPoints.length
+                  ? `${draftPoints.length} puntos · ${num(polylineLength(draftPoints))} m`
+                  : 'Marca puntos en el plano'}
             </span>
             <button
               type="button"
               id="finish-draw"
               className="dark"
-              disabled={draftPoints.length < (isPolygonTool ? 3 : 2)}
-              onClick={finishDraw}
+              disabled={
+                tool === 'fence:chain'
+                  ? false
+                  : draftPoints.length < (isPolygonTool ? 3 : 2)
+              }
+              onClick={() => {
+                if (tool === 'fence:chain') {
+                  setFenceAnchor(null);
+                  fenceChainIdRef.current = null;
+                  setTool('select');
+                  return;
+                }
+                finishDraw();
+              }}
             >
               Terminar
             </button>

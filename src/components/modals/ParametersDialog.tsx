@@ -32,6 +32,7 @@ export const ParametersDialog: React.FC<ParametersDialogProps> = ({
   const [estimateSource, setEstimateSource] = useState('Supuesto de ensayo');
   const [horizontalRain, setHorizontalRain] = useState(false);
   const [trained, setTrained] = useState(false);
+  const [rebelSharePct, setRebelSharePct] = useState(1);
 
   useEffect(() => {
     const dlg = dlgRef.current;
@@ -47,6 +48,9 @@ export const ParametersDialog: React.FC<ParametersDialogProps> = ({
       setEstimateSource(sc.estimateSource || 'Supuesto de ensayo');
       setHorizontalRain(!!sc.horizontalRain);
       setTrained(!!sc.trained);
+      setRebelSharePct(
+        Math.round(Math.max(0, Math.min(1, sc.rebelShare ?? 0.01)) * 1000) / 10
+      );
       dlg.showModal();
     } else if (!isOpen && dlg.open) {
       dlg.close();
@@ -89,6 +93,7 @@ export const ParametersDialog: React.FC<ParametersDialogProps> = ({
         estimateSource,
         trained,
         horizontalRain,
+        rebelShare: Math.max(0, Math.min(1, (Number(rebelSharePct) || 0) / 100)),
       });
     }, true);
     setActiveModal(null);
@@ -129,6 +134,19 @@ export const ParametersDialog: React.FC<ParametersDialogProps> = ({
             </label>
           ))}
         </fieldset>
+        <label>
+          Asistentes que intentan saltar vallas (%) · 0 desactiva
+          <input
+            type="number"
+            id="param-rebel-share"
+            name="rebelSharePct"
+            min={0}
+            max={25}
+            step={0.5}
+            value={rebelSharePct}
+            onChange={(e) => setRebelSharePct(Number(e.target.value))}
+          />
+        </label>
         <label>
           Fuente de rendimientos y tarifas
           <input

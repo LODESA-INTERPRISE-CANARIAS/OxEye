@@ -20,6 +20,7 @@ export const TOPICS: Record<string, string> = {
   blocked: 'Paso bloqueado',
   exit: 'Salida',
   offer: 'Oferta',
+  fence_breach: 'Intentos de saltar vallas',
 };
 
 /**
@@ -172,6 +173,17 @@ export class ExperienceMonitor {
             Math.min(40, (seconds / Math.max(1, tolerance)) * 35)
           );
         }
+      }
+      if (a.climbingFence) {
+        report(
+          a,
+          'fence_breach',
+          a.climbingFence.fenceId || null,
+          `Intento de saltar ${a.climbingFence.fenceName || 'valla'} en ${e.location(
+            Math.max(0, e.g.index(a.x, a.y))
+          )}.`,
+          18
+        );
       }
       if (a.stuck > 15) {
         report(

@@ -23,7 +23,8 @@ export type IncidentCategoryKey =
   | 'offer'
   | 'access'
   | 'dining'
-  | 'emergency';
+  | 'emergency'
+  | 'fence_breach';
 
 /** Tipos de acción guiada ejecutables desde una tarjeta de incidencia. */
 export type GuidedActionKind =
@@ -213,10 +214,23 @@ const CATEGORY_META: Record<IncidentCategoryKey, CategoryMeta> = {
       'Revisa en los accesos las unidades de autoridades autorizadas y deja un corredor libre de obstáculos.',
     ],
   },
+  fence_breach: {
+    label: 'Intentos de saltar vallas',
+    icon: '🚧',
+    color: '#b56838',
+    whyItHurts:
+      'Cuando una valla obliga a rodeos largos o bloquea líneas de deseo, una fracción de asistentes intenta saltarla, generando incidencias de seguridad y riesgo de caídas.',
+    steps: [
+      'Abre un paso peatonal más cercano o reorienta las vallas sueltas para acompañar el flujo natural.',
+      'Refuerza la vigilancia de seguridad o patrullas en los tramos con más intentos de salto.',
+      'Si deseas probar el escenario sin comportamiento infractor, ajusta el porcentaje en la Ficha de producción.',
+    ],
+  },
 };
 
 function mapComplaintToCategory(type: string): IncidentCategoryKey {
   const t = String(type || '').toLowerCase();
+  if (t.includes('valla') || t.includes('fence')) return 'fence_breach';
   if (t.includes('acceso')) return 'access';
   if (t.includes('oferta')) return 'offer';
   if (t.includes('salida') || t.includes('exit')) return 'exit';
@@ -400,6 +414,25 @@ function buildActionsForCategory(
         },
         {label: 'Revisar empresas y recursos', kind: 'open-org'},
       ];
+    case 'fence_breach':
+      return [
+        ...(targetId
+          ? [
+              {
+                label: `Seleccionar ${targetName || 'valla'}`,
+                kind: 'select-target' as const,
+                targetId,
+                primary: true,
+              },
+            ]
+          : []),
+        {
+          label: 'Ajustar vigilancia en Inventario',
+          kind: 'open-inventory',
+          primary: !targetId,
+        },
+        {label: 'Ajustar % en Ficha de producción', kind: 'open-parameters'},
+      ];
   }
 }
 
@@ -475,9 +508,16 @@ export function buildPostSimDiagnostics(
 
   for (const ep of episodes) {
     const key = (
-      ['price', 'queue', 'shelter', 'sound', 'blocked', 'exit', 'offer'].includes(
-        ep.type
-      )
+      [
+        'price',
+        'queue',
+        'shelter',
+        'sound',
+        'blocked',
+        'exit',
+        'offer',
+        'fence_breach',
+      ].includes(ep.type)
         ? ep.type
         : mapComplaintToCategory(ep.type)
     ) as IncidentCategoryKey;
@@ -515,8 +555,23 @@ export function buildPostSimDiagnostics(
     bump('dining', diningIssues, null, parts.join(' · '));
   }
 
+  const fenceBreachEvents = emergencyEvents.filter(
+    (ev) => ev.type === 'fence_breach'
+  );
+  if (fenceBreachEvents.length > 0 && !buckets.has('fence_breach')) {
+    bump(
+      'fence_breach',
+      fenceBreachEvents.length,
+      null,
+      fenceBreachEvents
+        .slice(0, 2)
+        .map((ev) => `${ev.name || 'Intento de saltar valla'} (${ev.status})`)
+        .join(' · ')
+    );
+  }
+
   const problemEmergencies = emergencyEvents.filter(
-    (ev) => ev.status !== 'resolved'
+    (ev) => ev.status !== 'resolved' && ev.type !== 'fence_breach'
   );
   if (problemEmergencies.length > 0) {
     bump(

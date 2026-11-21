@@ -15,6 +15,11 @@ import type {
   SimStation,
   ZoneMetric,
 } from '../../types';
+import {
+  fenceSegmentsMeters,
+  projectPointToSegment,
+  segmentsIntersect,
+} from '../cartography/fences';
 import {inside, rect, segmentDistance} from '../cartography/geometry';
 import {Dining} from '../dining/dining';
 import {picnicSlots} from '../dining/furniture';
@@ -77,6 +82,9 @@ export class EventEngine {
   time: number;
   closing: boolean;
   flowCache: Map<number, Int32Array>;
+  fenceSegments: Array<{id: string; name: string; a: Point; b: Point}>;
+  rebelGrid: NavigationGrid | null;
+  rebelFlowCache: Map<number, Int32Array>;
   agents: Agent[];
   nextId: number;
   byId: Map<number, Agent>;
@@ -152,6 +160,9 @@ export class EventEngine {
     this.time = 0;
     this.closing = false;
     this.flowCache = new Map();
+    this.fenceSegments = fenceSegmentsMeters(this.s.fences || [], this.g.m);
+    this.rebelGrid = null;
+    this.rebelFlowCache = new Map();
     this.agents = [];
     this.nextId = 1;
     this.byId = new Map();
@@ -183,6 +194,7 @@ export class EventEngine {
       technical: 0,
       shelterVisits: 0,
       shelterSeconds: 0,
+      fenceBreaches: 0,
     };
     this.duration = this.s.base.hours * 3600;
     const override = this.s.base.overrides?.limit;
@@ -662,6 +674,9 @@ export class EventEngine {
     }
     const profile = this.pickProfile();
     const persona = pickPersona(profile, this.random, this.s.variety ?? 1);
+    const rebelShare = Math.max(0, Math.min(1, this.s.rebelShare ?? 0.01));
+    const rebelRoll = this.random();
+    const rebel = rebelShare > 0 && rebelRoll < rebelShare;
     const goals =
       profile === 'walker'
         ? 0
@@ -679,6 +694,7 @@ export class EventEngine {
       r: this.s.diameter / 2,
       profile,
       persona,
+      rebel,
       spent: 0,
       goals,
       left: goals,
@@ -750,6 +766,99 @@ export class EventEngine {
     return this.flowCache.get(cell)!;
   }
 
+  /** Construye perezosamente la cuadrícula sin vallas solo cuando hay rebeldes y vallas. */
+  getRebelGrid(): NavigationGrid {
+    if (!this.rebelGrid) {
+      this.rebelGrid = buildGrid(this.s, this.g.cell, {ignoreFences: true});
+    }
+    return this.rebelGrid;
+  }
+
+  /** Campo de flujo sin vallas con caché LRU acotada (solo para agentes rebeldes). */
+  getRebelFlow(cell: number): Int32Array {
+    if (!this.rebelFlowCache.has(cell)) {
+      if (this.rebelFlowCache.size >= 32) {
+        const firstKey = this.rebelFlowCache.keys().next().value;
+        if (firstKey !== undefined) this.rebelFlowCache.delete(firstKey);
+      }
+      this.rebelFlowCache.set(cell, flow(this.getRebelGrid(), cell));
+    }
+    return this.rebelFlowCache.get(cell)!;
+  }
+
+  /**
+   * Gestiona el intento de salto de valla por parte de un agente rebelde:
+   * detecta la barrera interpuesta hacia su objetivo, aplica un tiempo de salto (3 s),
+   * lo traslada al lado opuesto libre y genera una incidencia de seguridad (`fence_breach`).
+   */
+  stepRebelFenceCross(a: Agent, goalPoint: Point): boolean {
+    if (!a.rebel || !this.fenceSegments.length) return false;
+    if (a.climbingFence) {
+      if (this.time >= a.climbingFence.until) {
+        const [tx, ty] = a.climbingFence.target;
+        this.remove(a);
+        a.x = tx;
+        a.y = ty;
+        a.stuck = 0;
+        this.insert(a);
+        delete a.climbingFence;
+      }
+      return true;
+    }
+    if (this.time < (a.fenceCrossCooldown || 0)) return false;
+
+    const pos: Point = [a.x, a.y];
+    let hitSeg: {id: string; name: string; a: Point; b: Point} | null = null;
+    let bestProj: {point: Point; dist: number} | null = null;
+    for (const seg of this.fenceSegments) {
+      const proj = projectPointToSegment(pos, seg.a, seg.b);
+      if (proj.dist > 1.8) continue;
+      const crossesDirect = segmentsIntersect(pos, goalPoint, seg.a, seg.b);
+      if ((crossesDirect || a.stuck > 3) && (!bestProj || proj.dist < bestProj.dist)) {
+        hitSeg = seg;
+        bestProj = proj;
+      }
+    }
+    if (!hitSeg || !bestProj) return false;
+
+    // Vector unitario perpendicular a la valla apuntando hacia el lado contrario al agente
+    const vx = hitSeg.b[0] - hitSeg.a[0];
+    const vy = hitSeg.b[1] - hitSeg.a[1];
+    const vLen = Math.hypot(vx, vy) || 1;
+    let nx = -vy / vLen;
+    let ny = vx / vLen;
+    // Asegurar que (nx, ny) apunta desde el agente hacia el otro lado de la valla
+    const toProjX = bestProj.point[0] - a.x;
+    const toProjY = bestProj.point[1] - a.y;
+    if (toProjX * nx + toProjY * ny < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const landRawX = bestProj.point[0] + nx * 1.45;
+    const landRawY = bestProj.point[1] + ny * 1.45;
+    const landCell = this.g.nearest(landRawX, landRawY, 3.5);
+    if (landCell < 0) return false;
+    const landPt = this.g.point(landCell);
+    // Verificar que aterriza efectivamente al otro lado de la línea de la valla
+    const sideDot =
+      (landPt[0] - bestProj.point[0]) * nx +
+      (landPt[1] - bestProj.point[1]) * ny;
+    if (sideDot <= 0.25) return false;
+
+    a.climbingFence = {
+      until: this.time + 3,
+      target: landPt,
+      fenceId: hitSeg.id,
+      fenceName: hitSeg.name,
+    };
+    a.fenceCrossCooldown = this.time + 90;
+    this.stats.fenceBreaches = (this.stats.fenceBreaches || 0) + 1;
+    const cell = Math.max(0, this.g.index(a.x, a.y));
+    this.pain('valla', cell, hitSeg.name, a, 0, 'salto_valla');
+    this.emergency.injectAtAgent('fence_breach', a, hitSeg.name);
+    return true;
+  }
+
   assign(a: Agent): void {
     if (
       a.left > 0 &&
@@ -783,23 +892,31 @@ export class EventEngine {
           : Math.min(a.completed + a.failed, wants.length - 1)
       ];
     const cell = this.g.index(a.x, a.y);
+    const rebelFlowCheck = a.rebel && this.fenceSegments.length > 0;
     const options = this.stations
       .filter(
         (b) =>
           b.capacity > 0 &&
           b.type === need &&
           b.cell >= 0 &&
-          b.field[cell] >= 0 &&
+          (b.field[cell] >= 0 ||
+            (rebelFlowCheck && this.getRebelFlow(b.cell)[cell] >= 0)) &&
           this.available(b)
       )
-      .map((b) => ({
-        b,
-        score:
-          (b.interest || 1) /
-          (1 +
-            (b.field[cell] * this.g.cell) / 600 +
-            ((b.queue.length / Math.max(1, b.capacity)) * b.minutes) / 10),
-      }));
+      .map((b) => {
+        const distCells =
+          b.field[cell] >= 0
+            ? b.field[cell]
+            : this.getRebelFlow(b.cell)[cell];
+        return {
+          b,
+          score:
+            (b.interest || 1) /
+            (1 +
+              (distCells * this.g.cell) / 600 +
+              ((b.queue.length / Math.max(1, b.capacity)) * b.minutes) / 10),
+        };
+      });
     if (!options.length) {
       if (
         this.stations.some(
@@ -1000,9 +1117,20 @@ export class EventEngine {
     precise: Point | null = null
   ): boolean {
     if (!field || goal === undefined) return false;
-    let target = this.nextCell(a, field, goal);
-    if (!target) return false;
     const end = precise || this.g.point(goal);
+    if (a.rebel && this.fenceSegments.length > 0) {
+      if (this.stepRebelFenceCross(a, end)) return false;
+      field = this.getRebelFlow(goal);
+    }
+    let target = this.nextCell(a, field, goal);
+    if (!target) {
+      if (a.rebel && this.fenceSegments.length > 0) {
+        // Permite acercarse a la valla para intentar cruzarla cuando el campo normal está bloqueado
+        target = end;
+      } else {
+        return false;
+      }
+    }
     if (precise && this.g.index(a.x, a.y) === goal) target = precise;
     if (Math.hypot(a.x - end[0], a.y - end[1]) < stopDistance) return true;
     const dx = target[0] - a.x;
@@ -1477,6 +1605,10 @@ export class EventEngine {
       oferta: [
         'Interés sin oferta disponible',
         'Ajustar horarios o añadir la actividad que busca este perfil.',
+      ],
+      valla: [
+        'Intentos de saltar vallas',
+        'Abrir un paso peatonal cercano, reorientar las vallas sueltas o reforzar la vigilancia.',
       ],
     };
     return [...this.pains.values()]

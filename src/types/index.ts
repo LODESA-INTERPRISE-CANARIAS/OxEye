@@ -225,6 +225,10 @@ export interface GeometryTrace {
   points: Point2D[];
   width?: number;
   origin?: string;
+  /** Origen de colocación para vallas: `'chain'` (encadenada) o `'loose'` (suelta). */
+  fenceKind?: 'chain' | 'loose';
+  /** Identificador compartido de cadena para vallas trazadas con la herramienta encadenada. */
+  chainId?: string;
   locked?: boolean;
   phaseTags?: PhaseKey[];
 }
@@ -501,6 +505,8 @@ export interface Scene {
   curiosityShare?: number;
   sensoryShare?: number;
   mildAlcoholShare?: number;
+  /** Fracción de asistentes ("rebeldes") que intentan saltar vallas (0–1; por defecto 0.01 = 1 %). */
+  rebelShare?: number;
   policeMode?: string;
   responseMode?: string;
   responseExampleNote?: string;

@@ -806,6 +806,15 @@
   fill: var(--lavender);
 }
 
+.fence-handle {
+  cursor: grab;
+  pointer-events: all;
+}
+
+.fence-handle:hover {
+  stroke-width: 0.36;
+}
+
 .multi-select-summary {
   list-style: none;
   padding: 0;
