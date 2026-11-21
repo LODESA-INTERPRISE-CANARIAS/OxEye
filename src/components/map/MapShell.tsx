@@ -29,10 +29,12 @@ import {
 } from '../../engine/cartography/geometry';
 import {
   expandSelectionToGroups,
+  findGroupableItemsById,
   groupBoundingBoxMeters,
   type GroupTransformSnapshot,
   resolveGroupLeafIds,
   rotateItemsRigid,
+  selectionTouchesSubsoil,
   snapshotGroupTransform,
   topGroupOf,
   translateItemsRigid,
@@ -1479,26 +1481,21 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
       }
       const isFenceTarget = !!(o && (s.fences || []).includes(o));
-      const isMovableObject = !!(
-        o &&
-        (s.base.booths.includes(o) || s.infrastructure.includes(o))
-      );
+      const groupableMap = findGroupableItemsById(s);
+      const isGroupableTarget = !!(resolvedId && groupableMap.has(resolvedId));
       let groupLeafIds: string[] | null = null;
       let subBallastIds: string[] | null = null;
-      if (isMovableObject && resolvedId) {
-        if (o.role === 'cover') {
+      if (isGroupableTarget && resolvedId) {
+        if (o?.role === 'cover') {
           const subs = coverSubcomponentBallastIds(s, resolvedId);
           if (subs.length) subBallastIds = subs;
         }
-        if (!handle) {
+        if (!handle && !xrayHandle && !fenceHandle) {
           const topGrp = topGroupOf(s.groups, resolvedId);
-          if (topGrp) {
-            groupLeafIds = resolveGroupLeafIds(s.groups, topGrp.id);
-          } else if (
-            selectedIds.length > 1 &&
-            selectedIds.includes(resolvedId)
-          ) {
+          if (selectedIds.length > 1 && selectedIds.includes(resolvedId)) {
             groupLeafIds = expandSelectionToGroups(s, selectedIds);
+          } else if (topGrp) {
+            groupLeafIds = resolveGroupLeafIds(s.groups, topGrp.id);
           } else if (subBallastIds?.length) {
             groupLeafIds = [resolvedId, ...subBallastIds];
           }
@@ -1575,6 +1572,45 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           viewRef.current.x = drag.view.x - (dx / clientW) * drag.view.w;
           viewRef.current.y = drag.view.y - (dy / clientH) * drag.view.h;
           applyView();
+        }
+        return;
+      }
+
+      // Si hay una multiselección o grupo activo (incluyendo columnas/muros del subsuelo),
+      // arrastrar cualquiera de sus miembros desplaza todo el conjunto rígidamente.
+      if (
+        isSelectLike &&
+        drag.groupLeafIds &&
+        drag.groupLeafIds.length > 1 &&
+        drag.groupSnapshots &&
+        !drag.groupRotate &&
+        panel === 'design'
+      ) {
+        const s = currentScene();
+        if (!drag.checkpoint) {
+          checkpoint();
+          drag.checkpoint = true;
+          onSceneChanged();
+        }
+        const movedOk = translateItemsRigid(
+          s,
+          drag.groupLeafIds,
+          drag.groupSnapshots,
+          p[0] - drag.p[0],
+          p[1] - drag.p[1],
+          m
+        );
+        if (movedOk) {
+          const isCoverWithSubsOnly =
+            drag.o?.role === 'cover' &&
+            drag.id &&
+            !topGroupOf(s.groups, drag.id) &&
+            selectedIds.length <= 1;
+          setSelectedIds(isCoverWithSubsOnly ? [drag.id] : drag.groupLeafIds);
+          if (selectionTouchesSubsoil(s, drag.groupLeafIds)) {
+            useProjectStore.setState((st) => ({revision: st.revision + 1}));
+          }
+          drawScenario();
         }
         return;
       }
@@ -1738,38 +1774,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           delta,
           m
         );
-        drawScenario();
-        return;
-      }
-
-      if (
-        isSelectLike &&
-        drag.groupLeafIds &&
-        drag.groupLeafIds.length > 1 &&
-        drag.groupSnapshots &&
-        panel === 'design'
-      ) {
-        const s = currentScene();
-        if (!drag.checkpoint) {
-          checkpoint();
-          drag.checkpoint = true;
-          onSceneChanged();
+        if (selectionTouchesSubsoil(s, drag.groupLeafIds)) {
+          useProjectStore.setState((st) => ({revision: st.revision + 1}));
         }
-        translateItemsRigid(
-          s,
-          drag.groupLeafIds,
-          drag.groupSnapshots,
-          p[0] - drag.p[0],
-          p[1] - drag.p[1],
-          m
-        );
-        // Si es una carpa arrastrada con sus subcomponentes (sin grupo Ctrl+G), mantener seleccionada la carpa
-        const isCoverWithSubsOnly =
-          drag.o?.role === 'cover' &&
-          drag.id &&
-          !topGroupOf(s.groups, drag.id) &&
-          selectedIds.length <= 1;
-        setSelectedIds(isCoverWithSubsOnly ? [drag.id] : drag.groupLeafIds);
         drawScenario();
         return;
       }

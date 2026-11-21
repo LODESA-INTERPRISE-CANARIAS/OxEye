@@ -131,6 +131,43 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
       await expect(xrayLayer.locator('.xray-wall')).toHaveCount(1);
     });
 
+    // 5b. Shift+clic en varias columnas las mueve juntas al arrastrar una sola y soporta Ctrl+G / Mayús+G
+    await test.step('5b. Arrastrar varias columnas seleccionadas y agrupar con Ctrl+G / Mayús+G', async () => {
+      await page.locator('[data-action="xray:column"]').click();
+      await page.mouse.click(cx - 10, cy - 5);
+      await expect(xrayLayer.locator('.xray-column')).toHaveCount(2);
+
+      // Shift+clic para seleccionar ambas columnas
+      await page.keyboard.down('Shift');
+      await page.mouse.click(cx - 45, cy - 5);
+      await page.keyboard.up('Shift');
+      await expect(page.locator('#multi-select-title')).toHaveText(
+        '2 elementos seleccionados'
+      );
+
+      // Guardar posiciones iniciales de ambos círculos de calor
+      const colHeats = xrayLayer.locator('[data-xray-heat-column]');
+      const x0Before = Number(await colHeats.nth(0).getAttribute('cx'));
+      const x1Before = Number(await colHeats.nth(1).getAttribute('cx'));
+
+      // Arrastrar solo la segunda columna: ambas deben desplazarse juntas
+      await page.mouse.move(cx - 10, cy - 5);
+      await page.mouse.down();
+      await page.mouse.move(cx + 20, cy + 5, {steps: 5});
+      await page.mouse.up();
+
+      const x0After = Number(await colHeats.nth(0).getAttribute('cx'));
+      const x1After = Number(await colHeats.nth(1).getAttribute('cx'));
+      expect(x0After - x0Before).toBeGreaterThan(2);
+      expect(x1After - x1Before).toBeCloseTo(x0After - x0Before, 1);
+
+      // Agrupar con Ctrl+G y desagrupar con Mayús+G
+      await page.keyboard.press('Control+g');
+      await expect(page.locator('#inspector')).toContainText('GRUPO · NIVEL 1');
+      await page.keyboard.press('Shift+G');
+      await expect(page.locator('#inspector')).not.toContainText('GRUPO · NIVEL');
+    });
+
     // 6. Al apagar Rayos X desaparece toda la capa
     await test.step('6. Apagar Rayos X', async () => {
       await page.locator('#layers').click();

@@ -284,6 +284,26 @@ describe('Lastres editables, umbral de 500 kg/m² y dotación de carpas', () => 
     expect(created).toHaveLength(2);
     expect(coverSubcomponentBallastIds(scene, 'cover-1')).toEqual(created);
 
+    // 8. Grouping, rigid translation and rotation also work on subsoil columns & walls
+    scene.subsoil = {
+      polygons: [],
+      columns: [
+        {id: 'col-1', name: 'Pilar 1', x: 40, y: 40, diameter: 1, influenceRadius: 4},
+        {id: 'col-2', name: 'Pilar 2', x: 44, y: 40, diameter: 1, influenceRadius: 4},
+      ],
+      walls: [],
+    };
+    const colGrp = groupSelection(scene, ['col-1', 'col-2']);
+    expect(colGrp?.memberLeafIds).toEqual(['col-1', 'col-2']);
+    const colSnaps = snapshotGroupTransform(scene, ['col-1', 'col-2']);
+    expect(translateItemsRigid(scene, ['col-1', 'col-2'], colSnaps, 10, 8, map)).toBe(true);
+    expect(scene.subsoil.columns[0].x).toBeCloseTo(42, 4);
+    expect(scene.subsoil.columns[1].x).toBeCloseTo(46, 4);
+    expect(scene.subsoil.columns[0].y).toBeCloseTo(42, 4);
+    expect(scene.subsoil.columns[1].y).toBeCloseTo(42, 4);
+    const colUngroup = ungroupTopLevel(scene, ['col-1', 'col-2']);
+    expect(colUngroup?.dissolvedGroupIds).toEqual([colGrp!.groupId]);
+
     // Suppress unused helper warning
     expect(percent([250, 200], map)).toEqual([50, 50]);
   });
