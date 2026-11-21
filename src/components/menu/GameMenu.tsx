@@ -51,9 +51,11 @@ type MenuScreen = 'main' | 'wizard' | 'preferences' | 'credits' | 'exit';
 export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const menuOpen = useProjectStore((s) => s.menuOpen);
   const project = useProjectStore((s) => s.project);
+  const hasSavedProject = useProjectStore((s) => s.hasSavedProject);
   const preferences = useProjectStore((s) => s.preferences);
   const currentScene = useProjectStore((s) => s.currentScene);
   const setMenuOpen = useProjectStore((s) => s.setMenuOpen);
+  const setTutorialActive = useProjectStore((s) => s.setTutorialActive);
   const updatePreferences = useProjectStore((s) => s.updatePreferences);
   const createFromWizard = useProjectStore((s) => s.createFromWizard);
   const showToast = useProjectStore((s) => s.showToast);
@@ -99,7 +101,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     to: '14:00',
     goals: ['family', 'local', 'comfort'],
     example: true,
-    startTutorial: false,
+    startTutorial: !hasSavedProject,
     workDays: [
       {
         id: 'wd-pre-1',
@@ -137,10 +139,11 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     normalizePaletteId(preferences.palette)
   );
 
-  const canContinue = !!project.scenes.cristo;
+  const canContinue = hasSavedProject && !!project.scenes.cristo;
   const activeTitle = currentScene().title;
 
   const handleClose = () => {
+    if (!canContinue) return;
     setMenuOpen(false);
     onResume();
     if (preferences.help !== false) {
@@ -280,6 +283,11 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                 type="button"
                 id="game-continue"
                 disabled={!canContinue}
+                title={
+                  canContinue
+                    ? 'Retomar la última sesión guardada'
+                    : 'Crea o carga primero un proyecto para poder continuar'
+                }
                 onClick={handleClose}
               >
                 Continuar
@@ -294,9 +302,14 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
               <button
                 type="button"
                 id="game-new"
+                className={!canContinue ? 'game-primary' : ''}
                 onClick={() => {
                   setStep(0);
                   setWizardError('');
+                  setSettings((prev) => ({
+                    ...prev,
+                    startTutorial: !hasSavedProject,
+                  }));
                   setScreen('wizard');
                 }}
               >
@@ -334,10 +347,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
               </button>
             </nav>
             <small>
-              {activeTitle} ·{' '}
               {canContinue
-                ? 'Guardado local disponible'
-                : 'Crea tu primer modelo'}
+                ? `${activeTitle} · Guardado local disponible`
+                : 'Sin sesión previa · Crea o carga un proyecto para comenzar'}
             </small>
           </main>
           <aside className="game-visual">
@@ -476,6 +488,25 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
             />{' '}
             Mostrar guía al entrar
           </label>
+          <button
+            type="button"
+            id="game-open-tutorial"
+            disabled={!canContinue}
+            title={
+              canContinue
+                ? 'Abrir el tutorial interactivo sobre el proyecto actual'
+                : 'Crea o carga primero un proyecto para abrir la guía de uso'
+            }
+            onClick={() => {
+              if (!canContinue) return;
+              setScreen('main');
+              setMenuOpen(false);
+              setTutorialActive(true);
+              onResume();
+            }}
+          >
+            Guía de uso (iniciar tutorial)
+          </button>
           <button
             type="button"
             id="prefs-save"

@@ -50,6 +50,7 @@ export type ActiveModal =
 
 export interface ProjectStoreState {
   project: ProjectFile;
+  hasSavedProject: boolean;
   activeVenue: VenueKey;
   panel: ActivePanel;
   phase: PhaseFilter;
@@ -163,6 +164,7 @@ const initialPrefs = loadPreferences();
  */
 export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   project: initialLoaded.project,
+  hasSavedProject: initialLoaded.hasSaved,
   activeVenue: VENUES[initialLoaded.project.active]
     ? initialLoaded.project.active
     : 'cristo',
@@ -528,6 +530,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     const ok = saveProjectToStorage(nextProject);
     set({
       project: nextProject,
+      hasSavedProject: true,
       saveStatusText: ok
         ? 'Guardado en este navegador'
         : 'Sin guardar · exporta el proyecto',
@@ -546,6 +549,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       (cloned.scenes[nextVenue]?.boundary?.length || 0) < 3;
     set({
       project: cloned,
+      hasSavedProject: true,
       activeVenue: nextVenue,
       selectedId: null,
       selectedIds: [],
@@ -682,6 +686,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     document.body.classList.remove('at-menu');
     set({
       project: nextProject,
+      hasSavedProject: true,
       activeVenue: 'cristo',
       phase: 'event',
       panel: 'design',
@@ -689,9 +694,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       selectedIds: [],
       tool: 'boundary',
       onboardingStage: 'perimeter',
-      tutorialActive: !!config.startTutorial,
+      tutorialActive: config.startTutorial ?? !state.hasSavedProject,
       menuOpen: false,
       activeModal: null,
+      saveStatusText: 'Guardado en este navegador',
       revision: state.revision + 1,
     });
   },
