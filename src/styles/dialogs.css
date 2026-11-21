@@ -3,18 +3,18 @@
  * inventario, laboratorio comparativo, contactos y sistema de lenguaje claro.
  */
 dialog {
-  border: 1px solid #cbb8de;
+  border: 1px solid var(--line-strong);
   border-radius: 12px;
   max-width: 620px;
   width: calc(100% - 35px);
   padding: 38px;
   color: var(--ink);
   background: var(--paper);
-  box-shadow: 0 14px 45px rgba(44, 22, 61, 0.22);
+  box-shadow: 0 14px 45px var(--shadow-color);
 }
 
 dialog::backdrop {
-  background: rgba(34, 15, 48, 0.58);
+  background: rgba(16, 18, 24, 0.58);
   backdrop-filter: blur(4px);
 }
 
@@ -24,7 +24,7 @@ dialog h2 {
   font-weight: normal;
   line-height: 1.15;
   letter-spacing: -0.035em;
-  color: var(--purple-dark);
+  color: var(--heading);
 }
 
 dialog h3 {
@@ -89,7 +89,7 @@ dialog p {
 
 .risk-guided-title {
   font-size: 13px;
-  color: var(--purple-dark);
+  color: var(--heading);
 }
 
 .risk-stats-visual {
@@ -104,7 +104,7 @@ dialog p {
 }
 
 .risk-stat-card {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 12px 14px;
@@ -128,7 +128,7 @@ dialog p {
   bottom: 0;
   left: 25%;
   width: 2px;
-  background: var(--purple-dark);
+  background: var(--heading);
   opacity: 0.55;
 }
 
@@ -145,7 +145,7 @@ dialog p {
 }
 
 .risk-slider-field {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 11px 14px;
@@ -223,8 +223,8 @@ dialog p {
 }
 
 .risk-split-bar .split-mild {
-  background: #e9dff5;
-  color: var(--purple-dark);
+  background: var(--purple-soft);
+  color: var(--heading);
 }
 
 .risk-split-bar .split-severe {
@@ -257,7 +257,7 @@ dialog p {
 .diag-donut-card,
 .diag-causes-card,
 .shift-visual-card {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px;
@@ -280,7 +280,7 @@ dialog p {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 23px;
   font-weight: 700;
-  fill: var(--purple-dark);
+  fill: var(--heading);
 }
 
 .diag-donut-label {
@@ -356,7 +356,7 @@ dialog p {
 
 .diag-bar-meta b {
   font-variant-numeric: tabular-nums;
-  color: var(--purple-dark);
+  color: var(--heading);
   white-space: nowrap;
 }
 
@@ -364,7 +364,7 @@ dialog p {
   width: 100%;
   height: 8px;
   border-radius: 999px;
-  background: #efe9f5;
+  background: var(--surface-muted);
   overflow: hidden;
 }
 
@@ -385,7 +385,7 @@ dialog p {
 }
 
 .diag-guide-card {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-left: 4px solid var(--purple-mid);
   border-radius: 8px;
@@ -401,7 +401,7 @@ dialog p {
 }
 
 .diag-guide-card.severity-low {
-  border-left-color: #633584;
+  border-left-color: var(--purple);
 }
 
 .diag-guide-head {
@@ -419,7 +419,7 @@ dialog p {
   gap: 6px;
   font-size: 12.5px;
   font-weight: 700;
-  color: var(--purple-dark);
+  color: var(--heading);
 }
 
 .diag-guide-title i {
@@ -507,8 +507,8 @@ dialog p {
   width: 100%;
   margin: 0.4em 0;
   padding: 0.55em;
-  border: 1px solid #cbbcd9;
-  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -533,8 +533,8 @@ dialog p {
 
 .batch-card {
   padding: 14px;
-  border: 1px solid #d5c7e3;
-  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   border-radius: 8px;
 }
 
@@ -597,8 +597,8 @@ dialog p {
 .stock-list input {
   width: 70px;
   padding: 8px;
-  border: 1px solid #cbbcd9;
-  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
 }
@@ -660,7 +660,7 @@ dialog p {
   min-width: 17px;
   padding: 0;
   margin: 0 0 1px 5px;
-  border: 1px solid #bfa9d4;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   background: var(--purple-soft);
   color: var(--purple);
@@ -769,7 +769,7 @@ dialog p {
   gap: 10px;
   padding: 8px 12px;
   margin-top: 8px;
-  background: #f6f1fb;
+  background: var(--surface-subtle);
   border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
@@ -781,7 +781,7 @@ dialog p {
   gap: 8px;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--purple-dark);
+  color: var(--heading);
   cursor: pointer;
 }
 
@@ -817,10 +817,10 @@ dialog p {
 .inline-contact-form {
   margin: 12px 0;
   padding: 14px 16px;
-  border: 1px solid #d4c0e8;
+  border: 1px solid var(--line-strong);
   border-left: 4px solid var(--purple);
   border-radius: 9px;
-  background: #faf6ff;
+  background: var(--surface-subtle);
 }
 
 .programme-inline-form h3 {
@@ -893,7 +893,7 @@ dialog p {
 }
 
 .activity-row.is-custom-activity {
-  background: #faf6ff;
+  background: var(--purple-soft);
   border-left: 3px solid var(--purple);
 }
 
@@ -912,8 +912,8 @@ dialog p {
   display: inline-block;
   font-size: 10px;
   font-weight: 700;
-  color: var(--purple-dark);
-  background: var(--lavender);
+  color: var(--heading);
+  background: var(--lavender-soft);
   padding: 2px 7px;
   border-radius: 999px;
 }
@@ -970,7 +970,7 @@ dialog p {
 
 .session-company-tag {
   font-weight: 600;
-  color: var(--purple-dark);
+  color: var(--heading);
 }
 
 .provider-group {
@@ -982,7 +982,7 @@ dialog p {
   font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--purple-dark);
+  color: var(--heading);
 }
 
 .provider-section-label.is-secondary {
@@ -991,18 +991,18 @@ dialog p {
 
 .provider-empty-note {
   padding: 10px 12px;
-  border: 1px dashed #cbb8de;
+  border: 1px dashed var(--line-strong);
   border-radius: 8px;
-  background: #faf6ff;
+  background: var(--surface-subtle);
 }
 
 .provider-saved-card {
   border-left: 3px solid var(--purple);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .provider-suggested-card {
-  background: #fbfaf7;
+  background: var(--surface-subtle);
   opacity: 0.92;
 }
 
@@ -1046,10 +1046,10 @@ dialog p {
 .tour-spot {
   position: fixed;
   border-radius: 10px;
-  border: 2px solid #e4cfa2;
+  border: 2px solid var(--gold-soft);
   box-shadow:
-    0 0 0 9999px rgba(24, 12, 36, 0.58),
-    0 0 0 4px rgba(228, 207, 162, 0.32);
+    0 0 0 9999px rgba(12, 16, 24, 0.58),
+    0 0 0 4px var(--ring);
   pointer-events: none;
   transition:
     top 0.24s ease,
@@ -1062,12 +1062,12 @@ dialog p {
   position: fixed;
   z-index: 2210;
   pointer-events: auto;
-  background: #fffef9;
+  background: var(--paper);
   color: var(--ink);
-  border: 1px solid #cbb8de;
+  border: 1px solid var(--line-strong);
   border-radius: 12px;
   padding: 18px 20px;
-  box-shadow: 0 16px 42px rgba(29, 14, 43, 0.34);
+  box-shadow: 0 16px 42px var(--shadow-color);
   transition:
     top 0.22s ease,
     left 0.22s ease;
@@ -1109,7 +1109,7 @@ dialog p {
 
 .tour-close-btn:hover {
   background: var(--purple-soft);
-  color: var(--purple-dark);
+  color: var(--heading);
 }
 
 .tour-coach h3 {
@@ -1117,7 +1117,7 @@ dialog p {
   font-size: 19px;
   font-weight: normal;
   line-height: 1.2;
-  color: var(--purple-dark);
+  color: var(--heading);
   margin: 4px 0 8px;
 }
 
@@ -1132,7 +1132,7 @@ dialog p {
   display: block;
   font-size: 12px;
   line-height: 1.45;
-  color: #b5542d;
+  color: var(--purple);
   margin-bottom: 12px;
 }
 
@@ -1146,12 +1146,12 @@ dialog p {
   flex: 1;
   height: 4px;
   border-radius: 999px;
-  background: #e8dff2;
+  background: var(--surface-muted);
   transition: background-color 0.2s ease;
 }
 
 .tour-progress-dots span.is-done {
-  background: #b99bd6;
+  background: var(--lavender);
 }
 
 .tour-progress-dots span.is-active {
@@ -1182,19 +1182,19 @@ dialog p {
 
 .risk-item {
   border-left: 4px solid #c49336;
-  background: #fff9ed;
+  background: var(--surface-subtle);
   padding: 10px 14px;
   margin: 10px 0;
   border-radius: 0 7px 7px 0;
 }
 
 .risk-item.critical {
-  border-color: #b9382c;
-  background: #fff0ed;
+  border-color: var(--danger);
+  background: rgba(185, 56, 44, 0.12);
 }
 
 .risk-item p {
-  color: #3a3542;
+  color: var(--ink);
   margin: 5px 0;
 }
 
@@ -1205,7 +1205,7 @@ dialog p {
 }
 
 .risk-stop {
-  background: #ffe9e4;
+  background: rgba(185, 56, 44, 0.14);
 }
 
 .risk-actions {
@@ -1231,7 +1231,9 @@ dialog p {
   display: block;
   width: 100%;
   padding: 9px;
-  border: 1px solid #cec3d7;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
   border-radius: 5px;
   margin-top: 5px;
 }
@@ -1263,7 +1265,7 @@ dialog p {
 
 .result-bar > div {
   height: 12px;
-  background: #ded8e8;
+  background: var(--surface-muted);
   border-radius: 6px;
   overflow: hidden;
   margin-top: 7px;
@@ -1310,14 +1312,14 @@ dialog p {
   z-index: 10000;
   max-width: min(320px, calc(100vw - 24px));
   padding: 16px 18px;
-  border: 1px solid #8a6ca8;
+  border: 1px solid var(--chrome-border);
   border-radius: 9px;
-  background: var(--purple-dark);
-  color: #faf6ff;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
   font:
     14px/1.6 Arial,
     sans-serif;
-  box-shadow: 0 8px 28px rgba(44, 22, 61, 0.32);
+  box-shadow: 0 8px 28px var(--shadow-color);
   white-space: normal;
   pointer-events: auto;
 }

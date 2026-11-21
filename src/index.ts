@@ -9,6 +9,7 @@ export * from './types';
 export type {VehiclePose} from './types';
 export * from './data/catalog';
 export * from './data/geodata';
+export * from './data/palettes';
 export * from './data/site-reference';
 export * from './data/venue-maps';
 export * from './data/plain-language-fields';

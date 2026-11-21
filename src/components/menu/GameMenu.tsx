@@ -1,4 +1,9 @@
 import React, {useState} from 'react';
+import {
+  applyPalette,
+  COLOR_PALETTES,
+  normalizePaletteId,
+} from '../../data/palettes';
 import {downloadFile} from '../../db/repository';
 import {
   DEFAULT_MAP_CENTER,
@@ -12,6 +17,7 @@ import {
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   CustomLocationConfig,
+  PaletteId,
   WorkDayKind,
   WorkShiftDay,
 } from '../../types';
@@ -127,6 +133,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const [prefSpeed, setPrefSpeed] = useState(preferences.speed);
   const [prefMotion, setPrefMotion] = useState(preferences.reduceMotion);
   const [prefHelp, setPrefHelp] = useState(preferences.help);
+  const [prefPalette, setPrefPalette] = useState<PaletteId>(
+    normalizePaletteId(preferences.palette)
+  );
 
   const canContinue = !!project.scenes.cristo;
   const activeTitle = currentScene().title;
@@ -300,6 +309,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                   setPrefSpeed(preferences.speed);
                   setPrefMotion(preferences.reduceMotion);
                   setPrefHelp(preferences.help);
+                  setPrefPalette(normalizePaletteId(preferences.palette));
                   setScreen('preferences');
                 }}
               >
@@ -396,7 +406,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
       )}
 
       {screen === 'preferences' && (
-        <main className="game-card">
+        <main className="game-card preferences-card">
           <h1>Ajustes</h1>
           <label>
             Velocidad inicial
@@ -412,6 +422,42 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
               ))}
             </select>
           </label>
+          <div className="palette-picker" role="radiogroup" aria-label="Paleta de color">
+            <span className="palette-picker-label">Paleta de color</span>
+            <div className="palette-grid">
+              {COLOR_PALETTES.map((pal) => {
+                const selected = prefPalette === pal.id;
+                return (
+                  <button
+                    key={pal.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-palette-choice={pal.id}
+                    className={`palette-card ${selected ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      setPrefPalette(pal.id);
+                      applyPalette(pal.id);
+                    }}
+                  >
+                    <span className="palette-swatches" aria-hidden="true">
+                      {pal.swatches.map((hex, i) => (
+                        <i key={i} style={{background: hex}} />
+                      ))}
+                    </span>
+                    <span className="palette-card-name">
+                      {pal.code} · {pal.name}
+                    </span>
+                    {selected && (
+                      <small className="palette-card-status">
+                        ✓ Seleccionada
+                      </small>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <label>
             <input
               id="game-motion"
@@ -433,11 +479,13 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
           <button
             type="button"
             id="prefs-save"
+            className="game-primary"
             onClick={() => {
               updatePreferences({
                 speed: prefSpeed,
                 reduceMotion: prefMotion,
                 help: prefHelp,
+                palette: prefPalette,
               });
               setScreen('main');
             }}

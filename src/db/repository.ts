@@ -1,6 +1,7 @@
 import Dexie, {type Table} from 'dexie';
 import {VENUES} from '../data/catalog';
 import {CARTO_DATA, MAPS_DATA} from '../data/geodata';
+import {applyPalette, normalizePaletteId} from '../data/palettes';
 import {remapScene, world} from '../engine/cartography/geometry';
 import {
   configure,
@@ -185,23 +186,28 @@ export function loadPreferences(): UserPreferences {
   try {
     const raw = localStorage.getItem(PREFS_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
+    const palette = normalizePaletteId(parsed.palette);
+    applyPalette(palette);
     return {
       speed: Number(parsed.speed) || 60,
       reduceMotion: !!parsed.reduceMotion,
       help: parsed.help !== false,
+      palette,
     };
   } catch {
-    return {speed: 60, reduceMotion: false, help: true};
+    applyPalette('oxeye');
+    return {speed: 60, reduceMotion: false, help: true, palette: 'oxeye'};
   }
 }
 
 /**
- * Saves user preferences to `localStorage` and updates document body motion class.
+ * Saves user preferences to `localStorage` and updates document body motion class and active color palette.
  *
  * @param prefs - User preferences to save.
  */
 export function savePreferences(prefs: UserPreferences): void {
   document.body.classList.toggle('reduce-motion', !!prefs.reduceMotion);
+  applyPalette(normalizePaletteId(prefs.palette));
   try {
     localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
   } catch {

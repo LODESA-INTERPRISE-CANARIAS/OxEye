@@ -27,6 +27,7 @@ import {ProgrammeDialog} from './components/modals/ProgrammeDialog';
 import {RiskDialog} from './components/modals/RiskDialog';
 import {SmallExampleDialog} from './components/modals/SmallExampleDialog';
 import {SimulationStrip} from './components/simulation/SimulationStrip';
+import {applyPalette, normalizePaletteId} from './data/palettes';
 import {EventEngine} from './engine/crowd/event-engine';
 import {
   applyLiveArrivals,
@@ -138,7 +139,8 @@ export const App: React.FC = () => {
     setSpeed(preferences.speed || 60);
     speedRef.current = preferences.speed || 60;
     document.body.classList.toggle('reduce-motion', !!preferences.reduceMotion);
-  }, [preferences.speed, preferences.reduceMotion]);
+    applyPalette(normalizePaletteId(preferences.palette));
+  }, [preferences.speed, preferences.reduceMotion, preferences.palette]);
 
   const dismissedIncidentsRef = useRef<Set<string>>(new Set());
 

@@ -586,11 +586,21 @@ export interface ProjectFile {
   scenes: Record<VenueKey, Scene>;
 }
 
+/** Identificadores de las paletas de color predefinidas de la interfaz. */
+export type PaletteId =
+  | 'oxeye'
+  | 'atlas'
+  | 'noctis'
+  | 'territorio'
+  | 'vector'
+  | 'bendy';
+
 /** Preferencias de usuario persistidas localmente. */
 export interface UserPreferences {
   speed?: number;
   reduceMotion?: boolean;
   help?: boolean;
+  palette?: PaletteId;
 }
 
 /* -------------------------------------------------------------------------- */
