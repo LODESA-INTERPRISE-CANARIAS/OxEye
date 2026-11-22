@@ -48,6 +48,10 @@ import {
   snapRoutePoint,
 } from '../../engine/cartography/route-network';
 import {
+  findItemsInMarqueeBox,
+  findOverlappingItemsAtPoint,
+} from '../../engine/cartography/selection-tools';
+import {
   generateCoherentSpawns,
   normalizeAccessFlows,
   snapEntranceToPerimeter,
@@ -180,6 +184,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       moved: boolean;
       checkpoint: boolean;
       panOnly?: boolean;
+      marquee?: {start: Point; current: Point} | null;
+    } | null>(null);
+    const overlapCycleRef = useRef<{
+      pt: Point;
+      ids: string[];
+      index: number;
     } | null>(null);
 
     const [draftPoints, setDraftPoints] = useState<Point[]>([]);
@@ -780,7 +790,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           isSel ? '#d97706' : '#9e5b2c'
         }" stroke-width=".58" stroke-linecap="round"/><polyline points="${ptsAttr}" fill="none" stroke="#f7dfb4" stroke-width=".26" stroke-dasharray=".8 .6" stroke-linecap="butt"/>${posts.join('')}${handlesSvg}</g>`;
       }
-      for (const o of [...s.base.booths, ...s.infrastructure]) {
+      const placedSorted = [
+        ...s.infrastructure.filter((o) => o.role === 'cover'),
+        ...s.base.booths,
+        ...s.infrastructure.filter((o) => o.role !== 'cover'),
+      ];
+      for (const o of placedSorted) {
         const [x, y] = world([o.x, o.y], m);
         const oArea = (o as Booth).area || 24;
         const w = o.width || Math.sqrt(oArea);
@@ -1791,6 +1806,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           }
         }
       }
+      const isShiftMarquee =
+        (tool === 'select' || tool === 'xray:select') &&
+        e.shiftKey &&
+        panel === 'design' &&
+        !handle &&
+        !xrayHandle &&
+        !fenceHandle;
       dragRef.current = {
         p,
         client: [e.clientX, e.clientY],
@@ -1817,6 +1839,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         snapshot: o ? structuredClone(o) : null,
         moved: false,
         checkpoint: false,
+        marquee: isShiftMarquee ? {start: p, current: p} : null,
       };
       mapDivRef.current?.setPointerCapture(e.pointerId);
     };
@@ -1849,6 +1872,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         viewRef.current.x = drag.view.x - (dx / clientW) * drag.view.w;
         viewRef.current.y = drag.view.y - (dy / clientH) * drag.view.h;
         applyView();
+        return;
+      }
+
+      if (drag.marquee) {
+        drag.marquee.current = p;
+        const draftEl = draftLayerRef.current;
+        if (draftEl) {
+          const x0 = Math.min(drag.marquee.start[0], p[0]);
+          const y0 = Math.min(drag.marquee.start[1], p[1]);
+          const rw = Math.abs(p[0] - drag.marquee.start[0]);
+          const rh = Math.abs(p[1] - drag.marquee.start[1]);
+          draftEl.innerHTML = `<rect class="marquee-selection-rect" x="${x0}" y="${y0}" width="${rw}" height="${rh}" fill="var(--purple)" fill-opacity=".14" stroke="var(--purple)" stroke-width=".45" stroke-dasharray="1.4 .8" pointer-events="none"/>`;
+        }
         return;
       }
 
@@ -2160,6 +2196,31 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const p = getPointerCoords(e);
       if (panel === 'simulate') return;
       if (d.moved) {
+        if (d.marquee) {
+          if (draftLayerRef.current) draftLayerRef.current.innerHTML = '';
+          const s = currentScene();
+          const m = currentMap();
+          const boxRes = findItemsInMarqueeBox(d.marquee.start, p, s, m, {
+            excludeLocked: true,
+          });
+          if (boxRes.ids.length) {
+            const expanded = expandSelectionToGroups(s, [
+              ...selectedIds,
+              ...boxRes.ids,
+            ]);
+            setSelectedIds(expanded);
+            showToast(
+              boxRes.skippedLocked > 0
+                ? `${boxRes.ids.length} seleccionados · ${boxRes.skippedLocked} bloqueados excluidos`
+                : `${boxRes.ids.length} elementos seleccionados`
+            );
+          } else if (boxRes.skippedLocked > 0) {
+            showToast(
+              `${boxRes.skippedLocked} elementos bloqueados en la zona (excluidos de la selección rápida)`
+            );
+          }
+          return;
+        }
         if (d.checkpoint) {
           save();
           updateScene(() => {});
@@ -2168,6 +2229,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       if (tool === 'select' || tool === 'xray:select') {
         const s = currentScene();
+        const m = currentMap();
         if (e.shiftKey && d.id) {
           const topGrp = topGroupOf(s.groups, d.id);
           if (topGrp) {
@@ -2186,11 +2248,59 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             toggleSelectedId(d.id);
           }
         } else if (d.id) {
+          const overlaps = !subsoilOnly
+            ? findOverlappingItemsAtPoint(p, s, m)
+            : [];
+          if (overlaps.length > 1) {
+            // Doble clic sobre elementos superpuestos: selecciona todos los no bloqueados
+            if (e.detail >= 2) {
+              const unlockedIds = overlaps
+                .filter((h) => !h.locked)
+                .map((h) => h.id);
+              const lockedCount = overlaps.length - unlockedIds.length;
+              overlapCycleRef.current = null;
+              if (unlockedIds.length) {
+                setSelectedIds(expandSelectionToGroups(s, unlockedIds));
+                showToast(
+                  lockedCount > 0
+                    ? `Seleccionados ${unlockedIds.length} superpuestos (${lockedCount} bloqueado excluido)`
+                    : `Seleccionados ${unlockedIds.length} elementos superpuestos`
+                );
+              } else {
+                setSelectedIds([overlaps[0].id]);
+                showToast('Todos los elementos superpuestos están bloqueados');
+              }
+              return;
+            }
+            // Selección cíclica en clics repetidos sobre el mismo punto
+            const prev = overlapCycleRef.current;
+            const overlapIds = overlaps.map((h) => h.id);
+            const sameSpot =
+              prev !== null &&
+              Math.hypot(p[0] - prev.pt[0], p[1] - prev.pt[1]) < 1.6 &&
+              prev.ids.length === overlapIds.length &&
+              prev.ids.every((oid, idx) => oid === overlapIds[idx]);
+            const nextIdx = sameSpot ? (prev.index + 1) % overlaps.length : 0;
+            overlapCycleRef.current = {pt: p, ids: overlapIds, index: nextIdx};
+            const chosen = overlaps[nextIdx];
+            const topGrp = topGroupOf(s.groups, chosen.id);
+            setSelectedIds(
+              topGrp ? resolveGroupLeafIds(s.groups, topGrp.id) : [chosen.id]
+            );
+            showToast(
+              `Superpuestos (${nextIdx + 1}/${overlaps.length}): ${chosen.name}${
+                chosen.locked ? ' · Bloqueado' : ''
+              } · clic para alternar · doble clic para ambos`
+            );
+            return;
+          }
+          overlapCycleRef.current = null;
           const topGrp = topGroupOf(s.groups, d.id);
           setSelectedIds(
             topGrp ? resolveGroupLeafIds(s.groups, topGrp.id) : [d.id]
           );
         } else if (!e.shiftKey) {
+          overlapCycleRef.current = null;
           setSelectedIds([]);
         }
         return;

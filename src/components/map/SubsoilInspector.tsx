@@ -9,6 +9,12 @@ import {
   snapshotGroupTransform,
   ungroupTopLevel,
 } from '../../engine/cartography/groups';
+import {
+  type AlignMode,
+  alignSelectedItems,
+  type DistributeAxis,
+  distributeSelectedItems,
+} from '../../engine/cartography/selection-tools';
 import {rotateWall, wallMetrics} from '../../engine/subsoil/heat';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
@@ -519,6 +525,54 @@ export const MultiSelectionInspector: React.FC<
     }
   };
 
+  const handleAlign = (mode: AlignMode, label: string) => {
+    let moved = 0;
+    let skipped = 0;
+    updateScene((sc) => {
+      const res = alignSelectedItems(sc, selectedIds, map, mode);
+      moved = res.movedCount;
+      skipped = res.lockedSkipped;
+    }, true);
+    if (moved > 0) {
+      onSceneChanged();
+      showToast(
+        skipped > 0
+          ? `${label} (${moved} movidos · ${skipped} bloqueados fijos)`
+          : `${label} (${moved} elementos)`
+      );
+    } else {
+      showToast(
+        skipped > 0
+          ? 'Sin cambios (elementos bloqueados)'
+          : 'Los elementos ya están alineados'
+      );
+    }
+  };
+
+  const handleDistribute = (axis: DistributeAxis) => {
+    if (selectedIds.length < 3) {
+      showToast('Selecciona al menos 3 elementos para distribuir equidistantemente');
+      return;
+    }
+    let moved = 0;
+    let skipped = 0;
+    updateScene((sc) => {
+      const res = distributeSelectedItems(sc, selectedIds, map, axis);
+      moved = res.movedCount;
+      skipped = res.lockedSkipped;
+    }, true);
+    if (moved > 0) {
+      onSceneChanged();
+      showToast(
+        axis === 'x'
+          ? `Distribuidos horizontalmente${skipped ? ` (${skipped} bloqueados fijos)` : ''}`
+          : `Distribuidos verticalmente${skipped ? ` (${skipped} bloqueados fijos)` : ''}`
+      );
+    } else {
+      showToast('Sin cambios de distribución');
+    }
+  };
+
   return (
     <>
       <span className="eyebrow">
@@ -544,24 +598,152 @@ export const MultiSelectionInspector: React.FC<
         </p>
       )}
       {panel === 'design' && groupBox && (
-        <div className="two" style={{marginTop: '8px'}}>
-          <button
-            type="button"
-            id="rotate-group-ccw"
-            className="quiet"
-            onClick={() => handleRotateGroup(-15)}
+        <>
+          <div
+            style={{
+              marginTop: '10px',
+              padding: '8px',
+              borderRadius: '8px',
+              border: '1px solid var(--line-strong)',
+              background: 'var(--surface-subtle)',
+            }}
           >
-            ↺ −15°
-          </button>
-          <button
-            type="button"
-            id="rotate-group-cw"
-            className="quiet"
-            onClick={() => handleRotateGroup(15)}
-          >
-            ↻ +15°
-          </button>
-        </div>
+            <span
+              className="eyebrow"
+              style={{display: 'block', marginBottom: '6px', fontSize: '0.7rem'}}
+            >
+              ALINEACIÓN
+            </span>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: '5px',
+              }}
+            >
+              <button
+                type="button"
+                id="align-left"
+                className="quiet"
+                title="Alinear a la izquierda"
+                aria-label="Alinear a la izquierda"
+                style={{display: 'flex', justifyContent: 'center', padding: '6px'}}
+                onClick={() => handleAlign('left', 'Alineados a la izquierda')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 3v18"/><rect x="8" y="5" width="8" height="5" rx="1"/><rect x="8" y="14" width="12" height="5" rx="1"/></svg>
+              </button>
+              <button
+                type="button"
+                id="align-center-x"
+                className="quiet"
+                title="Centrar horizontalmente"
+                aria-label="Centrar horizontalmente"
+                style={{display: 'flex', justifyContent: 'center', padding: '6px'}}
+                onClick={() => handleAlign('center-x', 'Centrados horizontalmente')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"/><rect x="7" y="5" width="10" height="5" rx="1"/><rect x="5" y="14" width="14" height="5" rx="1"/></svg>
+              </button>
+              <button
+                type="button"
+                id="align-right"
+                className="quiet"
+                title="Alinear a la derecha"
+                aria-label="Alinear a la derecha"
+                style={{display: 'flex', justifyContent: 'center', padding: '6px'}}
+                onClick={() => handleAlign('right', 'Alineados a la derecha')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 3v18"/><rect x="8" y="5" width="8" height="5" rx="1"/><rect x="4" y="14" width="12" height="5" rx="1"/></svg>
+              </button>
+              <button
+                type="button"
+                id="align-top"
+                className="quiet"
+                title="Alinear arriba"
+                aria-label="Alinear arriba"
+                style={{display: 'flex', justifyContent: 'center', padding: '6px'}}
+                onClick={() => handleAlign('top', 'Alineados arriba')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18"/><rect x="5" y="8" width="5" height="12" rx="1"/><rect x="14" y="8" width="5" height="8" rx="1"/></svg>
+              </button>
+              <button
+                type="button"
+                id="align-center-y"
+                className="quiet"
+                title="Centrar verticalmente"
+                aria-label="Centrar verticalmente"
+                style={{display: 'flex', justifyContent: 'center', padding: '6px'}}
+                onClick={() => handleAlign('center-y', 'Centrados verticalmente')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h18"/><rect x="5" y="5" width="5" height="14" rx="1"/><rect x="14" y="7" width="5" height="10" rx="1"/></svg>
+              </button>
+              <button
+                type="button"
+                id="align-bottom"
+                className="quiet"
+                title="Alinear abajo"
+                aria-label="Alinear abajo"
+                style={{display: 'flex', justifyContent: 'center', padding: '6px'}}
+                onClick={() => handleAlign('bottom', 'Alineados abajo')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 20h18"/><rect x="5" y="4" width="5" height="12" rx="1"/><rect x="14" y="8" width="5" height="8" rx="1"/></svg>
+              </button>
+            </div>
+
+            <span
+              className="eyebrow"
+              style={{display: 'block', margin: '8px 0 6px', fontSize: '0.7rem'}}
+            >
+              DISTRIBUIR (EQUIDISTANCIAR)
+            </span>
+            <div className="two">
+              <button
+                type="button"
+                id="distribute-x"
+                className="quiet"
+                disabled={selectedIds.length < 3}
+                title="Distribuir horizontalmente con separación equidistante (mín. 3 elementos)"
+                aria-label="Distribuir horizontalmente"
+                style={{display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', padding: '6px'}}
+                onClick={() => handleDistribute('x')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16M20 4v16"/><rect x="9.5" y="6" width="5" height="12" rx="1"/></svg>
+                <span style={{fontSize: '0.76rem'}}>Horiz.</span>
+              </button>
+              <button
+                type="button"
+                id="distribute-y"
+                className="quiet"
+                disabled={selectedIds.length < 3}
+                title="Distribuir verticalmente con separación equidistante (mín. 3 elementos)"
+                aria-label="Distribuir verticalmente"
+                style={{display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', padding: '6px'}}
+                onClick={() => handleDistribute('y')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16M4 20h16"/><rect x="6" y="9.5" width="12" height="5" rx="1"/></svg>
+                <span style={{fontSize: '0.76rem'}}>Vert.</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="two" style={{marginTop: '8px'}}>
+            <button
+              type="button"
+              id="rotate-group-ccw"
+              className="quiet"
+              onClick={() => handleRotateGroup(-15)}
+            >
+              ↺ −15°
+            </button>
+            <button
+              type="button"
+              id="rotate-group-cw"
+              className="quiet"
+              onClick={() => handleRotateGroup(15)}
+            >
+              ↻ +15°
+            </button>
+          </div>
+        </>
       )}
       {panel === 'design' && (
         <>
