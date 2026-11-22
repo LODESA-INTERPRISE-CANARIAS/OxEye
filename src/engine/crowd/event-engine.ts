@@ -874,6 +874,41 @@ export class EventEngine {
     }
     if (!hitSeg || !bestProj) return false;
 
+    // Si hay un policía en posición fija ("campeando" la zona/valla) o patrulla cercana dentro de su radio de vigilancia,
+    // disuade e intercepta inmediatamente el intento de salto sin generar bloqueo.
+    const watchPatrols: Array<{
+      x: number;
+      y: number;
+      fixed?: boolean;
+      radius?: number;
+      resourceId?: string;
+    }> = (this.emergency as unknown as {watch?: {patrols?: Array<{x: number; y: number; fixed?: boolean; radius?: number; resourceId?: string}>}})?.watch?.patrols || [];
+    const fixedGuards = this.s.infrastructure.filter(
+      (r) =>
+        r.role === 'emergency' &&
+        (r.kind === 'security' || r.kind === 'patrol') &&
+        r.active !== false &&
+        (r.staff || 0) > 0 &&
+        (r.fixedPost || r.patrolMode === 'fixed')
+    );
+    const guardedByWatch = watchPatrols.some((p) => {
+      const guardRadius = p.fixed ? Math.max(12, p.radius || 18) : 10;
+      return Math.hypot(p.x - bestProj!.point[0], p.y - bestProj!.point[1]) <= guardRadius;
+    });
+    const guardedByFixedPost = fixedGuards.some((r) => {
+      const gx = (r.x * this.g.m.widthMeters) / 100;
+      const gy = (r.y * this.g.m.heightMeters) / 100;
+      const guardRadius = Math.max(12, Number(r.patrolRadius) || 18);
+      return Math.hypot(gx - bestProj!.point[0], gy - bestProj!.point[1]) <= guardRadius;
+    });
+    if (guardedByWatch || guardedByFixedPost) {
+      a.fenceCrossCooldown = this.time + 180;
+      a.rebel = false;
+      a.stuck = 0;
+      this.stats.stewardPrevented = (this.stats.stewardPrevented || 0) + 1;
+      return false;
+    }
+
     // Vector unitario perpendicular a la valla apuntando hacia el lado contrario al agente
     const vx = hitSeg.b[0] - hitSeg.a[0];
     const vy = hitSeg.b[1] - hitSeg.a[1];

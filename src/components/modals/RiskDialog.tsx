@@ -52,8 +52,8 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
   const setPanel = useProjectStore((s) => s.setPanel);
   const setTool = useProjectStore((s) => s.setTool);
-  const setSelectedId = useProjectStore((s) => s.setSelectedId);
   const setXrayVisible = useProjectStore((s) => s.setXrayVisible);
+  const locateOnMap = useProjectStore((s) => s.locateOnMap);
   const updateScene = useProjectStore((s) => s.updateScene);
   const showToast = useProjectStore((s) => s.showToast);
 
@@ -176,10 +176,17 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
     switch (act.kind) {
       case 'select-item':
         closeDialog();
-        setPanel('design');
-        if (act.enableXray) setXrayVisible(true);
-        if (act.itemId) setSelectedId(act.itemId);
-        showToast('Elemento seleccionado en el plano para corregirlo');
+        if (act.itemId) {
+          locateOnMap({
+            id: act.itemId,
+            panel: 'design',
+            enableXray: act.enableXray,
+          });
+        } else {
+          setPanel('design');
+          if (act.enableXray) setXrayVisible(true);
+        }
+        showToast('Elemento localizado y centrado en el plano para corregirlo');
         return;
       case 'switch-tool':
         closeDialog();

@@ -292,9 +292,11 @@ export function buildDraftSvg(
             ? '#9e6d17'
             : tool === 'interestZone'
               ? '#0f766e'
-              : tool === 'flow'
-                ? '#dc2626'
-                : '#633584';
+              : tool === 'subperimeter'
+                ? '#b45309'
+                : tool === 'flow'
+                  ? '#dc2626'
+                  : '#633584';
   const lineW = 1.8 * mpp;
   const dashA = 6 * mpp;
   const dashB = 4 * mpp;

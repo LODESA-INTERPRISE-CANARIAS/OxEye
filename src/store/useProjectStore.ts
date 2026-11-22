@@ -33,6 +33,20 @@ import type {
 
 export type OnboardingStage = 'none' | 'perimeter' | 'inventory';
 
+export interface ToastAction {
+  label?: string;
+  targetId?: string;
+  targetPoint?: [number, number];
+  panel?: ActivePanel;
+  enableXray?: boolean;
+}
+
+export interface MapFocusRequest {
+  id?: string;
+  point?: [number, number];
+  seq: number;
+}
+
 export type ActiveModal =
   | null
   | 'demand'
@@ -84,6 +98,12 @@ export interface ProjectStoreState {
   saveStatusText: string;
   toastMessage: string | null;
   toastTone: 'default' | 'error';
+  toastAction: ToastAction | null;
+  focusRequest: MapFocusRequest | null;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
+  inspectorWidth: number;
+  inspectorExpanded: boolean;
   history: string[];
   future: string[];
   preferences: UserPreferences;
@@ -126,7 +146,21 @@ export interface ProjectStoreState {
   setPreviewCorrection: (proposal: SpatialCorrectionProposal | null) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
   setTutorialActive: (active: boolean) => void;
-  showToast: (msg: string, tone?: 'default' | 'error') => void;
+  setSidebarWidth: (width: number) => void;
+  toggleSidebarCollapsed: () => void;
+  setInspectorWidth: (width: number) => void;
+  toggleInspectorExpanded: () => void;
+  locateOnMap: (target: {
+    id?: string;
+    point?: [number, number];
+    panel?: ActivePanel;
+    enableXray?: boolean;
+  }) => void;
+  showToast: (
+    msg: string,
+    tone?: 'default' | 'error',
+    action?: ToastAction | null
+  ) => void;
   clearToast: () => void;
   checkpoint: () => void;
   undo: (isRedo?: boolean) => void;
@@ -230,6 +264,12 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   saveStatusText: 'Guardado en este navegador',
   toastMessage: null,
   toastTone: 'default',
+  toastAction: null,
+  focusRequest: null,
+  sidebarWidth: 308,
+  sidebarCollapsed: false,
+  inspectorWidth: 312,
+  inspectorExpanded: false,
   history: [],
   future: [],
   preferences: initialPrefs,
@@ -331,6 +371,13 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       const unique = [...new Set(ids)];
       const nextTool =
         unique.length && state.tool !== 'xray:select' ? 'select' : state.tool;
+      if (
+        state.tool === nextTool &&
+        state.selectedIds.length === unique.length &&
+        state.selectedIds.every((v, i) => v === unique[i])
+      ) {
+        return state;
+      }
       return {
         selectedIds: unique,
         selectedId: unique.length === 1 ? unique[0] : null,
@@ -469,17 +516,72 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   setOnboardingStage: (onboardingStage) => set({onboardingStage}),
   setTutorialActive: (tutorialActive) => set({tutorialActive}),
 
-  showToast: (msg, tone = 'default') => {
+  setSidebarWidth: (width) =>
+    set({
+      sidebarWidth: Math.max(220, Math.min(540, Math.round(Number(width) || 308))),
+      sidebarCollapsed: false,
+    }),
+
+  toggleSidebarCollapsed: () =>
+    set((state) => ({sidebarCollapsed: !state.sidebarCollapsed})),
+
+  setInspectorWidth: (width) =>
+    set({
+      inspectorWidth: Math.max(250, Math.min(520, Math.round(Number(width) || 312))),
+      inspectorExpanded: Number(width) >= 380,
+    }),
+
+  toggleInspectorExpanded: () =>
+    set((state) => {
+      const nextExpanded = !state.inspectorExpanded;
+      return {
+        inspectorExpanded: nextExpanded,
+        inspectorWidth: nextExpanded ? 410 : 312,
+      };
+    }),
+
+  locateOnMap: (target) => {
+    set((state) => {
+      const nextPanel = target.panel || (state.panel === 'simulate' ? 'design' : state.panel);
+      const nextIds = target.id ? [target.id] : state.selectedIds;
+      return {
+        panel: nextPanel,
+        tool: 'select',
+        xrayVisible: target.enableXray ? true : state.xrayVisible,
+        selectedIds: nextIds,
+        selectedId: nextIds.length === 1 ? nextIds[0] : null,
+        activeModal: null,
+        focusRequest: {
+          id: target.id,
+          point: target.point,
+          seq: (state.focusRequest?.seq || 0) + 1,
+        },
+        revision: state.revision + 1,
+      };
+    });
+  },
+
+  showToast: (msg, tone = 'default', action = null) => {
     if (toastTimeout) clearTimeout(toastTimeout);
-    set({toastMessage: msg, toastTone: tone});
-    toastTimeout = setTimeout(() => {
-      set({toastMessage: null, toastTone: 'default'});
-    }, 4200);
+    const hasAction = !!(action?.targetId || action?.targetPoint);
+    const effectiveTone =
+      tone === 'error' || hasAction ? 'error' : tone;
+    set({
+      toastMessage: msg,
+      toastTone: effectiveTone,
+      toastAction: action || null,
+    });
+    toastTimeout = setTimeout(
+      () => {
+        set({toastMessage: null, toastTone: 'default', toastAction: null});
+      },
+      hasAction || effectiveTone === 'error' ? 8000 : 4200
+    );
   },
 
   clearToast: () => {
     if (toastTimeout) clearTimeout(toastTimeout);
-    set({toastMessage: null, toastTone: 'default'});
+    set({toastMessage: null, toastTone: 'default', toastAction: null});
   },
 
   checkpoint: () => {

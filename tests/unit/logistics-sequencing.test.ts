@@ -174,4 +174,112 @@ describe('Logística Pre/Post: reservas poligonales, camiones escalonados, secue
     for (let i = 0; i < 60; i++) engine.tick(0.5);
     expect(row!.status).not.toBe('blocked');
   });
+
+  it('Subperímetro · excludes civilians from entering while authorizing emergency services and event staff', () => {
+    configure(MAPS_DATA);
+    const scene = initialScene('cristo', map, CARTO_DATA);
+    // Dibujar un subperímetro interior alrededor de [50%, 50%]
+    scene.reserves.push({
+      id: 'subperim-1',
+      name: 'Subperímetro backstage emergencias',
+      origin: 'subperimeter',
+      points: [
+        [46, 46],
+        [54, 46],
+        [54, 54],
+        [46, 54],
+      ],
+      phaseTags: ['pre', 'event', 'post'],
+    });
+    const engine = new EventEngine(phaseScene(scene, 'event'));
+    const cx = (50 * map.widthMeters) / 100;
+    const cy = (50 * map.heightMeters) / 100;
+    const k = engine.g.index(cx, cy);
+    expect(k).toBeGreaterThanOrEqual(0);
+    // Los civiles tienen prohibido el paso (free[k] === 0), pero emergencias y personal están autorizados (staffFree[k] === 1)
+    expect(engine.g.free[k]).toBe(0);
+    expect(engine.g.staffFree?.[k]).toBe(1);
+  });
+
+  it('Policía fija ("campeo" de zona) · holds position at assigned zone and deters fence jumps within radius', () => {
+    configure(MAPS_DATA);
+    const scene = initialScene('cristo', map, CARTO_DATA);
+    const fx = (50 * map.widthMeters) / 100;
+    const fy = (50 * map.heightMeters) / 100;
+    scene.fences = [
+      {
+        id: 'fence-stage-1',
+        name: 'Valla escenario 1',
+        points: [
+          percent([fx - 3, fy], map),
+          percent([fx + 3, fy], map),
+        ],
+        phaseTags: ['event'],
+      },
+    ];
+    scene.infrastructure.push({
+      id: 'pol-fixed-1',
+      name: 'Policía acceso escenario',
+      kind: 'security',
+      role: 'emergency',
+      x: 50,
+      y: 49,
+      width: 0.6,
+      depth: 0.6,
+      staff: 2,
+      capacity: 1,
+      active: true,
+      fixedPost: true,
+      patrolMode: 'fixed',
+      patrolRadius: 20,
+      phaseTags: ['event'],
+    });
+
+    const engine = new EventEngine(phaseScene(scene, 'event'));
+    engine.emergency = new ResponseSimulation(engine);
+    const rebelAgent: Record<string, unknown> = {
+      id: 777,
+      x: fx,
+      y: fy - 0.8,
+      r: 0.25,
+      rebel: true,
+      stuck: 4,
+    };
+    const jumped = engine.stepRebelFenceCross(
+      rebelAgent as never,
+      [fx, fy + 4]
+    );
+    expect(jumped).toBe(false);
+    expect(rebelAgent.rebel).toBe(false);
+    expect(engine.stats.stewardPrevented).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Diagnóstico contextual + Localizar en el mapa · identifies exact inaccessible loading zone, cause, and targetId', () => {
+    configure(MAPS_DATA);
+    const scene = initialScene('cristo', map, CARTO_DATA);
+    const loadingBay = scene.infrastructure.find((i) => i.kind === 'loading')!;
+    expect(loadingBay).toBeDefined();
+    // Colocar una zona excluida encima de la zona de descarga para hacerla inaccesible
+    scene.reserves.push({
+      id: 'block-reserve-1',
+      name: 'Obra municipal cerrada',
+      origin: 'Dibujada por el equipo',
+      points: [
+        [loadingBay.x - 4, loadingBay.y - 4],
+        [loadingBay.x + 4, loadingBay.y - 4],
+        [loadingBay.x + 4, loadingBay.y + 4],
+        [loadingBay.x - 4, loadingBay.y + 4],
+      ],
+      phaseTags: ['pre', 'event', 'post'],
+    });
+
+    const plan = shift(scene, map, 'pre');
+    expect(plan.error).toBeDefined();
+    expect(plan.error).toContain(loadingBay.name);
+    expect(plan.error).toContain('Obra municipal cerrada');
+    expect(plan.diagnostic).toBeDefined();
+    expect(plan.diagnostic?.targetId).toBe(loadingBay.id);
+    expect(plan.diagnostic?.location).toContain('CELDA');
+    expect(plan.diagnostic?.action.length).toBeGreaterThan(10);
+  });
 });

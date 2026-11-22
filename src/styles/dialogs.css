@@ -555,8 +555,46 @@ dialog p {
 #contacts-body input,
 #contacts-body select,
 #organizations-dialog input:not([type='checkbox']),
-#organizations-dialog select {
+#organizations-dialog select,
+#org-form input:not([type='checkbox']),
+#org-form select {
   margin-top: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+#org {
+  width: min(760px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+#org-form fieldset {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+  align-items: end;
+}
+
+#org-form fieldset > p {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  font-weight: 700;
+  color: var(--heading);
+}
+
+#org-form fieldset > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+#org-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  min-width: 0;
+  margin: 6px 0;
 }
 
 #batch-live svg {

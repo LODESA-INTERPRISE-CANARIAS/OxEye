@@ -1,4 +1,5 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {cellAt, world} from './engine/cartography/geometry';
 import {PlainLanguageEnhancer} from './components/common/PlainLanguageEnhancer';
 import {Toast} from './components/common/Toast';
 import {TutorialOverlay} from './components/common/TutorialOverlay';
@@ -510,7 +511,18 @@ export const App: React.FC = () => {
       if (!shiftPlanRef.current) {
         const plan = shift(s, m, currentPhase);
         if (plan.error) {
-          showToast(plan.error);
+          showToast(
+            plan.error,
+            'error',
+            plan.diagnostic?.targetId || plan.diagnostic?.targetPoint
+              ? {
+                  label: 'Localizar en el mapa',
+                  targetId: plan.diagnostic.targetId,
+                  targetPoint: plan.diagnostic.targetPoint,
+                  panel: 'design',
+                }
+              : null
+          );
           shiftPlanRef.current = null;
           return;
         }
@@ -532,9 +544,27 @@ export const App: React.FC = () => {
           ['both', 'in', 'free'].includes(g.phases?.event || g.role || 'both')
         )
       ) {
-        showToast('Añade un acceso de entrada al recinto antes de simular');
-        setPanel('design');
-        setTool('place:gate');
+        const closedOrOutGate = s.entrances[0];
+        if (closedOrOutGate) {
+          const gp = world([closedOrOutGate.x, closedOrOutGate.y], m);
+          showToast(
+            `Sin acceso de entrada habilitado: «${closedOrOutGate.name}» (CELDA ${cellAt(gp, 10)}) está configurado como «Solo salida» o cerrado. Cambia su Uso del acceso a «Entrada y salida» o dibuja otro acceso.`,
+            'error',
+            {
+              label: 'Localizar en el mapa',
+              targetId: closedOrOutGate.id,
+              targetPoint: gp,
+              panel: 'design',
+            }
+          );
+        } else {
+          showToast(
+            'Falta acceso de entrada en el perímetro del recinto. Usa «⇄ Acceso» sobre el borde del perímetro antes de simular.',
+            'error'
+          );
+          setPanel('design');
+          setTool('gateLine');
+        }
         return;
       }
       try {
@@ -552,8 +582,23 @@ export const App: React.FC = () => {
         base.seed = runSeed;
         const eng = createEngine(base);
         if (!eng.entries.length || eng.g.area < 1) {
+          const firstGate = s.entrances.find((g) =>
+            ['both', 'in', 'free'].includes(g.phases?.event || g.role || 'both')
+          ) || s.entrances[0];
+          const gp = firstGate ? world([firstGate.x, firstGate.y], m) : undefined;
           showToast(
-            'El acceso no conecta con una zona transitable. Revisa perímetro y obstáculos.'
+            firstGate && gp
+              ? `El acceso «${firstGate.name}» (CELDA ${cellAt(gp, 10)}) está desconectado de la zona transitable por vallas, reservas o perímetro cerrado. Despeja el paso junto al acceso.`
+              : 'Ningún acceso conecta con una superficie transitable (≥ 1 m²). Revisa el perímetro y las zonas excluidas.',
+            'error',
+            firstGate
+              ? {
+                  label: 'Localizar en el mapa',
+                  targetId: firstGate.id,
+                  targetPoint: gp,
+                  panel: 'design',
+                }
+              : null
           );
           return;
         }
@@ -617,7 +662,18 @@ export const App: React.FC = () => {
         if (!shiftPlanRef.current) {
           const plan = shift(s, m, currentPhase);
           if (plan.error) {
-            showToast(plan.error);
+            showToast(
+              plan.error,
+              'error',
+              plan.diagnostic?.targetId || plan.diagnostic?.targetPoint
+                ? {
+                    label: 'Localizar en el mapa',
+                    targetId: plan.diagnostic.targetId,
+                    targetPoint: plan.diagnostic.targetPoint,
+                    panel: 'design',
+                  }
+                : null
+            );
             shiftPlanRef.current = null;
             draggingTimeRef.current = false;
             return;
@@ -901,14 +957,22 @@ export const App: React.FC = () => {
     resetSim();
   }, [resetSim]);
 
-  const activeWeather =
-    engineInstance?.s.base.weather || currentScene().base.weather;
-
+  const activeVenue = useProjectStore((s) => s.activeVenue);
+  const revision = useProjectStore((s) => s.revision);
   const currentSceneObj = currentScene();
-  const riskSummary = assessRisk(currentSceneObj);
-  const isSafetyLocked =
-    currentSceneObj.safetyLock?.fingerprint ===
-    safetyFingerprint(currentSceneObj);
+  const activeWeather =
+    engineInstance?.s.base.weather || currentSceneObj.base.weather;
+
+  const {riskSummary, isSafetyLocked} = useMemo(() => {
+    void revision;
+    void activeVenue;
+    const sc = currentScene();
+    return {
+      riskSummary: assessRisk(sc),
+      isSafetyLocked:
+        sc.safetyLock?.fingerprint === safetyFingerprint(sc),
+    };
+  }, [currentScene, revision, activeVenue]);
   const hasSafetyBlocks =
     safetyStop || isSafetyLocked || riskSummary.critical.length > 0;
   const safetyBannerText =

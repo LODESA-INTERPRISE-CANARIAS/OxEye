@@ -224,7 +224,13 @@ function collectVehicleObstacles(
     boxes.push({id: inf.id, name: inf.name || inf.kind, poly, cx, cy});
   }
   for (const res of scene.reserves || []) {
-    if (res.origin === 'turning' || res.origin === 'loading') continue;
+    if (
+      res.origin === 'turning' ||
+      res.origin === 'loading' ||
+      res.origin === 'subperimeter'
+    ) {
+      continue;
+    }
     if (!res.points || res.points.length < 3) continue;
     const poly = res.points.map((p) => world(p, map));
     const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
@@ -250,7 +256,7 @@ export function buildVehicleGrid(
   baseGrid: NavigationGrid
 ): NavigationGrid {
   const {w, h, cell, m} = baseGrid;
-  const free = new Uint8Array(baseGrid.free);
+  const free = new Uint8Array(baseGrid.staffFree || baseGrid.free);
   const roads = collectRoadSegments(scene, m);
   const {boxes, fences} = collectVehicleObstacles(scene, m);
 
@@ -291,9 +297,14 @@ export function buildVehicleGrid(
     }
   }
 
-  // Zonas de carga/descarga y maniobra son siempre transitables para vehículos
+  // Zonas de carga/descarga, maniobra y subperímetros son siempre transitables para vehículos autorizados
   const serviceZones = (scene.reserves || [])
-    .filter((r) => r.origin === 'turning' || r.origin === 'loading')
+    .filter(
+      (r) =>
+        r.origin === 'turning' ||
+        r.origin === 'loading' ||
+        r.origin === 'subperimeter'
+    )
     .filter((r) => r.points && r.points.length >= 3)
     .map((r) => r.points.map((p) => world(p, m)));
 

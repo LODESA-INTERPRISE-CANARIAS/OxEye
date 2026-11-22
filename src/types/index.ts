@@ -196,8 +196,12 @@ export interface InfrastructureItem {
   ballastRequiredMassKg?: number;
   /** ID de la carpa a la que se vincula explícitamente un lastre (opcional). */
   attachedCoverId?: string;
-  /** Radio de actuación en metros para personal de asistencia y orientación. */
+  /** Radio de actuación o vigilancia en metros para personal de asistencia y policía. */
   patrolRadius?: number;
+  /** Si es `true` (o `patrolMode === 'fixed'`), la unidad policial mantiene posición fija vigilando su zona en vez de patrullar todo el recinto. */
+  fixedPost?: boolean;
+  /** Modo de vigilancia policial: `'patrol'` (patrulla itinerante) o `'fixed'` (posición fija / vigilancia de zona). */
+  patrolMode?: 'patrol' | 'fixed';
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   coverGroup?: string;
@@ -744,6 +748,8 @@ export interface NavigationGrid {
   h: number;
   cell: number;
   free: Uint8Array;
+  /** Máscara de celdas transitables para servicios de emergencia y personal autorizado (incluye subperímetros restringidos a civiles). */
+  staffFree?: Uint8Array;
   count: number;
   area: number;
   index: (x: number, y: number) => number;

@@ -84,8 +84,70 @@ export const Inspector: React.FC<InspectorProps> = ({
   const revision = useProjectStore((s) => s.revision);
   const setSelectedId = useProjectStore((s) => s.setSelectedId);
   const setSelectedIds = useProjectStore((s) => s.setSelectedIds);
+  const inspectorWidth = useProjectStore((s) => s.inspectorWidth);
+  const inspectorExpanded = useProjectStore((s) => s.inspectorExpanded);
+  const setInspectorWidth = useProjectStore((s) => s.setInspectorWidth);
+  const toggleInspectorExpanded = useProjectStore(
+    (s) => s.toggleInspectorExpanded
+  );
   const updateScene = useProjectStore((s) => s.updateScene);
   const showToast = useProjectStore((s) => s.showToast);
+
+  const handleInspectorResizeStart = (
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = inspectorWidth;
+    const onMove = (ev: PointerEvent) => {
+      setInspectorWidth(startW + (startX - ev.clientX));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+  const inspectorStyle = {width: `${inspectorWidth}px`} as React.CSSProperties;
+  const renderInspectorChrome = (onClose: () => void) => (
+    <>
+      <div
+        className="inspector-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar inspector"
+        title="Arrastra el borde izquierdo para ajustar el ancho"
+        onPointerDown={handleInspectorResizeStart}
+      />
+      <div className="inspector-header-actions">
+        <button
+          type="button"
+          id="toggle-inspector-width"
+          className="panel-width-btn"
+          aria-label="Expandir o contraer ancho del inspector"
+          title={
+            inspectorExpanded
+              ? 'Contraer ancho del inspector'
+              : 'Expandir ancho del inspector'
+          }
+          onClick={toggleInspectorExpanded}
+        >
+          ⇔
+        </button>
+        <button
+          type="button"
+          className="close"
+          id="close-inspector"
+          aria-label="Cerrar selección"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+    </>
+  );
 
   void revision;
   const s = currentScene();
@@ -152,19 +214,12 @@ export const Inspector: React.FC<InspectorProps> = ({
       <aside
         id="inspector"
         className="float-panel inspector"
+        style={inspectorStyle}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setSelectedIds([]);
         }}
       >
-        <button
-          type="button"
-          className="close"
-          id="close-inspector"
-          aria-label="Cerrar selección"
-          onClick={() => setSelectedIds([])}
-        >
-          ×
-        </button>
+        {renderInspectorChrome(() => setSelectedIds([]))}
         <MultiSelectionInspector
           selectedIds={selectedIds}
           onSceneChanged={onSceneChanged}
@@ -178,19 +233,12 @@ export const Inspector: React.FC<InspectorProps> = ({
       <aside
         id="inspector"
         className="float-panel inspector"
+        style={inspectorStyle}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setSelectedIds([]);
         }}
       >
-        <button
-          type="button"
-          className="close"
-          id="close-inspector"
-          aria-label="Cerrar selección"
-          onClick={() => setSelectedIds([])}
-        >
-          ×
-        </button>
+        {renderInspectorChrome(() => setSelectedIds([]))}
         <SubsoilInspector
           collection={
             subsoilHit.collection as
@@ -405,21 +453,14 @@ export const Inspector: React.FC<InspectorProps> = ({
     <aside
       id="inspector"
       className="float-panel inspector"
+      style={inspectorStyle}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           setSelectedId(null);
         }
       }}
     >
-      <button
-        type="button"
-        className="close"
-        id="close-inspector"
-        aria-label="Cerrar selección"
-        onClick={() => setSelectedId(null)}
-      >
-        ×
-      </button>
+      {renderInspectorChrome(() => setSelectedId(null))}
       <span className="eyebrow">
         {isNote ? 'OBSERVACIÓN' : 'ELEMENTO SELECCIONADO'}
       </span>
@@ -523,6 +564,72 @@ export const Inspector: React.FC<InspectorProps> = ({
                       Escala de persona a pie (mismo diámetro que el resto de
                       partículas: {num(s.diameter || 0.5)} m).
                     </p>
+                    {(item as Infrastructure).kind === 'security' && (
+                      <fieldset id="security-config">
+                        <legend>Vigilancia policial y patrulla</legend>
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            id="security-fixed-post"
+                            disabled={isLocked}
+                            checked={
+                              !!(item as Infrastructure).fixedPost ||
+                              (item as Infrastructure).patrolMode === 'fixed'
+                            }
+                            onChange={(e) => {
+                              const isFixed = e.target.checked;
+                              updateScene((scene) => {
+                                const t = scene.infrastructure.find(
+                                  (r) => r.id === item.id
+                                );
+                                if (t) {
+                                  t.fixedPost = isFixed;
+                                  t.patrolMode = isFixed ? 'fixed' : 'patrol';
+                                  t.patrolRadius ??= 18;
+                                }
+                              }, true);
+                              onSceneChanged();
+                            }}
+                          />{' '}
+                          Posición fija: vigilar esta zona (acceso a escenario,
+                          vallas específicas o área tensa)
+                        </label>
+                        <label>
+                          Radio de vigilancia y disuasión (m)
+                          <input
+                            id="edit-security-radius"
+                            type="number"
+                            min="5"
+                            max="100"
+                            step="1"
+                            disabled={isLocked}
+                            key={`secrad-${item.id}-${(item as Infrastructure).patrolRadius ?? 18}`}
+                            defaultValue={
+                              (item as Infrastructure).patrolRadius ?? 18
+                            }
+                            onKeyDown={commitOnEnter}
+                            onBlur={(e) => {
+                              const v = Math.max(
+                                5,
+                                Math.min(100, Number(e.target.value) || 18)
+                              );
+                              updateScene((scene) => {
+                                const t = scene.infrastructure.find(
+                                  (r) => r.id === item.id
+                                );
+                                if (t) t.patrolRadius = v;
+                              }, true);
+                              onSceneChanged();
+                            }}
+                          />
+                        </label>
+                        <p className="small-note">
+                          En posición fija la unidad permanece apostada en su
+                          zona, disuadiendo saltos de valla e interviniendo de
+                          inmediato sin alejarse a otras áreas.
+                        </p>
+                      </fieldset>
+                    )}
                     {(item as Infrastructure).kind === 'steward' && (
                       <fieldset id="steward-config">
                         <legend>Personal de asistencia y orientación</legend>
@@ -1122,6 +1229,34 @@ export const Inspector: React.FC<InspectorProps> = ({
                     />{' '}
                     Recurso de reserva: llegará después de solicitar refuerzos
                   </label>
+                  {(item as Infrastructure).kind === 'patrol' && (
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        id="patrol-fixed-post"
+                        disabled={isLocked}
+                        checked={
+                          !!(item as Infrastructure).fixedPost ||
+                          (item as Infrastructure).patrolMode === 'fixed'
+                        }
+                        onChange={(e) => {
+                          const isFixed = e.target.checked;
+                          updateScene((scene) => {
+                            const inf = scene.infrastructure.find(
+                              (st) => st.id === item.id
+                            );
+                            if (inf) {
+                              inf.fixedPost = isFixed;
+                              inf.patrolMode = isFixed ? 'fixed' : 'patrol';
+                              inf.patrolRadius ??= 22;
+                            }
+                          }, true);
+                          onSceneChanged();
+                        }}
+                      />{' '}
+                      Posición fija: vigilar zona asignada (acceso, vallas o área tensa)
+                    </label>
+                  )}
                   <div className="two">
                     <label>
                       Personal supuesto
@@ -1382,13 +1517,69 @@ export const Inspector: React.FC<InspectorProps> = ({
             </>
           ) : (
             isArea && (
-              <p>
-                {(item as {origin?: string}).origin === 'turning'
-                  ? 'Zona de maniobra de vehículos trazada en polígono libre (excluida del tránsito peatonal durante las fases activas).'
-                  : (item as {origin?: string}).origin === 'loading'
-                    ? 'Zona de carga y descarga / aparcamiento para servicios públicos trazada en polígono libre (excluida del tránsito peatonal durante las fases activas).'
-                    : 'Esta superficie queda excluida del tránsito de personas en el modelo.'}
-              </p>
+              <>
+                <label>
+                  Tipo de perímetro / reserva interior
+                  <select
+                    id="edit-reserve-origin"
+                    disabled={isLocked}
+                    value={
+                      ['subperimeter', 'turning', 'loading'].includes(
+                        (item as {origin?: string}).origin || ''
+                      )
+                        ? (item as {origin?: string}).origin
+                        : 'reserve'
+                    }
+                    onChange={(e) => {
+                      const nextOrigin = e.target.value;
+                      updateScene((scene) => {
+                        const target = scene.reserves.find(
+                          (r) => r.id === item.id
+                        );
+                        if (!target) return;
+                        target.origin =
+                          nextOrigin === 'reserve'
+                            ? 'Dibujada por el equipo'
+                            : nextOrigin;
+                        if (
+                          nextOrigin === 'subperimeter' &&
+                          target.name.startsWith('Zona excluida')
+                        ) {
+                          target.name = 'Subperímetro restringido';
+                        } else if (
+                          nextOrigin === 'reserve' &&
+                          target.name.startsWith('Subperímetro')
+                        ) {
+                          target.name = 'Zona excluida';
+                        }
+                      }, true);
+                      onSceneChanged();
+                    }}
+                  >
+                    <option value="reserve">
+                      Zona excluida (bloqueada a todo tránsito)
+                    </option>
+                    <option value="subperimeter">
+                      Subperímetro (excluye civiles · autoriza emergencias y personal)
+                    </option>
+                    <option value="turning">
+                      Zona de maniobra de vehículos
+                    </option>
+                    <option value="loading">
+                      Zona de carga y descarga / aparcamiento SP
+                    </option>
+                  </select>
+                </label>
+                <p>
+                  {(item as {origin?: string}).origin === 'subperimeter'
+                    ? 'Subperímetro interior del evento: excluye el paso y estancia de civiles pero autoriza la entrada y estacionamiento de servicios de emergencia, policía y personal del evento.'
+                    : (item as {origin?: string}).origin === 'turning'
+                      ? 'Zona de maniobra de vehículos trazada en polígono libre (excluida del tránsito peatonal civil y autorizada para vehículos operativos).'
+                      : (item as {origin?: string}).origin === 'loading'
+                        ? 'Zona de carga y descarga / aparcamiento para servicios públicos trazada en polígono libre (excluida de civiles y autorizada para vehículos y emergencias).'
+                        : 'Esta superficie queda excluida del tránsito de personas en el modelo.'}
+                </p>
+              </>
             )
           )}
         </>

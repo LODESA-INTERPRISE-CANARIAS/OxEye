@@ -230,6 +230,8 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const revision = useProjectStore((s) => s.revision);
     const onboardingStage = useProjectStore((s) => s.onboardingStage);
     const tutorialActive = useProjectStore((s) => s.tutorialActive);
+    const inspectorWidth = useProjectStore((s) => s.inspectorWidth);
+    const focusRequest = useProjectStore((s) => s.focusRequest);
 
     const setTool = useProjectStore((s) => s.setTool);
     const setSelectedId = useProjectStore((s) => s.setSelectedId);
@@ -630,29 +632,39 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       for (const o of s.reserves) {
         const isTurning = o.origin === 'turning';
         const isLoading = o.origin === 'loading';
+        const isSubperimeter = o.origin === 'subperimeter';
         const isResSel = !!(o.id && selectedSet.has(o.id));
-        const fill = isTurning
-          ? '#6b8ba4'
-          : isLoading
-            ? '#d49b38'
-            : '#879576';
+        const fill = isSubperimeter
+          ? '#f59e0b'
+          : isTurning
+            ? '#6b8ba4'
+            : isLoading
+              ? '#d49b38'
+              : '#879576';
         const stroke = isResSel
           ? '#4b2665'
-          : isTurning
-            ? '#3b607a'
-            : isLoading
-              ? '#9e6d17'
-              : '#a7b193';
-        const dashed = isTurning || isLoading;
+          : isSubperimeter
+            ? '#b45309'
+            : isTurning
+              ? '#3b607a'
+              : isLoading
+                ? '#9e6d17'
+                : '#a7b193';
+        const dashed = isTurning || isLoading || isSubperimeter;
+        const dashPattern = isSubperimeter ? '2.2 .9' : '1.8 1';
         html += `<polygon data-id="${esc(o.id)}" points="${pts(
           o.points
         )}" fill="${fill}" fill-opacity="${
-          dashed ? '.2' : '.12'
+          isSubperimeter ? '.14' : dashed ? '.2' : '.12'
         }" stroke="${stroke}" stroke-width="${
-          isResSel ? '.6' : dashed ? '.45' : '.25'
-        }"${dashed ? ' stroke-dasharray="1.8 1"' : ''}><title>${esc(
+          isResSel ? '.65' : isSubperimeter ? '.55' : dashed ? '.45' : '.25'
+        }"${dashed ? ` stroke-dasharray="${dashPattern}"` : ''}><title>${esc(
           o.name
-        )}</title></polygon>`;
+        )}${
+          isSubperimeter
+            ? ' · Subperímetro (excluye civiles · autoriza emergencias y personal)'
+            : ''
+        }</title></polygon>`;
       }
       if (routesVisible && (s.flows || []).length) {
         const flowList = s.flows || [];
@@ -803,6 +815,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         const sel = selectedSet.has(o.id);
         const isCover = (o as Infrastructure).role === 'cover';
         const oKind = (o as Infrastructure).kind;
+        const isFixedPolice =
+          (oKind === 'security' || oKind === 'patrol') &&
+          (!!(o as Infrastructure).fixedPost ||
+            (o as Infrastructure).patrolMode === 'fixed');
         if (oKind === 'steward') {
           const pRadius = Number((o as Infrastructure).patrolRadius) || 25;
           html += `<g data-id="${esc(o.id)}" class="map-item" transform="translate(${x} ${y})"><title>${esc(
@@ -826,7 +842,19 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           o.id
         )}" class="map-item" transform="translate(${x} ${y}) rotate(${
           o.rotation || 0
-        })"><title>${esc(o.name)} · ${w} × ${h} m</title><rect x="${
+        })"><title>${esc(o.name)} · ${w} × ${h} m${
+          isFixedPolice
+            ? ` · Posición fija (radio ${Number((o as Infrastructure).patrolRadius) || 18} m)`
+            : ''
+        }</title>${
+          (isFixedPolice || (oKind === 'security' && sel))
+            ? `<circle cx="0" cy="0" r="${Number((o as Infrastructure).patrolRadius) || 18}" fill="#244ea0" fill-opacity="${
+                sel ? '.10' : '.04'
+              }" stroke="#244ea0" stroke-width="${
+                sel ? '.38' : '.22'
+              }" stroke-dasharray="1.6 1" pointer-events="none"/>`
+            : ''
+        }<rect x="${
           -w / 2
         }" y="${-h / 2}" width="${w}" height="${h}" rx=".35" fill="${itemColor(
           o
@@ -1124,19 +1152,77 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       [fit, drawBase, drawGrid, drawScenario]
     );
 
+    const customFeaturesCount = currentMap().customLocation?.features?.length || 0;
+
     useEffect(() => {
       drawBase();
-      drawGrid();
     }, [
       drawBase,
-      drawGrid,
       activeVenue,
       base,
       labelsVisible,
-      gridVisible,
-      grid,
-      revision,
+      onboardingStage,
+      customFeaturesCount,
     ]);
+
+    useEffect(() => {
+      drawGrid();
+    }, [drawGrid, activeVenue, base, gridVisible, grid]);
+
+    // Centrar y encuadrar elemento o coordenada solicitada mediante «Localizar en el mapa»
+    useEffect(() => {
+      if (!focusRequest) return;
+      const s = currentScene();
+      const m = currentMap();
+      let targetPt: Point | null = focusRequest.point ? [...focusRequest.point] : null;
+      if (!targetPt && focusRequest.id) {
+        const fid = focusRequest.id;
+        const pointItem = [
+          ...s.base.booths,
+          ...s.infrastructure,
+          ...s.entrances,
+          ...s.annotations,
+          ...(s.subsoil?.columns || []),
+        ].find((o) => o.id === fid);
+        if (pointItem) {
+          targetPt = world([pointItem.x, pointItem.y], m);
+        } else {
+          const polyItem = [
+            ...s.reserves,
+            ...(s.fences || []),
+            ...(s.passages || []),
+            ...(s.flows || []),
+            ...s.roadPlans,
+            ...s.measurements,
+            ...(s.subsoil?.polygons || []),
+          ].find((o) => o.id === fid);
+          if (polyItem && polyItem.points?.length) {
+            const ptsM = polyItem.points.map((q) => world(q, m));
+            const cx = ptsM.reduce((a, b) => a + b[0], 0) / ptsM.length;
+            const cy = ptsM.reduce((a, b) => a + b[1], 0) / ptsM.length;
+            targetPt = [cx, cy];
+          } else {
+            const wallItem = (s.subsoil?.walls || []).find((w) => w.id === fid);
+            if (wallItem) {
+              const aM = world(wallItem.a, m);
+              const bM = world(wallItem.b, m);
+              targetPt = [(aM[0] + bM[0]) / 2, (aM[1] + bM[1]) / 2];
+            }
+          }
+        }
+      }
+      if (!targetPt) return;
+      const targetW = Math.max(55, Math.min(viewRef.current.w, 120));
+      const targetH = targetW * (viewRef.current.h / Math.max(1, viewRef.current.w));
+      viewRef.current = {
+        x: targetPt[0] - targetW / 2,
+        y: targetPt[1] - targetH / 2,
+        w: targetW,
+        h: targetH,
+      };
+      aspect();
+      applyView();
+    }, [focusRequest, currentScene, currentMap, aspect, applyView]);
 
     // Si se abre un escenario personalizado antiguo o guardado sin capa vectorial,
     // genera automáticamente su versión vectorial limpia una sola vez y la persiste.
@@ -1278,7 +1364,15 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     };
 
     const finishDraw = () => {
-      const isPolygon = ['boundary', 'reserve', 'xray:boundary'].includes(tool);
+      const isPolygon = [
+        'boundary',
+        'subperimeter',
+        'reserve',
+        'interestZone',
+        'turning',
+        'loadingZone',
+        'xray:boundary',
+      ].includes(tool);
       if (draftPoints.length < (isPolygon ? 3 : 2)) return;
       const m = currentMap();
       if (tool === 'gateLine' || tool === 'xray:wall') {
@@ -1390,6 +1484,17 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               );
             }
           }
+        } else if (tool === 'subperimeter') {
+          const count =
+            s.reserves.filter((r) => r.origin === 'subperimeter').length + 1;
+          s.reserves.push({
+            id,
+            phaseTags: ['pre', 'event', 'post'],
+            name: `Subperímetro restringido ${count}`,
+            points: p,
+            origin: 'subperimeter',
+          });
+          createdSubsoilId = id;
         } else if (tool === 'reserve') {
           s.reserves.push({
             id,
@@ -2332,7 +2437,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             }
             if (snap.dist > 22) {
               showToast(
-                'Los accesos solo pueden colocarse pegados al borde de un perímetro.'
+                `Acceso fuera del borde en CELDA ${cellAt(p, grid)} (a ${snap.dist.toFixed(1)} m del perímetro). Haz clic a menos de 22 m del borde del perímetro o usa «⊞ Base vehicular exterior».`,
+                'error',
+                {
+                  label: 'Localizar borde cercano',
+                  targetPoint: snap.point,
+                  panel: 'design',
+                }
               );
               return;
             }
@@ -2347,16 +2458,23 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               const corners = rect(cand as unknown as Record<string, unknown>, m);
               const center = world([x, y], m);
               const samples: Point[] = [center, ...corners];
-              const overlaps = zones.some((z) => {
+              const hitZone = zones.find((z) => {
                 const zMeters = z.points.map((pt) => world(pt, m));
                 return (
                   samples.some((pt) => inside(pt, zMeters)) ||
                   zMeters.some((pt) => inside(pt, corners))
                 );
               });
-              if (overlaps) {
+              if (hitZone) {
                 showToast(
-                  'No se pueden colocar elementos dentro de una zona libre / de interés.'
+                  `«${obj.name}» invade la zona libre «${hitZone.name}» (CELDA ${cellAt(p, grid)}). Coloca la pieza fuera de «${hitZone.name}».`,
+                  'error',
+                  {
+                    label: 'Localizar en el mapa',
+                    targetId: hitZone.id,
+                    targetPoint: p,
+                    panel: 'design',
+                  }
                 );
                 return;
               }
@@ -2518,7 +2636,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
         if (snap.dist > 22) {
           showToast(
-            'Los accesos solo pueden crearse pegados al borde de un perímetro.'
+            `Acceso fuera del borde en CELDA ${cellAt(p, grid)} (a ${snap.dist.toFixed(1)} m del perímetro). Marca los extremos sobre la línea del perímetro o usa «⊞ Base vehicular exterior».`,
+            'error',
+            {
+              label: 'Localizar borde cercano',
+              targetPoint: snap.point,
+              panel: 'design',
+            }
           );
           return;
         }
@@ -2605,8 +2729,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                   {
                     measure: 'Medir distancia',
                     note: 'Anotar en el plano',
-                    boundary:
+                     boundary:
                       'Perímetro: Mayús añade · Ctrl resta (primer clic)',
+                    subperimeter:
+                      'Subperímetro: excluye civiles · autoriza emergencias y personal',
                     reserve: 'Reservar zona',
                     interestZone:
                       'Zona libre / interés: dibuja el polígono y confirma',
@@ -2631,6 +2757,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       'gateLine',
       'measure',
       'boundary',
+      'subperimeter',
       'reserve',
       'interestZone',
       'turning',
@@ -2642,6 +2769,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     ].includes(tool);
     const isPolygonTool = [
       'boundary',
+      'subperimeter',
       'reserve',
       'interestZone',
       'turning',
@@ -2667,6 +2795,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             {
               '--night-opacity': nightOpacity,
               '--sun-opacity': sunOpacity,
+              '--inspector-width': `${inspectorWidth}px`,
             } as React.CSSProperties
           }
         >

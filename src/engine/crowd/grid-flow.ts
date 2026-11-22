@@ -21,54 +21,135 @@ export function rng(seed: number): () => number {
   };
 }
 
+interface BoundedPoly {
+  pts: Point[];
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+function toBoundedPoly(pts: Point[]): BoundedPoly {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y] = pts[i];
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return {pts, minX, minY, maxX, maxY};
+}
+
+function insideBounded(p: Point, b: BoundedPoly): boolean {
+  if (p[0] < b.minX || p[0] > b.maxX || p[1] < b.minY || p[1] > b.maxY) {
+    return false;
+  }
+  return inside(p, b.pts);
+}
+
 /**
  * Discretizes the scene into a navigable 2D grid of cells (`0.75 m` default).
+ * Precomputes bounding boxes for all polygons and produces both `free` (civilian crowd)
+ * and `staffFree` (authorized emergency services, police, and event staff, including `subperimeter` zones)
+ * in a single pass.
  *
  * @param s - Scene to discretize.
  * @param cell - Cell edge length in meters (defaults to `0.75`).
+ * @param opts - Optional flags (`ignoreFences`, `allowRestricted`).
  * @returns Constructed navigation grid with index, point, neighbors, and nearest queries.
  */
 export function buildGrid(
   s: Scene,
   cell = 0.75,
-  opts?: {ignoreFences?: boolean}
+  opts?: {ignoreFences?: boolean; allowRestricted?: boolean}
 ): NavigationGrid {
   const m = MAPS[s.site];
   const w = Math.ceil(m.widthMeters / cell);
   const h = Math.ceil(m.heightMeters / cell);
   const toMeters = (ps: Point[]): Point[] =>
     ps.map(([x, y]) => [(x * m.widthMeters) / 100, (y * m.heightMeters) / 100]);
-  const boundary = toMeters(s.boundary);
-  const obstacles = s.reserves.map((r) => toMeters(r.points));
+
+  const boundary = s.boundary?.length >= 3 ? toBoundedPoly(toMeters(s.boundary)) : null;
+  const passages = (s.passages || [])
+    .filter((r) => r.points?.length >= 3)
+    .map((r) => toBoundedPoly(toMeters(r.points)));
+
+  // Subperímetros: excluyen a civiles pero autorizan a servicios de emergencia, policía y personal del evento
+  const isStaffAuthorizedReserve = (origin?: string) =>
+    origin === 'subperimeter';
+
+  const hardObstacles = (s.reserves || [])
+    .filter((r) => r.points?.length >= 3 && !isStaffAuthorizedReserve(r.origin))
+    .map((r) => toBoundedPoly(toMeters(r.points)));
+
+  const restrictedForCivilians = (s.reserves || [])
+    .filter((r) => r.points?.length >= 3 && isStaffAuthorizedReserve(r.origin))
+    .map((r) => toBoundedPoly(toMeters(r.points)));
+
   const footprints = [
     ...s.base.booths,
     ...s.infrastructure.filter(
       (o) =>
         ['facility', 'furniture'].includes(o.role || '') || o.kind === 'ballast'
     ),
-  ].map((b) => rect(b, m));
+  ].map((b) => toBoundedPoly(rect(b, m)));
+
+  const segMargin = cell * 0.55 + s.diameter / 2;
   const segments = opts?.ignoreFences
     ? []
     : (s.fences || []).flatMap((f) => {
         const pts = toMeters(f.points);
-        return pts.slice(1).map((p, i) => [pts[i], p] as [Point, Point]);
+        return pts.slice(1).map((p, i) => {
+          const a = pts[i];
+          return {
+            a,
+            b: p,
+            minX: Math.min(a[0], p[0]) - segMargin,
+            minY: Math.min(a[1], p[1]) - segMargin,
+            maxX: Math.max(a[0], p[0]) + segMargin,
+            maxY: Math.max(a[1], p[1]) + segMargin,
+          };
+        });
       });
+
   const free = new Uint8Array(w * h);
+  const staffFree = new Uint8Array(w * h);
   let count = 0;
 
   for (let j = 0; j < h; j++) {
+    const py = (j + 0.5) * cell;
     for (let i = 0; i < w; i++) {
-      const p: Point = [(i + 0.5) * cell, (j + 0.5) * cell];
+      const px = (i + 0.5) * cell;
+      const p: Point = [px, py];
+      const inDomain =
+        (boundary !== null && insideBounded(p, boundary)) ||
+        passages.some((r) => insideBounded(p, r));
+      if (!inDomain) continue;
+      if (hardObstacles.some((o) => insideBounded(p, o))) continue;
+      if (footprints.some((o) => insideBounded(p, o))) continue;
       if (
-        (inside(p, boundary) ||
-          (s.passages || []).some((r) => inside(p, toMeters(r.points)))) &&
-        !obstacles.some((o) => inside(p, o)) &&
-        !footprints.some((o) => inside(p, o)) &&
-        !segments.some(
-          ([a, b]) => segmentDistance(p, a, b) < cell * 0.55 + s.diameter / 2
+        segments.some(
+          (sSeg) =>
+            px >= sSeg.minX &&
+            px <= sSeg.maxX &&
+            py >= sSeg.minY &&
+            py <= sSeg.maxY &&
+            segmentDistance(p, sSeg.a, sSeg.b) < segMargin
         )
       ) {
-        free[j * w + i] = 1;
+        continue;
+      }
+      const k = j * w + i;
+      staffFree[k] = 1;
+      if (
+        opts?.allowRestricted ||
+        !restrictedForCivilians.some((o) => insideBounded(p, o))
+      ) {
+        free[k] = 1;
         count++;
       }
     }
@@ -125,6 +206,7 @@ export function buildGrid(
     h,
     cell,
     free,
+    staffFree,
     count,
     area: count * cell * cell,
     index,

@@ -145,7 +145,8 @@ export class StewardSystem {
       const nx = sw.x + (dx / dist) * stepDist;
       const ny = sw.y + (dy / dist) * stepDist;
       const k = e.g.index(nx, ny);
-      if (k >= 0 && e.g.free[k]) {
+      const staffFree = e.g.staffFree || e.g.free;
+      if (k >= 0 && staffFree[k]) {
         sw.x = nx;
         sw.y = ny;
       } else {

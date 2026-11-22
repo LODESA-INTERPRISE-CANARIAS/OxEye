@@ -4,8 +4,10 @@
  * camiones, carretillas, cuadrillas de montaje/desmontaje y recogida de residuos.
  */
 import {allocate} from './companies';
-import {membership} from './phases';
+import {membership, phases} from './phases';
 import type {MapMetadata, PhaseKey, Point2D, Scene} from '../../types';
+import {cellAt, inside, rect, segmentDistance} from '../cartography/geometry';
+import {segmentsIntersect} from '../cartography/fences';
 import {rng} from '../crowd/grid-flow';
 
 const distance = (a: Point2D, b: Point2D) =>
@@ -45,8 +47,17 @@ export interface ShiftTaskSchedule {
   orderIndex: number;
 }
 
+export interface ShiftErrorDiagnostic {
+  problem: string;
+  location: string;
+  action: string;
+  targetId?: string;
+  targetPoint?: Point2D;
+}
+
 export interface ShiftPlan {
   error?: string;
+  diagnostic?: ShiftErrorDiagnostic;
   installed: Array<{o: Record<string, any>; p: Point2D; at: number}>;
   schedule: ShiftTaskSchedule[];
   required: number;
@@ -90,7 +101,7 @@ function dependencyStepsFor(o: Record<string, any>, phase: PhaseKey): string[] {
 function reserveZoneMetrics(
   r: {id?: string; name?: string; points: Point2D[]},
   map: MapMetadata
-): {x: number; y: number; width: number; depth: number; p: Point2D; name: string} {
+): {id: string; x: number; y: number; width: number; depth: number; p: Point2D; name: string} {
   const ptsM = r.points.map(([px, py]): Point2D => [
     (px * map.widthMeters) / 100,
     (py * map.heightMeters) / 100,
@@ -100,6 +111,7 @@ function reserveZoneMetrics(
   const cx = xs.reduce((a, b) => a + b, 0) / ptsM.length;
   const cy = ys.reduce((a, b) => a + b, 0) / ptsM.length;
   return {
+    id: r.id || 'reserve-zone',
     x: (cx / map.widthMeters) * 100,
     y: (cy / map.heightMeters) * 100,
     width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
@@ -107,6 +119,123 @@ function reserveZoneMetrics(
     p: [cx, cy],
     name: r.name || 'Zona reservada',
   };
+}
+
+/**
+ * Comprueba si una zona logística (descarga o maniobra) es inaccesible desde el acceso vehicular
+ * debido a zonas excluidas, vallas, estructuras permanentes o ubicación fuera del perímetro sin conexión vial.
+ */
+function checkZoneAccessibility(
+  zone: {id: string; name: string; x: number; y: number; width: number; depth: number; p: Point2D},
+  kindLabel: 'descarga' | 'maniobra',
+  gate: {id: string; name: string},
+  gateP: Point2D,
+  scene: Scene,
+  map: MapMetadata
+): ShiftErrorDiagnostic | null {
+  const zoneCell = cellAt(zone.p, 10);
+  const toMeters = (pts: Point2D[]): Point2D[] =>
+    pts.map(([px, py]) => [(px * map.widthMeters) / 100, (py * map.heightMeters) / 100]);
+
+  // 1. ¿Está invadida o encerrada por una zona excluida al tránsito?
+  const hardReserves = (scene.reserves || []).filter(
+    (r) =>
+      r.id !== zone.id &&
+      r.origin !== 'loading' &&
+      r.origin !== 'turning' &&
+      r.origin !== 'subperimeter' &&
+      r.points?.length >= 3 &&
+      membership(r).includes('pre')
+  );
+  for (const r of hardReserves) {
+    const polyM = toMeters(r.points);
+    if (inside(zone.p, polyM)) {
+      return {
+        problem: `La zona de ${kindLabel} «${zone.name}» es inaccesible porque está situada dentro de «${r.name || 'Zona excluida'}»`,
+        location: `«${zone.name}» · CELDA ${zoneCell}`,
+        action: `Mueve «${zone.name}» fuera de «${r.name || 'Zona excluida'}» o convierte la reserva en un Subperímetro autorizado.`,
+        targetId: zone.id,
+        targetPoint: zone.p,
+      };
+    }
+  }
+
+  // 2. ¿Está bloqueada por una estructura permanente encima de su punto de operación?
+  const permanentBlockers = [
+    ...scene.base.booths.filter((b) => b.permanent),
+    ...scene.infrastructure.filter(
+      (i) =>
+        i.permanent &&
+        i.id !== zone.id &&
+        i.kind !== 'loading' &&
+        i.kind !== 'turning'
+    ),
+  ];
+  for (const perm of permanentBlockers) {
+    const polyM = rect(perm as unknown as Record<string, unknown>, map);
+    if (inside(zone.p, polyM)) {
+      return {
+        problem: `La zona de ${kindLabel} «${zone.name}» está ocupada por el elemento permanente «${perm.name}»`,
+        location: `«${zone.name}» · CELDA ${zoneCell}`,
+        action: `Desplaza «${zone.name}» a un espacio despejado o desmarca «Elemento permanente» en «${perm.name}».`,
+        targetId: zone.id,
+        targetPoint: zone.p,
+      };
+    }
+  }
+
+  // 3. ¿Está bloqueada o encerrada por vallas activas en la fase?
+  const activeFences = (scene.fences || []).filter(
+    (f) => f.points?.length >= 2
+  );
+  const halfSpan = Math.max(1.6, Math.min(zone.width, zone.depth) * 0.45);
+  let crossingFence: {id?: string; name: string} | null = null;
+  let surroundingHits = 0;
+  const cardinalRays: Point2D[] = [
+    [zone.p[0] + 35, zone.p[1]],
+    [zone.p[0] - 35, zone.p[1]],
+    [zone.p[0], zone.p[1] + 35],
+    [zone.p[0], zone.p[1] - 35],
+  ];
+  const rayBlocked = [false, false, false, false];
+
+  for (const f of activeFences) {
+    const ptsM = toMeters(f.points);
+    for (let i = 1; i < ptsM.length; i++) {
+      const a = ptsM[i - 1];
+      const b = ptsM[i];
+      if (segmentDistance(zone.p, a, b) <= halfSpan) {
+        return {
+          problem: `La zona de ${kindLabel} «${zone.name}» es inaccesible porque la valla «${f.name || 'Valla'}» atraviesa o cierra su área de operación`,
+          location: `«${zone.name}» · CELDA ${zoneCell}`,
+          action: `Retira o desplaza «${f.name || 'Valla'}» o reubica «${zone.name}» en un corredor despejado.`,
+          targetId: zone.id,
+          targetPoint: zone.p,
+        };
+      }
+      if (segmentsIntersect(gateP, zone.p, a, b)) {
+        crossingFence = {id: f.id, name: f.name || 'Valla'};
+      }
+      for (let rIdx = 0; rIdx < cardinalRays.length; rIdx++) {
+        if (!rayBlocked[rIdx] && segmentsIntersect(zone.p, cardinalRays[rIdx], a, b)) {
+          rayBlocked[rIdx] = true;
+          surroundingHits++;
+        }
+      }
+    }
+  }
+
+  if (surroundingHits >= 3 && crossingFence) {
+    return {
+      problem: `La zona de ${kindLabel} «${zone.name}» está encerrada por vallas («${crossingFence.name}») sin paso para camiones desde «${gate.name}»`,
+      location: `«${zone.name}» · CELDA ${zoneCell}`,
+      action: `Abre un hueco de al menos 3,5 m en la línea de vallas o mueve «${zone.name}» hacia el lado accesible del recinto.`,
+      targetId: zone.id,
+      targetPoint: zone.p,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -131,6 +260,7 @@ export function shift(
   const infraBays = assets
     .filter((o) => o.kind === 'loading')
     .map((o) => ({
+      id: o.id,
       x: o.x,
       y: o.y,
       width: o.width,
@@ -141,6 +271,7 @@ export function shift(
   const infraYards = assets
     .filter((o) => o.kind === 'turning')
     .map((o) => ({
+      id: o.id,
       x: o.x,
       y: o.y,
       width: o.width,
@@ -186,11 +317,74 @@ export function shift(
   const days = Math.round(clamp(scene.eventDays, 1, 30, 1));
   const night =
     phase === 'post' && (scene.cleanDay || 0) > 0 && (scene.cleanDay || 0) < days;
+  const phaseLabel = phases[phase] || phase;
 
   if (!gate || (!night && (!bay || !yard))) {
+    const anyBayInScene =
+      scene.infrastructure.find((o) => o.kind === 'loading') ||
+      (scene.reserves || []).find((r) => r.origin === 'loading');
+    const anyYardInScene =
+      scene.infrastructure.find((o) => o.kind === 'turning') ||
+      (scene.reserves || []).find((r) => r.origin === 'turning');
+
+    let diag: ShiftErrorDiagnostic;
+    if (!gate) {
+      diag = {
+        problem: `Falta un acceso abierto al recinto para ${phaseLabel}`,
+        location: `Perímetro de «${scene.title}»`,
+        action: 'Dibuja un acceso vehicular o mixto en el borde del perímetro con «⇄ Acceso».',
+      };
+    } else if (!bay && anyBayInScene) {
+      const pt = 'points' in anyBayInScene && Array.isArray(anyBayInScene.points)
+        ? reserveZoneMetrics(anyBayInScene, map).p
+        : position(anyBayInScene as {x: number; y: number}, map);
+      diag = {
+        problem: `La zona de descarga «${anyBayInScene.name}» no está habilitada en la fase ${phaseLabel}`,
+        location: `«${anyBayInScene.name}» · CELDA ${cellAt(pt, 10)}`,
+        action: `Selecciona «${anyBayInScene.name}» y activa la casilla «${phaseLabel}» en Visible durante.`,
+        targetId: anyBayInScene.id,
+        targetPoint: pt,
+      };
+    } else if (!yard && anyYardInScene) {
+      const pt = 'points' in anyYardInScene && Array.isArray(anyYardInScene.points)
+        ? reserveZoneMetrics(anyYardInScene, map).p
+        : position(anyYardInScene as {x: number; y: number}, map);
+      diag = {
+        problem: `La zona de maniobra «${anyYardInScene.name}» no está habilitada en la fase ${phaseLabel}`,
+        location: `«${anyYardInScene.name}» · CELDA ${cellAt(pt, 10)}`,
+        action: `Selecciona «${anyYardInScene.name}» y activa la casilla «${phaseLabel}» en Visible durante.`,
+        targetId: anyYardInScene.id,
+        targetPoint: pt,
+      };
+    } else if (!bay && yard) {
+      diag = {
+        problem: `Falta una zona de carga y descarga activa en ${phaseLabel}`,
+        location: `Próxima a «${yard.name}» · CELDA ${cellAt(yard.p, 10)}`,
+        action: `Dibuja una reserva de descarga con «⇄ Carga / SP» conectada a «${yard.name}» y al acceso «${gate.name}».`,
+        targetId: yard.id,
+        targetPoint: yard.p,
+      };
+    } else if (bay && !yard) {
+      diag = {
+        problem: `Falta una zona de maniobra de camiones activa en ${phaseLabel}`,
+        location: `Próxima a «${bay.name}» · CELDA ${cellAt(bay.p, 10)}`,
+        action: `Dibuja una reserva de maniobra (mín. 3 × 3 m) con «⟲ Maniobra» junto a «${bay.name}».`,
+        targetId: bay.id,
+        targetPoint: bay.p,
+      };
+    } else {
+      const gPt = position(gate, map);
+      diag = {
+        problem: `Faltan la zona de descarga y la zona de maniobra para ${phaseLabel}`,
+        location: `Entorno del acceso «${gate.name}» · CELDA ${cellAt(gPt, 10)}`,
+        action: 'Añade «⟲ Maniobra» y «⇄ Carga / SP» desde Infraestructura del espacio.',
+        targetId: gate.id,
+        targetPoint: gPt,
+      };
+    }
     return {
-      error:
-        'Indica el acceso, la descarga y la maniobra. La limpieza calcula su propio recorrido.',
+      error: `${diag.problem} (${diag.location}). ${diag.action}`,
+      diagnostic: diag,
     } as ShiftPlan;
   }
   const gateP = position(gate, map);
@@ -199,10 +393,37 @@ export function shift(
   const yardP = yard ? yard.p : gateP;
 
   if (!night && yard && Math.min(yard.width, yard.depth) < 3) {
+    const diag: ShiftErrorDiagnostic = {
+      problem: `La reserva de maniobra «${yard.name}» (${yard.width.toFixed(1)} × ${yard.depth.toFixed(1)} m) es demasiado estrecha para el camión (mínimo 3,0 × 3,0 m)`,
+      location: `«${yard.name}» · CELDA ${cellAt(yard.p, 10)}`,
+      action: `Amplía las dimensiones de «${yard.name}» a ≥ 3 m de lado en el Inspector o redibuja el polígono.`,
+      targetId: yard.id,
+      targetPoint: yard.p,
+    };
     return {
-      error:
-        'La reserva de maniobra es demasiado estrecha para el camión supuesto.',
+      error: `${diag.problem} (${diag.location}). ${diag.action}`,
+      diagnostic: diag,
     } as ShiftPlan;
+  }
+
+  if (!night && bay) {
+    const bayAccessErr = checkZoneAccessibility(bay, 'descarga', gate, gateP, scene, map);
+    if (bayAccessErr) {
+      return {
+        error: `${bayAccessErr.problem} (${bayAccessErr.location}). ${bayAccessErr.action}`,
+        diagnostic: bayAccessErr,
+      } as ShiftPlan;
+    }
+  }
+
+  if (!night && yard) {
+    const yardAccessErr = checkZoneAccessibility(yard, 'maniobra', gate, gateP, scene, map);
+    if (yardAccessErr) {
+      return {
+        error: `${yardAccessErr.problem} (${yardAccessErr.location}). ${yardAccessErr.action}`,
+        diagnostic: yardAccessErr,
+      } as ShiftPlan;
+    }
   }
 
   const bins = assets

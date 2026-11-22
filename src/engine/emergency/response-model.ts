@@ -209,6 +209,7 @@ export const RESPONSE_PROFILES: Record<string, ResponseProfile> = {
 export function footprintClear(e: any, pose: VehiclePose, w: number, l: number): boolean {
   const nx = Math.max(1, Math.ceil(l / 0.3));
   const ny = Math.max(1, Math.ceil(w / 0.3));
+  const baseFree: Uint8Array = e.g.staffFree || e.g.free;
   for (let i = 0; i <= nx; i++) {
     for (let j = 0; j <= ny; j++) {
       const u = -l / 2 + (i * l) / nx;
@@ -216,7 +217,7 @@ export function footprintClear(e: any, pose: VehiclePose, w: number, l: number):
       const x = pose.x + Math.cos(pose.angle) * u - Math.sin(pose.angle) * v;
       const y = pose.y + Math.sin(pose.angle) * u + Math.cos(pose.angle) * v;
       const k = e.g.index(x, y);
-      if (k < 0 || !e.g.free[k]) return false;
+      if (k < 0 || !baseFree[k]) return false;
     }
   }
   return true;
@@ -247,16 +248,17 @@ export function responseRoute(
   near = 2
 ): {path?: Point[]; length?: number; error?: string} {
   const g = e.g;
-  const free = new Uint8Array(g.free.length);
+  const baseFree: Uint8Array = g.staffFree || g.free;
+  const free = new Uint8Array(baseFree.length);
   const r = profile.width / 2 + 0.15;
-  for (let k = 0; k < g.free.length; k++) {
-    if (!g.free[k]) continue;
+  for (let k = 0; k < baseFree.length; k++) {
+    if (!baseFree[k]) continue;
     const p = g.point(k);
     let clear = true;
     for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI) / 4;
       const j = g.index(p[0] + r * Math.cos(a), p[1] + r * Math.sin(a));
-      if (j < 0 || !g.free[j]) {
+      if (j < 0 || !baseFree[j]) {
         clear = false;
         break;
       }
@@ -264,7 +266,17 @@ export function responseRoute(
     if (clear) free[k] = 1;
   }
 
-  const grid = {...g, free};
+  const grid = {
+    ...g,
+    free,
+    neighbors: (k: number): number[] =>
+      [
+        k % g.w ? k - 1 : -1,
+        k % g.w < g.w - 1 ? k + 1 : -1,
+        k >= g.w ? k - g.w : -1,
+        k < g.w * (g.h - 1) ? k + g.w : -1,
+      ].filter((q) => q >= 0 && free[q]),
+  };
   let start = -1;
   let d = 1.5;
   const candidates: Array<{k: number; d: number}> = [];

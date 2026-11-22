@@ -255,20 +255,47 @@
 }
 
 .map-shell:has(#inspector:not([hidden])) #layer-panel {
-  right: 292px;
+  right: calc(var(--inspector-width, 312px) + 30px);
 }
 
 .inspector {
   top: 17px;
   right: 17px;
-  width: 262px;
+  width: var(--inspector-width, 312px);
+  min-width: 250px;
+  max-width: min(520px, calc(100% - 34px));
+}
+
+.inspector-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 10;
+  border-radius: 10px 0 0 10px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.inspector-resizer:hover,
+.inspector-resizer:active {
+  background: var(--purple-mid);
+  opacity: 0.35;
+}
+
+.inspector-header-actions {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .inspector .close {
-  float: right;
   border: 0;
   background: none;
-  padding: 0;
+  padding: 0 2px;
   font-size: 20px;
   line-height: 1;
   color: var(--heading);
@@ -347,8 +374,19 @@
 
 .inspector .two {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.inspector .two > * {
+  min-width: 0;
+}
+
+.inspector .two input,
+.inspector .two select {
+  width: 100%;
+  min-width: 0;
 }
 
 .inspector button {
@@ -423,9 +461,20 @@
 
 #inspector fieldset label {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 10.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+#inspector fieldset label.check,
+#inspector fieldset label:has(> input[type='checkbox']) {
+  flex-direction: row;
   align-items: center;
   gap: 9px;
-  margin: 8px 0;
   font-size: 11px;
   color: var(--ink);
   cursor: pointer;
@@ -434,6 +483,7 @@
 #inspector fieldset input[type='checkbox'] {
   width: 16px;
   height: 16px;
+  min-width: 16px;
   order: -1;
   margin: 0;
 }
@@ -920,7 +970,7 @@
 }
 
 .map-shell:has(#inspector:not([hidden])) #incident-corner {
-  right: 292px;
+  right: calc(var(--inspector-width, 312px) + 30px);
 }
 
 .map-shell:has(#layer-panel:not([hidden])) #incident-corner {

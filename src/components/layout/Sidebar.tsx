@@ -137,6 +137,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const currentMap = useProjectStore((s) => s.currentMap);
   const revision = useProjectStore((s) => s.revision);
   const onboardingStage = useProjectStore((s) => s.onboardingStage);
+  const sidebarWidth = useProjectStore((s) => s.sidebarWidth);
+  const sidebarCollapsed = useProjectStore((s) => s.sidebarCollapsed);
+  const setSidebarWidth = useProjectStore((s) => s.setSidebarWidth);
+  const toggleSidebarCollapsed = useProjectStore((s) => s.toggleSidebarCollapsed);
 
   const setTool = useProjectStore((s) => s.setTool);
   const setFenceLength = useProjectStore((s) => s.setFenceLength);
@@ -306,22 +310,99 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const expActions = engine ? analyze(engine) : [];
   const complaintsList = engine ? engine.complaints() : [];
 
+  const handleSidebarResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarCollapsed ? 260 : sidebarWidth;
+    const onMove = (ev: PointerEvent) => {
+      setSidebarWidth(startW + (ev.clientX - startX));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   return (
-    <aside className="sidebar" id="sidebar">
+    <aside
+      className={`sidebar ${sidebarCollapsed ? 'is-collapsed' : ''}`}
+      id="sidebar"
+      style={
+        sidebarCollapsed
+          ? undefined
+          : ({
+              width: `${sidebarWidth}px`,
+              '--sidebar-width': `${sidebarWidth}px`,
+            } as React.CSSProperties)
+      }
+    >
       <div className="sidebar-heading">
-        <span className="eyebrow" id="panel-kicker">
-          {panelTexts[panel][0]}
-        </span>
-        <h1 id="panel-title">
-          {panelTexts[panel][1].split('\n').map((line, idx) => (
-            <React.Fragment key={idx}>
-              {idx > 0 && <br />}
-              {line}
-            </React.Fragment>
-          ))}
-        </h1>
-        <p id="panel-desc">{panelTexts[panel][2]}</p>
+        <div className="sidebar-heading-top">
+          <span className="eyebrow" id="panel-kicker">
+            {panelTexts[panel][0]}
+          </span>
+          <div className="sidebar-width-actions">
+            {!sidebarCollapsed && (
+              <button
+                type="button"
+                id="sidebar-expand-toggle"
+                className="panel-width-btn"
+                title={
+                  sidebarWidth >= 380
+                    ? 'Restaurar ancho estándar del panel'
+                    : 'Ampliar ancho del panel lateral'
+                }
+                aria-label="Alternar ancho del panel lateral"
+                onClick={() => setSidebarWidth(sidebarWidth >= 380 ? 308 : 400)}
+              >
+                ⇔
+              </button>
+            )}
+            <button
+              type="button"
+              id="sidebar-collapse-toggle"
+              className="panel-width-btn"
+              title={
+                sidebarCollapsed
+                  ? 'Expandir panel lateral'
+                  : 'Contraer panel lateral'
+              }
+              aria-label={
+                sidebarCollapsed
+                  ? 'Expandir panel lateral'
+                  : 'Contraer panel lateral'
+              }
+              aria-expanded={!sidebarCollapsed}
+              onClick={toggleSidebarCollapsed}
+            >
+              {sidebarCollapsed ? '⇥' : '⇤'}
+            </button>
+          </div>
+        </div>
+        {!sidebarCollapsed && (
+          <>
+            <h1 id="panel-title">
+              {panelTexts[panel][1].split('\n').map((line, idx) => (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <br />}
+                  {line}
+                </React.Fragment>
+              ))}
+            </h1>
+            <p id="panel-desc">{panelTexts[panel][2]}</p>
+          </>
+        )}
       </div>
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar panel lateral"
+        title="Arrastra para ajustar el ancho del panel lateral"
+        onPointerDown={handleSidebarResizeStart}
+      />
 
       <div id="panel-content">
         {panel === 'design' && (
@@ -721,6 +802,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() => setTool('boundary')}
                 >
                   ▱ Perímetro
+                </button>
+                <button
+                  type="button"
+                  data-action="subperimeter"
+                  title="Perímetro interior restringido: excluye civiles y autoriza servicios de emergencia y personal del evento"
+                  className={tool === 'subperimeter' ? 'active' : ''}
+                  onClick={() => setTool('subperimeter')}
+                >
+                  ⬡ Subperímetro
                 </button>
                 <button
                   type="button"

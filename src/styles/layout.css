@@ -360,19 +360,110 @@
 }
 
 .sidebar {
-  width: 296px;
+  position: relative;
+  width: var(--sidebar-width, 308px);
+  min-width: 220px;
+  max-width: 540px;
   flex-shrink: 0;
   background: var(--paper);
   border-right: 1px solid var(--line);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  transition: width 0.12s ease;
+}
+
+.sidebar.is-collapsed {
+  width: 54px !important;
+  min-width: 54px;
+  overflow: hidden;
+}
+
+.sidebar.is-collapsed #panel-content,
+.sidebar.is-collapsed .sidebar-foot,
+.sidebar.is-collapsed .sidebar-resizer {
+  display: none;
+}
+
+.sidebar.is-collapsed .sidebar-heading {
+  padding: 14px 8px;
+  border-bottom: 0;
+}
+
+.sidebar.is-collapsed .sidebar-heading-top {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar.is-collapsed #panel-kicker {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  letter-spacing: 1.5px;
+  margin-top: 8px;
 }
 
 .sidebar-heading {
   padding: 20px 20px 15px;
   border-bottom: 1px solid var(--line);
   border-top: 2px solid var(--gold);
+}
+
+.sidebar-heading-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-width-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.panel-width-btn {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--heading);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.panel-width-btn:hover:not(:disabled) {
+  background: var(--purple-soft);
+  border-color: var(--purple);
+  color: var(--purple);
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer:active {
+  background: var(--purple-mid);
+  opacity: 0.35;
 }
 
 h1 {
@@ -503,13 +594,33 @@ h1 {
 
 .filter-pills {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
   gap: 3px;
   background: var(--surface-muted);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 3px;
   margin-bottom: 9px;
+}
+
+.sidebar .two,
+dialog .two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sidebar .two > *,
+dialog .two > * {
+  min-width: 0;
+}
+
+.sidebar .two input,
+.sidebar .two select,
+dialog .two input,
+dialog .two select {
+  width: 100%;
+  min-width: 0;
 }
 
 .filter-pills button {
