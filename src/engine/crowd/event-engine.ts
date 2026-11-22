@@ -25,6 +25,7 @@ import {Dining} from '../dining/dining';
 import {picnicSlots} from '../dining/furniture';
 import {EmergencyLab} from '../emergency/emergency-lab';
 import {yieldForPriority} from '../emergency/priority';
+import {VehicleManager} from '../mobility/vehicle-system';
 import {FeedbackLog} from './feedback';
 import {buildGrid, flow, rng} from './grid-flow';
 import {pickPersona} from './personas';
@@ -90,6 +91,7 @@ export class EventEngine {
   flowCache: Map<number, Int32Array>;
   fenceSegments: Array<{id: string; name: string; a: Point; b: Point}>;
   routeNetwork: RouteNetwork;
+  vehicleManager: VehicleManager;
   rebelGrid: NavigationGrid | null;
   rebelFlowCache: Map<number, Int32Array>;
   agents: Agent[];
@@ -173,6 +175,7 @@ export class EventEngine {
       [...(this.s.flows || []), ...(this.s.roadPlans || [])],
       this.g.m
     );
+    this.vehicleManager = new VehicleManager(this);
     this.rebelGrid = null;
     this.rebelFlowCache = new Map();
     this.agents = [];
@@ -1303,6 +1306,7 @@ export class EventEngine {
   tick(dt = 0.5): void {
     if (this.finished) return;
     this.time = Math.min(this.duration + 1800, this.time + dt);
+    this.vehicleManager?.update(dt);
     if (this.time < this.duration) {
       this.accumulator +=
         (this.hourly[

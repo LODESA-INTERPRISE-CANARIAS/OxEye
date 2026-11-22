@@ -733,6 +733,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   🅿 Carga / SP
                 </button>
+                <button
+                  type="button"
+                  data-action="vehicleBase"
+                  data-place="vehicleBase"
+                  title="Colocar base o spawn exterior de vehículos (ordinarios, logística o emergencias)"
+                  className={tool === 'vehicleBase' ? 'active' : ''}
+                  style={{gridColumn: '1 / -1'}}
+                  onClick={() => setTool('vehicleBase')}
+                >
+                  ⊞ Base vehicular exterior
+                </button>
               </div>
               {(tool === 'fence:chain' || tool === 'fence:loose') && (
                 <div className="fence-tool-panel" id="fence-tool-panel">

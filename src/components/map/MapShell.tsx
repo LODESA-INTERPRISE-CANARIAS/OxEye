@@ -869,8 +869,17 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             : spawnType === 'mixed'
               ? '#4b2665'
               : '#294d80';
-        const typeTag =
-          spawnType === 'vehicle' ? 'VEH' : spawnType === 'mixed' ? 'MIX' : 'PEA';
+        const typeTag = o.externalBase
+          ? o.vehicleCategory === 'emergency'
+            ? 'BASE EMG'
+            : o.vehicleCategory === 'logistics'
+              ? 'BASE LOG'
+              : 'BASE VEH'
+          : spawnType === 'vehicle'
+            ? 'VEH'
+            : spawnType === 'mixed'
+              ? 'MIX'
+              : 'PEA';
         const fm = flowMetrics.get(o.id);
         const shareTag =
           fm && fm.canEnter && fm.entrySharePct > 0
@@ -1527,22 +1536,23 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         return;
       }
       let gateSnapAngle = 0;
+      let isExternalBase = false;
       if (kind === 'gate') {
         const snap = snapPointToPerimeter(p, s, m);
         if (!snap) {
           showToast(
-            'Define primero un perímetro para poder colocar accesos en su borde.'
+            'Define primero un perímetro para poder colocar accesos o bases.'
           );
           return;
         }
-        if (snap.dist > 22) {
-          showToast(
-            'Los accesos solo pueden colocarse pegados al borde de un perímetro.'
-          );
-          return;
+        if (snap.dist > 10) {
+          // Base / aparcamiento vehicular exterior conectado a la red viaria
+          isExternalBase = true;
+          gateSnapAngle = snap.gateAngle;
+        } else {
+          [x, y] = snap.percentPoint;
+          gateSnapAngle = snap.gateAngle;
         }
-        [x, y] = snap.percentPoint;
-        gateSnapAngle = snap.gateAngle;
       }
       const id = crypto.randomUUID();
       updateScene((sc) => {
@@ -1557,7 +1567,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               : tagsForNew(),
           id,
           kind,
-          name: c.name,
+          name: isExternalBase ? 'Base vehicular exterior' : c.name,
           x,
           y,
           width: itemW,
@@ -1569,10 +1579,12 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           sc.entrances.push({
             ...baseObj,
             role: 'both',
-            clearWidth: 4,
+            clearWidth: isExternalBase ? 5 : 4,
             gateAngle: gateSnapAngle,
             phases: {event: 'both'},
-            spawnType: 'pedestrian',
+            spawnType: isExternalBase ? 'vehicle' : 'pedestrian',
+            externalBase: isExternalBase || undefined,
+            vehicleCategory: isExternalBase ? 'all' : undefined,
             entryWeight: 20,
             exitWeight: 20,
             maxRatePerHour: 0,
@@ -2067,7 +2079,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         }
         setSelectedId(drag.id);
         const s = currentScene();
-        if (s.entrances.includes(drag.o)) {
+        if (s.entrances.includes(drag.o) && !drag.o.externalBase) {
           const snap = snapPointToPerimeter(p, s, m);
           if (snap) {
             drag.o.x = snap.percentPoint[0];
@@ -2343,6 +2355,48 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           setSelectedId(fenceId);
         }
         onSceneChanged();
+      } else if (tool === 'vehicleBase') {
+        const s = currentScene();
+        if (
+          s.base.booths.length + s.infrastructure.length + s.entrances.length >=
+          500
+        ) {
+          showToast('Límite del prototipo: 500 elementos por espacio');
+          return;
+        }
+        const [bx, by] = percent(p, m);
+        const snap = snapPointToPerimeter(p, s, m);
+        const baseAngle = snap ? snap.gateAngle : 0;
+        const baseId = crypto.randomUUID();
+        const baseCount =
+          s.entrances.filter((g) => g.externalBase).length + 1;
+        updateScene((sc) => {
+          sc.entrances.push({
+            id: baseId,
+            kind: 'gate',
+            name: `Base vehicular ${baseCount}`,
+            x: bx,
+            y: by,
+            width: 5,
+            depth: 2.5,
+            area: 12.5,
+            rotation: 0,
+            role: 'both',
+            clearWidth: 5,
+            gateAngle: baseAngle,
+            phases: {event: 'both'},
+            spawnType: 'vehicle',
+            externalBase: true,
+            vehicleCategory: 'all',
+            phaseTags: ['pre', 'event', 'post'],
+          });
+        }, true);
+        setSelectedId(baseId);
+        setTool('select');
+        onSceneChanged();
+        showToast(
+          'Base vehicular exterior colocada · ajusta su categoría en el Inspector'
+        );
       } else if (tool === 'gateLine') {
         const s = currentScene();
         const snap = snapPointToPerimeter(p, s, m);

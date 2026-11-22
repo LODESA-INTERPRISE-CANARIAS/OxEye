@@ -57,6 +57,10 @@ export function resolveResponseConditions(
 }
 import {routeBranchBias} from '../cartography/route-network';
 import {flow, segmentDistance} from '../crowd/grid-flow';
+import {
+  buildVehicleGrid,
+  planVehicleRoute,
+} from '../mobility/vehicle-system';
 import {gateAllowsAuthority} from './priority';
 import {EmergencyLab, INCIDENTS} from './emergency-lab';
 import {Evacuation} from './evacuation';
@@ -541,9 +545,35 @@ export class ResponseSimulation extends EmergencyLab {
           .slice()
           .sort(
             (
-              a: {x: number; y: number; spawnType?: string},
-              b: {x: number; y: number; spawnType?: string}
+              a: {
+                x: number;
+                y: number;
+                spawnType?: string;
+                externalBase?: boolean;
+                vehicleCategory?: string;
+              },
+              b: {
+                x: number;
+                y: number;
+                spawnType?: string;
+                externalBase?: boolean;
+                vehicleCategory?: string;
+              }
             ) => {
+              const baseBonusA =
+                a.externalBase &&
+                (!a.vehicleCategory ||
+                  a.vehicleCategory === 'all' ||
+                  a.vehicleCategory === 'emergency')
+                  ? -60
+                  : 0;
+              const baseBonusB =
+                b.externalBase &&
+                (!b.vehicleCategory ||
+                  b.vehicleCategory === 'all' ||
+                  b.vehicleCategory === 'emergency')
+                  ? -60
+                  : 0;
               const vehA =
                 a.spawnType === 'vehicle' || a.spawnType === 'mixed' ? -25 : 0;
               const vehB =
@@ -553,11 +583,13 @@ export class ResponseSimulation extends EmergencyLab {
                   [(a.x * e.g.m.widthMeters) / 100, (a.y * e.g.m.heightMeters) / 100],
                   row.point!
                 ) +
+                baseBonusA +
                 vehA -
                 (dist(
                   [(b.x * e.g.m.widthMeters) / 100, (b.y * e.g.m.heightMeters) / 100],
                   row.point!
                 ) +
+                  baseBonusB +
                   vehB)
               );
             }
@@ -700,15 +732,68 @@ export class ResponseSimulation extends EmergencyLab {
       profile,
       profile.length / 2 + 1
     );
-    if (
-      route.error &&
-      row.responseMode === 'fire' &&
-      e.s.fireFootAccess === true
-    ) {
-      row.vehicleBlock = route.error;
-      Object.assign(profile, {width: 0.9, length: 1.8, speed: 0.85});
-      route = responseRoute(e, row.origin, row.point!, profile, 2);
-      row.footDeployment = !route.error;
+    // Si la huella del vehículo no cabe hasta el punto exacto interior (estrechamiento/giro),
+    // aproximar el vehículo hasta el punto despejado más cercano y desplegar a los operarios a pie.
+    if (route.error) {
+      const vehGrid = e.vehicleManager?.vehGrid || buildVehicleGrid(e.s, e.g);
+      const smartPlan = planVehicleRoute(
+        e.s,
+        vehGrid,
+        row.origin,
+        row.point!,
+        {
+          width: profile.width,
+          length: profile.length,
+          minTurnRadius: Math.max(3, profile.length * 0.8),
+        },
+        {
+          allowFootDismount: true,
+          pedestrianGrid: e.g,
+        }
+      );
+      if (smartPlan.ok && smartPlan.path) {
+        const combined = smartPlan.footPath
+          ? [...smartPlan.path, ...smartPlan.footPath.slice(1)]
+          : smartPlan.path;
+        row.vehicleBlock = smartPlan.dismountPoint ? route.error : undefined;
+        row.footDeployment = !!smartPlan.dismountPoint;
+        if (smartPlan.dismountPoint) {
+          Object.assign(profile, {
+            width: Math.min(profile.width, 0.9),
+            length: Math.min(profile.length, 1.8),
+            speed: Math.max(1.2, Math.min(profile.speed, 2.2)),
+          });
+        }
+        route = {
+          path: combined,
+          length: pathLength(combined),
+        };
+      } else {
+        // Respaldo a pie directo si existe paso peatonal (p. ej. consulta de orientación o bomberos a pie)
+        const footFallback = responseRoute(
+          e,
+          row.origin,
+          row.point!,
+          {...profile, width: 0.75, length: 1.2, speed: 1.35},
+          1.5
+        );
+        if (!footFallback.error && footFallback.path) {
+          row.vehicleBlock = route.error;
+          row.footDeployment = true;
+          Object.assign(profile, {width: 0.75, length: 1.2, speed: 1.35});
+          route = footFallback;
+        } else {
+          const altSummary = smartPlan.alternatives
+            .slice(0, 2)
+            .map((a) => a.label)
+            .join(' · ');
+          route = {
+            error:
+              (smartPlan.reason || route.error) +
+              (altSummary ? ` Alternativas: ${altSummary}.` : ''),
+          };
+        }
+      }
     }
     if (route.error || !route.path) {
       row.status = 'blocked';

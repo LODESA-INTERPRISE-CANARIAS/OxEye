@@ -778,6 +778,46 @@ export const Inspector: React.FC<InspectorProps> = ({
                             </option>
                           </select>
                         </label>
+                        {(spawnType === 'vehicle' ||
+                          spawnType === 'mixed' ||
+                          ent.externalBase) && (
+                          <label>
+                            Categoría de vehículos
+                            <select
+                              id="edit-vehicleCategory"
+                              value={ent.vehicleCategory || 'all'}
+                              onChange={(e) =>
+                                updateEntrance({
+                                  vehicleCategory: e.target.value as
+                                    | 'all'
+                                    | 'ordinary'
+                                    | 'logistics'
+                                    | 'emergency',
+                                })
+                              }
+                            >
+                              <option value="all">
+                                Todos (ordinarios, logística y emergencias)
+                              </option>
+                              <option value="ordinary">
+                                Vehículos ordinarios
+                              </option>
+                              <option value="logistics">
+                                Logística / carga y descarga
+                              </option>
+                              <option value="emergency">
+                                Base de emergencias / refuerzos
+                              </option>
+                            </select>
+                          </label>
+                        )}
+                        {ent.externalBase && (
+                          <p className="small-note" style={{margin: '4px 0'}}>
+                            Base vehicular exterior conectada a la red viaria:
+                            los vehículos y refuerzos parten desde aquí sin
+                            aparecer junto a la incidencia.
+                          </p>
+                        )}
                         <div className="spawn-flow-slider-group">
                           <div className="spawn-flow-slider-head">
                             <span>Flujo de entrada</span>

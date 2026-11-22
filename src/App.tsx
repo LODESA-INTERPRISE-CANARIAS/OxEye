@@ -206,7 +206,7 @@ export const App: React.FC = () => {
 
     const peopleEl = document.getElementById('people-layer');
     if (peopleEl) {
-      peopleEl.innerHTML = engine.agents
+      const peopleSvg = engine.agents
         .map(
           (a) =>
             `<circle cx="${a.x}" cy="${a.y}" r="${Math.max(
@@ -215,6 +215,21 @@ export const App: React.FC = () => {
             )}" fill="${satisfaction(a).color}" stroke="#fff" stroke-width=".1"/>`
         )
         .join('');
+      const vehSvg = (engine.vehicleManager?.vehicles || [])
+        .filter((v) => v.state !== 'departed')
+        .map((v) => {
+          const fill =
+            v.kind === 'emergency'
+              ? '#dc2626'
+              : v.kind === 'logistics'
+                ? '#d97706'
+                : '#3b82f6';
+          const stroke = v.state === 'blocked' ? '#ef4444' : '#ffffff';
+          const deg = (v.angle * 180) / Math.PI;
+          return `<g transform="translate(${v.x} ${v.y}) rotate(${deg})"><title>${v.name} · ${v.state}${v.diagnostic?.reason ? ' · ' + v.diagnostic.reason : ''}</title><rect x="${-v.length / 2}" y="${-v.width / 2}" width="${v.length}" height="${v.width}" rx=".45" fill="${fill}" stroke="${stroke}" stroke-width="${v.state === 'blocked' ? '.35' : '.18'}"/><rect x="${v.length / 2 - 1.1}" y="${-v.width / 2 + 0.25}" width=".8" height="${v.width - 0.5}" rx=".2" fill="#ffffff" fill-opacity=".65"/></g>`;
+        })
+        .join('');
+      peopleEl.innerHTML = peopleSvg + vehSvg;
     }
     const min = Math.floor(engine.time / 60);
     const clockEl = document.getElementById('clock');

@@ -236,6 +236,10 @@ export interface EntranceItem {
   frequencySec?: number;
   /** Nombre de la calle o vía real sobre la que se sitúa el punto de aparición. */
   streetName?: string;
+  /** Si es `true`, representa una base/aparcamiento vehicular exterior conectado a la red viaria. */
+  externalBase?: boolean;
+  /** Categoría de vehículos que genera este spawn o base exterior. */
+  vehicleCategory?: 'all' | 'ordinary' | 'logistics' | 'emergency';
 }
 
 /** Trazo poligonal o polilínea en el plano (reservas, pasillos, vallas, mediciones, viales). */
