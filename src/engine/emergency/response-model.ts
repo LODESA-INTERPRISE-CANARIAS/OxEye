@@ -56,7 +56,7 @@ export function resolveResponseConditions(
   };
 }
 import {routeBranchBias} from '../cartography/route-network';
-import {flow, segmentDistance} from '../crowd/grid-flow';
+import {buildGrid, flow, segmentDistance} from '../crowd/grid-flow';
 import {
   buildVehicleGrid,
   planVehicleRoute,
@@ -769,29 +769,35 @@ export class ResponseSimulation extends EmergencyLab {
           length: pathLength(combined),
         };
       } else {
-        // Respaldo a pie directo si existe paso peatonal (p. ej. consulta de orientación o bomberos a pie)
+        // 1. Si hay vallas cerrando el paso, apartarlas temporalmente (sin bloquear el juego)
+        const fenceFreeGrid =
+          e.rebelGrid || buildGrid(e.s, e.g.cell, {ignoreFences: true});
+        const fenceFreeEngine = {...e, g: fenceFreeGrid};
         const footFallback = responseRoute(
-          e,
+          fenceFreeEngine,
           row.origin,
           row.point!,
-          {...profile, width: 0.75, length: 1.2, speed: 1.35},
-          1.5
+          {...profile, width: 0.55, length: 0.7, speed: 1.55},
+          1.2
         );
         if (!footFallback.error && footFallback.path) {
           row.vehicleBlock = route.error;
           row.footDeployment = true;
-          Object.assign(profile, {width: 0.75, length: 1.2, speed: 1.35});
+          Object.assign(profile, {width: 0.55, length: 0.7, speed: 1.55});
           route = footFallback;
+          row.note =
+            row.type === 'fence_breach'
+              ? 'Valla apartada temporalmente · escuadra desplegada a pie en fila india hasta el punto.'
+              : 'Obstáculo en calzada · vehículo detenido y escuadra desplegada a pie en fila india.';
         } else {
-          const altSummary = smartPlan.alternatives
-            .slice(0, 2)
-            .map((a) => a.label)
-            .join(' · ');
-          route = {
-            error:
-              (smartPlan.reason || route.error) +
-              (altSummary ? ` Alternativas: ${altSummary}.` : ''),
-          };
+          // 2. Último recurso operativo: fila india directa a pie para que un obstáculo fijo nunca bloquee el juego
+          const directFoot: Point[] = [row.origin, row.point!];
+          row.vehicleBlock = route.error;
+          row.footDeployment = true;
+          Object.assign(profile, {width: 0.55, length: 0.7, speed: 1.4});
+          route = {path: directFoot, length: pathLength(directFoot)};
+          row.note =
+            'Acceso vehicular impedido por obstáculo fijo · atención a pie en fila india.';
         }
       }
     }

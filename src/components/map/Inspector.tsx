@@ -1786,6 +1786,53 @@ export const Inspector: React.FC<InspectorProps> = ({
           <label className="check">
             <input
               type="checkbox"
+              id="permanent-item-toggle"
+              checked={!!item.permanent}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                updateScene((scene) => {
+                  const target = [
+                    ...scene.base.booths,
+                    ...scene.infrastructure,
+                  ].find((st) => st.id === item.id);
+                  if (target) target.permanent = checked;
+                }, true);
+                onSceneChanged();
+              }}
+            />{' '}
+            Elemento permanente (no se monta ni desmonta; permanece tras recoger)
+          </label>
+          {!item.permanent && (
+            <label>
+              Tiempo de montaje (min, opcional)
+              <input
+                id="edit-assembly-minutes"
+                type="number"
+                min="1"
+                max="360"
+                step="1"
+                placeholder="Según tipo"
+                key={`asm-${item.id}-${item.assemblyMinutes ?? ''}`}
+                defaultValue={item.assemblyMinutes ?? ''}
+                onKeyDown={commitOnEnter}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  const val = raw === '' ? undefined : Math.max(1, Math.min(360, Number(raw) || 10));
+                  updateScene((scene) => {
+                    const target = [
+                      ...scene.base.booths,
+                      ...scene.infrastructure,
+                    ].find((st) => st.id === item.id);
+                    if (target) target.assemblyMinutes = val;
+                  }, true);
+                  onSceneChanged();
+                }}
+              />
+            </label>
+          )}
+          <label className="check">
+            <input
+              type="checkbox"
               id="heavy-load-toggle"
               checked={isHeavyLoadItem(item)}
               onChange={(e) => {

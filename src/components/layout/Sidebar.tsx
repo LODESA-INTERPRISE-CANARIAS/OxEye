@@ -553,18 +553,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 superficie.
               </p>
               <div className="filter-pills" role="group" aria-label="Categoría de piezas">
-                {(
-                  [
-                    ['all', 'Todos'],
-                    ['event', 'Evento'],
-                    ['services', 'Servicios'],
-                    ['logistics', 'Logística'],
-                  ] as const
+                {(phase === 'pre' || phase === 'post'
+                  ? ([['logistics', 'Montaje y logística']] as const)
+                  : ([
+                      ['all', 'Todos'],
+                      ['event', 'Evento'],
+                      ['services', 'Servicios'],
+                      ['logistics', 'Logística'],
+                    ] as const)
                 ).map(([key, label]) => (
                   <button
                     key={key}
                     type="button"
-                    className={catalogFilter === key ? 'active' : ''}
+                    className={
+                      (phase === 'pre' || phase === 'post'
+                        ? 'logistics'
+                        : catalogFilter) === key
+                        ? 'active'
+                        : ''
+                    }
                     onClick={() => setCatalogFilter(key)}
                   >
                     {label}
@@ -577,16 +584,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     if (['gate', 'power', 'turning', 'loading'].includes(k)) {
                       return false;
                     }
-                    if (catalogFilter === 'all') return true;
-                    if (catalogFilter === 'services') {
+                    const effectiveFilter =
+                      phase === 'pre' || phase === 'post'
+                        ? 'logistics'
+                        : catalogFilter;
+                    if (effectiveFilter === 'all') return true;
+                    if (effectiveFilter === 'services') {
                       return (
                         c.role === 'emergency' ||
                         c.role === 'facility' ||
                         c.role === 'steward'
                       );
                     }
-                    if (catalogFilter === 'logistics') {
-                      return c.role === 'logistics';
+                    if (effectiveFilter === 'logistics') {
+                      return c.role === 'logistics' || c.role === 'cover';
                     }
                     return (
                       c.role !== 'emergency' &&
@@ -622,6 +633,82 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Elige una pieza y pulsa en el plano. Puedes moverla, girarla y
                 cambiar sus medidas.
               </p>
+              {(phase === 'pre' || phase === 'post') && (
+                <div
+                  id="assembly-times-panel"
+                  style={{
+                    marginTop: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--line-strong)',
+                    background: 'var(--surface-subtle)',
+                  }}
+                >
+                  <b style={{fontSize: '0.8rem', color: 'var(--heading)'}}>
+                    Tiempos de montaje / desmontaje
+                  </b>
+                  <p className="small-note" style={{margin: '4px 0 6px'}}>
+                    Referencia orientativa por tipo de carpa y estructura
+                    (editable por pieza en el Inspector):
+                  </p>
+                  <div className="two" style={{marginBottom: '6px'}}>
+                    <label style={{fontSize: '0.76rem'}}>
+                      Base montaje (min)
+                      <input
+                        type="number"
+                        min="2"
+                        max="180"
+                        step="1"
+                        value={Number(s.setupMin ?? 10)}
+                        onChange={(e) => {
+                          const v = Math.max(2, Math.min(180, Number(e.target.value) || 10));
+                          updateScene((sc) => {
+                            sc.setupMin = v;
+                          });
+                        }}
+                      />
+                    </label>
+                    <label style={{fontSize: '0.76rem'}}>
+                      Base desmontaje (min)
+                      <input
+                        type="number"
+                        min="2"
+                        max="180"
+                        step="1"
+                        value={Number(s.strikeMin ?? 7)}
+                        onChange={(e) => {
+                          const v = Math.max(2, Math.min(180, Number(e.target.value) || 7));
+                          updateScene((sc) => {
+                            sc.strikeMin = v;
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: '16px',
+                      fontSize: '0.74rem',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <li>
+                      Carpa (6×6 / cubierta):{' '}
+                      <b>{Math.round((s.setupMin ?? 10) * 1.8)} min</b> montaje ·{' '}
+                      <b>{Math.round((s.strikeMin ?? 7) * 1.8)} min</b> desmontaje
+                    </li>
+                    <li>
+                      Escenario: <b>{Math.round((s.setupMin ?? 10) * 2.5)} min</b>{' '}
+                      (descarga → estructura → equipos → luz → pruebas)
+                    </li>
+                    <li>
+                      Puesto estándar: <b>{Math.round(s.setupMin ?? 10)} min</b> ·
+                      Mesa picnic: <b>{Math.round((s.setupMin ?? 10) * 0.35)} min</b>
+                    </li>
+                  </ul>
+                </div>
+              )}
             </section>
 
             <section className="panel-section">

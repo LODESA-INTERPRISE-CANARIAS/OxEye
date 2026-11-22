@@ -6,6 +6,7 @@
 import {allocate} from './companies';
 import {membership} from './phases';
 import type {MapMetadata, PhaseKey, Point2D, Scene} from '../../types';
+import {rng} from '../crowd/grid-flow';
 
 const distance = (a: Point2D, b: Point2D) =>
   Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -33,9 +34,21 @@ export interface ShiftStage {
   loaded?: boolean;
 }
 
+export interface ShiftTaskSchedule {
+  itemId: string;
+  itemName: string;
+  company: string;
+  workers: number;
+  steps: string[];
+  start: number;
+  end: number;
+  orderIndex: number;
+}
+
 export interface ShiftPlan {
   error?: string;
   installed: Array<{o: Record<string, any>; p: Point2D; at: number}>;
+  schedule: ShiftTaskSchedule[];
   required: number;
   stages: ShiftStage[];
   packages: Array<{p: Point2D; start: number; end: number}>;
@@ -52,6 +65,50 @@ export interface ShiftPlan {
   night: boolean;
 }
 
+/** Devuelve los pasos operativos ordenados según tipo de estructura y fase (`pre` o `post`). */
+function dependencyStepsFor(o: Record<string, any>, phase: PhaseKey): string[] {
+  const isStage = o.type === 'stage' || o.role === 'stage' || o.kind === 'stage';
+  const isCover = o.role === 'cover' || o.kind === 'cover';
+  const isFood = o.type === 'food';
+  const preSteps = isStage
+    ? [
+        'Descarga',
+        'Estructura principal',
+        'Equipos técnicos',
+        'Conexión eléctrica',
+        'Comprobaciones',
+      ]
+    : isCover
+      ? ['Descarga', 'Estructura y lona', 'Lastrado y fijación']
+      : isFood
+        ? ['Descarga', 'Emplazamiento', 'Toma eléctrica y vallas']
+        : ['Descarga', 'Colocación y nivelación', 'Equipamiento'];
+  return phase === 'post' ? preSteps.slice().reverse() : preSteps;
+}
+
+/** Calcula el centroide y dimensiones aproximadas (m) de una reserva poligonal. */
+function reserveZoneMetrics(
+  r: {id?: string; name?: string; points: Point2D[]},
+  map: MapMetadata
+): {x: number; y: number; width: number; depth: number; p: Point2D; name: string} {
+  const ptsM = r.points.map(([px, py]): Point2D => [
+    (px * map.widthMeters) / 100,
+    (py * map.heightMeters) / 100,
+  ]);
+  const xs = ptsM.map((q) => q[0]);
+  const ys = ptsM.map((q) => q[1]);
+  const cx = xs.reduce((a, b) => a + b, 0) / ptsM.length;
+  const cy = ys.reduce((a, b) => a + b, 0) / ptsM.length;
+  return {
+    x: (cx / map.widthMeters) * 100,
+    y: (cy / map.heightMeters) * 100,
+    width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+    depth: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+    p: [cx, cy],
+    name: r.name || 'Zona reservada',
+  };
+}
+
 /**
  * Calcula el plan temporal completo de una jornada de montaje (`pre`) o desmontaje/limpieza (`post`).
  */
@@ -63,11 +120,69 @@ export function shift(
   const assets = scene.infrastructure.filter(o =>
     membership(o).includes(phase),
   );
-  const bay = assets.find(o => o.kind === 'loading');
-  const yard = assets.find(o => o.kind === 'turning');
+  // Reconocer tanto elementos de infraestructura como polígonos dibujados en `reserves`
+  const loadingReserves = (scene.reserves || [])
+    .filter((r) => r.origin === 'loading' && r.points?.length >= 3)
+    .map((r) => reserveZoneMetrics(r, map));
+  const turningReserves = (scene.reserves || [])
+    .filter((r) => r.origin === 'turning' && r.points?.length >= 3)
+    .map((r) => reserveZoneMetrics(r, map));
+
+  const infraBays = assets
+    .filter((o) => o.kind === 'loading')
+    .map((o) => ({
+      x: o.x,
+      y: o.y,
+      width: o.width,
+      depth: o.depth,
+      p: position(o, map),
+      name: o.name,
+    }));
+  const infraYards = assets
+    .filter((o) => o.kind === 'turning')
+    .map((o) => ({
+      x: o.x,
+      y: o.y,
+      width: o.width,
+      depth: o.depth,
+      p: position(o, map),
+      name: o.name,
+    }));
+
+  const allBays = [...infraBays, ...loadingReserves];
+  const allYards = [...infraYards, ...turningReserves];
+  const bay = allBays[0];
+  const yard = allYards[0];
+
+  // Priorizar siempre accesos aptos para vehículos (vehicular/mixto) y bases vehiculares exteriores.
+  // Nunca meter camiones por un acceso exclusivamente peatonal (p. ej. Mercado 2 m) si existe acceso vehicular/mixto.
+  const openEntrances = scene.entrances.filter(
+    (g) => (g.phases?.event || g.role || 'both') !== 'closed'
+  );
+  const extBase =
+    openEntrances.find(
+      (g) =>
+        g.externalBase &&
+        (!g.vehicleCategory ||
+          g.vehicleCategory === 'all' ||
+          g.vehicleCategory === 'logistics')
+    ) || openEntrances.find((g) => g.externalBase);
+
+  const vehicleGates = openEntrances
+    .filter(
+      (g) =>
+        !g.externalBase &&
+        (g.spawnType === 'vehicle' || g.spawnType === 'mixed')
+    )
+    .sort((a, b) => (b.clearWidth || 4) - (a.clearWidth || 4));
+
   const gate =
-    scene.entrances.find(o => membership(o).includes(phase)) ||
+    vehicleGates.find((g) => membership(g).includes(phase)) ||
+    vehicleGates[0] ||
+    extBase ||
+    scene.entrances.find((o) => membership(o).includes(phase)) ||
     scene.entrances[0];
+
   const days = Math.round(clamp(scene.eventDays, 1, 30, 1));
   const night =
     phase === 'post' && (scene.cleanDay || 0) > 0 && (scene.cleanDay || 0) < days;
@@ -79,8 +194,9 @@ export function shift(
     } as ShiftPlan;
   }
   const gateP = position(gate, map);
-  const dock = bay ? position(bay, map) : gateP;
-  const yardP = yard ? position(yard, map) : gateP;
+  const truckStartP = extBase ? position(extBase, map) : gateP;
+  const dock = bay ? bay.p : gateP;
+  const yardP = yard ? yard.p : gateP;
 
   if (!night && yard && Math.min(yard.width, yard.depth) < 3) {
     return {
@@ -95,20 +211,33 @@ export function shift(
   const capacity = clamp(scene.bagLitres, 5, 240, 60);
   const crew = Math.round(clamp(scene.teamSize, 2, 6, 3));
   const batch = Math.round(clamp(scene.truckBatch, 1, 24, 5));
+  // Excluir elementos marcados como permanentes (no se montan ni desmontan; permanecen tras el evento)
   const tasks = [
     ...scene.base.booths,
     ...scene.infrastructure.filter(
       o => o.role === 'cover' || o.kind === 'picnic',
     ),
-  ].filter(o => membership(o).some(p => p === phase || p === 'event'));
-
-  const structures = tasks.filter(
+  ].filter(
     o =>
-      (o as any).type !== 'stage' &&
-      (o as any).role !== 'stage' &&
-      !(scene.progressByPhase?.[phase] || []).includes(o.id),
+      !o.permanent &&
+      membership(o).some(p => p === phase || p === 'event'),
   );
+
+  // Secuenciación espacial progresiva:
+  // - En `pre` (montaje): de más lejos a más cerca del acceso (montar primero el fondo sin encerrar camiones).
+  // - En `post` (desmontaje): de más cerca a más lejos del acceso (liberar primero lo delantero para entrar al fondo).
+  const structures = tasks
+    .filter(
+      o => !(scene.progressByPhase?.[phase] || []).includes(o.id),
+    )
+    .slice()
+    .sort((a, b) => {
+      const da = distance(position(a as {x: number; y: number}, map), gateP);
+      const db = distance(position(b as {x: number; y: number}, map), gateP);
+      return phase === 'pre' ? db - da : da - db;
+    });
   const installed: Array<{o: Record<string, any>; p: Point2D; at: number}> = [];
+  const schedule: ShiftTaskSchedule[] = [];
   const crewReturns: number[] = [];
   const stages: ShiftStage[] = [];
   const packages: Array<{p: Point2D; start: number; end: number}> = [];
@@ -234,9 +363,16 @@ export function shift(
     if (missing.length) {
       alerts.add('Sin empresa asignada: ' + missing.join(', '));
     }
-    const bays = assets.filter(o => o.kind === 'loading');
+    const bays = allBays;
     const dockFree = bays.map(() => truckTime);
     const first = truckTime;
+    const rand = rng((scene.seed || 2026) ^ (phase === 'post' ? 7919 : 104729));
+    // Calcular total de camiones para escalonar llegadas aleatoriamente en una ventana de 10 min (600 s)
+    const totalTrucks = groups.reduce(
+      (n, g) => n + (g.jobs.length && g.res ? Math.min(g.res.trucks, g.res.forks) : 0),
+      0
+    );
+    let globalTruckIdx = 0;
 
     for (const {c, jobs, res} of groups) {
       if (!jobs.length) continue;
@@ -244,17 +380,27 @@ export function shift(
         alerts.add(c.name + ' · recursos insuficientes');
         continue;
       }
-      const fleet = Array.from(
-        {length: Math.min(res.trucks, res.forks)},
-        () => first,
-      );
-      let groupCrew = first;
+      // Mantener orden espacial progresivo dentro de cada empresa (far-to-near en pre, near-to-far en post)
+      jobs.sort((a, b) => {
+        const da = distance(position(a as {x: number; y: number}, map), gateP);
+        const db = distance(position(b as {x: number; y: number}, map), gateP);
+        return phase === 'pre' ? db - da : da - db;
+      });
+      const truckSlots = Math.min(res.trucks, res.forks);
+      const fleet = Array.from({length: truckSlots}, () => {
+        const slotIndex = globalTruckIdx++;
+        if (slotIndex === 0 || totalTrucks <= 1) return first;
+        const baseStep = (600 / Math.max(1, totalTrucks - 1)) * slotIndex;
+        const jitter = (rand() - 0.5) * 90; // ±45 s aleatorio, acotado a [60 s, 600 s]
+        return first + Math.max(60, Math.min(600, Math.round(baseStep + jitter)));
+      });
+      let groupCrew = Math.min(...fleet);
       let groupPos: Point2D = gateP;
 
       for (let i = 0; i < jobs.length; i += batch) {
         const lane = fleet.indexOf(Math.min(...fleet));
         const bayIndex = dockFree.indexOf(Math.min(...dockFree));
-        const currentDock = position(bays[bayIndex], map);
+        const currentDock = bays[bayIndex].p;
         let localTruckTime = Math.max(dockFree[bayIndex], fleet[lane]);
         let localCrewTime = groupCrew;
         let localCrewPos = groupPos;
@@ -262,7 +408,11 @@ export function shift(
 
         const id = 'Camión ' + (lane + 1) + ' · ' + c.name;
         const fork = 'Carretilla ' + (lane + 1) + ' · ' + c.name;
-        let t = walk(id, 'Entrada', localTruckTime, gateP, yardP, 1.2);
+        let t =
+          extBase && distance(truckStartP, gateP) > 1
+            ? walk(id, 'Desde base exterior', localTruckTime, truckStartP, gateP, 2.2)
+            : localTruckTime;
+        t = walk(id, 'Entrada', t, gateP, yardP, 1.2);
         t = step(
           id,
           'Aparcando',
@@ -290,6 +440,7 @@ export function shift(
           const p = position(o as {x: number; y: number}, map);
           const food = o.type === 'food';
           const cover = o.role === 'cover';
+          const stage = o.type === 'stage' || o.role === 'stage';
           const table = o.kind === 'picnic' || o.type === 'rest';
           const angle = ((o.rotation || 0) * Math.PI) / 180;
           const rear: Point2D = [
@@ -307,14 +458,12 @@ export function shift(
             }
           }
           const target = food ? rear : p;
-          const label = food
-            ? 'Preparar toma y vallas'
-            : phase === 'pre'
-              ? 'Montar'
-              : 'Desmontar';
-          const minutes =
-            (phase === 'pre' ? (scene.setupMin ?? 10) : (scene.strikeMin ?? 7)) *
-            (food ? 0.45 : cover ? 1.8 : table ? 0.35 : 1);
+          const depSteps = dependencyStepsFor(o, phase);
+          const baseMin =
+            Number.isFinite(Number(o.assemblyMinutes)) && Number(o.assemblyMinutes) > 0
+              ? Number(o.assemblyMinutes) * (phase === 'post' ? 0.75 : 1)
+              : (phase === 'pre' ? (scene.setupMin ?? 10) : (scene.strikeMin ?? 7)) *
+                (stage ? 2.5 : food ? 0.45 : cover ? 1.8 : table ? 0.35 : 1);
 
           if (phase === 'pre') {
             t = step(fork, 'Recoger bulto', t, 18, currentDock);
@@ -330,19 +479,35 @@ export function shift(
             target,
             1.1,
           );
-          const start = Math.max(localCrewTime, phase === 'pre' ? t : 0);
-          localCrewTime = step(
-            'Montadores · ' + c.name,
-            label + ' · ' + o.name,
-            start,
-            (60 * minutes * 3) / localCrewCount,
-            target,
-          );
+          const taskStart = Math.max(localCrewTime, phase === 'pre' ? t : 0);
+          const totalTaskSec = (60 * baseMin * 3) / Math.max(1, localCrewCount);
+          const stepDur = totalTaskSec / depSteps.length;
+          let curT = taskStart;
+          for (const depName of depSteps) {
+            curT = step(
+              'Montadores · ' + c.name,
+              `${depName} · ${o.name}`,
+              curT,
+              stepDur,
+              target,
+            );
+          }
+          localCrewTime = curT;
           localCrewPos = target;
           installed.push({o, p, at: localCrewTime});
+          schedule.push({
+            itemId: o.id,
+            itemName: o.name,
+            company: c.name,
+            workers: localCrewCount,
+            steps: depSteps,
+            start: taskStart,
+            end: localCrewTime,
+            orderIndex: schedule.length,
+          });
 
           if (phase === 'pre') {
-            packages.push({p: target, start: t, end: start});
+            packages.push({p: target, start: t, end: taskStart});
             t = walk(fork, 'Regreso al camión', t, target, currentDock, 1.1);
           } else {
             t = walk(fork, 'Recoger material', t, forkPos, target, 0.95);
@@ -364,7 +529,11 @@ export function shift(
           }
         }
         step(id, 'En descarga / carga', parked, t - parked, currentDock);
-        localTruckTime = walk(id, 'Salida', t, currentDock, gateP, 1.15);
+        let exitT = walk(id, 'Salida', t, currentDock, gateP, 1.15);
+        if (extBase && distance(truckStartP, gateP) > 1) {
+          exitT = walk(id, 'Regreso a base', exitT, gateP, truckStartP, 2.2);
+        }
+        localTruckTime = exitT;
 
         groupCrew = localCrewTime;
         groupPos = localCrewPos;
@@ -410,6 +579,7 @@ export function shift(
   }
   return {
     installed,
+    schedule,
     required: structures.length,
     stages,
     packages,

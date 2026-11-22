@@ -134,6 +134,10 @@ export interface BoothItem {
   open?: number;
   close?: number;
   locked?: boolean;
+  /** Si es `true`, es un elemento permanente del emplazamiento (no se monta ni se desmonta). */
+  permanent?: boolean;
+  /** Tiempo estimado de montaje en minutos (opcional; si se omite usa el valor por defecto del tipo). */
+  assemblyMinutes?: number;
   heavyLoad?: boolean;
   /** Masa propia del elemento en kg (opcional). */
   massKg?: number;
@@ -173,6 +177,10 @@ export interface InfrastructureItem {
   tableWidth?: number;
   benchWidth?: number;
   locked?: boolean;
+  /** Si es `true`, es un elemento permanente del emplazamiento (no se monta ni se desmonta). */
+  permanent?: boolean;
+  /** Tiempo estimado de montaje en minutos (opcional; si se omite usa el valor por defecto del tipo). */
+  assemblyMinutes?: number;
   heavyLoad?: boolean;
   /** Masa propia del elemento en kg (opcional). */
   massKg?: number;
