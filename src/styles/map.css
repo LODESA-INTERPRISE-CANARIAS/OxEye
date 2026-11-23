@@ -930,9 +930,11 @@
 
 .selection-ring {
   stroke: var(--purple);
-  stroke-width: 0.6;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
   fill: none;
-  stroke-dasharray: 1 1;
+  stroke-dasharray: 0.7 0.5;
+  pointer-events: none;
 }
 
 .transform-controls [data-handle] {

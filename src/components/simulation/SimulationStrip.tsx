@@ -1,6 +1,66 @@
 import React, {useEffect, useRef} from 'react';
 import {phaseScene} from '../../engine/logistics/phases';
 import {useProjectStore} from '../../store/useProjectStore';
+import type {PhaseViewKey, Scene} from '../../types';
+
+function parseHhMmToSec(hhmm: string | undefined, fallbackSec: number): number {
+  if (!hhmm || typeof hhmm !== 'string') return fallbackSec;
+  const parts = hhmm.split(':').map(Number);
+  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) {
+    return fallbackSec;
+  }
+  return ((parts[0] * 60 + parts[1]) * 60 + 86400) % 86400;
+}
+
+function hourNumToHhMm(h: number): string {
+  const norm = ((h % 24) + 24) % 24;
+  const hh = Math.floor(norm);
+  const mm = Math.round((norm - hh) * 60) % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/** Resolves the configured `[from, to]` schedule window for the active phase. */
+export function resolveScheduleWindow(
+  scene: Scene,
+  phase: PhaseViewKey
+): {from: string; to: string} {
+  if ((phase === 'pre' || phase === 'post') && scene.workDays?.length) {
+    const match = scene.workDays.find((d) => d.kind === phase) || scene.workDays[0];
+    if (match?.from && match?.to) {
+      return {from: match.from, to: match.to};
+    }
+  }
+  const startH = typeof scene.base?.start === 'number' ? scene.base.start : 10;
+  const durH = typeof scene.base?.hours === 'number' ? scene.base.hours : 10;
+  return {
+    from: hourNumToHhMm(startH),
+    to: scene.endTime || hourNumToHhMm(startH + durH),
+  };
+}
+
+/** Formats elapsed simulation seconds as `HH:MM:SS` clamped within `[from, to]`. */
+export function formatEventTimeOfDay(
+  elapsedSeconds: number,
+  fromStr = '10:00',
+  toStr = '20:00'
+): string {
+  const startSec = parseHhMmToSec(fromStr, 10 * 3600);
+  let endSec = parseHhMmToSec(toStr, 20 * 3600);
+  if (endSec <= startSec) endSec += 86400;
+  const maxSpan = endSec - startSec;
+  const clamped = Math.max(0, Math.min(maxSpan, Math.floor(elapsedSeconds || 0)));
+  const absSec = (startSec + clamped) % 86400;
+  const hh = Math.floor(absSec / 3600);
+  const mm = Math.floor((absSec % 3600) / 60);
+  const ss = absSec % 60;
+  return (
+    String(hh).padStart(2, '0') +
+    ':' +
+    String(mm).padStart(2, '0') +
+    ':' +
+    String(ss).padStart(2, '0')
+  );
+}
 
 export interface SimulationStripProps {
   running: boolean;
@@ -46,9 +106,12 @@ export const SimulationStrip: React.FC<SimulationStripProps> = ({
     return () => el.removeEventListener('change', handleNativeChange);
   }, []);
 
-  const shown = phaseScene(currentScene(), phase);
+  const curScene = currentScene();
+  const shown = phaseScene(curScene, phase);
   const objectCount = shown.base.booths.length + shown.infrastructure.length;
   const isPlaying = running || shiftRun;
+  const scheduleWin = resolveScheduleWindow(curScene, phase);
+  const initialDayClock = formatEventTimeOfDay(0, scheduleWin.from, scheduleWin.to);
 
   return (
     <section className="simulation-strip" aria-label="Control de simulación">
@@ -89,6 +152,17 @@ export const SimulationStrip: React.FC<SimulationStripProps> = ({
       <div className="time">
         <b id="clock">00:00</b>
         <small>TIEMPO SIMULADO</small>
+      </div>
+      <div
+        className="time digital-clock-block"
+        title={`Horario configurado: ${scheduleWin.from} – ${scheduleWin.to}`}
+      >
+        <b id="day-clock" className="digital-clock-readout">
+          {initialDayClock}
+        </b>
+        <small>
+          HORA DEL DÍA ({scheduleWin.from}–{scheduleWin.to})
+        </small>
       </div>
       <div className="strip-stat">
         <b id="present">—</b>

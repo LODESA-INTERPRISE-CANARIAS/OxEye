@@ -861,7 +861,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           o
         )}" fill-opacity="${isCover ? 0.35 : 0.96}" stroke="${
           sel ? '#4b2665' : '#8c8f66'
-        }" stroke-width="${sel ? 0.65 : 0.3}"/>${
+        }" stroke-width="${sel ? 0.22 : 0.3}"/>${
           isCover
             ? `<path d="M${-w / 2},${-h / 2}L${w / 2},${h / 2}M${w / 2},${
                 -h / 2
@@ -1057,7 +1057,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           const bw = box.maxX - box.minX + pad * 2;
           const bh = box.maxY - box.minY + pad * 2;
           const handleY = by - 3.2;
-          html += `<g class="group-transform-controls"><rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx=".8" fill="none" stroke="#57367b" stroke-width=".45" stroke-dasharray="1.4 .8" pointer-events="none"/><line x1="${box.cx}" y1="${by}" x2="${box.cx}" y2="${handleY}" stroke="#57367b" stroke-width=".35" pointer-events="none"/><circle data-group-rotate="true" cx="${box.cx}" cy="${handleY}" r="1.25" fill="#fff" stroke="#57367b" stroke-width=".42" style="cursor:grab"><title>Girar grupo</title></circle></g>`;
+          html += `<g class="group-transform-controls"><rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx=".8" fill="none" stroke="#57367b" stroke-width=".18" stroke-dasharray=".8 .5" pointer-events="none"/><line x1="${box.cx}" y1="${by}" x2="${box.cx}" y2="${handleY}" stroke="#57367b" stroke-width=".15" pointer-events="none"/><circle data-group-rotate="true" cx="${box.cx}" cy="${handleY}" r=".68" fill="#fff" stroke="#57367b" stroke-width=".18" style="cursor:grab"><title>Girar grupo</title></circle></g>`;
         }
       }
 

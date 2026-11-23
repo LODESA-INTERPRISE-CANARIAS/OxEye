@@ -28,7 +28,11 @@ import {ParametersDialog} from './components/modals/ParametersDialog';
 import {ProgrammeDialog} from './components/modals/ProgrammeDialog';
 import {RiskDialog} from './components/modals/RiskDialog';
 import {SmallExampleDialog} from './components/modals/SmallExampleDialog';
-import {SimulationStrip} from './components/simulation/SimulationStrip';
+import {
+  formatEventTimeOfDay,
+  resolveScheduleWindow,
+  SimulationStrip,
+} from './components/simulation/SimulationStrip';
 import {applyPalette, normalizePaletteId} from './data/palettes';
 import {EventEngine} from './engine/crowd/event-engine';
 import {
@@ -242,6 +246,16 @@ export const App: React.FC = () => {
         ':' +
         String(min % 60).padStart(2, '0');
     }
+    const dayClockEl = document.getElementById('day-clock');
+    if (dayClockEl) {
+      const st = useProjectStore.getState();
+      const win = resolveScheduleWindow(st.currentScene(), st.phase);
+      dayClockEl.textContent = formatEventTimeOfDay(
+        engine.time,
+        win.from,
+        win.to
+      );
+    }
     const presentEl = document.getElementById('present');
     if (presentEl) presentEl.textContent = String(engine.agents.length);
     const waitingEl = document.getElementById('waiting');
@@ -304,6 +318,12 @@ export const App: React.FC = () => {
     }
     const clockEl = document.getElementById('clock');
     if (clockEl) clockEl.textContent = '00:00';
+    const dayClockEl = document.getElementById('day-clock');
+    if (dayClockEl) {
+      const st = useProjectStore.getState();
+      const win = resolveScheduleWindow(st.currentScene(), st.phase);
+      dayClockEl.textContent = formatEventTimeOfDay(0, win.from, win.to);
+    }
     const presentEl = document.getElementById('present');
     if (presentEl) presentEl.textContent = '—';
     const waitingEl = document.getElementById('waiting');
@@ -726,6 +746,12 @@ export const App: React.FC = () => {
         const a = shiftAt(plan, shiftTimeRef.current);
         const clockEl = document.getElementById('clock');
         if (clockEl) clockEl.textContent = timeLabel(a.time);
+        const dayClockEl = document.getElementById('day-clock');
+        if (dayClockEl) {
+          const st = useProjectStore.getState();
+          const win = resolveScheduleWindow(st.currentScene(), st.phase);
+          dayClockEl.textContent = formatEventTimeOfDay(a.time, win.from, win.to);
+        }
         const infoEl = document.getElementById('shift-info');
         if (infoEl) infoEl.textContent = a.label;
         const shiftEl = document.getElementById('shift-layer');
@@ -857,6 +883,12 @@ export const App: React.FC = () => {
           clockEl.textContent = new Date(a.time * 1000)
             .toISOString()
             .slice(11, 19);
+        }
+        const dayClockEl = document.getElementById('day-clock');
+        if (dayClockEl) {
+          const st = useProjectStore.getState();
+          const win = resolveScheduleWindow(st.currentScene(), st.phase);
+          dayClockEl.textContent = formatEventTimeOfDay(a.time, win.from, win.to);
         }
         const infoEl = document.getElementById('shift-info');
         if (infoEl) {

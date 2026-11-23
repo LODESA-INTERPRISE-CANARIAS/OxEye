@@ -776,6 +776,8 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     const postDays = workDays.filter((d) => d.kind === 'post');
     const firstLogHours =
       preDays[0]?.hours || postDays[0]?.hours || next.hoursLimit || 8;
+    next.base.start = config.start;
+    next.base.hours = config.hours;
     Object.assign(next, {
       title: config.name,
       eventDays: config.eventDays,

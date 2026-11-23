@@ -1,5 +1,6 @@
 import React, {useRef} from 'react';
 import {MAPS_DATA} from '../../data/geodata';
+import {getPaletteLogoColors} from '../../data/palettes';
 import {downloadFile, parseImportedProject} from '../../db/repository';
 import {useProjectStore} from '../../store/useProjectStore';
 
@@ -18,6 +19,8 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const project = useProjectStore((s) => s.project);
+  const paletteId = useProjectStore((s) => s.preferences.palette);
+  const logoColors = getPaletteLogoColors(paletteId);
   const panel = useProjectStore((s) => s.panel);
   const onboardingStage = useProjectStore((s) => s.onboardingStage);
   const saveStatusText = useProjectStore((s) => s.saveStatusText);
@@ -67,7 +70,21 @@ export const Header: React.FC<HeaderProps> = ({
           setMenuOpen(true);
         }}
       >
-        <img src="./favicon.svg" alt="" />
+        <svg
+          className="brand-logo"
+          viewBox="0 0 64 64"
+          aria-hidden="true"
+        >
+          <rect width="64" height="64" rx="19" fill={logoColors.bg} />
+          <path
+            d="M9 32Q32 6 55 32Q32 58 9 32Z"
+            fill="none"
+            stroke={logoColors.eye}
+            strokeWidth="3"
+          />
+          <circle cx="32" cy="32" r="11" fill={logoColors.eye} />
+          <circle cx="32" cy="32" r="4" fill={logoColors.pupil} />
+        </svg>
         <span>
           OJO DE BUEY<small>ESPACIO PARA ANTICIPARSE</small>
         </span>

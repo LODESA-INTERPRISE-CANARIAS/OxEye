@@ -21,6 +21,12 @@ export interface ColorPaletteDefinition {
     secondary: string;
     shadow: string;
   };
+  /** Colores del emblema Ojo de Buey adaptados a la paleta. */
+  logo: {
+    bg: string;
+    eye: string;
+    pupil: string;
+  };
 }
 
 /** Catálogo cerrado de las 6 paletas oficiales de OxEye. */
@@ -39,6 +45,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
       secondary: '#B59AD5',
       shadow: '#21172F',
     },
+    logo: {bg: '#4b2665', eye: '#e4d4f7', pupil: '#4b2665'},
   },
   {
     id: 'atlas',
@@ -54,6 +61,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
       secondary: '#87C8D9',
       shadow: '#102936',
     },
+    logo: {bg: '#167A9B', eye: '#E3F4F9', pupil: '#102936'},
   },
   {
     id: 'noctis',
@@ -69,6 +77,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
       secondary: '#9AA9BC',
       shadow: '#080D14',
     },
+    logo: {bg: '#1B2836', eye: '#52B6E5', pupil: '#111820'},
   },
   {
     id: 'territorio',
@@ -84,6 +93,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
       secondary: '#B79C71',
       shadow: '#242C25',
     },
+    logo: {bg: '#446853', eye: '#F3F0E8', pupil: '#28342F'},
   },
   {
     id: 'vector',
@@ -99,6 +109,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
       secondary: '#82949F',
       shadow: '#161C21',
     },
+    logo: {bg: '#B56838', eye: '#F4EAE2', pupil: '#20262C'},
   },
   {
     id: 'bendy',
@@ -114,6 +125,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
       secondary: '#FFE500',
       shadow: '#151A23',
     },
+    logo: {bg: '#111317', eye: '#00BDEB', pupil: '#111317'},
   },
 ] as const;
 
@@ -128,8 +140,23 @@ export function normalizePaletteId(raw: unknown): PaletteId {
     : DEFAULT_PALETTE_ID;
 }
 
-/** Aplica la paleta seleccionada al elemento raíz del documento (`data-palette`). */
+/** Devuelve los colores del emblema Ojo de Buey para una paleta dada. */
+export function getPaletteLogoColors(
+  palette: PaletteId
+): ColorPaletteDefinition['logo'] {
+  const id = normalizePaletteId(palette);
+  return (COLOR_PALETTES.find((p) => p.id === id) || COLOR_PALETTES[0]).logo;
+}
+
+/** Aplica la paleta seleccionada al elemento raíz del documento (`data-palette`) y actualiza el favicon. */
 export function applyPalette(palette: PaletteId): void {
   if (typeof document === 'undefined') return;
-  document.documentElement.dataset.palette = normalizePaletteId(palette);
+  const id = normalizePaletteId(palette);
+  document.documentElement.dataset.palette = id;
+  const logo = getPaletteLogoColors(id);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="19" fill="${logo.bg}"/><path d="M9 32Q32 6 55 32Q32 58 9 32Z" fill="none" stroke="${logo.eye}" stroke-width="3"/><circle cx="32" cy="32" r="11" fill="${logo.eye}"/><circle cx="32" cy="32" r="4" fill="${logo.pupil}"/></svg>`;
+  const iconEl = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (iconEl) {
+    iconEl.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
 }

@@ -173,7 +173,19 @@ export class Evacuation {
   }
 
   svg(): string {
+    const fencedCordons: Array<{rowId: string | number; center: [number, number]}> =
+      (this.e.emergency?.fire?.cordons || []).filter(
+        (c: {state: string}) => c.state === 'fenced'
+      );
     return this.orders
+      .filter(
+        (o) =>
+          !fencedCordons.some(
+            (c) =>
+              c.rowId === o.id ||
+              Math.hypot(c.center[0] - o.point[0], c.center[1] - o.point[1]) <= 1
+          )
+      )
       .map(
         (o) =>
           '<circle cx="' +

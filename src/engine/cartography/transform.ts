@@ -97,8 +97,9 @@ export function transformHandles(
   const y = (o.y * m.heightMeters) / 100;
   const w = o.width || 3;
   const h = o.depth || 3;
-  const size = Math.max(0.45, 7 / Math.max(0.1, pixelsPerMeter));
-  const offset = Math.max(2, 23 / Math.max(0.1, pixelsPerMeter));
+  const ppm = Math.max(0.5, pixelsPerMeter);
+  const size = Math.max(0.2, Math.min(0.65, 4.5 / ppm));
+  const offset = Math.max(0.9, Math.min(2.4, 14 / ppm));
   const dots: Array<[string, number, number]> = [
     ['nw', -w / 2, -h / 2],
     ['n', 0, -h / 2],
@@ -126,11 +127,11 @@ export function transformHandles(
     w +
     '" height="' +
     h +
-    '" fill="none" stroke="#7651a1" stroke-width=".35" pointer-events="none"/><line x1="0" y1="' +
+    '" fill="none" stroke="#7651a1" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none"/><line x1="0" y1="' +
     -h / 2 +
     '" x2="0" y2="' +
     (-h / 2 - offset) +
-    '" stroke="#7651a1" stroke-width=".25" pointer-events="none"/>' +
+    '" stroke="#7651a1" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none"/>' +
     dots
       .map(
         ([key, u, v]) =>
@@ -144,13 +145,13 @@ export function transformHandles(
           size +
           '" height="' +
           size +
-          '" fill="white" stroke="#7651a1" stroke-width=".2"><title>Arrastra para cambiar el tamaño. Mayús conserva la proporción.</title></rect>'
+          '" fill="white" stroke="#7651a1" stroke-width="1" vector-effect="non-scaling-stroke"><title>Arrastra para cambiar el tamaño. Mayús conserva la proporción.</title></rect>'
       )
       .join('') +
     '<circle data-handle="rotate" cx="0" cy="' +
     (-h / 2 - offset) +
     '" r="' +
-    size * 0.65 +
-    '" fill="#7651a1" stroke="white" stroke-width=".15"><title>Arrastra para girar. Mayús gira en pasos de 15 grados.</title></circle></g>'
+    size * 0.55 +
+    '" fill="#7651a1" stroke="white" stroke-width="1" vector-effect="non-scaling-stroke"><title>Arrastra para girar. Mayús gira en pasos de 15 grados.</title></circle></g>'
   );
 }

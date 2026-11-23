@@ -15,6 +15,22 @@ export interface FireNode {
   exposure: Map<string, number>;
 }
 
+export interface FireCordon {
+  id: string;
+  rowId: string | number;
+  center: [number, number];
+  radius: number;
+  state: 'approaching' | 'installing' | 'fenced';
+  startedAt: number;
+  installAt: number;
+  installDuration: number;
+  blockedApplied: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  crew: any[];
+  targetCell: number;
+  field: Int32Array | null;
+}
+
 export class FireModel {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
@@ -22,6 +38,7 @@ export class FireModel {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   workers: any[];
   usedExtinguishers: Set<string>;
+  cordons: FireCordon[];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
@@ -29,6 +46,7 @@ export class FireModel {
     this.nodes = new Map();
     this.workers = [];
     this.usedExtinguishers = new Set();
+    this.cordons = [];
   }
 
   start(row: EmergencyIncident): void {
@@ -187,11 +205,192 @@ export class FireModel {
   }
 
   extinguish(row: EmergencyIncident): void {
+    let hadDamage = false;
     for (const n of this.nodes.values()) {
-      if (n.rowId === row.id) n.burning = false;
+      if (n.rowId === row.id) {
+        n.burning = false;
+        if (n.damage > 0) hadDamage = true;
+      }
     }
     if (row.extinguisherWorker) this.e.remove(row.extinguisherWorker);
     row.localTeam = 0;
+    if (hadDamage || row.point) {
+      this.scheduleCordon(row);
+    }
+  }
+
+  /**
+   * Despliega un equipo de montaje tras extinguir el incendio para vallar
+   * perimetralmente el círculo afectado y evitar el paso sobre las cenizas.
+   */
+  scheduleCordon(row: EmergencyIncident): void {
+    if (this.cordons.some((c) => c.rowId === row.id)) return;
+    const e = this.e;
+    const rowNodes = [...this.nodes.values()].filter((n) => n.rowId === row.id);
+    let cx = row.point?.[0];
+    let cy = row.point?.[1];
+    let radius = 5.5;
+    if (rowNodes.length) {
+      const n0 = rowNodes[0];
+      if (cx == null || cy == null) {
+        cx = (n0.o.x * e.g.m.widthMeters) / 100;
+        cy = (n0.o.y * e.g.m.heightMeters) / 100;
+      }
+      const maxDim = Math.max(
+        ...rowNodes.map((n) => Math.max(n.o.width || 3, n.o.depth || 3))
+      );
+      radius = Math.max(4.5, Math.min(8, maxDim * 0.65 + 2.5));
+    }
+    if (cx == null || cy == null) return;
+
+    const perimeterPt: [number, number] = [cx + radius + 0.6, cy];
+    const goal =
+      e.g.nearest(perimeterPt[0], perimeterPt[1], 10) >= 0
+        ? e.g.nearest(perimeterPt[0], perimeterPt[1], 10)
+        : e.g.nearest(cx, cy, 12);
+    if (goal < 0) return;
+
+    const field = e.getFlow(goal);
+    // Origen del equipo de montaje: acceso más cercano o punto transitable
+    let spawnPt: [number, number] | null = null;
+    let bestD = Infinity;
+    for (const ent of e.s.entrances || []) {
+      const ex = (ent.x * e.g.m.widthMeters) / 100;
+      const ey = (ent.y * e.g.m.heightMeters) / 100;
+      const k = e.g.nearest(ex, ey, 6);
+      if (k >= 0 && field[k] >= 0) {
+        const d = Math.hypot(ex - cx, ey - cy);
+        if (d < bestD) {
+          bestD = d;
+          spawnPt = e.g.point(k);
+        }
+      }
+    }
+    if (!spawnPt) {
+      const fallbackCell = e.g.nearest(cx + radius + 3, cy + 3, 14);
+      spawnPt = fallbackCell >= 0 ? e.g.point(fallbackCell) : e.g.point(goal);
+    }
+
+    const crew = [0, 1].map((idx) => ({
+      id: `cordon-${row.id}-${idx}`,
+      x: spawnPt![0] + (idx === 0 ? -0.35 : 0.35),
+      y: spawnPt![1] + (idx === 0 ? -0.25 : 0.25),
+      r: 0.32,
+      speed: 1.15,
+      state: 'cordon-crew',
+      target: goal,
+      field,
+    }));
+
+    this.cordons.push({
+      id: `cordon-${row.id}`,
+      rowId: row.id,
+      center: [cx, cy],
+      radius,
+      state: 'approaching',
+      startedAt: e.time,
+      installAt: 0,
+      installDuration: 180,
+      blockedApplied: false,
+      crew,
+      targetCell: goal,
+      field,
+    });
+    row.note =
+      (row.note ? row.note + ' · ' : '') +
+      'Equipo de montaje en camino para vallar el círculo de cenizas.';
+  }
+
+  private blockCordonCells(cordon: FireCordon): void {
+    if (cordon.blockedApplied) return;
+    cordon.blockedApplied = true;
+    const e = this.e;
+    const [cx, cy] = cordon.center;
+    const r = cordon.radius;
+    const cell = e.g.cell || 0.75;
+    const iMin = Math.max(0, Math.floor((cx - r) / cell));
+    const iMax = Math.min(e.g.w - 1, Math.ceil((cx + r) / cell));
+    const jMin = Math.max(0, Math.floor((cy - r) / cell));
+    const jMax = Math.min(e.g.h - 1, Math.ceil((cy + r) / cell));
+    for (let j = jMin; j <= jMax; j++) {
+      for (let i = iMin; i <= iMax; i++) {
+        const k = j * e.g.w + i;
+        const p = e.g.point(k);
+        if (Math.hypot(p[0] - cx, p[1] - cy) <= r - 0.15) {
+          e.g.free[k] = 0;
+        }
+      }
+    }
+    e.flow?.clear?.();
+    // Desalojar visitantes que estuvieran dentro del círculo de cenizas
+    for (const a of e.agents || []) {
+      if (a.state === 'gone') continue;
+      const dx = a.x - cx;
+      const dy = a.y - cy;
+      const d = Math.hypot(dx, dy);
+      if (d < r) {
+        const ux = d > 0.05 ? dx / d : 1;
+        const uy = d > 0.05 ? dy / d : 0;
+        const safe = e.g.nearest(cx + ux * (r + 1), cy + uy * (r + 1), 8);
+        if (safe >= 0) {
+          const sp = e.g.point(safe);
+          e.remove(a);
+          a.x = sp[0];
+          a.y = sp[1];
+          e.insert(a);
+        }
+      }
+    }
+  }
+
+  private updateCordons(dt: number, events: EmergencyIncident[]): void {
+    const e = this.e;
+    for (const c of this.cordons) {
+      const row = events.find((r) => r.id === c.rowId);
+      if (c.state === 'approaching') {
+        let arrivedCount = 0;
+        for (const w of c.crew) {
+          if (c.field && c.targetCell >= 0) {
+            const reached = e.move(w, c.field, c.targetCell, dt, 0.7);
+            if (reached || Math.hypot(w.x - c.center[0], w.y - c.center[1]) <= c.radius + 1.4) {
+              arrivedCount++;
+            }
+          } else {
+            arrivedCount++;
+          }
+        }
+        if (arrivedCount >= c.crew.length || e.time - c.startedAt >= 120) {
+          c.state = 'installing';
+          c.installAt = e.time;
+          for (const w of c.crew) e.remove(w);
+          if (row) {
+            row.note =
+              'Equipo de montaje instalando vallas perimetrales alrededor de las cenizas.';
+          }
+        }
+      } else if (c.state === 'installing') {
+        const elapsed = e.time - c.installAt;
+        const progress = Math.min(1, elapsed / c.installDuration);
+        // Posicionar a los 2 operarios recorriendo el perímetro mientras montan las vallas
+        c.crew.forEach((w, idx) => {
+          const ang = progress * Math.PI * 2 + idx * Math.PI;
+          w.x = c.center[0] + Math.cos(ang) * (c.radius + 0.45);
+          w.y = c.center[1] + Math.sin(ang) * (c.radius + 0.45);
+        });
+        if (progress >= 0.35) {
+          this.blockCordonCells(c);
+        }
+        if (elapsed >= c.installDuration) {
+          c.state = 'fenced';
+          this.blockCordonCells(c);
+          c.crew = [];
+          if (row) {
+            row.note =
+              'Zona de cenizas vallada perimetralmente por el equipo de montaje; paso bloqueado.';
+          }
+        }
+      }
+    }
   }
 
   update(dt: number, events: EmergencyIncident[]): void {
@@ -267,6 +466,7 @@ export class FireModel {
         e.emergency.resolve(row);
       }
     }
+    this.updateCordons(dt, events);
   }
 
   svg(): string {
@@ -333,6 +533,36 @@ export class FireModel {
           '" y2="' +
           row.point[1] +
           '" stroke="#fff" stroke-width=".7"/>';
+      }
+    }
+    for (const c of this.cordons) {
+      const [cx, cy] = c.center;
+      const r = c.radius;
+      html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#4b4550" fill-opacity=".22" stroke="#7c2531" stroke-opacity=".35" stroke-width=".2" stroke-dasharray=".9 .6" pointer-events="none"/>`;
+      if (c.state === 'installing' || c.state === 'fenced') {
+        const segs = 12;
+        const progress =
+          c.state === 'fenced'
+            ? 1
+            : Math.max(0.15, Math.min(1, (e.time - c.installAt) / c.installDuration));
+        const activeSegs = Math.max(2, Math.round(segs * progress));
+        const pts: string[] = [];
+        for (let i = 0; i <= activeSegs; i++) {
+          const ang = (i / segs) * Math.PI * 2;
+          pts.push(`${(cx + Math.cos(ang) * r).toFixed(2)},${(cy + Math.sin(ang) * r).toFixed(2)}`);
+        }
+        const pAttr = pts.join(' ');
+        html += `<polyline points="${pAttr}" fill="none" stroke="#9a6532" stroke-width=".5" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${pAttr}" fill="none" stroke="#f7dfb4" stroke-width=".22" stroke-dasharray=".7 .55" stroke-linecap="butt"/>`;
+        for (let i = 0; i <= activeSegs; i++) {
+          const ang = (i / segs) * Math.PI * 2;
+          html += `<circle cx="${(cx + Math.cos(ang) * r).toFixed(2)}" cy="${(cy + Math.sin(ang) * r).toFixed(2)}" r=".32" fill="#7c4f24" stroke="#fff" stroke-width=".12"/>`;
+        }
+        html += `<text x="${cx}" y="${cy - r - 1.2}" font-size="1.35" text-anchor="middle" fill="#682630" font-weight="700">${
+          c.state === 'fenced' ? 'Zona vallada · cenizas' : 'Vallando cenizas…'
+        }</text>`;
+      }
+      for (const w of c.crew) {
+        html += `<g transform="translate(${w.x} ${w.y})"><circle cx="0" cy="0" r=".48" fill="#eab308" stroke="#1e293b" stroke-width=".16"/><text x="0" y="-1.1" font-size="1.25" text-anchor="middle" fill="#1e293b" font-weight="700">Montaje</text></g>`;
       }
     }
     return html;
