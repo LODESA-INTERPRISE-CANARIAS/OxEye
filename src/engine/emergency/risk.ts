@@ -16,9 +16,10 @@ import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
 import {evaluateAllCoverBallasts} from '../planning/ballast';
 import {demandPlan} from '../planning/demand';
-import {buildVehicleGrid, planVehicleRoute} from '../mobility/vehicle-system';
+import {buildVehicleGrid} from '../mobility/vehicle-system';
 import {evaluateHeavyLoadConflicts} from '../subsoil/heat';
 import {RESPONSE_PROFILES, responseRoute} from './response-model';
+import {evaluateMedicalResponsePlan} from './stretcher-nav';
 import {
   gateAllowsAuthority,
   gateVehicleDelaySec,
@@ -143,19 +144,29 @@ export function requiredStaff(s: Scene, kind: string): number {
     ? s.responseMode === 'stretcher'
       ? 2
       : 1
-    : ({fire: 2, ambulance: 2, patrol: 1, security: 1} as Record<string, number>)[
-        kind
-      ] || 1;
+    : ({
+        fire: 2,
+        ambulance: 2,
+        patrol: 1,
+        police_van: 2,
+        security: 1,
+      } as Record<string, number>)[kind] || 1;
 }
 
 export function resourceSlots(s: Scene, r: Infrastructure): number {
-  return r.active === false
+  const isReserveVehicle =
+    ['ambulance', 'fire', 'patrol', 'police_van'].includes(r.kind) &&
+    r.operationalMode === 'reserve' &&
+    r.availableForReinforcement !== false;
+  return r.active === false && !isReserveVehicle
     ? 0
     : Math.max(
         0,
         Math.min(
           Math.floor(Number(r.capacity) || 0),
-          Math.floor((Number(r.staff) || 0) / requiredStaff(s, r.kind))
+          Math.floor(
+            (Number(r.crewCapacity ?? r.staff) || 0) / requiredStaff(s, r.kind)
+          )
         )
       );
 }
@@ -322,12 +333,14 @@ export function assessRisk(
         ' persona(s) por intervención. Regla del ensayo, no mínimo legal.'
     );
   }
-  if (publicPresent && !slots(security)) {
+  const totalSecuritySlots =
+    slots('security') + slots('patrol') + slots('police_van');
+  if (publicPresent && !totalSecuritySlots) {
     add(
       'security',
       'critical',
       'No hay equipo de seguridad para intervenir',
-      'Configura una patrulla compatible en el plano. El personal anotado en otros formularios no sustituye un recurso operativo.'
+      'Configura una patrulla compatible en el plano (Policía a pie, Coche policial o Furgón policial). El personal anotado en otros formularios no sustituye un recurso operativo.'
     );
   }
   const food = s.base.booths.filter((o) => o.type === 'food');
@@ -654,12 +667,20 @@ export function assessRisk(
         error: string;
       }> = [];
       const stagingTargets: Array<{id: string; name: string; point: Point}> = [];
+      const stretcherBlockedTargets: Array<{
+        id: string;
+        name: string;
+        point: Point;
+        reason: string;
+        obstacle?: string;
+      }> = [];
       let requiredWidth = profile.width + 0.3;
 
       for (const target of targets) {
         let lastError = '';
         let directOk = false;
         let stagingOk = false;
+        let stretcherBlockedInfo: {reason: string; obstacle?: string} | null = null;
 
         for (const r of pool) {
           const origin: Point = [
@@ -672,6 +693,37 @@ export function assessRisk(
             length: isVehicleKind ? r.depth || profile.length : profile.length,
           };
           requiredWidth = Math.round((pr.width + 0.3) * 10) / 10;
+
+          // Ambulancia: evaluar las 3 rutas independientes (Ruta A vehicular, Ruta B sanitario a pie, Ruta C evacuación en camilla)
+          if (kind === 'ambulance') {
+            const medPlan = evaluateMedicalResponsePlan({
+              scene: engine.s,
+              pedGrid: engine.g,
+              vehGrid: getVehGrid(),
+              ambulanceOrigin: origin,
+              victimPoint: target.point,
+              ambulanceWidth: pr.width,
+              ambulanceLength: pr.length,
+            });
+            if (medPlan.failedPhase === 'none') {
+              directOk = true;
+              break;
+            }
+            if (medPlan.assistancePossible && medPlan.stretcherEvacuationPossible) {
+              stagingOk = true;
+              break;
+            }
+            if (medPlan.assistancePossible && !medPlan.stretcherEvacuationPossible) {
+              stretcherBlockedInfo = {
+                reason: medPlan.routeC.reason || medPlan.summaryDetail,
+                obstacle: medPlan.routeC.blockingObstacle,
+              };
+              continue;
+            }
+            lastError = medPlan.routeB.reason || medPlan.summaryDetail;
+            continue;
+          }
+
           const direct = responseRoute(
             engine,
             origin,
@@ -685,8 +737,7 @@ export function assessRisk(
           }
           lastError = direct.error;
 
-          // Intervención sin entrada directa del vehículo:
-          // 1) Bomberos con acceso a pie habilitado
+          // Bomberos con acceso a pie habilitado
           if (kind === 'fire' && s.fireFootAccess) {
             const footFire = responseRoute(
               engine,
@@ -700,37 +751,6 @@ export function assessRisk(
               break;
             }
           }
-
-          // 2) Ambulancia: estacionamiento en punto accesible más cercano + desembarco sanitario a pie/camilla + evacuación de vuelta
-          if (kind === 'ambulance') {
-            const footApproach = responseRoute(
-              engine,
-              origin,
-              target.point,
-              {name: 'Sanitario a pie', width: 0.75, length: 1.2, speed: 1.1, staff: 2},
-              1.8
-            );
-            if (!footApproach.error) {
-              stagingOk = true;
-              break;
-            }
-            const smart = planVehicleRoute(
-              engine.s,
-              getVehGrid(),
-              origin,
-              target.point,
-              {
-                width: pr.width,
-                length: pr.length,
-                minTurnRadius: Math.max(3, pr.length * 0.8),
-              },
-              {allowFootDismount: true, pedestrianGrid: engine.g}
-            );
-            if (smart.ok) {
-              stagingOk = true;
-              break;
-            }
-          }
         }
 
         if (!directOk) {
@@ -739,6 +759,14 @@ export function assessRisk(
               id: target.id,
               name: target.name,
               point: target.point,
+            });
+          } else if (stretcherBlockedInfo) {
+            stretcherBlockedTargets.push({
+              id: target.id,
+              name: target.name,
+              point: target.point,
+              reason: stretcherBlockedInfo.reason,
+              obstacle: stretcherBlockedInfo.obstacle,
             });
           } else {
             unreachableTargets.push({
@@ -751,10 +779,9 @@ export function assessRisk(
         }
       }
 
-      if (stagingTargets.length && !unreachableTargets.length) {
+      if (stagingTargets.length && !unreachableTargets.length && !stretcherBlockedTargets.length) {
         const primaryResource = pool[0];
         const firstStg = stagingTargets[0];
-        const svcLabel = serviceLabels[kind] || kind;
         const sampleNames = stagingTargets
           .slice(0, 3)
           .map((t) => `«${t.name}»`)
@@ -762,8 +789,10 @@ export function assessRisk(
         add(
           'route-staging-' + kind,
           'warning',
-          `${stagingTargets.length} punto(s) atendidos por ${svcLabel} mediante desembarco a pie / camilla (${sampleNames})`,
-          `«${primaryResource.name}» estaciona en el punto accesible más cercano y el equipo sanitario continúa a pie hasta ${sampleNames}, evaluando la evacuación de regreso al vehículo. Puede implicar mayor demora, pero no impide simular.`,
+          kind === 'ambulance'
+            ? `Ambulancia sin acceso directo a ${stagingTargets.length} punto(s) (${sampleNames})`
+            : `${stagingTargets.length} punto(s) atendidos mediante desembarco a pie (${sampleNames})`,
+          `La ambulancia «${primaryResource.name}» estaciona en un punto accesible alternativo y se ha verificado tanto la ruta peatonal de los sanitarios como el recorrido de evacuación en camilla hasta ${sampleNames}. No impide simular.`,
           {
             kind,
             resourceId: primaryResource.id,
@@ -777,6 +806,37 @@ export function assessRisk(
           {
             origin: 'operational',
             location: `«${firstStg.name}» · CELDA ${cellAt(firstStg.point, 10)}`,
+          }
+        );
+      }
+
+      if (stretcherBlockedTargets.length) {
+        const primaryResource = pool[0];
+        const firstSt = stretcherBlockedTargets[0];
+        const sampleNames = stretcherBlockedTargets
+          .slice(0, 3)
+          .map((t) => `«${t.name}»`)
+          .join(', ');
+        const locStr = `«${firstSt.name}» · CELDA ${cellAt(firstSt.point, 10)}`;
+        add(
+          'route-stretcher-' + kind,
+          'critical',
+          `Evacuación con camilla no resuelta en ${stretcherBlockedTargets.length} punto(s) (${sampleNames})`,
+          `El personal sanitario puede llegar a pie para prestar asistencia en ${sampleNames}, pero no existe una ruta apta para el traslado en camilla hasta la ambulancia. ${firstSt.reason}`,
+          {
+            kind: 'stretcher',
+            resourceId: primaryResource.id,
+            resourceName: primaryResource.name,
+            targetId: firstSt.id,
+            targetName: firstSt.name,
+            unreachableNames: stretcherBlockedTargets.map((t) => t.name),
+            reason: 'narrow_turn',
+            requiredWidth: 0.9,
+            errorDetail: firstSt.reason,
+          },
+          {
+            origin: 'operational',
+            location: locStr,
           }
         );
       }
@@ -900,7 +960,7 @@ export function assessRisk(
     statistical,
     slots: {
       medical: slots(response),
-      security: slots(security),
+      security: totalSecuritySlots,
       fire: slots('fire'),
     },
     checkedAt: new Date().toISOString(),
@@ -913,6 +973,20 @@ export function liveFailures(e: any): RiskIssue[] {
     (r) => !['resolved', 'unreported'].includes(r.status)
   );
   const failures: RiskIssue[] = rows.flatMap((r) => {
+    if (r.stretcherEvacuationBlocked) {
+      return [
+        {
+          id: 'incident-stretcher-' + r.id,
+          level: 'critical' as const,
+          origin: 'operational' as const,
+          location: r.point ? `CELDA ${cellAt(r.point, 10)}` : undefined,
+          title: `Evacuación con camilla no resuelta (${r.name})`,
+          action:
+            r.note ||
+            'El personal sanitario pudo llegar a pie para asistir a la víctima, pero no existe una ruta apta para el traslado en camilla hasta la ambulancia.',
+        },
+      ];
+    }
     const problem =
       r.status === 'blocked' ||
       (r.status === 'waiting' &&
@@ -926,6 +1000,7 @@ export function liveFailures(e: any): RiskIssue[] {
           {
             id: 'incident-' + r.id,
             level: 'critical' as const,
+            location: r.point ? `CELDA ${cellAt(r.point, 10)}` : undefined,
             title: r.name + ' sin respuesta disponible',
             action:
               r.note ||

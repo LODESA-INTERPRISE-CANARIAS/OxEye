@@ -19,6 +19,7 @@ import type {
   NavigationGrid,
   Point2D,
   Scene,
+  StretcherState,
 } from '../../types';
 import {inside, world} from '../cartography/geometry';
 import {flow} from '../crowd/grid-flow';
@@ -28,6 +29,10 @@ import {
   planVehicleRoute,
 } from '../mobility/vehicle-system';
 import {gateAllowsAuthority, gateVehicleDelaySec, poseAt} from './priority';
+import {
+  evaluateMedicalResponsePlan,
+  resolveStretcherConfig,
+} from './stretcher-nav';
 
 export type EmergencyVehicleKind =
   | 'ambulance'
@@ -113,6 +118,7 @@ export interface DeployedCrewMember {
   x: number;
   y: number;
   carryingStretcher: boolean;
+  stretcherState?: StretcherState;
   carryingPatient: boolean;
   path: Point2D[];
   pathDist: number;
@@ -135,6 +141,8 @@ export interface EmergencyMission {
   stagingPoint: Point2D;
   incidentPoint: Point2D;
   needsEvacuation: boolean;
+  stretcherEvacuationPossible?: boolean;
+  failedPhase?: 'none' | 'vehicle_approach' | 'medic_foot' | 'stretcher_evacuation';
   dispatchedAt: number;
   dispatchDelay: number;
   vehicleArrivedAt?: number;
@@ -504,13 +512,24 @@ export class EmergencyVehicleFleet {
     if (!candidates.length) return null;
 
     candidates.sort((a, b) => {
-      const etaA = dist(a.currentPosition, incidentPoint) / Math.max(1, a.speed) + a.delaySec;
-      const etaB = dist(b.currentPosition, incidentPoint) / Math.max(1, b.speed) + b.delaySec;
+      const etaA = dist(a.currentPosition, incidentPoint) / Math.max(1, a.speed) + Math.min(a.delaySec, 8);
+      const etaB = dist(b.currentPosition, incidentPoint) / Math.max(1, b.speed) + Math.min(b.delaySec, 8);
+      // Para incendios, priorizar camiones de bomberos reales (≥ 4 m) frente a marcadores pequeños a pie
+      const truckBonusA =
+        requestedMode === 'fire' && (a.length >= 4 || a.width >= 2) ? -120 : 0;
+      const truckBonusB =
+        requestedMode === 'fire' && (b.length >= 4 || b.width >= 2) ? -120 : 0;
       const crewBonusA = opts?.preferHighCrew ? -a.crewCapacity * 4 : 0;
       const crewBonusB = opts?.preferHighCrew ? -b.crewCapacity * 4 : 0;
       const patrolBonusA = a.vehicleStatus === 'patrolling' ? -10 : 0;
       const patrolBonusB = b.vehicleStatus === 'patrolling' ? -10 : 0;
-      return etaA + crewBonusA + patrolBonusA - (etaB + crewBonusB + patrolBonusB);
+      return (
+        etaA +
+        truckBonusA +
+        crewBonusA +
+        patrolBonusA -
+        (etaB + truckBonusB + crewBonusB + patrolBonusB)
+      );
     });
     return candidates[0];
   }
@@ -559,12 +578,38 @@ export class EmergencyVehicleFleet {
     let vehiclePath: Point2D[] = [unit.currentPosition];
     let stagingPoint: Point2D = [...unit.currentPosition];
     let footPath: Point2D[] = [];
+    let evacuationPath: Point2D[] = [];
     let routeWarning: string | undefined;
+    let stretcherEvacuationPossible = true;
+    let failedPhase: EmergencyMission['failedPhase'] = 'none';
 
-    if (stayParkedFixed || !matchingGate) {
+    if (unit.kind === 'ambulance') {
+      // Evaluación diferenciada en 3 rutas: Ruta A (ambulancia), Ruta B (sanitario a pie), Ruta C (camilla desplegada)
+      const medPlan = evaluateMedicalResponsePlan({
+        scene,
+        pedGrid: this.e.g,
+        vehGrid: this.vehGrid,
+        ambulanceOrigin: unit.currentPosition,
+        victimPoint: incidentPoint,
+        ambulanceWidth: unit.width,
+        ambulanceLength: unit.length,
+        allowVehicleDirect: !stayParkedFixed && !!matchingGate,
+      });
+      vehiclePath = medPlan.routeA.path || [unit.currentPosition];
+      stagingPoint = medPlan.routeA.stagingPoint;
+      footPath = medPlan.routeB.path || [stagingPoint, incidentPoint];
+      evacuationPath =
+        medPlan.routeC.path || footPath.slice().reverse();
+      stretcherEvacuationPossible = medPlan.stretcherEvacuationPossible;
+      failedPhase = medPlan.failedPhase;
+      if (medPlan.severity !== 'info') {
+        routeWarning = `${medPlan.summaryTitle}: ${medPlan.summaryDetail}`;
+      }
+    } else if (stayParkedFixed || !matchingGate) {
       // Estacionamiento en posición actual/exterior accesible y desembarco a pie
       const fp = buildFootPath(this.e.g, stagingPoint, incidentPoint);
       footPath = fp.path;
+      evacuationPath = footPath.slice().reverse();
       if (!fp.exact) {
         routeWarning =
           'No existe un corredor peatonal continuo libre de obstáculos hasta el punto; aproximación a pie asistida.';
@@ -604,12 +649,11 @@ export class EmergencyVehicleFleet {
           plan.reason ||
           'Acceso vehicular interior restringido; vehículo estacionado en punto seguro y despliegue a pie.';
       }
+      const evacFoot = buildFootPath(this.e.g, incidentPoint, stagingPoint);
+      evacuationPath = evacFoot.exact
+        ? evacFoot.path
+        : footPath.slice().reverse();
     }
-
-    const evacFoot = buildFootPath(this.e.g, incidentPoint, stagingPoint);
-    const evacuationPath = evacFoot.exact
-      ? evacFoot.path
-      : footPath.slice().reverse();
 
     const needsEvacuation =
       opts?.needsEvacuation ??
@@ -629,8 +673,11 @@ export class EmergencyVehicleFleet {
       stagingPoint,
       incidentPoint,
       needsEvacuation,
+      stretcherEvacuationPossible,
+      failedPhase,
       dispatchedAt: this.e.time,
-      dispatchDelay: unit.delaySec + conditionalDelay,
+      // Demora realista de arranque/embarque para unidades ya posicionadas en base o standby
+      dispatchDelay: Math.min(unit.delaySec, 6) + conditionalDelay,
       handlingDuration,
       footPath: footPath.length >= 2 ? footPath : [stagingPoint, incidentPoint],
       evacuationPath:
@@ -683,8 +730,10 @@ export class EmergencyVehicleFleet {
     this.crew = this.crew.filter((c) => c.incidentId !== mission.incidentId);
     const deployCount =
       unit.kind === 'police_van'
-        ? Math.min(unit.crewCapacity, 4)
-        : Math.min(unit.crewCapacity, 2);
+        ? Math.min(unit.crewCapacity, 6)
+        : unit.kind === 'fire'
+          ? Math.min(unit.crewCapacity, 4)
+          : Math.min(unit.crewCapacity, 2);
     const role: DeployedCrewMember['role'] =
       unit.kind === 'ambulance'
         ? 'medical'
@@ -696,6 +745,7 @@ export class EmergencyVehicleFleet {
     for (let i = 0; i < deployCount; i++) {
       const offset = i * 0.65;
       const startPt = mission.footPath[0] || unit.currentPosition;
+      const stretcherCfg = resolveStretcherConfig(this.e.s.stretcher);
       this.crew.push({
         id: `crew-${unit.resourceId}-${mission.incidentId}-${i}`,
         unitId: unit.resourceId,
@@ -704,11 +754,12 @@ export class EmergencyVehicleFleet {
         x: startPt[0] + (i % 2 === 0 ? -0.35 : 0.35),
         y: startPt[1] + offset * 0.25,
         carryingStretcher: unit.kind === 'ambulance' && i === 0,
+        stretcherState: unit.kind === 'ambulance' && i === 0 ? 'folded' : undefined,
         carryingPatient: false,
         path: mission.footPath,
         pathDist: 0,
         pathLength: footLen,
-        speed: unit.kind === 'ambulance' ? 1.35 : 1.55,
+        speed: unit.kind === 'ambulance' ? stretcherCfg.speedEmpty : 1.55,
         status: 'deploying',
       });
     }
@@ -718,10 +769,48 @@ export class EmergencyVehicleFleet {
     mission.stage = 'crew_deploying';
   }
 
-  private startVehicleReturn(unit: EmergencyUnitRuntime): void {
+  private startVehicleReturn(
+    unit: EmergencyUnitRuntime,
+    evacuatingPatient = false
+  ): void {
     // Prohibido salir si la tripulación no está completamente embarcada
     if (unit.crewStatus !== 'embarked') return;
-    if (dist(unit.currentPosition, unit.homePosition) <= 1.5) {
+
+    // Si es una ambulancia que acaba de embarcar a un paciente y no se había movido de su punto de espera,
+    // debe salir hacia la salida vehicular/base exterior más cercana con sirenas activas para realizar el traslado.
+    let targetPos: Point2D = unit.homePosition;
+    if (
+      evacuatingPatient &&
+      unit.kind === 'ambulance' &&
+      dist(unit.currentPosition, unit.homePosition) <= 3
+    ) {
+      const map = this.e.g.m;
+      const vehExits = (this.e.s.entrances || [])
+        .filter(
+          (g: EntranceItem) =>
+            (g.phases?.event || g.role || 'both') !== 'closed' &&
+            (g.externalBase ||
+              g.spawnType === 'vehicle' ||
+              g.spawnType === 'mixed' ||
+              g.accessCategory === 'emergency_vehicle')
+        )
+        .map((g: EntranceItem) => ({
+          pt: world([g.x, g.y], map),
+          ext: !!g.externalBase,
+        }))
+        .filter((g: {pt: Point2D}) => dist(g.pt, unit.currentPosition) > 6)
+        .sort(
+          (a: {pt: Point2D; ext: boolean}, b: {pt: Point2D; ext: boolean}) =>
+            (a.ext ? -30 : 0) +
+            dist(a.pt, unit.currentPosition) -
+            ((b.ext ? -30 : 0) + dist(b.pt, unit.currentPosition))
+        );
+      if (vehExits.length) {
+        targetPos = vehExits[0].pt;
+      }
+    }
+
+    if (dist(unit.currentPosition, targetPos) <= 1.5) {
       unit.currentPosition = [unit.homePosition[0], unit.homePosition[1]];
       unit.vehicleStatus =
         unit.operationalMode === 'exterior_patrol' && unit.patrolPath.length >= 2
@@ -740,32 +829,74 @@ export class EmergencyVehicleFleet {
       this.e.s,
       this.vehGrid,
       unit.currentPosition,
-      unit.homePosition,
+      targetPos,
       {
         width: unit.width,
         length: unit.length,
         minTurnRadius: Math.max(3, unit.length * 0.75),
-      }
+      },
+      {allowFootDismount: true, pedestrianGrid: this.e.g}
     );
     const backPath =
       backPlan.ok && backPlan.path && backPlan.path.length >= 2
         ? backPlan.path
         : unit.activePath.length >= 2
           ? unit.activePath.slice().reverse()
-          : [unit.currentPosition, unit.homePosition];
+          : [unit.currentPosition, targetPos];
 
     unit.activePath = backPath;
     unit.activeDist = 0;
     unit.activeLength = polylineLength(backPath);
     unit.vehicleStatus = 'returning';
-    unit.sirensActive = false;
+    unit.sirensActive = evacuatingPatient && this.e.s.emergency?.sirens !== false;
+  }
+
+  /**
+   * Activa la salida de evacuación de una ambulancia estacionada tras recibir un paciente
+   * entregado por un equipo de camilla a pie (`responseMode === 'stretcher'`).
+   */
+  triggerPatientEvacuation(resourceId: string): boolean {
+    const unit = this.units.find(
+      (u) => u.resourceId === resourceId && u.kind === 'ambulance'
+    );
+    if (!unit || unit.vehicleStatus === 'en_route' || unit.vehicleStatus === 'returning') {
+      return false;
+    }
+    unit.crewStatus = 'embarked';
+    unit.available = false;
+    this.startVehicleReturn(unit, true);
+    return (unit.vehicleStatus as EmergencyVehicleStatus) === 'returning';
   }
 
   update(dt: number, events: EmergencyIncident[]): void {
     const now = this.e.time;
 
-    // 1. Actualizar patrullas exteriores (solo las que tienen modo 'exterior_patrol' y están libres)
+    // 1. Actualizar patrullas exteriores y salidas de evacuación autónomas (sin misión activa en `this.missions`)
     for (const u of this.units) {
+      if (
+        u.vehicleStatus === 'returning' &&
+        u.assignedIncidentId === null &&
+        u.activePath.length >= 2 &&
+        u.activeLength > 0.2
+      ) {
+        u.activeDist = Math.min(u.activeLength, u.activeDist + u.speed * dt);
+        const pose = poseAt(u.activePath, u.activeDist);
+        u.currentPosition = [pose.x, pose.y];
+        u.angle = pose.angle;
+        if (u.activeDist >= u.activeLength - 0.15) {
+          u.currentPosition = [u.homePosition[0], u.homePosition[1]];
+          u.vehicleStatus =
+            u.operationalMode === 'exterior_patrol' && u.patrolPath.length >= 2
+              ? 'patrolling'
+              : 'parked';
+          u.available = true;
+          u.sirensActive = false;
+          u.activePath = [];
+          u.activeDist = 0;
+          u.activeLength = 0;
+        }
+        continue;
+      }
       if (
         u.vehicleStatus === 'patrolling' &&
         u.operationalMode === 'exterior_patrol' &&
@@ -883,21 +1014,34 @@ export class EmergencyVehicleFleet {
         if (now >= (mission.interventionEndAt ?? now)) {
           const members = this.crew.filter((c) => c.incidentId === mission.incidentId);
           const evacLen = polylineLength(mission.evacuationPath);
+          const stretcherCfg = resolveStretcherConfig(this.e.s.stretcher);
+          const canEvacWithStretcher =
+            mission.needsEvacuation && mission.stretcherEvacuationPossible !== false;
           for (const m of members) {
             m.status = 'returning';
             m.path = mission.evacuationPath;
             m.pathDist = 0;
             m.pathLength = evacLen;
-            m.carryingPatient = mission.needsEvacuation && m.carryingStretcher;
-            if (m.carryingPatient) m.speed = 0.95;
+            m.carryingPatient = canEvacWithStretcher && m.carryingStretcher;
+            if (m.carryingStretcher) {
+              m.stretcherState = canEvacWithStretcher ? 'deployed' : 'folded';
+            }
+            if (m.carryingPatient) m.speed = stretcherCfg.speedLoaded;
           }
           mission.stage = 'crew_returning';
           unit.crewStatus = 'returning';
           if (row) {
-            row.phase = mission.needsEvacuation ? 'transfer' : 'care';
-            row.note = mission.needsEvacuation
-              ? 'Traslado del paciente en camilla hasta la ambulancia estacionada.'
-              : 'Intervención completada · personal regresando al vehículo.';
+            row.phase = canEvacWithStretcher ? 'transfer' : 'care';
+            if (mission.needsEvacuation && !canEvacWithStretcher) {
+              row.stretcherEvacuationBlocked = true;
+              row.failedPhase = 'stretcher_evacuation';
+              row.note =
+                'CRÍTICO — Evacuación con camilla no resuelta: asistencia prestada a pie, pero no existe ruta apta para el traslado en camilla hasta la ambulancia.';
+            } else {
+              row.note = canEvacWithStretcher
+                ? 'Traslado del paciente en camilla desplegada hasta la ambulancia estacionada.'
+                : 'Intervención completada · personal regresando al vehículo.';
+            }
           }
         }
         continue;
@@ -947,7 +1091,10 @@ export class EmergencyVehicleFleet {
             }
           }
           mission.stage = 'vehicle_returning';
-          this.startVehicleReturn(unit);
+          this.startVehicleReturn(
+            unit,
+            mission.needsEvacuation && mission.stretcherEvacuationPossible !== false
+          );
           if (unit.vehicleStatus === 'parked' || unit.vehicleStatus === 'patrolling') {
             mission.stage = 'completed';
           }

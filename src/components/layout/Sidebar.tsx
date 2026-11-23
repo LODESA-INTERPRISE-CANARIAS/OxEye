@@ -223,8 +223,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
+  const incidentsDisabled = safetyStop && !running;
+
   const handleIncidentClick = (incType: string) => {
-    if (safetyStop) return;
+    if (incidentsDisabled) return;
     if (!engine) {
       onTogglePlay();
     }
@@ -1532,7 +1534,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="minor"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('minor')}
                     >
                       Malestar leve
@@ -1540,7 +1542,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="orientation"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('orientation')}
                     >
                       Orientación
@@ -1548,7 +1550,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="obstacle"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('obstacle')}
                     >
                       Obstáculo en paso
@@ -1556,7 +1558,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="fall"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('fall')}
                     >
                       ⊕ Caída
@@ -1564,7 +1566,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="fire"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('fire')}
                     >
                       ♨ Cocina
@@ -1572,7 +1574,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="cut"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('cut')}
                     >
                       ✚ Corte
@@ -1580,7 +1582,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       data-incident="conflict"
-                      disabled={safetyStop}
+                      disabled={incidentsDisabled}
                       onClick={() => handleIncidentClick('conflict')}
                     >
                       ! Conflicto

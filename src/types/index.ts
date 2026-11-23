@@ -60,6 +60,31 @@ export type EmergencyCrewStatus =
   | 'intervening'
   | 'returning';
 
+/** Estado físico de una camilla sanitaria. */
+export type StretcherState = 'folded' | 'deployed';
+
+/** Propiedades configurables del equipamiento camilla (`stretcher`). */
+export interface StretcherConfig {
+  /** Longitud física de la camilla desplegada en metros (por defecto 2,00 m). */
+  length: number;
+  /** Anchura física de la camilla desplegada en metros (por defecto 0,65 m). */
+  width: number;
+  /** Espacio adicional de manipulación longitudinal para los operarios (m). */
+  handlingMarginLength: number;
+  /** Espacio adicional de manipulación lateral en giros y pasillos (m). */
+  handlingMarginWidth: number;
+  /** Número de operarios sanitarios necesarios para portar la camilla (por defecto 2). */
+  requiredOperators: number;
+  /** Estado operativo inicial o actual (`folded` plegada / `deployed` desplegada). */
+  state: StretcherState;
+  /** Indica si permite transporte de paciente. */
+  canTransportPatient: boolean;
+  /** Velocidad de desplazamiento sin paciente (m/s). */
+  speedEmpty: number;
+  /** Velocidad de desplazamiento transportando paciente (m/s). */
+  speedLoaded: number;
+}
+
 /** Vía vectorial simplificada obtenida de OpenStreetMap para un emplazamiento personalizado. */
 export interface CustomMapStreet {
   name: string;
@@ -691,6 +716,8 @@ export interface Scene {
     sirens: boolean;
     vehicleSpeed: number;
   };
+  /** Configuración editable de la camilla sanitaria (`stretcher`). */
+  stretcher?: Partial<StretcherConfig>;
   meta?: {
     version: number;
     grid: number;

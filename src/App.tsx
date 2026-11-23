@@ -412,8 +412,16 @@ export const App: React.FC = () => {
         sc.safetyLock = {fingerprint: safetyFingerprint(sc), at: record.at};
       });
       const report = assessRisk(s);
-      report.issues = [...issues, ...report.issues];
-      report.critical = [...issues, ...report.critical];
+      const dedupeIssues = (list: RiskIssue[]): RiskIssue[] => {
+        const seen = new Set<string>();
+        return list.filter((it) => {
+          if (seen.has(it.id)) return false;
+          seen.add(it.id);
+          return true;
+        });
+      };
+      report.issues = dedupeIssues([...issues, ...report.issues]);
+      report.critical = dedupeIssues([...issues, ...report.critical]);
       setCustomRiskReport(report);
       setActiveModal('risk');
     },
@@ -639,6 +647,10 @@ export const App: React.FC = () => {
     }
 
     const nextRunning = !runningRef.current;
+    if (nextRunning) {
+      safetyStopRef.current = false;
+      setSafetyStop(false);
+    }
     runningRef.current = nextRunning;
     setRunning(nextRunning);
   }, [showToast, setPanel, setTool, setActiveModal, updateScene]);
@@ -1061,7 +1073,7 @@ export const App: React.FC = () => {
         onSceneChanged={handleSceneChanged}
         onRecordAction={recordAction}
         reviewTick={reviewTick}
-        safetyStop={safetyStop}
+        safetyStop={safetyStop && !diagnosticSimMode && !running}
       />
 
       <main className="workspace">

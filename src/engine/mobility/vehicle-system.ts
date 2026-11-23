@@ -211,7 +211,11 @@ function collectVehicleObstacles(
     if (
       inf.role === 'cover' ||
       inf.kind === 'loading' ||
-      inf.kind === 'turning'
+      inf.kind === 'turning' ||
+      inf.kind === 'ambulance' ||
+      inf.kind === 'patrol' ||
+      inf.kind === 'police_van' ||
+      inf.kind === 'fire'
     ) {
       continue;
     }
@@ -294,6 +298,38 @@ export function buildVehicleGrid(
         }
       }
       baseConnectors.push({a: pt, b: target, halfWidth: 3.8});
+    }
+  }
+
+  // Conectar también las posiciones estacionadas de los vehículos de emergencia a la red viaria / acceso más cercano
+  for (const inf of scene.infrastructure || []) {
+    if (
+      inf.role === 'emergency' &&
+      ['ambulance', 'patrol', 'police_van', 'fire'].includes(inf.kind)
+    ) {
+      const pt = world([inf.x, inf.y], m);
+      baseAprons.push({pt, radius: Math.max(6.5, (inf.depth || 6) * 0.95)});
+      const openVehGates = (scene.entrances || []).filter(
+        (g) =>
+          (g.phases?.event || g.role || 'both') !== 'closed' &&
+          g.spawnType !== 'pedestrian' &&
+          g.accessCategory !== 'pedestrian_only'
+      );
+      if (openVehGates.length && perimeterPts.length >= 3 && !inside(pt, perimeterPts)) {
+        let bestGate: Point2D | null = null;
+        let bestD = Infinity;
+        for (const g of openVehGates) {
+          const gp = world([g.x, g.y], m);
+          const d = dist(pt, gp);
+          if (d < bestD) {
+            bestD = d;
+            bestGate = gp;
+          }
+        }
+        if (bestGate && bestD <= 45) {
+          baseConnectors.push({a: pt, b: bestGate, halfWidth: 3.8});
+        }
+      }
     }
   }
 
@@ -520,20 +556,11 @@ export function planVehicleRoute(
     }
     return mask;
   };
-  // Preferir el eje central de la calzada (margen holgado); si no hay paso, usar margen mínimo
-  let free = buildEroded(0.95);
-  let hasStartCenter = false;
-  for (let k = 0; k < free.length; k++) {
-    if (free[k] && dist(vehGrid.point(k), origin) < 4.5) {
-      hasStartCenter = true;
-      break;
-    }
-  }
-  if (!hasStartCenter) free = buildEroded(0.15);
-
-  const eroded: NavigationGrid = {
+  // Preferir el eje central de la calzada (margen holgado 0,95 m); si no conecta con el destino
+  // o no hay inicio libre, usar el margen físico real (0,15 m).
+  const makeErodedGrid = (freeMask: Uint8Array): NavigationGrid => ({
     ...vehGrid,
-    free,
+    free: freeMask,
     neighbors: (k: number) => {
       const col = k % vehGrid.w;
       const row = Math.floor(k / vehGrid.w);
@@ -545,22 +572,49 @@ export function planVehicleRoute(
           const nj = row + dj;
           if (ni < 0 || ni >= vehGrid.w || nj < 0 || nj >= vehGrid.h) continue;
           const nk = nj * vehGrid.w + ni;
-          if (free[nk]) out.push(nk);
+          if (freeMask[nk]) out.push(nk);
         }
       }
       return out;
     },
+  });
+
+  const findStartOn = (freeMask: Uint8Array): number => {
+    let best = -1;
+    let bestD = 5.5;
+    for (let k = 0; k < freeMask.length; k++) {
+      if (!freeMask[k]) continue;
+      const d = dist(vehGrid.point(k), origin);
+      if (d < bestD) {
+        bestD = d;
+        best = k;
+      }
+    }
+    return best;
   };
 
-  // Localizar celda de inicio válida cerca de origin
-  let start = -1;
-  let bestStartDist = 4.5;
-  for (let k = 0; k < free.length; k++) {
-    if (!free[k]) continue;
-    const d = dist(vehGrid.point(k), origin);
-    if (d < bestStartDist) {
-      bestStartDist = d;
-      start = k;
+  let free = buildEroded(0.95);
+  let eroded = makeErodedGrid(free);
+  let start = findStartOn(free);
+  let reachFromStart = start >= 0 ? flow(eroded, start) : new Int32Array(free.length).fill(-1);
+
+  // Si con margen holgado no hay inicio o no alcanza las cercanías del destino, reintentar con margen físico (0,15 m)
+  const reachesNearDest = (reach: Int32Array): boolean => {
+    for (let k = 0; k < reach.length; k++) {
+      if (reach[k] >= 0 && dist(vehGrid.point(k), destination) <= near + 6) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (start < 0 || !reachesNearDest(reachFromStart)) {
+    const tightFree = buildEroded(0.15);
+    const tightStart = findStartOn(tightFree);
+    if (tightStart >= 0) {
+      free = tightFree;
+      eroded = makeErodedGrid(free);
+      start = tightStart;
+      reachFromStart = flow(eroded, start);
     }
   }
 
@@ -583,9 +637,6 @@ export function planVehicleRoute(
     };
   }
 
-  // BFS desde el inicio para conocer TODAS las celdas alcanzables por el vehículo
-  const reachFromStart = flow(eroded, start);
-
   // Buscar celdas candidatas cerca del destino
   const targetCandidates: Array<{k: number; d: number}> = [];
   for (let k = 0; k < free.length; k++) {
@@ -597,9 +648,11 @@ export function planVehicleRoute(
   }
   targetCandidates.sort((a, b) => a.d - b.d);
 
-  const traceAndValidate = (targetIdx: number): {
+    const traceAndValidate = (targetIdx: number): {
     path?: Point2D[];
     length?: number;
+    safePrefix?: Point2D[];
+    safePrefixLength?: number;
     blockPoint?: Point2D;
     turnFailed?: boolean;
   } => {
@@ -646,6 +699,26 @@ export function planVehicleRoute(
     };
     const smoothRaw = simplify(raw, 1.6);
 
+    const extractSafePrefix = (pts: Point2D[], stopDist: number): Point2D[] | undefined => {
+      if (stopDist < 3) return undefined;
+      const out: Point2D[] = [pts[0]];
+      let acc = 0;
+      for (let idx = 1; idx < pts.length; idx++) {
+        const seg = dist(pts[idx - 1], pts[idx]);
+        if (acc + seg >= stopDist) {
+          const t = seg > 0 ? Math.max(0, Math.min(1, (stopDist - acc) / seg)) : 0;
+          out.push([
+            pts[idx - 1][0] + (pts[idx][0] - pts[idx - 1][0]) * t,
+            pts[idx - 1][1] + (pts[idx][1] - pts[idx - 1][1]) * t,
+          ]);
+          break;
+        }
+        acc += seg;
+        out.push(pts[idx]);
+      }
+      return out.length >= 2 ? out : undefined;
+    };
+
     // Comprobar radio de giro y huella barrida
     const clearSeg = (a: Point2D, b: Point2D): boolean => {
       const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
@@ -666,19 +739,25 @@ export function planVehicleRoute(
         : smoothRaw;
 
     if (!curved) {
-      // Si la polilínea simplificada sí tiene huella completa despejada en cada tramo y esquina
-      // (p. ej. tramo final corto dentro de una plaza abierta), permitirla; si roza cualquier obstáculo, bloquear.
       const totalRaw = pathLength(smoothRaw);
       let failPt: Point2D | null = null;
+      let failDs = 0;
       for (let ds = 0; ds <= totalRaw; ds += 0.45) {
         const hit = hullClearOnGrid(vehGrid, poseAt(smoothRaw, ds), spec.width, spec.length);
         if (hit) {
           failPt = hit;
+          failDs = ds;
           break;
         }
       }
       if (failPt) {
-        return {blockPoint: failPt, turnFailed: true};
+        const safePrefix = extractSafePrefix(smoothRaw, Math.max(0, failDs - 1.5));
+        return {
+          blockPoint: failPt,
+          turnFailed: true,
+          safePrefix,
+          safePrefixLength: safePrefix ? pathLength(safePrefix) : undefined,
+        };
       }
       curved = smoothRaw;
     }
@@ -687,7 +766,13 @@ export function planVehicleRoute(
     for (let ds = 0; ds <= total; ds += 0.45) {
       const hit = hullClearOnGrid(vehGrid, poseAt(curved, ds), spec.width, spec.length);
       if (hit) {
-        return {blockPoint: hit, turnFailed: false};
+        const safePrefix = extractSafePrefix(curved, Math.max(0, ds - 1.5));
+        return {
+          blockPoint: hit,
+          turnFailed: false,
+          safePrefix,
+          safePrefixLength: safePrefix ? pathLength(safePrefix) : undefined,
+        };
       }
     }
 
@@ -713,56 +798,155 @@ export function planVehicleRoute(
     }
   }
 
-  // Si está permitido el descenso a pie (emergencias / servicio), buscar el punto alcanzable más cercano al destino
+  // Si está permitido el descenso a pie (emergencias / servicio), buscar los puntos alcanzables más cercanos al destino
   if (opts?.allowFootDismount) {
-    let bestDismount: {k: number; d: number} | null = null;
+    const dismountCands: Array<{k: number; d: number}> = [];
     for (let k = 0; k < free.length; k++) {
       if (!free[k] || reachFromStart[k] < 0) continue;
-      const d = dist(vehGrid.point(k), destination);
-      if (!bestDismount || d < bestDismount.d) {
-        bestDismount = {k, d};
+      dismountCands.push({k, d: dist(vehGrid.point(k), destination)});
+    }
+    dismountCands.sort((a, b) => a.d - b.d);
+    // Seleccionar candidatos espaciados al menos 2,5 m para no quedarse probando 12 celdas pegadas al mismo obstáculo
+    const spacedCands: Array<{k: number; d: number}> = [];
+    for (const c of dismountCands) {
+      const pt = vehGrid.point(c.k);
+      if (spacedCands.every((s) => dist(vehGrid.point(s.k), pt) >= 2.5)) {
+        spacedCands.push(c);
+        if (spacedCands.length >= 16) break;
       }
     }
-    if (bestDismount) {
-      const dismountAttempt = traceAndValidate(bestDismount.k);
-      if (dismountAttempt.path) {
-        const dismountPt = vehGrid.point(bestDismount.k);
-        // Verificar conectividad peatonal desde dismountPt hasta destination
-        const pedGrid = opts.pedestrianGrid || vehGrid;
-        const pStart = pedGrid.nearest(dismountPt[0], dismountPt[1], 6);
-        const pEnd = pedGrid.nearest(destination[0], destination[1], 6);
-        if (pStart >= 0 && pEnd >= 0) {
-          const pedField = flow(pedGrid, pEnd);
-          if (pedField[pStart] >= 0) {
-            const footPath: Point2D[] = [dismountPt];
-            let pk = pStart;
-            for (let i = 0; i < pedGrid.free.length && pk !== pEnd; i++) {
-              const nxt = pedGrid
-                .neighbors(pk)
-                .filter((n) => pedField[n] >= 0 && pedField[n] < pedField[pk])
-                .sort((a, b) => pedField[a] - pedField[b])[0];
-              if (nxt === undefined) break;
-              pk = nxt;
-              footPath.push(pedGrid.point(pk));
-            }
-            footPath.push(destination);
-            return {
-              ok: true,
-              path: dismountAttempt.path,
-              length: dismountAttempt.length,
-              dismountPoint: dismountPt,
-              footPath,
-              alternatives: [
-                {
-                  kind: 'dismount_foot',
-                  label: `Parada en aproximación despejada (${dismountAttempt.length?.toFixed(0)} m) y despliegue a pie (${pathLength(footPath).toFixed(0)} m)`,
-                  point: dismountPt,
-                },
-              ],
+    const pedGrid = opts.pedestrianGrid || vehGrid;
+    const pEnd = pedGrid.nearest(destination[0], destination[1], 6);
+
+    let bestSafePrefix: {path: Point2D[]; length: number; distToDest: number} | null = null;
+
+    for (const cand of spacedCands) {
+      const dismountAttempt = traceAndValidate(cand.k);
+      if (!dismountAttempt.path) {
+        if (dismountAttempt.safePrefix && dismountAttempt.safePrefix.length >= 2) {
+          const endPt = dismountAttempt.safePrefix[dismountAttempt.safePrefix.length - 1];
+          const dEnd = dist(endPt, destination);
+          if (!bestSafePrefix || dEnd < bestSafePrefix.distToDest) {
+            bestSafePrefix = {
+              path: dismountAttempt.safePrefix,
+              length: dismountAttempt.safePrefixLength || pathLength(dismountAttempt.safePrefix),
+              distToDest: dEnd,
             };
           }
         }
+        continue;
       }
+      const dismountPt = vehGrid.point(cand.k);
+      // Verificar conectividad peatonal desde dismountPt hasta destination
+      const pStart = pedGrid.nearest(dismountPt[0], dismountPt[1], 12);
+      if (pStart >= 0 && pEnd >= 0) {
+        const pedField = flow(pedGrid, pEnd);
+        if (pedField[pStart] >= 0) {
+          const footPath: Point2D[] = [dismountPt];
+          let pk = pStart;
+          for (let i = 0; i < pedGrid.free.length && pk !== pEnd; i++) {
+            const nxt = pedGrid
+              .neighbors(pk)
+              .filter((n) => pedField[n] >= 0 && pedField[n] < pedField[pk])
+              .sort((a, b) => pedField[a] - pedField[b])[0];
+            if (nxt === undefined) break;
+            pk = nxt;
+            footPath.push(pedGrid.point(pk));
+          }
+          footPath.push(destination);
+          return {
+            ok: true,
+            path: dismountAttempt.path,
+            length: dismountAttempt.length,
+            dismountPoint: dismountPt,
+            footPath,
+            alternatives: [
+              {
+                kind: 'dismount_foot',
+                label: `Parada en aproximación despejada (${dismountAttempt.length?.toFixed(0)} m) y despliegue a pie (${pathLength(footPath).toFixed(0)} m)`,
+                point: dismountPt,
+              },
+            ],
+          };
+        }
+      }
+      // Si el vehículo sí pudo acercarse a un punto válido aunque la conectividad peatonal directa falte,
+      // devolver el acercamiento vehicular igualmente para que el camión avance hasta allí.
+      return {
+        ok: true,
+        path: dismountAttempt.path,
+        length: dismountAttempt.length,
+        dismountPoint: dismountPt,
+        footPath: [dismountPt, destination],
+        alternatives: [
+          {
+            kind: 'dismount_foot',
+            label: `Parada en aproximación despejada (${dismountAttempt.length?.toFixed(0)} m) y despliegue a pie`,
+            point: dismountPt,
+          },
+        ],
+      };
+    }
+
+    // Si ningún candidato pasó la huella estricta de 8 m por el escalonado de la calle estrecha,
+    // usar el prefijo seguro o la ruta suavizada sobre la malla ya erosionada por anchura (`width/2 + 0,15 m`)
+    // para que el vehículo de emergencia siempre avance por la calzada despejada hasta el punto practicable más cercano.
+    if (bestSafePrefix) {
+      const dismountPt = bestSafePrefix.path[bestSafePrefix.path.length - 1];
+      return {
+        ok: true,
+        path: bestSafePrefix.path,
+        length: bestSafePrefix.length,
+        dismountPoint: dismountPt,
+        footPath: [dismountPt, destination],
+        alternatives: [
+          {
+            kind: 'dismount_foot',
+            label: `Aproximación segura hasta antes del estrechamiento (${bestSafePrefix.length.toFixed(0)} m) y despliegue a pie`,
+            point: dismountPt,
+          },
+        ],
+      };
+    }
+
+    // Respaldo sobre malla erosionada por anchura para vehículos de emergencia cuando un giro de calzada
+    // roza el borde del escalonado de celda: traza la polilínea continua por celdas 100 % libres y erosionadas.
+    for (const cand of spacedCands.slice(0, 6)) {
+      const field = flow(eroded, cand.k);
+      if (field[start] < 0) continue;
+      let k = start;
+      const raw: Point2D[] = [vehGrid.point(k)];
+      const targetPt = vehGrid.point(cand.k);
+      for (let i = 0; i < free.length && k !== cand.k; i++) {
+        const next = eroded
+          .neighbors(k)
+          .filter((n) => field[n] >= 0 && field[n] < field[k])
+          .sort((a, b) => {
+            if (field[a] !== field[b]) return field[a] - field[b];
+            return dist(vehGrid.point(a), targetPt) - dist(vehGrid.point(b), targetPt);
+          })[0];
+        if (next === undefined) break;
+        k = next;
+        raw.push(vehGrid.point(k));
+      }
+      if (k !== cand.k || raw.length < 2) continue;
+      const len = pathLength(raw);
+      if (len < 2) continue;
+      const dismountPt = raw[raw.length - 1];
+      return {
+        ok: true,
+        path: raw,
+        length: len,
+        dismountPoint: dismountPt,
+        footPath: [dismountPt, destination],
+        alternatives: [
+          {
+            kind: 'dismount_foot',
+            label: `Aproximación por calzada despejada (${len.toFixed(0)} m) y despliegue a pie`,
+            point: dismountPt,
+          },
+        ],
+      };
     }
   }
 

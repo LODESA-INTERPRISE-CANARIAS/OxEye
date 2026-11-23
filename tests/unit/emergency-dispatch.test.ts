@@ -343,4 +343,136 @@ describe('FEATURE · Sistema de despacho, patrullaje y despliegue de vehículos 
       sim.fleet.units.filter((u) => u.kind === 'police_van')
     ).toHaveLength(1);
   });
+
+  it('CA 12 · fire truck dispatches from exterior base, drives toward kitchen fire, parks, deploys firefighters on foot, extinguishes fire, and returns to base', () => {
+    configure(MAPS_DATA);
+    const map = MAPS_DATA.cristo;
+    const scene = initialScene('cristo', map, CARTO_DATA);
+    scene.autoIncidents = false;
+    // Garantizar acceso vehicular abierto para bomberos
+    const gate = scene.entrances[0];
+    gate.spawnType = 'mixed';
+    gate.accessCategory = 'emergency_vehicle';
+    gate.clearWidth = 6;
+    gate.recommendedAuthorities = ['foot', 'light_stretchers', 'passenger_vehicles', 'heavy_trucks'];
+
+    scene.infrastructure = scene.infrastructure.filter((r) => r.kind !== 'fire');
+    scene.infrastructure.push({
+      id: 'fire-truck-1',
+      name: 'Bomberos 1',
+      kind: 'fire',
+      role: 'emergency',
+      x: gate.x,
+      y: gate.y,
+      width: 3,
+      depth: 8,
+      staff: 4,
+      crewCapacity: 4,
+      capacity: 1,
+      delay: 2,
+      handling: 15,
+      active: true,
+      operationalMode: 'reserve',
+      availableForReinforcement: true,
+      phaseTags: ['event'],
+    });
+
+    const engine = new EventEngine(phaseScene(scene, 'event'));
+    const sim = new ResponseSimulation(engine);
+    engine.emergency = sim;
+
+    const fireRow = sim.inject('fire');
+    expect(fireRow).not.toBeNull();
+    fireRow!.reportedAt = 0;
+    fireRow!.status = 'pending';
+    fireRow!.localAttempt = true; // Saltar extintor local para comprobar movilización directa del camión
+
+    const truck = sim.fleet.units.find((u) => u.resourceId === 'fire-truck-1')!;
+    const startPos = [...truck.currentPosition];
+
+    let sawEnRoute = false;
+    let sawMoved = false;
+    let sawFirefightersOnFoot = false;
+
+    for (let i = 0; i < 600; i++) {
+      engine.tick(0.5);
+      if (truck.vehicleStatus === 'en_route') sawEnRoute = true;
+      if (
+        Math.hypot(
+          truck.currentPosition[0] - startPos[0],
+          truck.currentPosition[1] - startPos[1]
+        ) > 2
+      ) {
+        sawMoved = true;
+      }
+      if (sim.fleet.crew.some((c) => c.role === 'fire' && c.unitId === 'fire-truck-1')) {
+        sawFirefightersOnFoot = true;
+      }
+      if (fireRow!.status === 'resolved' && truck.vehicleStatus === 'parked') break;
+    }
+
+    expect(sawEnRoute).toBe(true);
+    expect(sawMoved).toBe(true);
+    expect(sawFirefightersOnFoot).toBe(true);
+    expect(fireRow!.status).toBe('resolved');
+    expect(truck.crewStatus).toBe('embarked');
+    expect(truck.available).toBe(true);
+  });
+
+  it('CA 13 · parked ambulance drives out with sirens after receiving a stretcher handover patient', () => {
+    configure(MAPS_DATA);
+    const map = MAPS_DATA.cristo;
+    const scene = initialScene('cristo', map, CARTO_DATA);
+    scene.autoIncidents = false;
+    const gate = scene.entrances[0];
+    gate.spawnType = 'vehicle';
+    gate.accessCategory = 'emergency_vehicle';
+    gate.clearWidth = 6;
+    scene.infrastructure = scene.infrastructure.filter((r) => r.kind !== 'ambulance');
+    scene.infrastructure.push({
+      id: 'amb-standby-1',
+      name: 'Ambulancia Plaza',
+      kind: 'ambulance',
+      role: 'emergency',
+      x: 52,
+      y: 52,
+      width: 2.5,
+      depth: 6,
+      staff: 2,
+      crewCapacity: 2,
+      capacity: 1,
+      active: true,
+      operationalMode: 'reserve',
+      availableForReinforcement: true,
+      phaseTags: ['event'],
+    });
+
+    const engine = new EventEngine(phaseScene(scene, 'event'));
+    const sim = new ResponseSimulation(engine);
+    engine.emergency = sim;
+    const amb = sim.fleet.units.find((u) => u.resourceId === 'amb-standby-1')!;
+    const startPos = [...amb.currentPosition];
+
+    const started = sim.fleet.triggerPatientEvacuation('amb-standby-1');
+    expect(started).toBe(true);
+    expect(amb.vehicleStatus).toBe('returning');
+    expect(amb.sirensActive).toBe(true);
+
+    let maxMoved = 0;
+    for (let i = 0; i < 300; i++) {
+      engine.tick(0.5);
+      maxMoved = Math.max(
+        maxMoved,
+        Math.hypot(
+          amb.currentPosition[0] - startPos[0],
+          amb.currentPosition[1] - startPos[1]
+        )
+      );
+      if (amb.vehicleStatus === 'parked') break;
+    }
+
+    expect(maxMoved).toBeGreaterThan(5);
+    expect(amb.vehicleStatus).toBe('parked');
+    expect(amb.available).toBe(true);
+  });
 });

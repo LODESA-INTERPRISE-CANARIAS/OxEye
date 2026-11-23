@@ -184,10 +184,10 @@ export const RESPONSE_PROFILES: Record<string, ResponseProfile> = {
     staff: 1,
   },
   stretcher: {
-    name: 'Camilla + equipo',
-    width: 1.1,
-    length: 3.6,
-    speed: 0.7,
+    name: 'Camilla desplegada + 2 operarios',
+    width: 0.65,
+    length: 2.0,
+    speed: 0.85,
     staff: 2,
   },
   ambulance: {
@@ -1044,10 +1044,27 @@ export class ResponseSimulation extends EmergencyLab {
       const next = Math.min(pLength, (row.vehicleDistance || 0) + step);
       const pose = poseAt(row.path, next);
       if (!footprintClear(e, pose, vWidth, vLength)) {
-        row.status = 'blocked';
-        row.note =
-          'La huella queda bloqueada por un elemento fijo o por el giro.';
-        return false;
+        // Si es asistencia sanitaria/camilla y el sanitario a pie sí cabe, no cancelar como "sin respuesta disponible":
+        // continuar la asistencia a pie y registrar si la camilla no pudo pasar en la fase de evacuación.
+        const isMedical = ['firstaid', 'stretcher', 'ambulance'].includes(
+          row.responseMode || ''
+        );
+        if (isMedical && footprintClear(e, pose, 0.55, 0.7)) {
+          row.vehicleWidth = 0.55;
+          row.vehicleLength = 0.7;
+          row.footDeployment = true;
+          if (row.phase === 'transfer' || row.responseMode === 'stretcher') {
+            row.stretcherEvacuationBlocked = true;
+            row.failedPhase = 'stretcher_evacuation';
+            row.note =
+              'Asistencia sanitaria prestada a pie; la camilla desplegada no cabe en este giro o estrechamiento.';
+          }
+        } else {
+          row.status = 'blocked';
+          row.note =
+            'La huella queda bloqueada por un elemento fijo o por el giro.';
+          return false;
+        }
       }
       const blockers = e.agents.filter(
         (a: Agent) =>
@@ -1222,6 +1239,10 @@ export class ResponseSimulation extends EmergencyLab {
     if (a) {
       if (row.phase === 'handover') {
         this.e.depart(a);
+        // Si un equipo de camilla entregó el paciente a una ambulancia estacionada, movilizar la ambulancia para evacuarlo
+        if (row.transportId) {
+          this.fleet?.triggerPatientEvacuation(row.transportId);
+        }
       } else {
         this.e.assign(a);
       }
@@ -1295,6 +1316,10 @@ export class ResponseSimulation extends EmergencyLab {
       }
       if (row.status === 'local') {
         this.fire.localStep(row, dt);
+        // Mientras se intenta la primera intervención con extintor, movilizar en paralelo el camión de bomberos
+        if (row.type === 'fire' && this.fleet && !this.fleet.missions.has(row.id)) {
+          this.fleet.dispatchForIncident(row, 'fire');
+        }
         continue;
       }
       if (row.status === 'blocked' && e.time >= (row.retryAt || 0)) {
