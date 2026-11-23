@@ -94,7 +94,13 @@ export function reconcile(
         Object.assign(o, {
           role: c.role,
           capacity:
-            kind === 'picnic' ? 6 : c.role === 'emergency' ? 1 : 10,
+            kind === 'picnic'
+              ? 6
+              : kind === 'yellow_tent'
+                ? 2
+                : c.role === 'emergency'
+                  ? 1
+                  : 10,
           staff: defaultStaff,
           ...(isEmergencyVeh
             ? {
@@ -107,6 +113,8 @@ export function reconcile(
             ({
               fire: 90,
               medical: 30,
+              yellow_tent: 20,
+              violet_point: 15,
               security: 15,
               patrol: 30,
               police_van: 45,

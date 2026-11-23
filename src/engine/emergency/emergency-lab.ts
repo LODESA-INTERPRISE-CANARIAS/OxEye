@@ -1,4 +1,10 @@
 import type {EmergencyIncident, Infrastructure, Scene} from '../../types';
+import {
+  categoryForIncidentType,
+  formatIncidentCode,
+  normalizeSeverity,
+  syncIncidentHistory,
+} from './incident-center';
 import {advancePriority, inVehicle, priorityRoute} from './priority';
 
 const esc = (s: unknown): string =>
@@ -21,7 +27,7 @@ export const INCIDENTS: Record<
   string,
   {
     name: string;
-    service: 'medical' | 'fire' | 'security';
+    service: 'medical' | 'fire' | 'security' | 'yellow_tent' | 'violet_point';
     duration: number;
     question: string;
   }
@@ -78,6 +84,27 @@ export const INCIDENTS: Record<
     duration: 120,
     question:
       '¿Hay vigilancia, señalización o un paso cercano que evite que los asistentes salten la valla?',
+  },
+  accessibility: {
+    name: 'Solicitud de acompañamiento',
+    service: 'yellow_tent',
+    duration: 180,
+    question:
+      '¿Hay una Carpa Amarilla colocada con auxiliares disponibles y recorrido accesible?',
+  },
+  violet_point: {
+    name: 'Solicitud de atención reservada',
+    service: 'violet_point',
+    duration: 240,
+    question:
+      '¿Hay un Punto Violeta colocado, accesible y operativo en el recinto?',
+  },
+  congestion: {
+    name: 'Congestión y afluencia puntual',
+    service: 'security',
+    duration: 120,
+    question:
+      '¿Se despeja el embotellamiento y se orienta la circulación de visitantes?',
   },
 };
 
@@ -148,6 +175,7 @@ export class EmergencyLab {
   e: any;
   events: EmergencyIncident[];
   next: number;
+  categoryCounts: Record<string, number>;
   seed?: number;
   random: () => number;
   nextRandom: number;
@@ -159,6 +187,7 @@ export class EmergencyLab {
     this.e = e;
     this.events = [];
     this.next = 1;
+    this.categoryCounts = {};
     this.random = () => {
       this.seed =
         (((this.seed ?? e.s.seed ^ 541) * 1664525 + 1013904223) >>> 0);
@@ -203,8 +232,15 @@ export class EmergencyLab {
       station?.cell ??
       (agent ? e.g.index(agent.x, agent.y) : e.entries[0]?.cell);
     if (anchor === undefined || anchor === null || anchor < 0) return null;
+    const cat = categoryForIncidentType(type);
+    this.categoryCounts[cat] = (this.categoryCounts[cat] || 0) + 1;
     const row: EmergencyIncident = {
       id: this.next++,
+      code: formatIncidentCode(cat, this.categoryCounts[cat]),
+      category: cat,
+      severity: normalizeSeverity(undefined, type),
+      sensitive: cat === 'violet_point',
+      hasPreDetectionData: true,
       type,
       name: spec.name,
       created: e.time,
@@ -252,6 +288,7 @@ export class EmergencyLab {
         }
       }
     }
+    syncIncidentHistory(this.e);
     return row;
   }
 
@@ -273,8 +310,15 @@ export class EmergencyLab {
         ? rawCell
         : e.g.nearest(agent.x, agent.y, 6);
     if (anchor < 0) return null;
+    const cat = categoryForIncidentType(type);
+    this.categoryCounts[cat] = (this.categoryCounts[cat] || 0) + 1;
     const row: EmergencyIncident = {
       id: this.next++,
+      code: formatIncidentCode(cat, this.categoryCounts[cat]),
+      category: cat,
+      severity: normalizeSeverity(undefined, type),
+      sensitive: cat === 'violet_point',
+      hasPreDetectionData: true,
       type,
       name: detail ? `${spec.name} (${detail})` : spec.name,
       created: e.time,
@@ -286,6 +330,7 @@ export class EmergencyLab {
       fenceName: detail,
     };
     this.events.push(row);
+    syncIncidentHistory(this.e);
     return row;
   }
 
@@ -414,6 +459,7 @@ export class EmergencyLab {
         if (a?.state === 'incident') e.assign(a);
       }
     }
+    syncIncidentHistory(e);
   }
 
   blocksPerson(x: number, y: number, r: number): boolean {

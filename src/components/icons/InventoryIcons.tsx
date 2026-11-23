@@ -139,6 +139,21 @@ export const InventoryIcon: React.FC<InventoryIconProps> = ({
           <path d="M12 8v8M8 12h8" />
         </svg>
       );
+    case 'yellow_tent':
+      return (
+        <svg {...common}>
+          <path d="M3 19L12 5l9 14H3z" />
+          <circle cx="12" cy="11.5" r="1.4" />
+          <path d="M9.5 14.5h5M12 14.5v2.5" />
+        </svg>
+      );
+    case 'violet_point':
+      return (
+        <svg {...common}>
+          <path d="M12 3l7 3v5.5c0 4.5-3 7.8-7 9.5-4-1.7-7-5-7-9.5V6l7-3z" />
+          <circle cx="12" cy="11.5" r="2.2" />
+        </svg>
+      );
     case 'steward':
       return (
         <svg {...common}>

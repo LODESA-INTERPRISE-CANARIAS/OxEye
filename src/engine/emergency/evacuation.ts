@@ -175,7 +175,8 @@ export class Evacuation {
   svg(): string {
     const fencedCordons: Array<{rowId: string | number; center: [number, number]}> =
       (this.e.emergency?.fire?.cordons || []).filter(
-        (c: {state: string}) => c.state === 'fenced'
+        (c: {state: string}) =>
+          c.state === 'fenced' || c.state === 'cleanup' || c.state === 'reopened'
       );
     return this.orders
       .filter(

@@ -102,6 +102,26 @@ export const INVENTORY_META: Record<string, InventoryItemMeta> = {
       multi: '2+: Atención sanitaria simultánea en varios focos; reduce drásticamente el riesgo de saturación.',
     }),
   },
+  yellow_tent: {
+    category: 'emergency',
+    icon: '🟡',
+    accent: '#E69A26',
+    tiers: () => ({
+      zero: '0: Sin Carpa Amarilla; las solicitudes de acompañamiento o accesibilidad quedarán en espera.',
+      one: '1: Carpa Amarilla física con 2 auxiliares para acompañamiento, préstamo de materiales y punto de calma.',
+      multi: '2+: Cobertura de accesibilidad distribuida en distintas zonas del recinto sin esperas por saturación.',
+    }),
+  },
+  violet_point: {
+    category: 'emergency',
+    icon: '🟣',
+    accent: '#9755C2',
+    tiers: () => ({
+      zero: '0: Sin Punto Violeta en el recinto; no habrá espacio físico reservado de atención.',
+      one: '1: Punto Violeta físico con atención reservada, discreta y privacidad garantizada en modo público.',
+      multi: '2+: Puntos de atención reservada en varios sectores para cobertura inmediata y segura.',
+    }),
+  },
   steward: {
     category: 'emergency',
     icon: '🦺',

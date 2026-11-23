@@ -97,6 +97,16 @@ export function objectSkin(
   } else if (kind === 'medical') {
     content =
       '<path d="M-.25 -1H.25V-.25H1V.25H.25V1H-.25V.25H-1V-.25H-.25Z" fill="#fff"/>';
+  } else if (kind === 'yellow_tent') {
+    content =
+      line(-w / 2, -h / 2, w / 2, h / 2) +
+      line(w / 2, -h / 2, -w / 2, h / 2) +
+      '<circle cx="0" cy="-.45" r=".28" fill="#fff"/><path d="M-.45 .05H.45M0 .05V.55M-.32 .95L0 .52L.32 .95" stroke="#fff" stroke-width=".18" fill="none" stroke-linecap="round"/>';
+  } else if (kind === 'violet_point') {
+    content =
+      line(-w / 2, -h / 2, w / 2, h / 2) +
+      line(w / 2, -h / 2, -w / 2, h / 2) +
+      '<circle cx="0" cy="0" r=".65" fill="#fff" fill-opacity=".92"/><circle cx="0" cy="0" r=".28" fill="#9755C2"/>';
   } else if (
     o.type === 'commerce' ||
     o.type === 'workshop' ||

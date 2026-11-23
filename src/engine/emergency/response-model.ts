@@ -7,6 +7,13 @@ import type {
   ResponseProfile,
   VehiclePose,
 } from '../../types';
+import {
+  categoryForIncidentType,
+  formatIncidentCode,
+  INCIDENT_CATEGORIES,
+  normalizeSeverity,
+  syncIncidentHistory,
+} from './incident-center';
 
 /**
  * Tiempos de respuesta externa orientativos para el Área Metropolitana de Tenerife
@@ -110,58 +117,65 @@ export function serviceLoad(emergency: any): ServiceLoadRow[] {
   const active = (emergency.events as EmergencyIncident[]).filter(
     (q) => !['resolved', 'unreported'].includes(q.status)
   );
-  return ['medical', 'security', 'fire', 'ambulance', 'patrol'].map((kind) => {
-    const resources = (emergency.resources() as Infrastructure[]).filter(
-      (r) =>
-        (r.kind === kind || (kind === 'patrol' && r.kind === 'police_van')) &&
-        r.active !== false
-    );
-    const staffPer =
-      kind === 'medical'
-        ? emergency.e.s.responseMode === 'stretcher'
-          ? 2
-          : 1
-        : ['fire', 'ambulance'].includes(kind)
-          ? 2
-          : 1;
-    const capacity = resources.reduce(
-      (n, r) =>
-        n +
-        Math.min(
-          Math.max(0, Math.floor(r.capacity || 0)),
-          Math.floor((r.staff || 0) / staffPer)
-        ),
-      0
-    );
-    const busy = active.filter(
-      (q) =>
-        q.resourceId &&
-        resources.some((r) => r.id === q.resourceId) &&
-        ['assigned', 'assisting', 'waiting_transport'].includes(q.status)
-    ).length;
-    const waiting = active.filter(
-      (q) =>
-        ['pending', 'waiting', 'blocked', 'waiting_transport'].includes(
-          q.status
-        ) &&
-        (q.type === 'fire'
-          ? 'fire'
-          : ['orientation', 'obstacle', 'conflict', 'fence_breach'].includes(
-                q.type
-              )
-            ? emergency.e.s.policeMode || 'security'
-            : q.responseMode === 'ambulance'
-              ? 'ambulance'
-              : 'medical') === kind
-    ).length;
-    return {
-      kind,
-      capacity,
-      busy,
-      waiting,
-      overloaded: waiting > 0 || (capacity > 0 && busy >= capacity),
-    };
-  });
+  const coreKinds = new Set(['medical', 'security', 'fire', 'ambulance', 'patrol']);
+  return ['medical', 'security', 'fire', 'ambulance', 'patrol', 'yellow_tent', 'violet_point']
+    .map((kind) => {
+      const resources = (emergency.resources() as Infrastructure[]).filter(
+        (r) =>
+          (r.kind === kind || (kind === 'patrol' && r.kind === 'police_van')) &&
+          r.active !== false
+      );
+      const staffPer =
+        kind === 'medical'
+          ? emergency.e.s.responseMode === 'stretcher'
+            ? 2
+            : 1
+          : ['fire', 'ambulance'].includes(kind)
+            ? 2
+            : 1;
+      const capacity = resources.reduce(
+        (n, r) =>
+          n +
+          Math.min(
+            Math.max(0, Math.floor(r.capacity || 0)),
+            Math.floor((r.staff || 0) / staffPer)
+          ),
+        0
+      );
+      const busy = active.filter(
+        (q) =>
+          q.resourceId &&
+          resources.some((r) => r.id === q.resourceId) &&
+          ['assigned', 'assisting', 'waiting_transport'].includes(q.status)
+      ).length;
+      const waiting = active.filter(
+        (q) =>
+          ['pending', 'waiting', 'blocked', 'waiting_transport'].includes(
+            q.status
+          ) &&
+          (q.type === 'fire'
+            ? 'fire'
+            : q.type === 'accessibility'
+              ? 'yellow_tent'
+              : q.type === 'violet_point'
+                ? 'violet_point'
+                : ['orientation', 'obstacle', 'conflict', 'fence_breach', 'congestion'].includes(
+                      q.type
+                    )
+                  ? emergency.e.s.policeMode || 'security'
+                  : q.responseMode === 'ambulance'
+                    ? 'ambulance'
+                    : 'medical') === kind
+      ).length;
+      return {
+        kind,
+        capacity,
+        busy,
+        waiting,
+        overloaded: waiting > 0 || (capacity > 0 && busy >= capacity),
+      };
+    })
+    .filter((row) => coreKinds.has(row.kind) || row.capacity > 0 || row.waiting > 0);
 }
 
 /**
@@ -182,6 +196,20 @@ export const RESPONSE_PROFILES: Record<string, ResponseProfile> = {
     length: 0.9,
     speed: 1.1,
     staff: 1,
+  },
+  yellow_tent: {
+    name: 'Auxiliar de Carpa Amarilla',
+    width: 0.5,
+    length: 0.5,
+    speed: 1.05,
+    staff: 1,
+  },
+  violet_point: {
+    name: 'Equipo Punto Violeta',
+    width: 0.5,
+    length: 0.5,
+    speed: 1.05,
+    staff: 2,
   },
   stretcher: {
     name: 'Camilla desplegada + 2 operarios',
@@ -295,7 +323,7 @@ export function responseRoute(
       ].filter((q) => q >= 0 && free[q]),
   };
   let start = -1;
-  let d = 1.5;
+  let d = Math.max(3.5, near + 1.5);
   const candidates: Array<{k: number; d: number}> = [];
   for (let k = 0; k < free.length; k++) {
     if (!free[k]) continue;
@@ -470,28 +498,31 @@ export class ResponseSimulation extends EmergencyLab {
   ): EmergencyIncident | null {
     const row = super.inject(type, sourceId);
     if (row) {
-      row.severity = ['minor', 'orientation', 'obstacle'].includes(type)
-        ? 'leve'
-        : type === 'fire'
-          ? 'grave'
-          : 'moderada';
-      row.responseMode = [
-        'fire',
-        'conflict',
-        'orientation',
-        'obstacle',
-        'fence_breach',
-      ].includes(type)
-        ? type === 'fire'
-          ? 'fire'
-          : this.e.s.policeMode || 'security'
-        : this.e.s.responseMode || 'firstaid';
+      row.severity = normalizeSeverity(row.severity, type);
+      row.responseMode =
+        type === 'accessibility'
+          ? 'yellow_tent'
+          : type === 'violet_point'
+            ? 'violet_point'
+            : [
+                  'fire',
+                  'conflict',
+                  'orientation',
+                  'obstacle',
+                  'fence_breach',
+                  'congestion',
+                ].includes(type)
+              ? type === 'fire'
+                ? 'fire'
+                : this.e.s.policeMode || 'security'
+              : this.e.s.responseMode || 'firstaid';
       row.phase = 'alert';
       if (type === 'fire') this.fire.start(row);
       row.model = 'Hipótesis editable · no protocolo validado';
       row.afterReportStatus = row.status;
       row.status = 'unreported';
       row.reporters = [];
+      syncIncidentHistory(this.e);
     }
     return row;
   }
@@ -503,17 +534,27 @@ export class ResponseSimulation extends EmergencyLab {
   ): EmergencyIncident | null {
     const row = super.injectAtAgent(type, agent, detail);
     if (row) {
-      row.severity = type === 'fence_breach' ? 'moderada' : 'leve';
-      row.responseMode = ['conflict', 'orientation', 'obstacle', 'fence_breach'].includes(
-        type
-      )
-        ? this.e.s.policeMode || 'security'
-        : this.e.s.responseMode || 'firstaid';
+      row.severity = normalizeSeverity(row.severity, type);
+      row.responseMode =
+        type === 'accessibility'
+          ? 'yellow_tent'
+          : type === 'violet_point'
+            ? 'violet_point'
+            : [
+                  'conflict',
+                  'orientation',
+                  'obstacle',
+                  'fence_breach',
+                  'congestion',
+                ].includes(type)
+              ? this.e.s.policeMode || 'security'
+              : this.e.s.responseMode || 'firstaid';
       row.phase = 'alert';
       row.model = 'Hipótesis editable · no protocolo validado';
       row.afterReportStatus = row.status;
       row.status = 'unreported';
       row.reporters = [];
+      syncIncidentHistory(this.e);
     }
     return row;
   }
@@ -585,17 +626,21 @@ export class ResponseSimulation extends EmergencyLab {
 
     const p = RESPONSE_PROFILES[row.responseMode || 'firstaid'] || RESPONSE_PROFILES.firstaid;
     const kind =
-      row.responseMode === 'ambulance'
-        ? 'ambulance'
-        : row.responseMode === 'fire'
-          ? 'fire'
-          : row.responseMode === 'security'
-            ? 'security'
-            : row.responseMode === 'patrol'
-              ? 'patrol'
-              : row.responseMode === 'police_van'
-                ? 'police_van'
-                : 'medical';
+      row.responseMode === 'yellow_tent'
+        ? 'yellow_tent'
+        : row.responseMode === 'violet_point'
+          ? 'violet_point'
+          : row.responseMode === 'ambulance'
+            ? 'ambulance'
+            : row.responseMode === 'fire'
+              ? 'fire'
+              : row.responseMode === 'security'
+                ? 'security'
+                : row.responseMode === 'patrol'
+                  ? 'patrol'
+                  : row.responseMode === 'police_van'
+                    ? 'police_van'
+                    : 'medical';
     const candidates = this.resources().filter(
       (r) =>
         r.active !== false &&
@@ -613,6 +658,20 @@ export class ResponseSimulation extends EmergencyLab {
             ['ambulance', 'fire', 'patrol'].includes(kind) ? 1 : Infinity
           )
     );
+    if (!candidates.length && (kind === 'yellow_tent' || kind === 'violet_point')) {
+      const hasPhysical = this.resources().some(
+        (r) => r.kind === kind && r.active !== false && (r.staff || 0) >= p.staff
+      );
+      row.status = 'waiting';
+      row.note = hasPhysical
+        ? kind === 'yellow_tent'
+          ? 'Carpa Amarilla sin auxiliares disponibles en este momento; solicitud en espera.'
+          : 'Punto Violeta ocupado atendiendo otra solicitud; en espera.'
+        : kind === 'yellow_tent'
+          ? 'No hay ninguna Carpa Amarilla colocada en el plano para atender la solicitud.'
+          : 'No hay ningún Punto Violeta colocado en el plano para prestar atención reservada.';
+      return;
+    }
     if (!candidates.length) {
       const rc = resolveResponseConditions(e.s.responseConditions);
       const externalTravelSec =
@@ -824,18 +883,54 @@ export class ResponseSimulation extends EmergencyLab {
     const patrol = this.watch.patrols.find(
       (pt) => pt.resourceId === resource.id
     );
-    row.origin = patrol
+    const resOrigin: Point = patrol
       ? [patrol.x, patrol.y]
       : [
           (resource.x * e.g.m.widthMeters) / 100,
           (resource.y * e.g.m.heightMeters) / 100,
         ];
+    row.origin = resOrigin;
+    const dToPoint = dist(resOrigin, row.point!);
+    // En Punto Violeta siempre sale personal desde el Punto Violeta hacia el lugar;
+    // en Carpa Amarilla, si está muy cerca (<= 14 m) puede acercarse el visitante, si no sale el auxiliar.
+    row.selfApproach = kind === 'yellow_tent' && dToPoint <= 14;
+    if (kind === 'violet_point') {
+      const secSupport = this.resources().find(
+        (r) =>
+          r.active !== false &&
+          ['security', 'patrol', 'police_van'].includes(r.kind || '') &&
+          (r.staff || 0) > 0
+      );
+      if (secSupport) {
+        row.policeSupportId = secSupport.id;
+        row.policeSupportName = secSupport.name;
+        const secPos: Point = [
+          (secSupport.x * e.g.m.widthMeters) / 100,
+          (secSupport.y * e.g.m.heightMeters) / 100,
+        ];
+        const secRoute = responseRoute(
+          e,
+          secPos,
+          row.selfApproach ? resOrigin : row.point!,
+          RESPONSE_PROFILES.security,
+          2.5
+        );
+        if (!secRoute.error && secRoute.path) {
+          row.supportPath = secRoute.path;
+          row.supportLength = secRoute.length;
+          row.supportDistance = 0;
+          row.supportPose = poseAt(secRoute.path, 0);
+        }
+      }
+    }
+    const routeFrom = row.selfApproach ? row.point! : row.origin;
+    const routeTo = row.selfApproach ? row.origin : row.point!;
     let route = exteriorStagingOnly
       ? {error: 'Acceso vehicular directo no disponible; estacionamiento exterior y desembarco a pie.'}
       : responseRoute(
           e,
-          row.origin,
-          row.point!,
+          routeFrom,
+          routeTo,
           profile,
           profile.length / 2 + 1
         );
@@ -1049,6 +1144,8 @@ export class ResponseSimulation extends EmergencyLab {
         const isMedical = ['firstaid', 'stretcher', 'ambulance'].includes(
           row.responseMode || ''
         );
+        const isPointPed =
+          row.responseMode === 'yellow_tent' || row.responseMode === 'violet_point';
         if (isMedical && footprintClear(e, pose, 0.55, 0.7)) {
           row.vehicleWidth = 0.55;
           row.vehicleLength = 0.7;
@@ -1059,6 +1156,8 @@ export class ResponseSimulation extends EmergencyLab {
             row.note =
               'Asistencia sanitaria prestada a pie; la camilla desplegada no cabe en este giro o estrechamiento.';
           }
+        } else if (isPointPed && e.g.nearest(pose.x, pose.y, 1.5) >= 0) {
+          // Peatón de Carpa Amarilla / Punto Violeta: bordea esquinas de lastres o mobiliario sin quedar bloqueado
         } else {
           row.status = 'blocked';
           row.note =
@@ -1069,7 +1168,7 @@ export class ResponseSimulation extends EmergencyLab {
       const blockers = e.agents.filter(
         (a: Agent) =>
           a.state !== 'gone' &&
-          !(row.phase === 'transfer' && a.id === row.agentId) &&
+          !((row.phase === 'transfer' || row.selfApproach) && a.id === row.agentId) &&
           inVehicle([a.x, a.y], pose, vWidth, vLength, a.r)
       );
       const other = this.events.find(
@@ -1081,7 +1180,9 @@ export class ResponseSimulation extends EmergencyLab {
             Math.hypot(vLength, vWidth) / 2 +
               Math.hypot(r.vehicleLength || 2, r.vehicleWidth || 2) / 2
       );
-      if (blockers.length || other) {
+      const isPointPedestrian =
+        row.responseMode === 'yellow_tent' || row.responseMode === 'violet_point';
+      if ((blockers.length && !isPointPedestrian) || other) {
         row.speedNow = 0;
         row.peopleDelay = (row.peopleDelay || 0) + dt;
         row.note = other
@@ -1094,17 +1195,23 @@ export class ResponseSimulation extends EmergencyLab {
       row.vehiclePose = pose;
       row.vehicleDistance = next;
       left -= step;
-      if (row.phase === 'transfer') {
+      if (row.phase === 'transfer' || row.selfApproach) {
         const a = e.byId.get(row.agentId);
         if (a) {
           e.remove(a);
           a.x = pose.x;
           a.y = pose.y;
-          a.state = 'transport';
+          a.state = row.selfApproach ? 'approaching_service' : 'transport';
           e.insert(a);
         }
       }
       if (next >= pLength - 0.01) return true;
+    }
+    if (row.supportPath && row.supportPose && (row.supportLength || 0) > 0) {
+      const sLen = row.supportLength || 0;
+      const sNext = Math.min(sLen, (row.supportDistance || 0) + dt * 1.15);
+      row.supportDistance = sNext;
+      row.supportPose = poseAt(row.supportPath, sNext);
     }
     return false;
   }
@@ -1115,7 +1222,9 @@ export class ResponseSimulation extends EmergencyLab {
       row.responseMode === 'firstaid' ||
       row.responseMode === 'security' ||
       row.responseMode === 'patrol' ||
-      row.responseMode === 'fire'
+      row.responseMode === 'fire' ||
+      ((row.responseMode === 'yellow_tent' || row.responseMode === 'violet_point') &&
+        row.selfApproach)
     ) {
       this.resolve(row);
       return;
@@ -1247,6 +1356,7 @@ export class ResponseSimulation extends EmergencyLab {
         this.e.assign(a);
       }
     }
+    syncIncidentHistory(this.e);
   }
 
   override update(dt: number): void {
@@ -1366,6 +1476,7 @@ export class ResponseSimulation extends EmergencyLab {
         this.startTransfer(row);
       }
     }
+    syncIncidentHistory(e);
   }
 }
 
@@ -1382,36 +1493,111 @@ const esc = (s: unknown): string =>
       })[c] || c
   );
 
+export interface ResponseSvgOptions {
+  highlightIncidentId?: string | number | null;
+  viewMode?: 'focus' | 'context';
+  privacyMode?: 'public' | 'authorized_synthetic';
+}
+
 /**
  * Generates an SVG markup string for active response teams, vehicles, sirens, fire, evacuation zones, and patrols.
  *
  * @param engine - EventEngine instance.
+ * @param opts - Optional highlight, focus/context mode, and privacy settings for incident playback.
  * @returns SVG markup string.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function responseSVG(engine: any): string {
+export function responseSVG(engine: any, opts?: ResponseSvgOptions): string {
   const fireSvg = engine.emergency.fire?.svg() || '';
   const evacSvg = engine.emergency.evacuation?.svg() || '';
   const watchSvg = engine.emergency.watch?.svg(engine.emergency.events) || '';
   const fleetSvg = engine.emergency.fleet?.svg() || '';
+  const highlightId = opts?.highlightIncidentId ?? null;
+  const isFocus = opts?.viewMode === 'focus' && highlightId != null;
+  const privacyMode = opts?.privacyMode || 'public';
+
   const eventsSvg = (engine.emergency.events as EmergencyIncident[])
-    .filter((row) => row.status !== 'resolved' && row.status !== 'unreported')
+    .filter((row) => {
+      if (highlightId != null && String(row.id) === String(highlightId)) {
+        return true;
+      }
+      return row.status !== 'resolved' && row.status !== 'unreported';
+    })
     .map((row) => {
-      const [x, y] = row.point!;
-      let html = `<circle cx="${x}" cy="${y}" r="2.4" fill="${
-        row.status === 'resolved' ? '#93b784' : '#d87956'
-      }" fill-opacity=".45" stroke="#c16d48" stroke-width=".3"/><text x="${x}" y="${
-        y + 0.7
-      }" text-anchor="middle" font-size="2.2">${
+      const cat = row.category || categoryForIncidentType(row.type);
+      const meta = INCIDENT_CATEGORIES[cat];
+      const code = row.code || formatIncidentCode(cat, Number(row.id) || 1);
+      const isSelected = highlightId != null && String(row.id) === String(highlightId);
+      const opacity = isFocus && !isSelected ? '.26' : '1';
+      const isRedactedViolet = cat === 'violet_point' && privacyMode === 'public';
+
+      if (isRedactedViolet) {
+        const [vx, vy] = row.point || [40, 40];
+        let vHtml = `<g data-investigate-incident="${esc(row.id)}" class="incident-map-marker" opacity="${opacity}" style="cursor:pointer"><title>${esc(
+          `${code} · Punto Violeta (atención reservada · doble clic para analizar)`
+        )}</title>`;
+        if (isSelected) {
+          vHtml += `<circle cx="${vx}" cy="${vy}" r="4.6" fill="none" stroke="${meta.color}" stroke-width=".4" stroke-dasharray="1.2 .7"/>`;
+        }
+        vHtml += `<circle cx="${vx}" cy="${vy}" r="2.3" fill="${
+          row.status === 'resolved' ? '#64748b' : meta.color
+        }" fill-opacity="${row.status === 'resolved' ? '.25' : '.34'}" stroke="${meta.color}" stroke-width=".32"/><text x="${vx}" y="${
+          vy - 2.9
+        }" text-anchor="middle" font-size="1.25" font-weight="700" fill="${meta.color}">${esc(
+          code
+        )}</text><text x="${vx}" y="${vy + 0.65}" text-anchor="middle" font-size="1.9" font-weight="700" fill="#1e293b">${
+          row.status === 'resolved' ? '✓' : '!'
+        }</text></g>`;
+        if (row.path && row.status !== 'resolved') {
+          vHtml += `<polyline points="${row.path
+            .map((pt) => pt.join(','))
+            .join(' ')}" fill="none" stroke="${meta.color}" stroke-opacity="${opacity}" stroke-width=".45" stroke-dasharray="1.5 1"/>`;
+        }
+        if (row.vehiclePose && row.status !== 'resolved') {
+          const vp2 = row.vehiclePose;
+          vHtml += `<g opacity="${opacity}" transform="translate(${vp2.x} ${vp2.y})"><ellipse cy=".15" rx=".48" ry=".28" fill="#294652"/><circle cy="-.25" r=".46" fill="${meta.color}" stroke="#ffffff" stroke-width=".16"/>${
+            row.phase === 'transfer'
+              ? '<circle cx=".65" cy="-.25" r=".42" fill="#f8fafc" stroke="#475569" stroke-width=".15"/>'
+              : ''
+          }</g><g opacity="${opacity}" transform="translate(${vp2.x} ${vp2.y - 2.3})"><rect x="-2.4" y="-1.4" width="4.8" height="1.9" rx=".5" fill="#192e38"/><text text-anchor="middle" font-size="1.35" fill="white">VIO</text></g>`;
+        }
+        if (row.supportPath && row.status !== 'resolved') {
+          vHtml += `<polyline points="${row.supportPath
+            .map((pt: number[]) => pt.join(','))
+            .join(' ')}" fill="none" stroke="#263e64" stroke-opacity=".65" stroke-width=".3" stroke-dasharray="1 1"/>`;
+        }
+        if (row.supportPose && row.status !== 'resolved') {
+          const sp = row.supportPose;
+          vHtml += `<g opacity="${opacity}" transform="translate(${sp.x} ${sp.y})"><circle r=".48" fill="#263e64" stroke="#fff" stroke-width=".15"/><text y="-1.1" text-anchor="middle" font-size="1.25" font-weight="700" fill="#263e64">POL</text></g>`;
+        }
+        return vHtml;
+      }
+
+      const [x, y] = row.point || [0, 0];
+      let html = `<g data-investigate-incident="${esc(row.id)}" class="incident-map-marker" opacity="${opacity}" style="cursor:pointer"><title>${esc(
+        `${code} · ${row.name || meta.label} (doble clic para investigar)`
+      )}</title>`;
+      if (isSelected) {
+        html += `<circle cx="${x}" cy="${y}" r="4.6" fill="none" stroke="${meta.color}" stroke-width=".4" stroke-dasharray="1.2 .7"/><circle cx="${x}" cy="${y}" r="6.8" fill="none" stroke="${meta.color}" stroke-opacity=".45" stroke-width=".25"/>`;
+      }
+      html += `<circle cx="${x}" cy="${y}" r="2.3" fill="${
+        row.status === 'resolved' ? '#64748b' : meta.color
+      }" fill-opacity="${row.status === 'resolved' ? '.25' : '.36'}" stroke="${meta.color}" stroke-width=".32"/><text x="${x}" y="${
+        y - 2.9
+      }" text-anchor="middle" font-size="1.25" font-weight="700" fill="${meta.color}">${esc(
+        code
+      )}</text><text x="${x}" y="${y + 0.65}" text-anchor="middle" font-size="1.9" font-weight="700" fill="#1e293b">${
         row.status === 'resolved' ? '✓' : '!'
-      }</text>`;
+      }</text></g>`;
       if (row.fleetMission) {
         return html;
       }
       const p = row.vehiclePose;
       const walking =
         row.footDeployment ||
-        ['firstaid', 'security'].includes(row.responseMode || '');
+        ['firstaid', 'security', 'yellow_tent', 'violet_point'].includes(
+          row.responseMode || ''
+        );
       const stretcher = row.responseMode === 'stretcher';
       const vLen = row.vehicleLength || 2;
       const vWid = row.vehicleWidth || 2;
@@ -1419,11 +1605,11 @@ export function responseSVG(engine: any): string {
         html += `<polyline points="${row.path
           .map((pt) => pt.join(','))
           .join(' ')}" fill="none" stroke="${
-          row.phase === 'transfer' ? '#a47eaf' : '#3b8aa4'
-        }" stroke-width=".45" stroke-dasharray="1.5 1"/>`;
+          row.phase === 'transfer' ? '#a47eaf' : meta.color
+        }" stroke-opacity="${opacity}" stroke-width=".45" stroke-dasharray="1.5 1"/>`;
       }
       if (p && row.status !== 'resolved') {
-        html += `<g transform="translate(${p.x} ${p.y}) rotate(${
+        html += `<g opacity="${opacity}" transform="translate(${p.x} ${p.y}) rotate(${
           (p.angle * 180) / Math.PI
         })"><title>${esc(
           (row.resourceName || '') + ' · ' + (row.note || '')
@@ -1431,7 +1617,7 @@ export function responseSVG(engine: any): string {
         if (walking) {
           html += `<ellipse cy=".15" rx=".48" ry=".28" fill="#294652"/><circle cy="-.25" r=".44" fill="${
             row.responseMode === 'security' ? '#263e64' : '#e9eff0'
-          }" stroke="#3c6570" stroke-width=".15"/><path d="M-.22 0H.22M0-.22V.22" stroke="#c26d49" stroke-width=".12"/>`;
+          }" stroke="#3c6570" stroke-width=".15"/><path d="M-.22 0H.22M0-.22V.22" stroke="${meta.color}" stroke-width=".12"/>`;
         } else if (stretcher) {
           html += `<rect x="-1.1" y="-.35" width="2.2" height=".7" rx=".15" fill="#f2e8b9" stroke="#876e35" stroke-width=".15"/><circle cx="-1.5" r=".3" fill="#558c92"/><circle cx="1.5" r=".3" fill="#558c92"/>${
             row.phase === 'transfer'
@@ -1451,16 +1637,30 @@ export function responseSVG(engine: any): string {
         }
         const police = ['security', 'patrol'].includes(row.responseMode || '');
         const fire = row.responseMode === 'fire';
+        const isAcc = row.responseMode === 'yellow_tent';
+        const isVio = row.responseMode === 'violet_point';
         const lights = police
           ? ['#ea2948', '#2476ff']
           : fire
             ? ['#ed3434', '#ff9823']
-            : ['#20bc70', '#df2940'];
-        const tag = police ? 'POL' : fire ? 'BOM' : 'SAN';
+            : isAcc
+              ? ['#E69A26', '#fef3c7']
+              : isVio
+                ? ['#9755C2', '#e9d5ff']
+                : ['#20bc70', '#df2940'];
+        const tag = police
+          ? 'POL'
+          : fire
+            ? 'BOM'
+            : isAcc
+              ? 'ACC'
+              : isVio
+                ? 'VIO'
+                : 'SAN';
         html += `<circle cx="-.4" cy="0" r=".38" fill="${lights[0]}"/><circle cx=".4" cy="0" r=".38" fill="${lights[1]}"/>`;
         html += `<rect x="${-vLen / 2}" y="${
           -vWid / 2
-        }" width="${vLen}" height="${vWid}" fill="none" stroke="#43889b" stroke-dasharray=".4 .3" stroke-width=".12"/></g><g transform="translate(${
+        }" width="${vLen}" height="${vWid}" fill="none" stroke="#43889b" stroke-dasharray=".4 .3" stroke-width=".12"/></g><g opacity="${opacity}" transform="translate(${
           p.x
         } ${p.y - 2.6})"><rect x="-2.5" y="-1.5" width="5" height="2" rx=".5" fill="#192e38"/><text text-anchor="middle" font-size="1.45" fill="white">${tag}</text><circle cx="-2.8" cy="-.4" r=".5" fill="${
           lights[0]

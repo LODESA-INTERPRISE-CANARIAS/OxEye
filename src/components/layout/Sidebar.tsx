@@ -51,6 +51,7 @@ export interface SidebarProps {
   onTogglePlay: () => void;
   onSceneChanged: () => void;
   onRecordAction: (kind: string, value: unknown) => void;
+  onInvestigateIncident?: (incidentId: string | number) => void;
   reviewTick: number;
   safetyStop?: boolean;
 }
@@ -114,6 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onTogglePlay,
   onSceneChanged,
   onRecordAction,
+  onInvestigateIncident,
   reviewTick,
   safetyStop = false,
 }) => {
@@ -1522,6 +1524,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 fire: 'Bomberos',
                                 ambulance: 'Ambulancias',
                                 patrol: 'Policía',
+                                yellow_tent: 'Carpa Amarilla',
+                                violet_point: 'Punto Violeta',
                               } as Record<string, string>
                             )[r.kind] || r.kind}
                             : {r.busy}/{r.capacity} equipos ocupados ·{' '}
@@ -1587,6 +1591,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     >
                       ! Conflicto
                     </button>
+                    <button
+                      type="button"
+                      data-incident="accessibility"
+                      disabled={incidentsDisabled}
+                      title="Solicitud de acompañamiento / accesibilidad (requiere Carpa Amarilla en el plano)"
+                      onClick={() => handleIncidentClick('accessibility')}
+                    >
+                      Acompañamiento
+                    </button>
+                    <button
+                      type="button"
+                      data-incident="violet_point"
+                      disabled={incidentsDisabled}
+                      title="Solicitud de atención reservada (requiere Punto Violeta en el plano)"
+                      onClick={() => handleIncidentClick('violet_point')}
+                    >
+                      Atención reservada
+                    </button>
+                    <button
+                      type="button"
+                      data-incident="congestion"
+                      disabled={incidentsDisabled}
+                      onClick={() => handleIncidentClick('congestion')}
+                    >
+                      Congestión
+                    </button>
                   </div>
                   <p className="small-note" style={{marginTop: '2px'}}>
                     Sucesos ficticios. La respuesta depende de los recursos
@@ -1598,25 +1628,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                   <div id="director-log" aria-live="polite">
                     {openEmergencyEvents.map((row) => (
-                      <article key={row.id} className="director-log-row">
-                        <b>{row.name}</b>
+                      <article
+                        key={row.id}
+                        className="director-log-row"
+                        onDoubleClick={() => onInvestigateIncident?.(row.id)}
+                        title="Doble clic para investigar incidencia"
+                      >
+                        <b>
+                          {row.code ? `${row.code} · ` : ''}
+                          {row.name}
+                        </b>
                         <span>{statuses[row.status] || row.status}</span>
                         <small>
-                          {(row.reporters
-                            ?.map((p) => `${p.label} (${p.role})`)
-                            .join(', ') || '') +
-                            ` · Demora de aviso ${Math.round(row.reportDelay || 0)} s · ` +
-                            (row.phase === 'transfer' ? 'Traslado · ' : '') +
-                            (row.note || '') +
-                            (row.reinforcements
-                              ? ' · ' + row.reinforcements.status
-                              : '') +
-                            ` · ${row.yieldedIds?.length || 0} requeridos a ceder / ${
-                              row.yieldBlockedIds?.length || 0
-                            } sin espacio encontrado / ${Math.round(
-                              row.peopleDelay || 0
-                            )} s retenido`}
+                          {(row.sensitive
+                            ? 'Atención reservada en Punto Violeta'
+                            : (row.reporters
+                                ?.map((p) => `${p.label} (${p.role})`)
+                                .join(', ') || '') +
+                              ` · Demora de aviso ${Math.round(row.reportDelay || 0)} s · ` +
+                              (row.phase === 'transfer' ? 'Traslado · ' : '') +
+                              (row.note || '') +
+                              (row.reinforcements
+                                ? ' · ' + row.reinforcements.status
+                                : '') +
+                              ` · ${row.yieldedIds?.length || 0} requeridos a ceder / ${
+                                row.yieldBlockedIds?.length || 0
+                              } sin espacio encontrado / ${Math.round(
+                                row.peopleDelay || 0
+                              )} s retenido`)}
                         </small>
+                        {onInvestigateIncident && (
+                          <button
+                            type="button"
+                            className="quiet"
+                            style={{marginTop: '4px', fontSize: '11px', padding: '3px 7px'}}
+                            onClick={() => onInvestigateIncident(row.id)}
+                          >
+                            Investigar incidencia
+                          </button>
+                        )}
                       </article>
                     ))}
                     {recentLogs.map((row, idx) => (

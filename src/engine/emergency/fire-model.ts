@@ -20,11 +20,14 @@ export interface FireCordon {
   rowId: string | number;
   center: [number, number];
   radius: number;
-  state: 'approaching' | 'installing' | 'fenced';
+  state: 'approaching' | 'installing' | 'fenced' | 'cleanup' | 'reopened';
   startedAt: number;
   installAt: number;
   installDuration: number;
+  fencedAt?: number;
+  cleanupAt?: number;
   blockedApplied: boolean;
+  blockedCells?: number[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   crew: any[];
   targetCell: number;
@@ -312,15 +315,18 @@ export class FireModel {
     const iMax = Math.min(e.g.w - 1, Math.ceil((cx + r) / cell));
     const jMin = Math.max(0, Math.floor((cy - r) / cell));
     const jMax = Math.min(e.g.h - 1, Math.ceil((cy + r) / cell));
+    const blockedCells: number[] = [];
     for (let j = jMin; j <= jMax; j++) {
       for (let i = iMin; i <= iMax; i++) {
         const k = j * e.g.w + i;
         const p = e.g.point(k);
-        if (Math.hypot(p[0] - cx, p[1] - cy) <= r - 0.15) {
+        if (Math.hypot(p[0] - cx, p[1] - cy) <= r - 0.15 && e.g.free[k]) {
           e.g.free[k] = 0;
+          blockedCells.push(k);
         }
       }
     }
+    cordon.blockedCells = blockedCells;
     e.flow?.clear?.();
     // Desalojar visitantes que estuvieran dentro del círculo de cenizas
     for (const a of e.agents || []) {
@@ -382,12 +388,28 @@ export class FireModel {
         }
         if (elapsed >= c.installDuration) {
           c.state = 'fenced';
+          c.fencedAt = e.time;
           this.blockCordonCells(c);
           c.crew = [];
           if (row) {
             row.note =
               'Zona de cenizas vallada perimetralmente por el equipo de montaje; paso bloqueado.';
           }
+        }
+      } else if (c.state === 'fenced' && c.fencedAt != null && e.time - c.fencedAt >= 360) {
+        c.state = 'cleanup';
+        c.cleanupAt = e.time;
+        if (row) {
+          row.note = 'Retirada de restos y enfriamiento de la zona afectada en curso.';
+        }
+      } else if (c.state === 'cleanup' && c.cleanupAt != null && e.time - c.cleanupAt >= 180) {
+        c.state = 'reopened';
+        for (const k of c.blockedCells || []) {
+          e.g.free[k] = 1;
+        }
+        e.flow?.clear?.();
+        if (row) {
+          row.note = 'Restos retirados; perímetro reabierto al tránsito.';
         }
       }
     }
@@ -538,11 +560,15 @@ export class FireModel {
     for (const c of this.cordons) {
       const [cx, cy] = c.center;
       const r = c.radius;
+      if (c.state === 'reopened') {
+        html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#64748b" fill-opacity=".08" stroke="#199A87" stroke-opacity=".45" stroke-width=".2" stroke-dasharray=".8 .8" pointer-events="none"/><text x="${cx}" y="${cy - r - 1}" font-size="1.25" text-anchor="middle" fill="#199A87" font-weight="700">Zona reabierta</text>`;
+        continue;
+      }
       html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#4b4550" fill-opacity=".22" stroke="#7c2531" stroke-opacity=".35" stroke-width=".2" stroke-dasharray=".9 .6" pointer-events="none"/>`;
-      if (c.state === 'installing' || c.state === 'fenced') {
+      if (c.state === 'installing' || c.state === 'fenced' || c.state === 'cleanup') {
         const segs = 12;
         const progress =
-          c.state === 'fenced'
+          c.state === 'fenced' || c.state === 'cleanup'
             ? 1
             : Math.max(0.15, Math.min(1, (e.time - c.installAt) / c.installDuration));
         const activeSegs = Math.max(2, Math.round(segs * progress));
@@ -558,7 +584,11 @@ export class FireModel {
           html += `<circle cx="${(cx + Math.cos(ang) * r).toFixed(2)}" cy="${(cy + Math.sin(ang) * r).toFixed(2)}" r=".32" fill="#7c4f24" stroke="#fff" stroke-width=".12"/>`;
         }
         html += `<text x="${cx}" y="${cy - r - 1.2}" font-size="1.35" text-anchor="middle" fill="#682630" font-weight="700">${
-          c.state === 'fenced' ? 'Zona vallada · cenizas' : 'Vallando cenizas…'
+          c.state === 'cleanup'
+            ? 'Retirada de restos…'
+            : c.state === 'fenced'
+              ? 'Zona vallada · cenizas'
+              : 'Vallando cenizas…'
         }</text>`;
       }
       for (const w of c.crew) {

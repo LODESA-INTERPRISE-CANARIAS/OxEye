@@ -97,6 +97,7 @@ export interface MapShellHandle {
   drawBase: () => void;
   drawGrid: () => void;
   drawScenario: () => void;
+  focusPoint: (pt: Point, targetWidth?: number, animate?: boolean) => void;
 }
 
 export interface MapShellProps {
@@ -105,6 +106,7 @@ export interface MapShellProps {
   onClearProposal: () => void;
   onSceneChanged: () => void;
   onUndoRedo: (isRedo?: boolean) => void;
+  onInvestigateIncident?: (incidentId: string | number) => void;
   activeWeather: string;
 }
 
@@ -142,6 +144,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       onClearProposal,
       onSceneChanged,
       onUndoRedo,
+      onInvestigateIncident,
       activeWeather,
     },
     ref
@@ -876,9 +879,13 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         )}" fill="#3c5140" pointer-events="none">${esc(
           oKind === 'medical'
             ? '✚'
-            : oKind === 'toilet'
-              ? 'WC'
-              : o.name.split(' ').slice(0, 2).join(' ')
+            : oKind === 'yellow_tent'
+              ? 'Carpa Amarilla'
+              : oKind === 'violet_point'
+                ? 'Punto Violeta'
+                : oKind === 'toilet'
+                  ? 'WC'
+                  : o.name.split(' ').slice(0, 2).join(' ')
         )}</text>${
           sel
             ? `<rect class="selection-ring" x="${-w / 2 - 1}" y="${
@@ -1147,6 +1154,63 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       drawAnnotations,
     ]);
 
+    const focusAnimRef = useRef<number>(0);
+
+    const focusPoint = useCallback(
+      (pt: Point, targetWidth = 54, animate = true) => {
+        if (focusAnimRef.current) {
+          cancelAnimationFrame(focusAnimRef.current);
+          focusAnimRef.current = 0;
+        }
+        const mapEl = mapDivRef.current;
+        const rectBox = mapEl?.getBoundingClientRect();
+        const ratio =
+          rectBox && rectBox.height > 0
+            ? rectBox.width / rectBox.height
+            : viewRef.current.w / Math.max(1, viewRef.current.h);
+        const w = Math.max(32, Math.min(180, targetWidth));
+        const h = w / Math.max(0.25, ratio);
+        const target = {
+          x: pt[0] - w / 2,
+          y: pt[1] - h / 2,
+          w,
+          h,
+        };
+        const reduceMotion =
+          typeof document !== 'undefined' &&
+          document.body.classList.contains('reduce-motion');
+        if (!animate || reduceMotion) {
+          viewRef.current = target;
+          aspect();
+          applyView();
+          return;
+        }
+        const startView = {...viewRef.current};
+        const t0 = performance.now();
+        const dur = 280;
+        const stepAnim = (now: number) => {
+          const raw = Math.min(1, (now - t0) / dur);
+          const ease = 1 - Math.pow(1 - raw, 3);
+          viewRef.current = {
+            x: startView.x + (target.x - startView.x) * ease,
+            y: startView.y + (target.y - startView.y) * ease,
+            w: startView.w + (target.w - startView.w) * ease,
+            h: startView.h + (target.h - startView.h) * ease,
+          };
+          applyView();
+          if (raw < 1) {
+            focusAnimRef.current = requestAnimationFrame(stepAnim);
+          } else {
+            focusAnimRef.current = 0;
+            aspect();
+            applyView();
+          }
+        };
+        focusAnimRef.current = requestAnimationFrame(stepAnim);
+      },
+      [aspect, applyView]
+    );
+
     useImperativeHandle(
       ref,
       () => ({
@@ -1154,8 +1218,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         drawBase,
         drawGrid,
         drawScenario,
+        focusPoint,
       }),
-      [fit, drawBase, drawGrid, drawScenario]
+      [fit, drawBase, drawGrid, drawScenario, focusPoint]
     );
 
     const customFeaturesCount = currentMap().customLocation?.features?.length || 0;
@@ -2821,7 +2886,16 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            onDoubleClick={() => {
+            onDoubleClick={(e) => {
+              const incEl = (e.target as HTMLElement | null)?.closest?.(
+                '[data-investigate-incident]'
+              ) as HTMLElement | null;
+              if (incEl && incEl.dataset.investigateIncident && onInvestigateIncident) {
+                e.preventDefault();
+                e.stopPropagation();
+                onInvestigateIncident(incEl.dataset.investigateIncident);
+                return;
+              }
               if (tool === 'fence:chain' && fenceAnchor) {
                 setFenceAnchor(null);
                 fenceChainIdRef.current = null;
@@ -2874,7 +2948,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
                 ref={draftLayerRef}
                 pointerEvents="none"
               />
-              <g id="response-layer" pointerEvents="none" />
+              <g
+                id="response-layer"
+                pointerEvents={isSimulate ? 'visiblePainted' : 'none'}
+              />
             </svg>
           </div>
 

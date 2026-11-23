@@ -28,6 +28,7 @@ import {ParametersDialog} from './components/modals/ParametersDialog';
 import {ProgrammeDialog} from './components/modals/ProgrammeDialog';
 import {RiskDialog} from './components/modals/RiskDialog';
 import {SmallExampleDialog} from './components/modals/SmallExampleDialog';
+import {IncidentAnalysisPanel} from './components/simulation/IncidentAnalysisPanel';
 import {
   formatEventTimeOfDay,
   resolveScheduleWindow,
@@ -113,6 +114,19 @@ export const App: React.FC = () => {
   const [closingData, setClosingData] = useState<ClosingDialogData | null>(
     null
   );
+  const mainEngineRef = useRef<EventEngine | null>(null);
+  const investigationEngineRef = useRef<EventEngine | null>(null);
+  const [investigationState, setInvestigationState] = useState<{
+    incidentId: string | number;
+    savedMainTime: number;
+    currentTime: number;
+    playing: boolean;
+    playbackSpeed: 1 | 2 | 5 | 10 | 50;
+    viewMode: 'focus' | 'context';
+    privacyMode: 'public' | 'authorized_synthetic';
+  } | null>(null);
+  const investigationStateRef = useRef(investigationState);
+  investigationStateRef.current = investigationState;
 
   const preferences = useProjectStore((s) => s.preferences);
   const [speed, setSpeed] = useState(preferences.speed || 60);
@@ -152,18 +166,29 @@ export const App: React.FC = () => {
   const dismissedIncidentsRef = useRef<Set<string>>(new Set());
 
   const syncDirectorOverlays = useCallback(() => {
-    const engine = engineRef.current;
+    const inv = investigationStateRef.current;
+    const engine =
+      inv && investigationEngineRef.current
+        ? investigationEngineRef.current
+        : engineRef.current;
     const responseEl = document.getElementById('response-layer');
     const heatEl = document.getElementById('heat-layer');
     const cornerEl = document.getElementById('incident-corner');
     if (responseEl) {
       responseEl.innerHTML = engine
-        ? responseSVG(engine) + (engine.stewards?.svg() || '')
+        ? responseSVG(engine, {
+            highlightIncidentId: inv?.incidentId ?? null,
+            viewMode: inv?.viewMode || 'context',
+            privacyMode: inv?.privacyMode || 'public',
+          }) + (engine.stewards?.svg() || '')
         : '';
     }
     if (cornerEl) {
       const html = engine
-        ? incidentDashboard(engine, dismissedIncidentsRef.current)
+        ? incidentDashboard(engine, dismissedIncidentsRef.current, {
+            privacyMode: inv?.privacyMode || 'public',
+            activeIncidentId: inv?.incidentId ?? null,
+          })
         : '';
       cornerEl.innerHTML = html;
       cornerEl.hidden = !html;
@@ -296,6 +321,9 @@ export const App: React.FC = () => {
     runningRef.current = false;
     setRunning(false);
     simTargetRef.current = 0;
+    mainEngineRef.current = null;
+    investigationEngineRef.current = null;
+    setInvestigationState(null);
     engineRef.current = null;
     setEngineInstance(null);
     lastReviewRef.current = -1;
@@ -848,9 +876,161 @@ export const App: React.FC = () => {
     ]
   );
 
+  const buildInvestigationEngineAt = useCallback(
+    (targetGlobalSeconds: number, savedMainTime: number): EventEngine | null => {
+      const baseScene = replayBaseRef.current;
+      if (!baseScene) return null;
+      const goal = Math.max(0, Math.min(savedMainTime, targetGlobalSeconds));
+      let invEng = investigationEngineRef.current;
+      if (!invEng || goal < invEng.time - 0.25) {
+        invEng = createEngine(structuredClone(baseScene));
+        let cursor = 0;
+        const log = replayLogRef.current;
+        while (invEng.time + 0.49 <= goal && !invEng.finished) {
+          while (cursor < log.length && log[cursor].time <= invEng.time) {
+            const {kind, value} = log[cursor++];
+            if (kind === 'evacuate') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).evacuation?.order(null, true);
+            } else if (kind === 'inject') {
+              const v = value as string | {type: string; sourceId?: string | null};
+              invEng.emergency.inject(
+                typeof v === 'string' ? v : v.type,
+                typeof v === 'string' ? null : v.sourceId || null
+              );
+            } else if (kind === 'weather') {
+              applyLiveWeather(invEng, value as 'sun' | 'cloud' | 'rain' | 'wind');
+            } else if (kind === 'arrivals') {
+              applyLiveArrivals(invEng, Number(value));
+            }
+          }
+          invEng.tick(0.5);
+          invEng.experience.update();
+        }
+      } else {
+        const log = replayLogRef.current;
+        let cursor = 0;
+        while (cursor < log.length && log[cursor].time <= invEng.time) cursor++;
+        while (invEng.time + 0.49 <= goal && !invEng.finished) {
+          while (cursor < log.length && log[cursor].time <= invEng.time) {
+            const {kind, value} = log[cursor++];
+            if (kind === 'evacuate') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).evacuation?.order(null, true);
+            } else if (kind === 'inject') {
+              const v = value as string | {type: string; sourceId?: string | null};
+              invEng.emergency.inject(
+                typeof v === 'string' ? v : v.type,
+                typeof v === 'string' ? null : v.sourceId || null
+              );
+            } else if (kind === 'weather') {
+              applyLiveWeather(invEng, value as 'sun' | 'cloud' | 'rain' | 'wind');
+            } else if (kind === 'arrivals') {
+              applyLiveArrivals(invEng, Number(value));
+            }
+          }
+          invEng.tick(0.5);
+          invEng.experience.update();
+        }
+      }
+      investigationEngineRef.current = invEng;
+      engineRef.current = invEng;
+      return invEng;
+    },
+    []
+  );
+
+  const openInvestigation = useCallback(
+    (incidentId: string | number) => {
+      const activeMain = mainEngineRef.current || engineRef.current;
+      if (!activeMain) return;
+      runningRef.current = false;
+      setRunning(false);
+      shiftRunRef.current = false;
+      setShiftRun(false);
+      mainEngineRef.current = activeMain;
+      const savedMainTime = activeMain.time;
+      const row = activeMain.emergency.events.find(
+        (ev) => String(ev.id) === String(incidentId)
+      );
+      if (!row) return;
+
+      if (!replayBaseRef.current) {
+        replayBaseRef.current = structuredClone(activeMain.s);
+      }
+      investigationEngineRef.current = null;
+      const invEng =
+        buildInvestigationEngineAt(savedMainTime, savedMainTime) || activeMain;
+      engineRef.current = invEng;
+
+      const nextState = {
+        incidentId: row.id,
+        savedMainTime,
+        currentTime: invEng.time,
+        playing: false,
+        playbackSpeed: (investigationStateRef.current?.playbackSpeed || 1) as
+          | 1
+          | 2
+          | 5
+          | 10
+          | 50,
+        viewMode: (investigationStateRef.current?.viewMode || 'context') as
+          | 'focus'
+          | 'context',
+        privacyMode: (investigationStateRef.current?.privacyMode || 'public') as
+          | 'public'
+          | 'authorized_synthetic',
+      };
+      investigationStateRef.current = nextState;
+      setInvestigationState(nextState);
+      paintPeople();
+
+      if (row.point && !(row.sensitive && nextState.privacyMode === 'public')) {
+        mapRef.current?.focusPoint([row.point[0], row.point[1]], 54, true);
+      }
+    },
+    [buildInvestigationEngineAt, paintPeople]
+  );
+
+  const seekInvestigation = useCallback(
+    (targetGlobalSeconds: number) => {
+      const inv = investigationStateRef.current;
+      if (!inv) return;
+      const invEng = buildInvestigationEngineAt(
+        targetGlobalSeconds,
+        inv.savedMainTime
+      );
+      if (!invEng) return;
+      const updated = {...inv, currentTime: invEng.time};
+      investigationStateRef.current = updated;
+      setInvestigationState(updated);
+      paintPeople();
+    },
+    [buildInvestigationEngineAt, paintPeople]
+  );
+
+  const exitInvestigation = useCallback(() => {
+    if (mainEngineRef.current) {
+      engineRef.current = mainEngineRef.current;
+      setEngineInstance(mainEngineRef.current);
+      simTargetRef.current = mainEngineRef.current.time;
+    }
+    investigationEngineRef.current = null;
+    investigationStateRef.current = null;
+    setInvestigationState(null);
+    paintPeople();
+  }, [paintPeople]);
+
   useEffect(() => {
     const onCornerClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
+      const invBtn = target?.closest<HTMLElement>('[data-investigate-btn]');
+      if (invBtn?.dataset.investigateBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        openInvestigation(invBtn.dataset.investigateBtn);
+        return;
+      }
       const btn = target?.closest<HTMLElement>('[data-dismiss-incident]');
       if (!btn) return;
       const id = btn.dataset.dismissIncident;
@@ -860,10 +1040,36 @@ export const App: React.FC = () => {
       dismissedIncidentsRef.current.add(id);
       syncDirectorOverlays();
     };
+    const onCornerDblClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-dismiss-incident]')) return;
+      const card = target?.closest<HTMLElement>('[data-investigate-incident]');
+      if (card?.dataset.investigateIncident) {
+        e.preventDefault();
+        e.stopPropagation();
+        openInvestigation(card.dataset.investigateIncident);
+      }
+    };
+    const onCornerKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button')) return;
+      const card = target?.closest<HTMLElement>('[data-investigate-incident]');
+      if (card?.dataset.investigateIncident) {
+        e.preventDefault();
+        openInvestigation(card.dataset.investigateIncident);
+      }
+    };
     const cornerEl = document.getElementById('incident-corner');
     cornerEl?.addEventListener('click', onCornerClick);
-    return () => cornerEl?.removeEventListener('click', onCornerClick);
-  }, [syncDirectorOverlays]);
+    cornerEl?.addEventListener('dblclick', onCornerDblClick);
+    cornerEl?.addEventListener('keydown', onCornerKeyDown);
+    return () => {
+      cornerEl?.removeEventListener('click', onCornerClick);
+      cornerEl?.removeEventListener('dblclick', onCornerDblClick);
+      cornerEl?.removeEventListener('keydown', onCornerKeyDown);
+    };
+  }, [syncDirectorOverlays, openInvestigation]);
 
   useEffect(() => {
     let rafId = 0;
@@ -908,6 +1114,29 @@ export const App: React.FC = () => {
             } viajes al contenedor · ${Math.round(
               plan.binWalk
             )} m de ida con bolsa. ${plan.alerts.join(' ')}`;
+          }
+        }
+      }
+
+      if (investigationStateRef.current?.playing) {
+        const inv = investigationStateRef.current;
+        const nextT = Math.min(
+          inv.savedMainTime,
+          inv.currentTime + dt * inv.playbackSpeed
+        );
+        const invEng = buildInvestigationEngineAt(nextT, inv.savedMainTime);
+        if (invEng) {
+          const reachedEnd = nextT >= inv.savedMainTime - 0.25;
+          const updated = {
+            ...inv,
+            currentTime: invEng.time,
+            playing: !reachedEnd,
+          };
+          investigationStateRef.current = updated;
+          setInvestigationState(updated);
+          if (now - lastPaint > 90 || reachedEnd) {
+            paintPeople();
+            lastPaint = now;
           }
         }
       }
@@ -977,7 +1206,14 @@ export const App: React.FC = () => {
 
     rafId = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(rafId);
-  }, [paintPeople, replayActions, showToast, triggerDayClose, checkLiveSafety]);
+  }, [
+    paintPeople,
+    replayActions,
+    showToast,
+    triggerDayClose,
+    checkLiveSafety,
+    buildInvestigationEngineAt,
+  ]);
 
   const handleApplyProposal = useCallback(() => {
     if (!proposal || !(proposal.objects.length + proposal.moves.length)) return;
@@ -1105,6 +1341,7 @@ export const App: React.FC = () => {
         onTogglePlay={togglePlay}
         onSceneChanged={handleSceneChanged}
         onRecordAction={recordAction}
+        onInvestigateIncident={openInvestigation}
         reviewTick={reviewTick}
         safetyStop={safetyStop && !diagnosticSimMode && !running}
       />
@@ -1148,8 +1385,86 @@ export const App: React.FC = () => {
             resetSim();
             setTimeout(() => mapRef.current?.fit(), 20);
           }}
+          onInvestigateIncident={openInvestigation}
           activeWeather={activeWeather}
         />
+        {investigationState &&
+          (investigationEngineRef.current || mainEngineRef.current) &&
+          (() => {
+            const activeEng =
+              investigationEngineRef.current || mainEngineRef.current!;
+            const inc =
+              activeEng.emergency.events.find(
+                (ev) => String(ev.id) === String(investigationState.incidentId)
+              ) ||
+              mainEngineRef.current?.emergency.events.find(
+                (ev) => String(ev.id) === String(investigationState.incidentId)
+              );
+            if (!inc) return null;
+            return (
+              <IncidentAnalysisPanel
+                incident={inc}
+                engine={activeEng}
+                baseScene={
+                  replayBaseRef.current || useProjectStore.getState().currentScene()
+                }
+                phase={phase}
+                replayLog={replayLogRef.current}
+                savedMainTime={investigationState.savedMainTime}
+                currentTime={investigationState.currentTime}
+                playing={investigationState.playing}
+                playbackSpeed={investigationState.playbackSpeed}
+                viewMode={investigationState.viewMode}
+                privacyMode={investigationState.privacyMode}
+                onSeekTime={seekInvestigation}
+                onTogglePlay={() =>
+                  setInvestigationState((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          playing:
+                            !prev.playing &&
+                            prev.currentTime >= prev.savedMainTime - 0.5
+                              ? (seekInvestigation(inc.created || 0), true)
+                              : !prev.playing,
+                        }
+                      : null
+                  )
+                }
+                onChangeSpeed={(s) =>
+                  setInvestigationState((prev) =>
+                    prev ? {...prev, playbackSpeed: s} : null
+                  )
+                }
+                onChangeViewMode={(m) => {
+                  setInvestigationState((prev) =>
+                    prev ? {...prev, viewMode: m} : null
+                  );
+                  setTimeout(syncDirectorOverlays, 0);
+                }}
+                onChangePrivacyMode={(p) => {
+                  setInvestigationState((prev) =>
+                    prev ? {...prev, privacyMode: p} : null
+                  );
+                  setTimeout(syncDirectorOverlays, 0);
+                }}
+                onFocusMap={() => {
+                  if (
+                    inc.point &&
+                    !(inc.sensitive && investigationState.privacyMode === 'public')
+                  ) {
+                    mapRef.current?.focusPoint(
+                      [inc.point[0], inc.point[1]],
+                      54,
+                      true
+                    );
+                  }
+                }}
+                onSelectSimultaneous={(id) => openInvestigation(id)}
+                onExit={exitInvestigation}
+              />
+            );
+          })()}
         <SimulationStrip
           running={running}
           shiftRun={shiftRun}

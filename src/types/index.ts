@@ -956,18 +956,93 @@ export interface VehiclePose {
   [key: string]: any;
 }
 
+/** Categoría normalizada de incidencia para notificaciones, mapa e informes. */
+export type IncidentAlertCategory =
+  | 'fire'
+  | 'medical'
+  | 'accessibility'
+  | 'violet_point'
+  | 'security'
+  | 'logistics'
+  | 'congestion'
+  | 'information';
+
+/** Gravedad independiente de la categoría de incidencia. */
+export type IncidentSeverityLevel =
+  | 'informativa'
+  | 'leve'
+  | 'moderada'
+  | 'grave'
+  | 'critica';
+
+/** Evento cronológico registrado en la evolución de una incidencia. */
+export interface IncidentTimelineEvent {
+  id: string;
+  time: number;
+  relTime: number;
+  kind:
+    | 'origin'
+    | 'detection'
+    | 'assignment'
+    | 'dispatch'
+    | 'arrival'
+    | 'intervention'
+    | 'transfer'
+    | 'extinguished'
+    | 'hot_zone'
+    | 'cordon_approach'
+    | 'cordon_install'
+    | 'cordon_fenced'
+    | 'cleanup'
+    | 'reopened'
+    | 'waiting'
+    | 'blocked'
+    | 'severity_change'
+    | 'consequence'
+    | 'resolution';
+  label: string;
+  detail: string;
+  status: string;
+  severity?: IncidentSeverityLevel;
+  resourceId?: string;
+  resourceName?: string;
+  point?: Point2D;
+  distanceMeters?: number;
+  calibrated?: 'simulated' | 'exploratory_estimate';
+}
+
 /** Incidencia de emergencia inyectada o detectada en simulación. */
 export interface EmergencyIncident {
   id: number | string;
+  /** Código único categorizado, p. ej. `SAN-014`, `ACC-008`, `VIO-003`, `FUE-002`. */
+  code?: string;
+  /** Categoría visual y operativa de la incidencia. */
+  category?: IncidentAlertCategory;
+  /** Nivel de gravedad independiente del color de categoría. */
+  severity?: IncidentSeverityLevel | string;
+  /** Indica si requiere tratamiento reservado (p. ej. Punto Violeta). */
+  sensitive?: boolean;
   type: 'fall' | 'cut' | 'fire' | 'conflict' | string;
   name?: string;
-  service?: 'medical' | 'fire' | 'security' | string;
+  service?: 'medical' | 'fire' | 'security' | 'accessibility' | 'violet_point' | string;
   x?: number;
   y?: number;
   time?: number;
   point?: Point2D;
   created?: number;
+  reportedAt?: number;
+  assigned?: number;
+  arrived?: number;
+  closed?: number;
   status: string;
+  /** Historial estructurado de hitos y cambios de estado. */
+  timeline?: IncidentTimelineEvent[];
+  /** Indica si existe registro del instante previo a la detección. */
+  hasPreDetectionData?: boolean;
+  /** IDs de incidencias activas simultáneamente durante el ciclo de vida. */
+  simultaneousIds?: Array<number | string>;
+  /** Obstáculos o desvíos encontrados durante la respuesta. */
+  obstaclesEncountered?: string[];
   [key: string]: any;
 }
 
