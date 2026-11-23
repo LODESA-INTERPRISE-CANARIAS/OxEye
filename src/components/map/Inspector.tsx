@@ -30,9 +30,11 @@ import {
 } from '../../engine/subsoil/heat';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
+  AccessCategory,
   Annotation,
   AuthorityAccessUnit,
   Booth,
+  ConditionalAccessState,
   Entrance,
   Infrastructure,
   PhaseKey,
@@ -41,6 +43,7 @@ import type {
   SubsoilPolygon,
   SubsoilWall,
 } from '../../types';
+import {resolveAccessCategory} from '../../engine/emergency/priority';
 import {
   deleteItemsFromScene,
   duplicateItemsInScene,
@@ -864,6 +867,86 @@ export const Inspector: React.FC<InspectorProps> = ({
                           )}
                         </div>
                         <label>
+                          Clasificación operativa del acceso
+                          <select
+                            id="edit-accessCategory"
+                            value={resolveAccessCategory(ent)}
+                            onChange={(e) => {
+                              const cat = e.target.value as AccessCategory;
+                              const nextSpawn: SpawnKind =
+                                cat === 'pedestrian_only'
+                                  ? 'pedestrian'
+                                  : cat === 'emergency_vehicle'
+                                    ? 'vehicle'
+                                    : cat === 'mixed' || cat === 'conditional'
+                                      ? 'mixed'
+                                      : spawnType;
+                              updateEntrance({
+                                accessCategory: cat,
+                                spawnType: nextSpawn,
+                                ...(cat === 'conditional'
+                                  ? {
+                                      conditionalState:
+                                        ent.conditionalState || 'open_on_demand',
+                                    }
+                                  : {}),
+                                ...(cat === 'physically_blocked'
+                                  ? {
+                                      role: 'closed',
+                                      phases: {...ent.phases, event: 'closed'},
+                                    }
+                                  : ent.role === 'closed'
+                                    ? {
+                                        role: 'both',
+                                        phases: {...ent.phases, event: 'both'},
+                                      }
+                                    : {}),
+                              });
+                            }}
+                          >
+                            <option value="pedestrian_only">
+                              Exclusivamente peatonal (no apto vehículos)
+                            </option>
+                            <option value="mixed">
+                              Mixto (peatones y vehículos)
+                            </option>
+                            <option value="emergency_vehicle">
+                              Vehículos de emergencia
+                            </option>
+                            <option value="conditional">
+                              Condicionado (vallas móviles / bolardos retirables)
+                            </option>
+                            <option value="physically_blocked">
+                              Bloqueado físicamente
+                            </option>
+                          </select>
+                        </label>
+                        {resolveAccessCategory(ent) === 'conditional' && (
+                          <label>
+                            Estado del acceso condicionado
+                            <select
+                              id="edit-conditionalState"
+                              value={ent.conditionalState || 'open_on_demand'}
+                              onChange={(e) =>
+                                updateEntrance({
+                                  conditionalState: e.target
+                                    .value as ConditionalAccessState,
+                                })
+                              }
+                            >
+                              <option value="open_on_demand">
+                                Retirable bajo demanda (+15 s emergencias)
+                              </option>
+                              <option value="open">
+                                Abierto temporalmente
+                              </option>
+                              <option value="closed">
+                                Cerrado (sin paso vehicular)
+                              </option>
+                            </select>
+                          </label>
+                        )}
+                        <label>
                           Tipo de infraestructura / tráfico
                           <select
                             id="edit-spawnType"
@@ -871,6 +954,12 @@ export const Inspector: React.FC<InspectorProps> = ({
                             onChange={(e) =>
                               updateEntrance({
                                 spawnType: e.target.value as SpawnKind,
+                                accessCategory:
+                                  e.target.value === 'pedestrian'
+                                    ? 'pedestrian_only'
+                                    : e.target.value === 'vehicle'
+                                      ? 'emergency_vehicle'
+                                      : 'mixed',
                               })
                             }
                           >

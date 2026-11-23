@@ -11,14 +11,20 @@ import type {
   Scene,
   VenueKey,
 } from '../../types';
-import {inside, rect, world} from '../cartography/geometry';
+import {cellAt, inside, rect, world} from '../cartography/geometry';
 import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
 import {evaluateAllCoverBallasts} from '../planning/ballast';
 import {demandPlan} from '../planning/demand';
+import {buildVehicleGrid, planVehicleRoute} from '../mobility/vehicle-system';
 import {evaluateHeavyLoadConflicts} from '../subsoil/heat';
 import {RESPONSE_PROFILES, responseRoute} from './response-model';
-import {gateAllowsAuthority} from './priority';
+import {
+  gateAllowsAuthority,
+  gateVehicleDelaySec,
+  isPedestrianOnlyAccess,
+  resolveAccessCategory,
+} from './priority';
 
 export interface RiskIssueMeta {
   kind?: string;
@@ -34,7 +40,9 @@ export interface RiskIssueMeta {
 
 export interface RiskIssue {
   id: string;
-  level: 'critical' | 'warning';
+  level: 'critical' | 'warning' | 'info';
+  origin?: 'normative' | 'algorithm_limit' | 'operational';
+  location?: string;
   title: string;
   action: string;
   meta?: RiskIssueMeta;
@@ -54,6 +62,7 @@ export interface RiskAssessmentReport {
   issues: RiskIssue[];
   critical: RiskIssue[];
   warnings: RiskIssue[];
+  infos: RiskIssue[];
   expected: number;
   statistical: RiskStatisticalReport | null;
   slots: {
@@ -181,11 +190,21 @@ export function assessRisk(
   const issues: RiskIssue[] = [];
   const add = (
     id: string,
-    level: 'critical' | 'warning',
+    level: 'critical' | 'warning' | 'info',
     title: string,
     action: string,
-    meta?: RiskIssueMeta
-  ) => issues.push({id, level, title, action, ...(meta ? {meta} : {})});
+    meta?: RiskIssueMeta,
+    extra?: {origin?: RiskIssue['origin']; location?: string}
+  ) =>
+    issues.push({
+      id,
+      level,
+      title,
+      action,
+      ...(meta ? {meta} : {}),
+      ...(extra?.origin ? {origin: extra.origin} : {}),
+      ...(extra?.location ? {location: extra.location} : {}),
+    });
 
   const resources = s.infrastructure.filter((r) => r.role === 'emergency');
   if (
@@ -366,20 +385,45 @@ export function assessRisk(
     ...(security === 'patrol' ? ['patrol'] : []),
   ];
   for (const kind of vehicleKinds) {
-    if (
-      slots(kind) &&
-      !gates.some((g) =>
-        gateAllowsAuthority(g, kind, RESPONSE_PROFILES[kind].width + 0.3)
+    if (!slots(kind)) continue;
+    const reqW = RESPONSE_PROFILES[kind].width + 0.3;
+    const allowedGates = gates.filter((g) => gateAllowsAuthority(g, kind, reqW));
+    if (!allowedGates.length) {
+      // Para ambulancias: si hay accesos peatonales/mixtos abiertos, puede estacionar en el exterior y entrar a pie/camilla (Advertencia, no bloqueo fatal)
+      if (kind === 'ambulance' && gates.length > 0) {
+        add(
+          'gate-ambulance-staging',
+          'warning',
+          'Ambulancia sin acceso vehicular directo · intervención con desembarco a pie',
+          'No hay una puerta vehicular de ≥ 2,8 m para la ambulancia. El vehículo estacionará en el punto exterior accesible más cercano y el equipo sanitario accederá a pie con camilla (añade tiempo de traslado).',
+          undefined,
+          {origin: 'operational'}
+        );
+      } else {
+        add(
+          'gate-' + kind,
+          'critical',
+          'Falta acceso reservado compatible para ' +
+            ({fire: 'bomberos', ambulance: 'ambulancia', patrol: 'policía'}[
+              kind
+            ] || kind),
+          'Marca un acceso como «Vehículos de emergencia», «Mixto» o «Condicionado» (retirable) con anchura libre suficiente y autoridades autorizadas.',
+          undefined,
+          {origin: 'normative'}
+        );
+      }
+    } else if (
+      allowedGates.every(
+        (g) => resolveAccessCategory(g) === 'conditional' && gateVehicleDelaySec(g) > 0
       )
     ) {
       add(
-        'gate-' + kind,
-        'critical',
-        'Falta acceso reservado compatible para ' +
-          ({fire: 'bomberos', ambulance: 'ambulancia', patrol: 'policía'}[
-            kind
-          ] || kind),
-        'Marca las autoridades recomendadas en un acceso y comprueba su anchura libre y recorrido.'
+        'gate-conditional-' + kind,
+        'warning',
+        `Acceso condicionado para ${{fire: 'bomberos', ambulance: 'ambulancia', patrol: 'policía'}[kind] || kind} (requiere apertura)`,
+        `El paso vehicular depende de retirar vallas/bolardos en «${allowedGates[0].name}» (+${gateVehicleDelaySec(allowedGates[0])} s estimados). No impide simular.`,
+        undefined,
+        {origin: 'operational'}
       );
     }
   }
@@ -558,20 +602,31 @@ export function assessRisk(
       patrol: 'coche policial',
       fire: 'bomberos',
     };
-    const targets: Array<{id: string; name: string; point: Point}> = [
-      ...engine.entries.map((g) => ({
-        id: g.id,
-        name: g.name || 'Acceso',
-        point: engine.g.point(g.cell),
-      })),
-      ...engine.stations
-        .filter((t) => t.cell >= 0)
-        .map((t) => ({
-          id: t.id || '',
-          name: t.name || 'Actividad',
-          point: engine.g.point(t.cell),
-        })),
-    ];
+    const allGateTargets = engine.entries.map((g) => ({
+      id: g.id,
+      name: g.name || 'Acceso',
+      point: engine.g.point(g.cell),
+      isPedestrianOnly: isPedestrianOnlyAccess(g),
+      isGate: true,
+    }));
+    const stationTargets = engine.stations
+      .filter((t) => t.cell >= 0)
+      .map((t) => ({
+        id: t.id || '',
+        name: t.name || 'Actividad',
+        point: engine.g.point(t.cell),
+        isPedestrianOnly: false,
+        isGate: false,
+      }));
+
+    let vehGridCache: ReturnType<typeof buildVehicleGrid> | null = null;
+    const getVehGrid = () => {
+      if (!vehGridCache) {
+        vehGridCache = engine.vehicleManager?.vehGrid || buildVehicleGrid(engine.s, engine.g);
+      }
+      return vehGridCache;
+    };
+
     for (const kind of [...new Set([response, security, ...vehicleKinds])]) {
       const profileKey =
         kind === 'medical'
@@ -585,50 +640,147 @@ export function assessRisk(
         (r) => r.kind === kind && resourceSlots(s, r) > 0
       );
       if (!pool.length) continue;
-      const unreachableTargets: Array<{id: string; name: string; error: string}> =
-        [];
+      const isVehicleKind = ['fire', 'ambulance', 'patrol'].includes(kind);
+      // Los vehículos de emergencia NUNCA deben exigirse para circular por puertas exclusivamente peatonales
+      // ni necesitan ir de puerta en puerta (pueden entrar, estacionar y salir marcha atrás).
+      const targets = isVehicleKind
+        ? stationTargets
+        : [...allGateTargets, ...stationTargets];
+
+      const unreachableTargets: Array<{
+        id: string;
+        name: string;
+        point: Point;
+        error: string;
+      }> = [];
+      const stagingTargets: Array<{id: string; name: string; point: Point}> = [];
       let requiredWidth = profile.width + 0.3;
+
       for (const target of targets) {
         let lastError = '';
-        const reachable = pool.some((r) => {
+        let directOk = false;
+        let stagingOk = false;
+
+        for (const r of pool) {
           const origin: Point = [
             (r.x * engine.g.m.widthMeters) / 100,
             (r.y * engine.g.m.heightMeters) / 100,
           ];
-          const vehicle = ['fire', 'ambulance', 'patrol'].includes(kind);
           const pr = {
             ...profile,
-            width: vehicle ? r.width || profile.width : profile.width,
-            length: vehicle ? r.depth || profile.length : profile.length,
+            width: isVehicleKind ? r.width || profile.width : profile.width,
+            length: isVehicleKind ? r.depth || profile.length : profile.length,
           };
           requiredWidth = Math.round((pr.width + 0.3) * 10) / 10;
-          let route = responseRoute(
+          const direct = responseRoute(
             engine,
             origin,
             target.point,
             pr,
             pr.length / 2 + 1
           );
-          if (route.error && kind === 'fire' && s.fireFootAccess) {
-            route = responseRoute(
+          if (!direct.error) {
+            directOk = true;
+            break;
+          }
+          lastError = direct.error;
+
+          // Intervención sin entrada directa del vehículo:
+          // 1) Bomberos con acceso a pie habilitado
+          if (kind === 'fire' && s.fireFootAccess) {
+            const footFire = responseRoute(
               engine,
               origin,
               target.point,
               {...pr, width: 0.9, length: 1.8, speed: 0.85},
               2
             );
+            if (!footFire.error) {
+              directOk = true;
+              break;
+            }
           }
-          if (route.error) lastError = route.error;
-          return !route.error;
-        });
-        if (!reachable) {
-          unreachableTargets.push({
-            id: target.id,
-            name: target.name,
-            error: lastError,
-          });
+
+          // 2) Ambulancia: estacionamiento en punto accesible más cercano + desembarco sanitario a pie/camilla + evacuación de vuelta
+          if (kind === 'ambulance') {
+            const footApproach = responseRoute(
+              engine,
+              origin,
+              target.point,
+              {name: 'Sanitario a pie', width: 0.75, length: 1.2, speed: 1.1, staff: 2},
+              1.8
+            );
+            if (!footApproach.error) {
+              stagingOk = true;
+              break;
+            }
+            const smart = planVehicleRoute(
+              engine.s,
+              getVehGrid(),
+              origin,
+              target.point,
+              {
+                width: pr.width,
+                length: pr.length,
+                minTurnRadius: Math.max(3, pr.length * 0.8),
+              },
+              {allowFootDismount: true, pedestrianGrid: engine.g}
+            );
+            if (smart.ok) {
+              stagingOk = true;
+              break;
+            }
+          }
+        }
+
+        if (!directOk) {
+          if (stagingOk) {
+            stagingTargets.push({
+              id: target.id,
+              name: target.name,
+              point: target.point,
+            });
+          } else {
+            unreachableTargets.push({
+              id: target.id,
+              name: target.name,
+              point: target.point,
+              error: lastError,
+            });
+          }
         }
       }
+
+      if (stagingTargets.length && !unreachableTargets.length) {
+        const primaryResource = pool[0];
+        const firstStg = stagingTargets[0];
+        const svcLabel = serviceLabels[kind] || kind;
+        const sampleNames = stagingTargets
+          .slice(0, 3)
+          .map((t) => `«${t.name}»`)
+          .join(', ');
+        add(
+          'route-staging-' + kind,
+          'warning',
+          `${stagingTargets.length} punto(s) atendidos por ${svcLabel} mediante desembarco a pie / camilla (${sampleNames})`,
+          `«${primaryResource.name}» estaciona en el punto accesible más cercano y el equipo sanitario continúa a pie hasta ${sampleNames}, evaluando la evacuación de regreso al vehículo. Puede implicar mayor demora, pero no impide simular.`,
+          {
+            kind,
+            resourceId: primaryResource.id,
+            resourceName: primaryResource.name,
+            targetId: firstStg.id,
+            targetName: firstStg.name,
+            unreachableNames: stagingTargets.map((t) => t.name),
+            reason: 'no_corridor',
+            requiredWidth,
+          },
+          {
+            origin: 'operational',
+            location: `«${firstStg.name}» · CELDA ${cellAt(firstStg.point, 10)}`,
+          }
+        );
+      }
+
       if (unreachableTargets.length) {
         const primaryResource = pool[0];
         const firstTarget = unreachableTargets[0];
@@ -643,6 +795,7 @@ export function assessRisk(
           .slice(0, 3)
           .map((t) => `«${t.name}»`)
           .join(', ');
+        const locStr = `«${firstTarget.name}» · CELDA ${cellAt(firstTarget.point, 10)}`;
         const title =
           unreachableTargets.length === 1
             ? `Sin aproximación de ${svcLabel} hacia «${firstTarget.name}»`
@@ -651,20 +804,41 @@ export function assessRisk(
           reason === 'start_blocked'
             ? `«${primaryResource.name}» está sobre un obstáculo o sin espacio libre en su posición inicial (necesita ~${requiredWidth} m despejados). Reubícalo sobre un paso libre.`
             : reason === 'narrow_turn'
-              ? `El giro o estrechamiento hacia ${sampleNames} es inferior al ancho/radio de «${primaryResource.name}» (${requiredWidth} m). Ensancha el paso o suaviza el giro.`
-              : `No hay corredor continuo de ${requiredWidth} m entre «${primaryResource.name}» y ${sampleNames}. Separa puestos, mesas o vallas en medio.`;
-        add('route-' + kind, 'critical', title, action, {
-          kind,
-          resourceId: primaryResource.id,
-          resourceName: primaryResource.name,
-          targetId: firstTarget.id,
-          targetName: firstTarget.name,
-          unreachableNames: unreachableTargets.map((t) => t.name),
-          reason,
-          requiredWidth,
-          errorDetail: firstTarget.error,
-        });
+              ? `El giro o estrechamiento hacia ${sampleNames} (${locStr}) es inferior al ancho/radio de «${primaryResource.name}» (${requiredWidth} m). Ensancha el paso o suaviza el giro.`
+              : `No existe ruta vehicular ni alternativa practicable a pie hacia ${sampleNames} (${locStr}). Separa puestos, mesas o vallas en medio.`;
+        add(
+          'route-' + kind,
+          'critical',
+          title,
+          action,
+          {
+            kind,
+            resourceId: primaryResource.id,
+            resourceName: primaryResource.name,
+            targetId: firstTarget.id,
+            targetName: firstTarget.name,
+            unreachableNames: unreachableTargets.map((t) => t.name),
+            reason,
+            requiredWidth,
+            errorDetail: firstTarget.error,
+          },
+          {
+            origin: reason === 'narrow_turn' ? 'algorithm_limit' : 'normative',
+            location: locStr,
+          }
+        );
       }
+    }
+
+    if (!issues.some((i) => i.id.startsWith('route-'))) {
+      add(
+        'route-info-ok',
+        'info',
+        'Rutas de emergencia y evacuación verificadas',
+        'Todos los puntos de actividad disponen de aproximación directa o alternativa operativa.',
+        undefined,
+        {origin: 'operational'}
+      );
     }
   }
 
@@ -721,6 +895,7 @@ export function assessRisk(
     issues,
     critical: issues.filter((i) => i.level === 'critical'),
     warnings: issues.filter((i) => i.level === 'warning'),
+    infos: issues.filter((i) => i.level === 'info'),
     expected,
     statistical,
     slots: {

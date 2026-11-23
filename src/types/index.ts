@@ -27,6 +27,17 @@ export type Point2D = [number, number];
 /** Clasificación de infraestructura / tránsito admitido en un punto de aparición (spawn). */
 export type SpawnKind = 'pedestrian' | 'vehicle' | 'mixed';
 
+/** Clasificación operativa detallada de un acceso del recinto. */
+export type AccessCategory =
+  | 'emergency_vehicle'
+  | 'pedestrian_only'
+  | 'mixed'
+  | 'conditional'
+  | 'physically_blocked';
+
+/** Estado operativo de un acceso condicionado (vallas móviles, bolardos o puertas retirables). */
+export type ConditionalAccessState = 'closed' | 'open_on_demand' | 'open';
+
 /** Vía vectorial simplificada obtenida de OpenStreetMap para un emplazamiento personalizado. */
 export interface CustomMapStreet {
   name: string;
@@ -238,6 +249,10 @@ export interface EntranceItem {
   phases?: Record<string, string>;
   /** Tipo de tránsito admitido en este punto de aparición (peatonal, vehicular o mixto). */
   spawnType?: SpawnKind;
+  /** Clasificación operativa explícita del acceso (emergencias, peatonal, mixto, condicionado o bloqueado). */
+  accessCategory?: AccessCategory;
+  /** Estado actual si el acceso es condicionado (`closed`, `open_on_demand` o `open`). */
+  conditionalState?: ConditionalAccessState;
   /** Peso o porcentaje relativo de flujo de entrada (0–100). */
   entryWeight?: number;
   /** Peso o porcentaje relativo de flujo de salida (0–100). */

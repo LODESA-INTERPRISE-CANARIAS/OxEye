@@ -126,12 +126,13 @@ export const App: React.FC = () => {
 
   const phase = useProjectStore((s) => s.phase);
   const lens = useProjectStore((s) => s.lens);
+  const diagnosticSimMode = useProjectStore((s) => s.diagnosticSimMode);
   const currentScene = useProjectStore((s) => s.currentScene);
-  const currentMap = useProjectStore((s) => s.currentMap);
   const setPanel = useProjectStore((s) => s.setPanel);
   const setTool = useProjectStore((s) => s.setTool);
   const setPhase = useProjectStore((s) => s.setPhase);
   const setActiveModal = useProjectStore((s) => s.setActiveModal);
+  const setDiagnosticSimMode = useProjectStore((s) => s.setDiagnosticSimMode);
   const updateScene = useProjectStore((s) => s.updateScene);
   const undo = useProjectStore((s) => s.undo);
   const showToast = useProjectStore((s) => s.showToast);
@@ -261,6 +262,7 @@ export const App: React.FC = () => {
   const resetSim = useCallback(() => {
     safetyStopRef.current = false;
     setSafetyStop(false);
+    setDiagnosticSimMode(false);
     preflightStampRef.current = '';
     setCustomRiskReport(null);
     if (useProjectStore.getState().currentScene().safetyLock) {
@@ -313,7 +315,7 @@ export const App: React.FC = () => {
     const seekEl = document.getElementById('seek-time');
     if (seekEl) seekEl.textContent = '00:00:00';
     setReviewTick((t) => t + 1);
-  }, [updateScene]);
+  }, [updateScene, setDiagnosticSimMode]);
 
   const triggerDayClose = useCallback(() => {
     const currentPhase = useProjectStore.getState().phase;
@@ -370,6 +372,7 @@ export const App: React.FC = () => {
       served: eng?.stats.served || 0,
       abandoned: eng?.stats.abandoned || 0,
       seed: eng?.s.seed ?? useProjectStore.getState().activeRunSeed ?? undefined,
+      diagnosticMode: useProjectStore.getState().diagnosticSimMode,
       engine: eng,
       emergencyReport,
     });
@@ -420,6 +423,8 @@ export const App: React.FC = () => {
   const checkLiveSafety = useCallback((): boolean => {
     const eng = engineRef.current;
     if (!eng) return true;
+    // En modo diagnóstico (escenario no validado — uso exclusivamente analítico) no interrumpimos la ejecución
+    if (useProjectStore.getState().diagnosticSimMode) return true;
     const issues: RiskIssue[] = [
       ...assessRisk(eng.s).critical,
       ...liveFailures(eng),
@@ -466,41 +471,46 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const togglePlay = useCallback(() => {
+  const togglePlay = useCallback(
+    (forceDiagnostic = false) => {
     const currentPhase = useProjectStore.getState().phase;
     const s = useProjectStore.getState().currentScene();
     const m = useProjectStore.getState().currentMap();
+    const isDiagnostic =
+      forceDiagnostic || useProjectStore.getState().diagnosticSimMode;
 
-    if (s.safetyLock?.fingerprint === safetyFingerprint(s)) {
-      setActiveModal('risk');
-      return;
-    }
-    if (safetyStopRef.current) {
-      setActiveModal('risk');
-      return;
-    }
-    if (!runningRef.current && currentPhase !== 'pre' && currentPhase !== 'post') {
-      const stamp = JSON.stringify(s);
-      if (stamp !== preflightStampRef.current) {
-        try {
-          const trial = createEngine(phaseScene(s, 'event'));
-          const r = assessRisk(s, trial, {routes: true});
-          if (r.critical.length) {
-            setCustomRiskReport(r);
-            setActiveModal('risk');
+    if (!isDiagnostic) {
+      if (s.safetyLock?.fingerprint === safetyFingerprint(s)) {
+        setActiveModal('risk');
+        return;
+      }
+      if (safetyStopRef.current) {
+        setActiveModal('risk');
+        return;
+      }
+      if (!runningRef.current && currentPhase !== 'pre' && currentPhase !== 'post') {
+        const stamp = JSON.stringify(s);
+        if (stamp !== preflightStampRef.current) {
+          try {
+            const trial = createEngine(phaseScene(s, 'event'));
+            const r = assessRisk(s, trial, {routes: true});
+            if (r.critical.length) {
+              setCustomRiskReport(r);
+              setActiveModal('risk');
+              return;
+            }
+            if (s.safetyLock) {
+              updateScene((sc) => {
+                delete sc.safetyLock;
+              });
+            }
+            preflightStampRef.current = JSON.stringify(
+              useProjectStore.getState().currentScene()
+            );
+          } catch (err) {
+            showToast('Revisión no completada: ' + (err as Error).message);
             return;
           }
-          if (s.safetyLock) {
-            updateScene((sc) => {
-              delete sc.safetyLock;
-            });
-          }
-          preflightStampRef.current = JSON.stringify(
-            useProjectStore.getState().currentScene()
-          );
-        } catch (err) {
-          showToast('Revisión no completada: ' + (err as Error).message);
-          return;
         }
       }
     }
@@ -509,7 +519,24 @@ export const App: React.FC = () => {
 
     if (!runningRef.current && (currentPhase === 'pre' || currentPhase === 'post')) {
       if (!shiftPlanRef.current) {
-        const plan = shift(s, m, currentPhase);
+        let effectiveScene = s;
+        let plan = shift(effectiveScene, m, currentPhase);
+        if (
+          !plan.error &&
+          plan.required === 0 &&
+          (s.progressByPhase?.[currentPhase]?.length || 0) > 0
+        ) {
+          // Todas las tareas figuraban ya como completadas de una jornada previa: reiniciar progreso para poder ensayar el turno completo
+          updateScene((sc) => {
+            if (sc.progressByPhase) delete sc.progressByPhase[currentPhase];
+            if (sc.shiftDays) delete sc.shiftDays[currentPhase];
+          });
+          effectiveScene = useProjectStore.getState().currentScene();
+          plan = shift(effectiveScene, m, currentPhase);
+          showToast(
+            'Progreso de montaje previo reiniciado para simular el turno completo.'
+          );
+        }
         if (plan.error) {
           showToast(
             plan.error,
@@ -975,12 +1002,27 @@ export const App: React.FC = () => {
   }, [currentScene, revision, activeVenue]);
   const hasSafetyBlocks =
     safetyStop || isSafetyLocked || riskSummary.critical.length > 0;
-  const safetyBannerText =
-    safetyStop || isSafetyLocked
-      ? 'ENSAYO CANCELADO · corrige el fallo y repite la revisión'
+  const handleStartDiagnosticSim = useCallback(() => {
+    safetyStopRef.current = false;
+    setSafetyStop(false);
+    setDiagnosticSimMode(true);
+    setCustomRiskReport(null);
+    setActiveModal(null);
+    setPanel('simulate');
+    showToast(
+      'Simulación diagnóstica activa · Escenario no validado — uso exclusivamente analítico',
+      'error'
+    );
+    setTimeout(() => togglePlay(true), 20);
+  }, [setDiagnosticSimMode, setActiveModal, setPanel, showToast, togglePlay]);
+
+  const safetyBannerText = diagnosticSimMode
+    ? 'MODO DIAGNÓSTICO · Escenario no validado — uso exclusivamente analítico (no certifica seguridad)'
+    : safetyStop || isSafetyLocked
+      ? 'ENSAYO CANCELADO · corrige el fallo o ejecuta en modo diagnóstico'
       : riskSummary.critical.length
-        ? `${riskSummary.critical.length} bloqueos antes de ensayar · Revisar riesgos`
-        : `Revisión de riesgos · ${riskSummary.warnings.length} aspectos pendientes`;
+        ? `${riskSummary.critical.length} críticos · ${riskSummary.warnings.length} advertencias · Revisar riesgos`
+        : `Revisión de riesgos · ${riskSummary.warnings.length} advertencias`;
 
   return (
     <>
@@ -1120,6 +1162,7 @@ export const App: React.FC = () => {
         customReport={customRiskReport}
         onClearCustomReport={() => setCustomRiskReport(null)}
         onSceneChanged={handleSceneChanged}
+        onStartDiagnosticSim={handleStartDiagnosticSim}
         onReproduceSeed={(seed) => {
           const st = useProjectStore.getState();
           st.setSimSeedMode('fixed');

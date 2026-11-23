@@ -16,6 +16,7 @@ export interface ClosingDialogData {
   served: number;
   abandoned: number;
   seed?: number;
+  diagnosticMode?: boolean;
   engine?: EventEngine | null;
   emergencyReport?: Array<{
     id: string | number;
@@ -81,6 +82,17 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
     ? `Tareas completadas ${finished.length} / ${plan.required} · Pendientes ${pending}. ${plan.alerts.join(' ')}`
     : `Llegadas ${data?.arrivals || 0} · Atenciones ${data?.served || 0} · Abandonos ${data?.abandoned || 0}`;
 
+  const handleResetShiftProgress = () => {
+    if (closedPhase !== 'pre' && closedPhase !== 'post') return;
+    updateScene((s) => {
+      if (s.progressByPhase) delete s.progressByPhase[closedPhase];
+      if (s.shiftDays) delete s.shiftDays[closedPhase];
+    }, true);
+    onSceneChanged();
+    setActiveModal(null);
+    showToast('Progreso del turno reiniciado · pulsa Iniciar para simular el montaje completo.');
+  };
+
   const handleExtendDay = () => {
     updateScene((s) => {
       if (plan && (closedPhase === 'pre' || closedPhase === 'post')) {
@@ -110,6 +122,23 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
       }}
     >
       <h2>Balance de jornada</h2>
+      {data?.diagnosticMode && (
+        <div
+          style={{
+            padding: '9px 12px',
+            marginBottom: '10px',
+            borderRadius: '8px',
+            background: 'rgba(180, 60, 76, 0.12)',
+            border: '1px solid var(--danger)',
+            color: 'var(--danger)',
+            fontSize: '0.84rem',
+            fontWeight: 700,
+          }}
+        >
+          ESCENARIO NO VALIDADO — USO EXCLUSIVAMENTE ANALÍTICO · Simulación
+          diagnóstica con restricciones críticas activas (no certifica seguridad).
+        </div>
+      )}
       {!plan && (data?.seed ?? data?.engine?.s.seed) !== undefined && (
         <div
           style={{
@@ -247,6 +276,20 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
         <button type="button" id="extend-day" onClick={handleExtendDay}>
           Añadir jornada y ajustar recursos
         </button>
+        {isLog && (
+          <>
+            {' '}
+            <button
+              type="button"
+              id="reset-shift-progress"
+              onClick={handleResetShiftProgress}
+            >
+              {closedPhase === 'post'
+                ? 'Reiniciar desmontaje desde cero'
+                : 'Reiniciar montaje desde cero'}
+            </button>
+          </>
+        )}
         {closedPhase === 'pre' && !pending && (
           <button
             type="button"

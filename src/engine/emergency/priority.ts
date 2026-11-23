@@ -3,7 +3,12 @@
  * Cálculo de poses sobre trayectorias, colisión con huella de vehículo y cesión de paso peatonal.
  */
 import {flow} from '../crowd/grid-flow';
-import type {AuthorityAccessUnit, Point2D} from '../../types';
+import type {
+  AccessCategory,
+  AuthorityAccessUnit,
+  ConditionalAccessState,
+  Point2D,
+} from '../../types';
 
 /** Compatibilidad entre modos de respuesta de emergencia y las casillas de autoridades recomendadas. */
 export const AUTHORITY_COMPAT: Record<string, AuthorityAccessUnit[]> = {
@@ -14,29 +19,71 @@ export const AUTHORITY_COMPAT: Record<string, AuthorityAccessUnit[]> = {
   foot: ['foot'],
 };
 
+export interface GateLike {
+  phases?: {event?: string};
+  role?: string;
+  clearWidth?: number;
+  spawnType?: string;
+  externalBase?: boolean;
+  accessCategory?: AccessCategory;
+  conditionalState?: ConditionalAccessState;
+  recommendedAuthorities?: AuthorityAccessUnit[];
+}
+
+/**
+ * Resuelve la clasificación operativa efectiva de un acceso del recinto.
+ */
+export function resolveAccessCategory(g: GateLike): AccessCategory {
+  if (g.accessCategory) return g.accessCategory;
+  const gateRole = g.phases?.event || g.role || 'both';
+  if (gateRole === 'closed') return 'physically_blocked';
+  if (gateRole === 'emergency' || g.externalBase) return 'emergency_vehicle';
+  if (g.spawnType === 'vehicle') return 'emergency_vehicle';
+  if (g.spawnType === 'mixed') return 'mixed';
+  if (g.spawnType === 'pedestrian') return 'pedestrian_only';
+  return 'mixed';
+}
+
+/** Devuelve `true` si el acceso es exclusivamente peatonal (nunca apto para vehículos). */
+export function isPedestrianOnlyAccess(g: GateLike): boolean {
+  return resolveAccessCategory(g) === 'pedestrian_only';
+}
+
+/** Demora operativa en segundos al atravesar un acceso condicionado (retirada de valla/bolardo). */
+export function gateVehicleDelaySec(g: GateLike): number {
+  const cat = resolveAccessCategory(g);
+  if (cat === 'conditional' && (g.conditionalState || 'open_on_demand') === 'open_on_demand') {
+    return 15;
+  }
+  return 0;
+}
+
 /**
  * Comprueba si un acceso permite el paso del tipo de unidad/vehículo indicado
- * respetando su categoría en `recommendedAuthorities` (o el modo legado `'emergency'`)
- * y la anchura libre declarada.
+ * respetando su clasificación operativa (`accessCategory`), estado condicionado,
+ * `recommendedAuthorities` y la anchura libre declarada.
  */
 export function gateAllowsAuthority(
-  g: {
-    phases?: {event?: string};
-    role?: string;
-    clearWidth?: number;
-    recommendedAuthorities?: AuthorityAccessUnit[];
-  },
+  g: GateLike,
   mode: string,
   requiredWidth: number,
 ): boolean {
   const gateRole = g.phases?.event || g.role || 'both';
-  if (gateRole === 'closed') return false;
+  const cat = resolveAccessCategory(g);
+  const isVehicle = ['fire', 'ambulance', 'patrol'].includes(mode);
+
+  if (gateRole === 'closed' || cat === 'physically_blocked') return false;
+  if (isVehicle && cat === 'pedestrian_only') return false;
+  if (cat === 'conditional' && g.conditionalState === 'closed') return false;
   if ((Number(g.clearWidth) || 0) < requiredWidth) return false;
+
   const authorities = g.recommendedAuthorities;
   if (Array.isArray(authorities) && authorities.length > 0) {
     const allowed = AUTHORITY_COMPAT[mode] || ['heavy_trucks'];
     return authorities.some((u) => allowed.includes(u));
   }
+  if (cat === 'emergency_vehicle' || cat === 'conditional') return true;
+  if (cat === 'mixed' && isVehicle) return true;
   return gateRole === 'emergency';
 }
 

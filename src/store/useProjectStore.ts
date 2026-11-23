@@ -104,6 +104,8 @@ export interface ProjectStoreState {
   sidebarCollapsed: boolean;
   inspectorWidth: number;
   inspectorExpanded: boolean;
+  /** Cuando es `true`, ejecuta la simulación en modo diagnóstico (escenario no validado — uso exclusivamente analítico). */
+  diagnosticSimMode: boolean;
   history: string[];
   future: string[];
   preferences: UserPreferences;
@@ -150,6 +152,7 @@ export interface ProjectStoreState {
   toggleSidebarCollapsed: () => void;
   setInspectorWidth: (width: number) => void;
   toggleInspectorExpanded: () => void;
+  setDiagnosticSimMode: (enabled: boolean) => void;
   locateOnMap: (target: {
     id?: string;
     point?: [number, number];
@@ -270,6 +273,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   sidebarCollapsed: false,
   inspectorWidth: 312,
   inspectorExpanded: false,
+  diagnosticSimMode: false,
   history: [],
   future: [],
   preferences: initialPrefs,
@@ -539,6 +543,8 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
         inspectorWidth: nextExpanded ? 410 : 312,
       };
     }),
+
+  setDiagnosticSimMode: (diagnosticSimMode) => set({diagnosticSimMode}),
 
   locateOnMap: (target) => {
     set((state) => {

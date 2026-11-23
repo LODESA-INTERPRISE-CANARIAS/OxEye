@@ -259,6 +259,10 @@ describe('Logística Pre/Post: reservas poligonales, camiones escalonados, secue
     const scene = initialScene('cristo', map, CARTO_DATA);
     const loadingBay = scene.infrastructure.find((i) => i.kind === 'loading')!;
     expect(loadingBay).toBeDefined();
+    // Dejar únicamente esta zona de descarga para verificar el error contextual cuando no hay alternativa
+    scene.infrastructure = scene.infrastructure.filter(
+      (i) => i.kind !== 'loading' || i.id === loadingBay.id
+    );
     // Colocar una zona excluida encima de la zona de descarga para hacerla inaccesible
     scene.reserves.push({
       id: 'block-reserve-1',

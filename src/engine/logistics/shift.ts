@@ -131,13 +131,14 @@ function checkZoneAccessibility(
   gate: {id: string; name: string},
   gateP: Point2D,
   scene: Scene,
-  map: MapMetadata
+  map: MapMetadata,
+  phase: PhaseKey
 ): ShiftErrorDiagnostic | null {
   const zoneCell = cellAt(zone.p, 10);
   const toMeters = (pts: Point2D[]): Point2D[] =>
     pts.map(([px, py]) => [(px * map.widthMeters) / 100, (py * map.heightMeters) / 100]);
 
-  // 1. ¿Está invadida o encerrada por una zona excluida al tránsito?
+  // 1. Validación temporal: solo comprobar reservas excluidas presentes físicamente en la fase actual
   const hardReserves = (scene.reserves || []).filter(
     (r) =>
       r.id !== zone.id &&
@@ -145,7 +146,7 @@ function checkZoneAccessibility(
       r.origin !== 'turning' &&
       r.origin !== 'subperimeter' &&
       r.points?.length >= 3 &&
-      membership(r).includes('pre')
+      membership(r).includes(phase)
   );
   for (const r of hardReserves) {
     const polyM = toMeters(r.points);
@@ -160,7 +161,7 @@ function checkZoneAccessibility(
     }
   }
 
-  // 2. ¿Está bloqueada por una estructura permanente encima de su punto de operación?
+  // 2. ¿Está bloqueada por una estructura permanente ya existente?
   const permanentBlockers = [
     ...scene.base.booths.filter((b) => b.permanent),
     ...scene.infrastructure.filter(
@@ -184,9 +185,9 @@ function checkZoneAccessibility(
     }
   }
 
-  // 3. ¿Está bloqueada o encerrada por vallas activas en la fase?
+  // 3. Validación temporal: en Pre-evento las vallas con phaseTags solo de Evento aún no se han instalado
   const activeFences = (scene.fences || []).filter(
-    (f) => f.points?.length >= 2
+    (f) => f.points?.length >= 2 && membership(f).includes(phase)
   );
   const halfSpan = Math.max(1.6, Math.min(zone.width, zone.depth) * 0.45);
   let crossingFence: {id?: string; name: string} | null = null;
@@ -389,42 +390,93 @@ export function shift(
   }
   const gateP = position(gate, map);
   const truckStartP = extBase ? position(extBase, map) : gateP;
-  const dock = bay ? bay.p : gateP;
-  const yardP = yard ? yard.p : gateP;
+  const skippedZoneAlerts: string[] = [];
 
-  if (!night && yard && Math.min(yard.width, yard.depth) < 3) {
-    const diag: ShiftErrorDiagnostic = {
-      problem: `La reserva de maniobra «${yard.name}» (${yard.width.toFixed(1)} × ${yard.depth.toFixed(1)} m) es demasiado estrecha para el camión (mínimo 3,0 × 3,0 m)`,
-      location: `«${yard.name}» · CELDA ${cellAt(yard.p, 10)}`,
-      action: `Amplía las dimensiones de «${yard.name}» a ≥ 3 m de lado en el Inspector o redibuja el polígono.`,
-      targetId: yard.id,
-      targetPoint: yard.p,
-    };
-    return {
-      error: `${diag.problem} (${diag.location}). ${diag.action}`,
-      diagnostic: diag,
-    } as ShiftPlan;
-  }
+  // Evaluar todas las zonas de descarga y maniobra disponibles: si alguna está bloqueada pero existen otras
+  // operativas en la plaza, evitar el fallo fatal, advertir y operar con las zonas disponibles.
+  let usableBays = allBays;
+  let usableYards = allYards;
 
-  if (!night && bay) {
-    const bayAccessErr = checkZoneAccessibility(bay, 'descarga', gate, gateP, scene, map);
-    if (bayAccessErr) {
+  if (!night && allBays.length > 0) {
+    const okBays: typeof allBays = [];
+    let firstBayErr: ShiftErrorDiagnostic | null = null;
+    for (const candidateBay of allBays) {
+      const err = checkZoneAccessibility(
+        candidateBay,
+        'descarga',
+        gate,
+        gateP,
+        scene,
+        map,
+        phase
+      );
+      if (err) {
+        if (!firstBayErr) firstBayErr = err;
+        skippedZoneAlerts.push(
+          `Zona de descarga «${candidateBay.name}» omitida por bloqueo (${err.problem}).`
+        );
+      } else {
+        okBays.push(candidateBay);
+      }
+    }
+    if (!okBays.length && firstBayErr) {
       return {
-        error: `${bayAccessErr.problem} (${bayAccessErr.location}). ${bayAccessErr.action}`,
-        diagnostic: bayAccessErr,
+        error: `${firstBayErr.problem} (${firstBayErr.location}). ${firstBayErr.action}`,
+        diagnostic: firstBayErr,
       } as ShiftPlan;
     }
+    usableBays = okBays;
   }
 
-  if (!night && yard) {
-    const yardAccessErr = checkZoneAccessibility(yard, 'maniobra', gate, gateP, scene, map);
-    if (yardAccessErr) {
+  if (!night && allYards.length > 0) {
+    const okYards: typeof allYards = [];
+    let firstYardErr: ShiftErrorDiagnostic | null = null;
+    for (const candidateYard of allYards) {
+      if (Math.min(candidateYard.width, candidateYard.depth) < 3) {
+        const narrowErr: ShiftErrorDiagnostic = {
+          problem: `La reserva de maniobra «${candidateYard.name}» (${candidateYard.width.toFixed(1)} × ${candidateYard.depth.toFixed(1)} m) es demasiado estrecha para el camión (mínimo 3,0 × 3,0 m)`,
+          location: `«${candidateYard.name}» · CELDA ${cellAt(candidateYard.p, 10)}`,
+          action: `Amplía las dimensiones de «${candidateYard.name}» a ≥ 3 m de lado en el Inspector o redibuja el polígono.`,
+          targetId: candidateYard.id,
+          targetPoint: candidateYard.p,
+        };
+        if (!firstYardErr) firstYardErr = narrowErr;
+        skippedZoneAlerts.push(
+          `Zona de maniobra «${candidateYard.name}» omitida por anchura insuficiente (< 3 m).`
+        );
+        continue;
+      }
+      const err = checkZoneAccessibility(
+        candidateYard,
+        'maniobra',
+        gate,
+        gateP,
+        scene,
+        map,
+        phase
+      );
+      if (err) {
+        if (!firstYardErr) firstYardErr = err;
+        skippedZoneAlerts.push(
+          `Zona de maniobra «${candidateYard.name}» omitida por bloqueo (${err.problem}).`
+        );
+      } else {
+        okYards.push(candidateYard);
+      }
+    }
+    if (!okYards.length && firstYardErr) {
       return {
-        error: `${yardAccessErr.problem} (${yardAccessErr.location}). ${yardAccessErr.action}`,
-        diagnostic: yardAccessErr,
+        error: `${firstYardErr.problem} (${firstYardErr.location}). ${firstYardErr.action}`,
+        diagnostic: firstYardErr,
       } as ShiftPlan;
     }
+    usableYards = okYards;
   }
+
+  const activeBay = usableBays[0];
+  const activeYard = usableYards[0];
+  const dock = activeBay ? activeBay.p : gateP;
+  const yardP = activeYard ? activeYard.p : gateP;
 
   const bins = assets
     .filter(o => o.kind === 'bin')
@@ -463,7 +515,7 @@ export function shift(
   const stages: ShiftStage[] = [];
   const packages: Array<{p: Point2D; start: number; end: number}> = [];
   const stores: Array<{p: Point2D; angle: number}> = [];
-  const alerts = new Set<string>();
+  const alerts = new Set<string>(skippedZoneAlerts);
 
   let cleanTime = 0;
   let cleanPos: Point2D = gateP;
@@ -584,7 +636,7 @@ export function shift(
     if (missing.length) {
       alerts.add('Sin empresa asignada: ' + missing.join(', '));
     }
-    const bays = allBays;
+    const bays = usableBays;
     const dockFree = bays.map(() => truckTime);
     const first = truckTime;
     const rand = rng((scene.seed || 2026) ^ (phase === 'post' ? 7919 : 104729));

@@ -69,6 +69,7 @@ import {
 } from '../../engine/logistics/phases';
 import {insertStock} from '../../engine/planning/inventory';
 import {coverSubcomponentBallastIds} from '../../engine/planning/ballast';
+import {resolveAccessCategory} from '../../engine/emergency/priority';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   Booth,
@@ -912,17 +913,22 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
             : spawnType === 'mixed'
               ? '#4b2665'
               : '#294d80';
+        const accessCat = resolveAccessCategory(o);
         const typeTag = o.externalBase
           ? o.vehicleCategory === 'emergency'
             ? 'BASE EMG'
             : o.vehicleCategory === 'logistics'
               ? 'BASE LOG'
               : 'BASE VEH'
-          : spawnType === 'vehicle'
-            ? 'VEH'
-            : spawnType === 'mixed'
-              ? 'MIX'
-              : 'PEA';
+          : accessCat === 'physically_blocked'
+            ? 'BLOQ'
+            : accessCat === 'conditional'
+              ? 'COND'
+              : accessCat === 'emergency_vehicle'
+                ? 'EMG'
+                : accessCat === 'mixed'
+                  ? 'MIX'
+                  : 'PEA';
         const fm = flowMetrics.get(o.id);
         const shareTag =
           fm && fm.canEnter && fm.entrySharePct > 0

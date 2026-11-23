@@ -61,7 +61,11 @@ import {
   buildVehicleGrid,
   planVehicleRoute,
 } from '../mobility/vehicle-system';
-import {gateAllowsAuthority} from './priority';
+import {
+  gateAllowsAuthority,
+  gateVehicleDelaySec,
+  resolveAccessCategory,
+} from './priority';
 import {EmergencyLab, INCIDENTS} from './emergency-lab';
 import {Evacuation} from './evacuation';
 import {FireModel} from './fire-model';
@@ -701,25 +705,34 @@ export class ResponseSimulation extends EmergencyLab {
     const needsAuthorityCheck =
       ['ambulance', 'fire', 'patrol'].includes(responseMode) ||
       (hasAuthorityConfig && ['stretcher', 'foot'].includes(responseMode));
+    let conditionalGateDelay = 0;
+    let exteriorStagingOnly = false;
     if (needsAuthorityCheck) {
       const requiredWidth = ['ambulance', 'fire', 'patrol'].includes(
         responseMode
       )
         ? profile.width + 0.3
         : profile.width;
-      if (
-        !e.s.entrances.some((g: Record<string, unknown>) =>
-          gateAllowsAuthority(g as never, responseMode, requiredWidth)
-        )
-      ) {
-        row.status = 'blocked';
-        row.note =
-          'No hay un acceso autorizado para esta unidad con la anchura de ensayo declarada.';
-        row.reinforcements ??= {
-          requestedAt: e.time,
-          status: 'Solicitud simulada · acceso autorizado pendiente',
-        };
-        return;
+      const matchingGate = e.s.entrances.find((g: Record<string, unknown>) =>
+        gateAllowsAuthority(g as never, responseMode, requiredWidth)
+      );
+      if (!matchingGate) {
+        // Para ambulancias: si no hay puerta vehicular pero existen accesos peatonales/mixtos,
+        // estacionar en punto exterior accesible y desplegar personal sanitario + camilla a pie.
+        if (responseMode === 'ambulance') {
+          exteriorStagingOnly = true;
+        } else {
+          row.status = 'blocked';
+          row.note =
+            'No hay un acceso autorizado para esta unidad con la anchura de ensayo declarada.';
+          row.reinforcements ??= {
+            requestedAt: e.time,
+            status: 'Solicitud simulada · acceso autorizado pendiente',
+          };
+          return;
+        }
+      } else {
+        conditionalGateDelay = gateVehicleDelaySec(matchingGate as never);
       }
     }
     if (row.reinforcements) {
@@ -737,15 +750,17 @@ export class ResponseSimulation extends EmergencyLab {
           (resource.x * e.g.m.widthMeters) / 100,
           (resource.y * e.g.m.heightMeters) / 100,
         ];
-    let route = responseRoute(
-      e,
-      row.origin,
-      row.point!,
-      profile,
-      profile.length / 2 + 1
-    );
-    // Si la huella del vehículo no cabe hasta el punto exacto interior (estrechamiento/giro),
-    // aproximar el vehículo hasta el punto despejado más cercano y desplegar a los operarios a pie.
+    let route = exteriorStagingOnly
+      ? {error: 'Acceso vehicular directo no disponible; estacionamiento exterior y desembarco a pie.'}
+      : responseRoute(
+          e,
+          row.origin,
+          row.point!,
+          profile,
+          profile.length / 2 + 1
+        );
+    // Si la huella del vehículo no cabe hasta el punto exacto interior (estrechamiento/giro/acceso peatonal),
+    // aproximar el vehículo hasta el punto despejado más cercano y desplegar a los operarios/sanitarios a pie.
     if (route.error) {
       const vehGrid = e.vehicleManager?.vehGrid || buildVehicleGrid(e.s, e.g);
       const smartPlan = planVehicleRoute(
@@ -769,6 +784,8 @@ export class ResponseSimulation extends EmergencyLab {
           : smartPlan.path;
         row.vehicleBlock = smartPlan.dismountPoint ? route.error : undefined;
         row.footDeployment = !!smartPlan.dismountPoint;
+        row.dismountPoint = smartPlan.dismountPoint || row.origin;
+        row.stagingUsed = !!smartPlan.dismountPoint || exteriorStagingOnly;
         if (smartPlan.dismountPoint) {
           Object.assign(profile, {
             width: Math.min(profile.width, 0.9),
@@ -781,35 +798,44 @@ export class ResponseSimulation extends EmergencyLab {
           length: pathLength(combined),
         };
       } else {
-        // 1. Si hay vallas cerrando el paso, apartarlas temporalmente (sin bloquear el juego)
+        // 1. Evaluar ruta peatonal/camilla desde la posición de estacionamiento del vehículo
+        const footOrigin = row.origin;
         const fenceFreeGrid =
           e.rebelGrid || buildGrid(e.s, e.g.cell, {ignoreFences: true});
         const fenceFreeEngine = {...e, g: fenceFreeGrid};
         const footFallback = responseRoute(
           fenceFreeEngine,
-          row.origin,
+          footOrigin,
           row.point!,
-          {...profile, width: 0.55, length: 0.7, speed: 1.55},
+          {...profile, width: 0.55, length: 0.7, speed: 1.45},
           1.2
         );
         if (!footFallback.error && footFallback.path) {
           row.vehicleBlock = route.error;
           row.footDeployment = true;
-          Object.assign(profile, {width: 0.55, length: 0.7, speed: 1.55});
+          row.dismountPoint = footOrigin;
+          row.stagingUsed = true;
+          Object.assign(profile, {width: 0.55, length: 0.7, speed: 1.45});
           route = footFallback;
           row.note =
-            row.type === 'fence_breach'
-              ? 'Valla apartada temporalmente · escuadra desplegada a pie en fila india hasta el punto.'
-              : 'Obstáculo en calzada · vehículo detenido y escuadra desplegada a pie en fila india.';
+            responseMode === 'ambulance'
+              ? 'Ambulancia estacionada en punto accesible · equipo sanitario desplegado a pie con camilla hasta la víctima.'
+              : row.type === 'fence_breach'
+                ? 'Valla apartada temporalmente · escuadra desplegada a pie en fila india hasta el punto.'
+                : 'Obstáculo en calzada · vehículo detenido y escuadra desplegada a pie en fila india.';
         } else {
           // 2. Último recurso operativo: fila india directa a pie para que un obstáculo fijo nunca bloquee el juego
           const directFoot: Point[] = [row.origin, row.point!];
           row.vehicleBlock = route.error;
           row.footDeployment = true;
-          Object.assign(profile, {width: 0.55, length: 0.7, speed: 1.4});
+          row.dismountPoint = row.origin;
+          row.stagingUsed = true;
+          Object.assign(profile, {width: 0.55, length: 0.7, speed: 1.35});
           route = {path: directFoot, length: pathLength(directFoot)};
           row.note =
-            'Acceso vehicular impedido por obstáculo fijo · atención a pie en fila india.';
+            responseMode === 'ambulance'
+              ? 'Ambulancia estacionada en exterior · equipo sanitario accediendo a pie.'
+              : 'Acceso vehicular impedido por obstáculo fijo · atención a pie en fila india.';
         }
       }
     }
@@ -875,15 +901,16 @@ export class ResponseSimulation extends EmergencyLab {
     row.vehicleDistance = 0;
     row.vehicle = true;
     row.assigned = e.time;
-    row.alertDelay = Math.max(
-      0,
-      resource.delay ??
-        (({fire: 90, security: 15, patrol: 30, medical: 30, ambulance: 60} as Record<
-          string,
-          number
-        >)[resource.kind] ||
-          60)
-    );
+    row.alertDelay =
+      Math.max(
+        0,
+        resource.delay ??
+          (({fire: 90, security: 15, patrol: 30, medical: 30, ambulance: 60} as Record<
+            string,
+            number
+          >)[resource.kind] ||
+            60)
+      ) + conditionalGateDelay;
     row.handling = Math.max(
       1,
       row.severity === 'leve'
@@ -896,11 +923,15 @@ export class ResponseSimulation extends EmergencyLab {
     row.status = 'assigned';
     row.phase = 'approach';
     row.note = row.footDeployment
-      ? 'Dotación de bomberos a pie desde el vehículo; aproximación del camión bloqueada: ' +
-        row.vehicleBlock
+      ? (responseMode === 'ambulance'
+          ? 'Ambulancia estacionada en punto accesible · personal sanitario desplegado a pie hasta la víctima.'
+          : 'Dotación desplegada a pie desde el vehículo; aproximación vehicular limitada: ' +
+            row.vehicleBlock)
       : row.whistleDispersal || row.type === 'conflict'
         ? 'Oficial desalojando paso con silbato y avisos de voz para intervenir.'
-        : 'Recurso asignado. Recorrido geométrico de ensayo.';
+        : conditionalGateDelay > 0
+          ? `Recurso asignado · acceso condicionado abierto bajo demanda (+${conditionalGateDelay} s).`
+          : 'Recurso asignado. Recorrido geométrico de ensayo.';
   }
 
   move(row: EmergencyIncident, dt: number): boolean {
@@ -992,7 +1023,7 @@ export class ResponseSimulation extends EmergencyLab {
       this.resolve(row);
       return;
     }
-    let target = row.origin || row.point;
+    let target = row.dismountPoint || row.origin || row.point;
     if (row.responseMode === 'stretcher') {
       const ambulance = this.resources()
         .filter(
@@ -1041,8 +1072,10 @@ export class ResponseSimulation extends EmergencyLab {
       ? [row.vehiclePose.x, row.vehiclePose.y]
       : row.point;
     const profile =
-      row.profile || RESPONSE_PROFILES[row.responseMode || 'firstaid'];
-    const route = responseRoute(
+      row.footDeployment && row.responseMode === 'ambulance'
+        ? RESPONSE_PROFILES.stretcher
+        : row.profile || RESPONSE_PROFILES[row.responseMode || 'firstaid'];
+    let route = responseRoute(
       e,
       origin,
       target,
@@ -1050,10 +1083,22 @@ export class ResponseSimulation extends EmergencyLab {
       profile.length / 2 + 1
     );
     if (route.error || !route.path) {
-      row.status = 'blocked';
-      row.note = 'Traslado bloqueado: ' + route.error;
-      return;
+      // Si la camilla completa no cabe en un estrechamiento, intentar traslado asistido a pie hasta la ambulancia estacionada
+      const assistedProfile: ResponseProfile = {
+        name: 'Evacuación asistida a pie',
+        width: 0.75,
+        length: 1.4,
+        speed: 0.85,
+        staff: 2,
+      };
+      const fallbackRoute = responseRoute(e, origin, target, assistedProfile, 1.5);
+      if (!fallbackRoute.error && fallbackRoute.path) {
+        route = fallbackRoute;
+      } else {
+        route = {path: [origin, target], length: dist(origin, target)};
+      }
     }
+    row.evacuationPath = route.path;
     row.path = route.path;
     row.pathLength = route.length;
     row.vehicleDistance = 0;
@@ -1063,9 +1108,9 @@ export class ResponseSimulation extends EmergencyLab {
     row.phase = 'transfer';
     row.status = 'assigned';
     row.note =
-      row.responseMode === 'stretcher'
-        ? 'Traslado en camilla al punto de entrega supuesto.'
-        : 'Regreso de la ambulancia al punto de transferencia del recinto.';
+      row.responseMode === 'stretcher' || row.footDeployment
+        ? 'Evacuación del paciente en camilla hasta la ambulancia estacionada en punto accesible.'
+        : 'Regreso de la ambulancia (marcha atrás / salida) al punto de transferencia del recinto.';
     const a = e.byId.get(row.agentId);
     if (a) {
       e.remove(a);

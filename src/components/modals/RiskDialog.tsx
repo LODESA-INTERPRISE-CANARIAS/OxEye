@@ -31,6 +31,7 @@ export interface RiskDialogProps {
   onClearCustomReport: () => void;
   onSceneChanged: () => void;
   onReproduceSeed?: (seed: number) => void;
+  onStartDiagnosticSim?: () => void;
 }
 
 /**
@@ -43,6 +44,7 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
   onClearCustomReport,
   onSceneChanged,
   onReproduceSeed,
+  onStartDiagnosticSim,
 }) => {
   const dlgRef = useRef<HTMLDialogElement | null>(null);
   const activeModal = useProjectStore((s) => s.activeModal);
@@ -411,26 +413,86 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
         );
       })()}
       <p>
-        El modelo se guarda como borrador aunque existan bloqueos. Los bloqueos
-        impiden iniciar o reanudar el ensayo. Son controles internos del
-        prototipo; la dotación legal corresponde al plan específico del evento.
+        El modelo se guarda como borrador aunque existan incidencias críticas.
+        Las advertencias no impiden simular. Si existen restricciones críticas,
+        puedes corregirlas o ejecutar una simulación diagnóstica (escenario no
+        validado — uso exclusivamente analítico).
       </p>
       <div
         className={`risk-summary ${baseReport.critical.length ? 'risk-stop' : ''}`}
       >
         <b>
-          {baseReport.critical.length} bloqueos · {baseReport.warnings.length}{' '}
-          aspectos por revisar
+          {baseReport.critical.length} críticos · {baseReport.warnings.length}{' '}
+          advertencias · {(baseReport.infos || []).length} informativos
         </b>
         <p>
           {Math.round(baseReport.expected)} personas de ocupación media estimada.
           Equipos simultáneos: sanitarios {baseReport.slots.medical}, seguridad{' '}
           {baseReport.slots.security}, bomberos {baseReport.slots.fire}.
         </p>
+        {baseReport.critical.length > 0 && onStartDiagnosticSim && (
+          <div
+            style={{
+              marginTop: '10px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: 'var(--surface)',
+              border: '1px dashed var(--danger)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+            }}
+          >
+            <div style={{flex: '1 1 260px', fontSize: '0.82rem'}}>
+              <b>Modo de simulación diagnóstica</b>
+              <div style={{color: 'var(--muted)', marginTop: '2px'}}>
+                Permite estudiar consecuencias en un{' '}
+                <b>Escenario no validado — uso exclusivamente analítico</b>. Sus
+                resultados no certifican seguridad ni autorización.
+              </div>
+            </div>
+            <button
+              type="button"
+              id="start-diagnostic-sim"
+              className="dark"
+              onClick={onStartDiagnosticSim}
+            >
+              Simular en modo diagnóstico
+            </button>
+          </div>
+        )}
       </div>
       <div className="risk-guided-list">
         {baseReport.issues.map((issue) => {
           const guide = resolveRiskGuide(issue, s);
+          const levelLabel =
+            issue.level === 'critical'
+              ? 'CRÍTICO · '
+              : issue.level === 'info'
+                ? 'INFORMATIVO · '
+                : 'ADVERTENCIA · ';
+          const badgeClass =
+            issue.level === 'critical'
+              ? 'badge-high'
+              : issue.level === 'info'
+                ? 'badge-low'
+                : 'badge-medium';
+          const badgeText =
+            issue.level === 'critical'
+              ? 'Crítico'
+              : issue.level === 'info'
+                ? 'Informativo'
+                : 'Advertencia';
+          const originTag =
+            issue.origin === 'normative'
+              ? 'Normativa / Seguridad'
+              : issue.origin === 'algorithm_limit'
+                ? 'Limitación del algoritmo'
+                : issue.origin === 'operational'
+                  ? 'Operativo'
+                  : null;
           return (
             <article
               key={issue.id}
@@ -439,16 +501,21 @@ export const RiskDialog: React.FC<RiskDialogProps> = ({
             >
               <header className="diag-guide-head">
                 <b className="risk-guided-title">
-                  {guide.icon}{' '}
-                  {issue.level === 'critical' ? 'BLOQUEO · ' : 'REVISAR · '}
+                  {guide.icon} {levelLabel}
                   {issue.title}
                 </b>
-                <span
-                  className={`diag-badge ${issue.level === 'critical' ? 'badge-high' : 'badge-medium'}`}
-                >
-                  {issue.level === 'critical' ? 'Impide simular' : 'Aviso'}
-                </span>
+                <div style={{display: 'inline-flex', gap: '6px', alignItems: 'center'}}>
+                  {originTag && (
+                    <span className="diag-badge badge-low">{originTag}</span>
+                  )}
+                  <span className={`diag-badge ${badgeClass}`}>{badgeText}</span>
+                </div>
               </header>
+              {issue.location && (
+                <p className="diag-evidence">
+                  <b>Ubicación:</b> {issue.location}
+                </p>
+              )}
               <p className="diag-why">{guide.cause}</p>
               <p className="diag-evidence">
                 <b>Detalle:</b> {issue.action}
