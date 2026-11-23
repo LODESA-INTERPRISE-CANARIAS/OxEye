@@ -61,6 +61,7 @@ export * from './engine/logistics/shift';
 export * from './engine/planning/batch';
 export * from './engine/planning/contacts';
 export * from './engine/planning/demand';
+export * from './engine/planning/event-demand';
 export * from './engine/planning/evaluator';
 export * from './engine/planning/inventory';
 export * from './engine/planning/layout';

@@ -670,6 +670,66 @@ export interface FalseAlarmRecord {
   point: Point2D;
 }
 
+/** Origen o procedencia de los parámetros de demanda de un proyecto. */
+export type DemandSourceKind =
+  | 'manual'
+  | 'curve_preset'
+  | 'smart_suggestion'
+  | 'programme_suggestion'
+  | 'legacy_hourly_migration';
+
+/** Distribución de permanencia utilizada para derivar salidas y ocupación simultánea. */
+export interface DwellTimeDistribution {
+  meanMinutes: number;
+  spreadRatio: number;
+  shortShare?: number;
+  longShare?: number;
+}
+
+/** Fuente única canónica de planificación de demanda, afluencia horaria y servicios. */
+export interface EventDemandConfig {
+  date: string;
+  startHour: number;
+  hours: number;
+  uniqueAttendees: number;
+  curveProfile: AttendanceCurveProfile;
+  hourlyArrivals: number[];
+  dwellTimeMinutes: number;
+  dwellDistribution: DwellTimeDistribution;
+  desiredMaxOccupancy: number | null;
+  authorizedCapacity: number | null;
+  operationalAreaM2: number | null;
+  reentryRate: number;
+  provenance: DemandSourceKind;
+  legacyHourlyRate?: number;
+  serviceParams: {
+    foodShare: number;
+    serviceHourly: number;
+    utilization: number;
+    seatedShare: number;
+    mealMin: number;
+    mealMax: number;
+    tablesPerRoof: number;
+    shopShare: number;
+    shopMinutes: number;
+    shopPlaces: number;
+    toiletShare: number;
+    toiletMinutes: number;
+    children: number;
+    older: number;
+  };
+  updatedAt: string;
+  revision: number;
+}
+
+/** Instantánea guardada de una variante de demanda para comparación sin perder el escenario actual. */
+export interface DemandVariantSnapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  demandConfig: EventDemandConfig;
+}
+
 /** Parámetros de entrada para el cálculo de demanda de servicios. */
 export interface DemandInputs {
   arrivals: number;
@@ -940,6 +1000,10 @@ export interface Scene {
   };
   /** Configuración editable de la camilla sanitaria (`stretcher`). */
   stretcher?: Partial<StretcherConfig>;
+  /** Fuente única canónica de configuración de demanda, afluencia y capacidad de servicios. */
+  demandConfig?: EventDemandConfig;
+  /** Variantes guardadas de escenarios de demanda para comparación. */
+  demandVariants?: DemandVariantSnapshot[];
   /** Modelo de afluencia dinámica centrado en asistentes únicos y curva horaria. */
   attendance?: AttendanceConfig;
   /** Configuración de comportamiento humano, congestiones, consultas y falsas alarmas. */

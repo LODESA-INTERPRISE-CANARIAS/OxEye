@@ -13,6 +13,10 @@ import {smallExample} from '../engine/crowd/small-example';
 import {addResponseExample} from '../engine/emergency/response-example';
 import {assessRisk} from '../engine/emergency/risk';
 import {migrateSceneContactsAndProgramme} from '../engine/planning/contacts';
+import {
+  ensureEventDemandConfig,
+  syncDemandConfigToScene,
+} from '../engine/planning/event-demand';
 import type {
   ProjectFile,
   UserPreferences,
@@ -142,6 +146,10 @@ export function loadProjectFromStorage(): {
           f.name ??= 'Valla ' + (i + 1);
         }
         migrateSceneContactsAndProgramme(saved.scenes[k]);
+        syncDemandConfigToScene(
+          saved.scenes[k],
+          ensureEventDemandConfig(saved.scenes[k])
+        );
       }
       configure(saved.maps);
       return {project: saved, hasSaved: true};
@@ -309,6 +317,7 @@ export function parseImportedProject(
     for (const k of Object.keys(VENUES) as VenueKey[]) {
       validateScene(scenes[k]);
       migrateSceneContactsAndProgramme(scenes[k]);
+      syncDemandConfigToScene(scenes[k], ensureEventDemandConfig(scenes[k]));
       const sameBase =
         JSON.stringify(pMaps?.[k]?.bbox) === JSON.stringify(maps[k].bbox);
       if (!sameBase && !isValidCustomMap(pMaps?.[k])) {
@@ -333,6 +342,7 @@ export function parseImportedProject(
     old.roadPlans = [];
     validateScene(old);
     migrateSceneContactsAndProgramme(old);
+    syncDemandConfigToScene(old, ensureEventDemandConfig(old));
     const next = structuredClone(currentProject);
     next.scenes[siteKey] = old;
     next.active = siteKey;

@@ -9,6 +9,7 @@ import type {
   InfrastructureItem,
   Scene,
 } from '../../types';
+import {deriveEventDemand} from './event-demand';
 import {ensureProjectObjectives, OBJECTIVE_BY_ID} from './objectives';
 
 /** Valores por defecto del formulario de cálculo de servicios. */
@@ -163,9 +164,14 @@ export function buildObjectiveDemandReport(
   scene: Scene,
   inputs: DemandInputs
 ): ObjectiveDemandReport {
-  const base = demandPlan(inputs);
+  const derived = deriveEventDemand(scene);
+  // Cuando el escenario ya usa EventDemandConfig, las necesidades base respetan la ocupación media y franja crítica reales
+  const base = scene.demandConfig ? derived.averageServicesPlan : demandPlan(inputs);
   const obj = ensureProjectObjectives(scene);
-  const suggestedInputs = suggestDemandInputsFromObjectives(scene, inputs);
+  const suggestedInputs = suggestDemandInputsFromObjectives(scene, {
+    ...inputs,
+    arrivals: Math.round(derived.averageArrivalsPerHour) || inputs.arrivals,
+  });
 
   const placedFood = scene.base.booths.filter((b) => b.type === 'food').length;
   const placedShops = scene.base.booths.filter((b) => b.type === 'commerce').length;

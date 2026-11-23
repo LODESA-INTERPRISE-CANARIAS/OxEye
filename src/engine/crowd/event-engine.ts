@@ -476,7 +476,7 @@ export class EventEngine {
         return c;
       }
     }
-    if (this.s.attendance && this.attendance) {
+    if ((this.s.demandConfig || this.s.attendance) && this.attendance) {
       return this.attendance.plan.hourlyEntries;
     }
     const loss = weather === 'rain' ? 0.4 : weather === 'wind' ? 0.25 : 0;

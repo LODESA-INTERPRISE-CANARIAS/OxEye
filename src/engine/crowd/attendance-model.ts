@@ -10,7 +10,14 @@ import type {
   AttendanceCurveProfile,
   Scene,
 } from '../../types';
+import {
+  CURVE_ANCHORS_BY_PROFILE,
+  deriveEventDemand,
+  ensureEventDemandConfig,
+  syncDemandConfigToScene,
+} from '../planning/event-demand';
 import {activities} from '../planning/programme';
+import type {EventEngine} from './event-engine';
 
 export interface AttendanceCurvePresetMeta {
   key: AttendanceCurveProfile;
@@ -87,18 +94,6 @@ function interpolateNormalizedCurve(
   return out;
 }
 
-const ANCHORS_BY_PROFILE: Record<AttendanceCurveProfile, number[]> = {
-  morning: [0.65, 1.15, 1.35, 1.1, 0.72, 0.42, 0.25],
-  afternoon: [0.3, 0.55, 0.9, 1.25, 1.35, 1.05, 0.6],
-  night: [0.22, 0.4, 0.78, 1.22, 1.45, 1.2, 0.58],
-  full_day: [0.45, 0.92, 1.18, 1.05, 0.74, 0.86, 1.28, 1.36, 0.98, 0.45],
-  family: [0.62, 1.2, 1.32, 0.85, 0.65, 1.05, 0.82, 0.38],
-  trade_fair: [0.55, 1.08, 1.22, 0.75, 0.95, 1.18, 0.88, 0.42],
-  festival: [0.28, 0.52, 0.78, 0.96, 1.18, 1.42, 1.34, 0.72],
-  street_market: [0.75, 1.05, 1.18, 1.12, 0.98, 1.08, 0.92, 0.62],
-  custom: [0.8, 1.0, 1.15, 1.0, 0.95, 0.85],
-};
-
 export interface HourlyAttendancePlan {
   hours: number;
   startHour: number;
@@ -119,6 +114,20 @@ export function buildHourlyAttendancePlan(
   scene: Scene,
   override?: Partial<AttendanceConfig>
 ): HourlyAttendancePlan {
+  if (!override && scene.demandConfig) {
+    const derived = deriveEventDemand(scene);
+    return {
+      hours: derived.config.hours,
+      startHour: derived.config.startHour,
+      uniqueAttendees: derived.plannedUniqueAttendees,
+      curveProfile: derived.config.curveProfile,
+      weights: derived.config.hourlyArrivals.map((v) => Math.max(0.05, Number(v) || 0.05)),
+      hourlyEntries: [...derived.effectiveHourlyArrivals],
+      expectedExits: derived.hourly.map((h) => h.exits),
+      expectedOccupancy: derived.hourly.map((h) => h.peakOccupancy),
+      peakSimultaneous: derived.peakSimultaneousOccupancy,
+    };
+  }
   const hours = Math.max(1, Math.min(24, Math.round(scene.base?.hours || 6)));
   const startHour = Number.isFinite(scene.base?.start) ? Number(scene.base.start) : 10;
   const cfg: Partial<AttendanceConfig> = {...scene.attendance, ...override};
@@ -143,7 +152,7 @@ export function buildHourlyAttendancePlan(
     weights = cfg.customWeights.map((w) => Math.max(0.05, Number(w) || 0.05));
   } else {
     weights = interpolateNormalizedCurve(
-      ANCHORS_BY_PROFILE[curveProfile] || ANCHORS_BY_PROFILE.full_day,
+      CURVE_ANCHORS_BY_PROFILE[curveProfile] || CURVE_ANCHORS_BY_PROFILE.full_day,
       hours
     );
   }
@@ -428,4 +437,50 @@ export class AttendanceModel {
       renderCap: cap,
     };
   }
+}
+
+/**
+ * Aplica cambios de demanda desde el instante actual de una simulación iniciada sin perder
+ * el histórico previo, sin reiniciar el tiempo y sin duplicar partículas existentes.
+ */
+export function applyLiveDemandFromNow(
+  engine: EventEngine,
+  updatedScene: Scene
+): void {
+  const nextCfg = structuredClone(ensureEventDemandConfig(updatedScene));
+  syncDemandConfigToScene(engine.s, nextCfg);
+
+  const nextPlan = buildHourlyAttendancePlan(engine.s);
+  const currentBucket = Math.max(0, Math.floor(engine.time / 3600));
+  const mergedHourly = nextPlan.hourlyEntries.map((val, idx) =>
+    idx < currentBucket && idx < engine.hourly.length ? engine.hourly[idx] : val
+  );
+
+  engine.duration = Math.max(3600, nextPlan.hours * 3600);
+  if (engine.time < engine.duration) {
+    engine.closing = false;
+  }
+
+  engine.attendance.plan = {
+    ...nextPlan,
+    hourlyEntries: mergedHourly,
+  };
+  engine.attendance.config = {
+    ...engine.attendance.config,
+    uniqueAttendees: nextPlan.uniqueAttendees,
+    curveProfile: nextPlan.curveProfile,
+    customWeights: [...nextPlan.weights],
+    maxSimultaneousTarget: nextCfg.desiredMaxOccupancy ?? undefined,
+    authorizedCapacity: nextCfg.authorizedCapacity ?? undefined,
+    reentryShare: nextCfg.reentryRate,
+  };
+
+  while (engine.attendance.hourlyObservedEntries.length < nextPlan.hours) {
+    engine.attendance.hourlyObservedEntries.push(0);
+  }
+  while (engine.attendance.hourlyObservedExits.length < nextPlan.hours) {
+    engine.attendance.hourlyObservedExits.push(0);
+  }
+
+  engine.hourly = [...mergedHourly];
 }

@@ -18,6 +18,10 @@ import {
 } from './components/modals/ClosingDialog';
 import {ComparisonDialog} from './components/modals/ComparisonDialog';
 import {ContactsDialog} from './components/modals/ContactsDialog';
+import {
+  DemandChangeDialog,
+  type DemandLiveDecision,
+} from './components/modals/DemandChangeDialog';
 import {DemandDialog} from './components/modals/DemandDialog';
 import {DeveloperReferenceDialog} from './components/modals/DeveloperReferenceDialog';
 import {InfoDialog} from './components/modals/InfoDialog';
@@ -36,6 +40,7 @@ import {
   SimulationStrip,
 } from './components/simulation/SimulationStrip';
 import {applyPalette, normalizePaletteId} from './data/palettes';
+import {applyLiveDemandFromNow} from './engine/crowd/attendance-model';
 import {EventEngine} from './engine/crowd/event-engine';
 import {
   applyLiveArrivals,
@@ -62,8 +67,12 @@ import {observeIssues} from './engine/experience/review-memory';
 import {phaseScene} from './engine/logistics/phases';
 import {shift, shiftAt, shiftSVG} from './engine/logistics/shift';
 import type {LayoutOptions} from './engine/planning/layout';
+import {
+  ensureEventDemandConfig,
+  updateEventDemand,
+} from './engine/planning/event-demand';
 import {useProjectStore} from './store/useProjectStore';
-import type {PhaseKey, Scene} from './types';
+import type {EventDemandConfig, PhaseKey, Scene} from './types';
 
 const timeLabel = (t: number): string =>
   [Math.floor(t / 3600), Math.floor(t / 60) % 60, Math.floor(t) % 60]
@@ -111,6 +120,15 @@ export const App: React.FC = () => {
   const [engineInstance, setEngineInstance] = useState<EventEngine | null>(
     null
   );
+  const [appliedRunRevision, setAppliedRunRevision] = useState<number | null>(
+    null
+  );
+  const [pendingDemandPatch, setPendingDemandPatch] = useState<
+    | (Partial<EventDemandConfig> & {
+        serviceParamsPatch?: Partial<EventDemandConfig['serviceParams']>;
+      })
+    | null
+  >(null);
   const [reviewTick, setReviewTick] = useState(0);
   const [closingData, setClosingData] = useState<ClosingDialogData | null>(
     null
@@ -341,6 +359,8 @@ export const App: React.FC = () => {
     setInvestigationState(null);
     engineRef.current = null;
     setEngineInstance(null);
+    setAppliedRunRevision(null);
+    setPendingDemandPatch(null);
     lastReviewRef.current = -1;
     lastHeatRef.current = -1;
     dismissedIncidentsRef.current.clear();
@@ -423,6 +443,7 @@ export const App: React.FC = () => {
           evacuation: em.evacuation?.stats,
           crowd: em.social?.stats,
           recommendations,
+          demandRevision: eng.s.demandConfig?.revision ?? 1,
         };
       });
     }
@@ -562,6 +583,10 @@ export const App: React.FC = () => {
         applyLiveWeather(eng, value as 'sun' | 'cloud' | 'rain' | 'wind');
       } else if (kind === 'arrivals') {
         applyLiveArrivals(eng, Number(value));
+      } else if (kind === 'demand_live_patch') {
+        const snapScene = structuredClone(eng.s);
+        updateEventDemand(snapScene, value as Partial<EventDemandConfig>);
+        applyLiveDemandFromNow(eng, snapScene);
       } else {
         (eng.s as unknown as Record<string, unknown>)[kind] = value;
       }
@@ -729,6 +754,7 @@ export const App: React.FC = () => {
         replayBaseRef.current = base;
         engineRef.current = eng;
         setEngineInstance(eng);
+        setAppliedRunRevision(ensureEventDemandConfig(base).revision);
       } catch (err) {
         showToast('No se pudo iniciar el ensayo: ' + (err as Error).message);
         return;
@@ -972,6 +998,10 @@ export const App: React.FC = () => {
               applyLiveWeather(invEng, value as 'sun' | 'cloud' | 'rain' | 'wind');
             } else if (kind === 'arrivals') {
               applyLiveArrivals(invEng, Number(value));
+            } else if (kind === 'demand_live_patch') {
+              const snapScene = structuredClone(invEng.s);
+              updateEventDemand(snapScene, value as Partial<EventDemandConfig>);
+              applyLiveDemandFromNow(invEng, snapScene);
             }
           }
           invEng.tick(0.5);
@@ -1027,6 +1057,10 @@ export const App: React.FC = () => {
               applyLiveWeather(invEng, value as 'sun' | 'cloud' | 'rain' | 'wind');
             } else if (kind === 'arrivals') {
               applyLiveArrivals(invEng, Number(value));
+            } else if (kind === 'demand_live_patch') {
+              const snapScene = structuredClone(invEng.s);
+              updateEventDemand(snapScene, value as Partial<EventDemandConfig>);
+              applyLiveDemandFromNow(invEng, snapScene);
             }
           }
           invEng.tick(0.5);
@@ -1437,6 +1471,104 @@ export const App: React.FC = () => {
     resetSim();
   }, [resetSim]);
 
+  const handleRequestDemandChange = useCallback(
+    (
+      patch: Partial<EventDemandConfig> & {
+        serviceParamsPatch?: Partial<EventDemandConfig['serviceParams']>;
+      }
+    ) => {
+      const eng = engineRef.current;
+      const started = Boolean(eng && eng.time > 0);
+      if (!started) {
+        updateScene((sc) => {
+          updateEventDemand(sc, patch);
+        }, true);
+        if (eng) {
+          resetSim();
+        }
+        return;
+      }
+      setPendingDemandPatch(patch);
+    },
+    [updateScene, resetSim]
+  );
+
+  const pendingDemandPreview = useMemo(() => {
+    if (!pendingDemandPatch) return null;
+    const sc = useProjectStore.getState().currentScene();
+    const currentConfig = ensureEventDemandConfig(sc);
+    const clone = structuredClone(sc);
+    const pendingConfig = updateEventDemand(clone, pendingDemandPatch);
+    const elapsedSec = engineRef.current?.time || 0;
+    const sameStart = pendingConfig.startHour === currentConfig.startHour;
+    const coversElapsed = pendingConfig.hours * 3600 > elapsedSec + 30;
+    return {
+      currentConfig,
+      pendingConfig,
+      canApplyLive: sameStart && coversElapsed,
+      liveApplyBlockedReason: !sameStart
+        ? 'Cambiar la hora de apertura modifica las franjas iniciales ya simuladas; reinicia o guarda una variante.'
+        : !coversElapsed
+          ? 'La nueva duración es menor que el tiempo ya simulado; reinicia o guarda una variante.'
+          : undefined,
+    };
+  }, [pendingDemandPatch]);
+
+  const handleApplyDemandDecision = useCallback(
+    (decision: DemandLiveDecision) => {
+      if (!pendingDemandPatch || !pendingDemandPreview) {
+        setPendingDemandPatch(null);
+        return;
+      }
+      if (decision === 'cancel') {
+        setPendingDemandPatch(null);
+        showToast('Cambio descartado; la simulación continúa sin contradicciones.');
+        return;
+      }
+      if (decision === 'save_variant') {
+        const idx = (useProjectStore.getState().currentScene().demandVariants || []).length + 1;
+        updateScene((sc) => {
+          sc.demandVariants = [
+            ...(sc.demandVariants || []),
+            {
+              id: crypto.randomUUID(),
+              name: `Variante #${idx}`,
+              createdAt: new Date().toISOString(),
+              demandConfig: structuredClone(pendingDemandPreview.pendingConfig),
+            },
+          ];
+        }, false);
+        setPendingDemandPatch(null);
+        showToast('Variante guardada para comparar sin interrumpir el ensayo actual.');
+        return;
+      }
+      if (decision === 'restart') {
+        updateScene((sc) => {
+          updateEventDemand(sc, pendingDemandPatch);
+        }, true);
+        setPendingDemandPatch(null);
+        resetSim();
+        showToast('Ensayo reiniciado con la nueva configuración de demanda.');
+        return;
+      }
+      // decision === 'apply_now'
+      updateScene((sc) => {
+        updateEventDemand(sc, pendingDemandPatch);
+      }, true);
+      const updatedScene = useProjectStore.getState().currentScene();
+      const eng = engineRef.current;
+      if (eng) {
+        applyLiveDemandFromNow(eng, updatedScene);
+        recordAction('demand_live_patch', structuredClone(pendingDemandPatch));
+        setAppliedRunRevision(ensureEventDemandConfig(updatedScene).revision);
+        paintPeople();
+      }
+      setPendingDemandPatch(null);
+      showToast('Cambios aplicados desde el momento actual conservando el histórico previo.');
+    },
+    [pendingDemandPatch, pendingDemandPreview, updateScene, resetSim, showToast, recordAction, paintPeople]
+  );
+
   const activeVenue = useProjectStore((s) => s.activeVenue);
   const revision = useProjectStore((s) => s.revision);
   const currentSceneObj = currentScene();
@@ -1516,6 +1648,8 @@ export const App: React.FC = () => {
         onInvestigateIncident={openInvestigation}
         reviewTick={reviewTick}
         safetyStop={safetyStop && !diagnosticSimMode && !running}
+        appliedRunRevision={appliedRunRevision}
+        onRequestDemandChange={handleRequestDemandChange}
       />
 
       <main className="workspace">
@@ -1684,7 +1818,20 @@ export const App: React.FC = () => {
       </main>
 
       <ObjectivesDialog onSceneChanged={handleSceneChanged} />
-      <DemandDialog />
+      <DemandDialog
+        engine={engineInstance}
+        appliedRunRevision={appliedRunRevision}
+        onRequestDemandChange={handleRequestDemandChange}
+      />
+      <DemandChangeDialog
+        open={Boolean(pendingDemandPatch && pendingDemandPreview)}
+        elapsedSeconds={engineInstance?.time || 0}
+        currentConfig={pendingDemandPreview?.currentConfig || null}
+        pendingConfig={pendingDemandPreview?.pendingConfig || null}
+        canApplyLive={pendingDemandPreview?.canApplyLive ?? false}
+        liveApplyBlockedReason={pendingDemandPreview?.liveApplyBlockedReason}
+        onDecision={handleApplyDemandDecision}
+      />
       <ProgrammeDialog />
       <InventoryDialog onSceneCommitted={handleSceneChanged} />
       <LaboratoryDialog

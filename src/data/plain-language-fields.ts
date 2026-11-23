@@ -3,17 +3,37 @@
  * Diccionario de preguntas comprensibles y explicaciones contextuales para todos los parámetros.
  */
 export const PLAIN_LANGUAGE_FIELDS: Record<string, [string, string]> = {
+  uniqueAttendees: [
+    'Asistentes únicos previstos',
+    'Personas distintas que visitan el evento durante toda la jornada. Es la suma real de las llegadas previstas por cada hora, sin confundirla con la ocupación simultánea ni con el aforo máximo.',
+  ],
+  curveProfile: [
+    'Curva horaria de llegadas',
+    'Forma en que se distribuyen las entradas hora a hora a lo largo del evento. La media por hora se calcula automáticamente y la hora punta indica cuándo entran más personas.',
+  ],
   arrivals: [
-    '¿Cuántas personas llegarán cada hora?',
-    'Cuenta las entradas durante una hora, incluidas las personas que regresan. Por ejemplo, 200 llegadas por hora no significa que haya 200 personas dentro a la vez.',
+    'Llegadas medias por hora (referencia)',
+    'Media de entradas por hora calculada a partir del total diario dividido entre las horas de apertura. Las personas presentes al mismo tiempo dependen además de cuánto tiempo permanecen dentro.',
   ],
   area: [
     '¿Cuántos metros cuadrados podemos utilizar?',
-    'Introduce la superficie del recinto disponible para planificar. Todavía habrá que reservar espacio para estructuras, colas, pasos y servicios. Esta cifra por sí sola no establece el aforo.',
+    'Introduce la superficie libre operativa disponible para planificar servicios, colas y estancia. Esta cifra por sí sola no establece el aforo autorizado.',
   ],
   stayMinutes: [
-    '¿Cuánto tiempo permanecerá cada visitante? (minutos)',
-    'Una estancia media de 60 minutos significa que una visita dura aproximadamente una hora. A igual ritmo de llegadas, una estancia mayor aumenta la ocupación simultánea.',
+    'Permanencia media esperada (min)',
+    'Minutos aproximados que pasa cada visitante dentro del recinto. Con las mismas llegadas, una permanencia mayor aumenta la ocupación simultánea máxima.',
+  ],
+  dwellTimeMinutes: [
+    'Permanencia media esperada (min)',
+    'Minutos aproximados que pasa cada visitante dentro del recinto. Se combina con la curva de entradas para calcular cuántas personas coinciden dentro en cada tramo.',
+  ],
+  authorizedCapacity: [
+    'Aforo máximo autorizado',
+    'Límite oficial o de seguridad si está definido. Déjalo vacío («No definido») cuando no dispongas todavía de una cifra autorizada.',
+  ],
+  desiredMaxOccupancy: [
+    'Ocupación simultánea máxima prevista',
+    'Referencia operativa del máximo de personas coincidiendo a la vez dentro del recinto para mantener comodidad y fluidez.',
   ],
   foodShare: [
     '¿Qué porcentaje de visitantes comprará comida?',

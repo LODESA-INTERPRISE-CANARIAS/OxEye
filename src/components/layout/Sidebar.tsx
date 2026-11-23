@@ -6,9 +6,22 @@ import {cellAt, polylineLength, world} from '../../engine/cartography/geometry';
 import {generateCoherentSpawns} from '../../engine/cartography/spawns';
 import type {EventEngine} from '../../engine/crowd/event-engine';
 import {
-  applyLiveArrivals,
   applyLiveWeather,
 } from '../../engine/director/director-logic';
+import {
+  deriveEventDemand,
+  ensureEventDemandConfig,
+  formatClockHour,
+  getDemandSyncStatus,
+  updateEventDemand,
+} from '../../engine/planning/event-demand';
+import {
+  AttendanceProfileSelector,
+  AudienceTotalInput,
+  DemandSyncBadge,
+  DwellTimeInput,
+  EventDurationInput,
+} from '../demand/DemandControls';
 import {INCIDENTS} from '../../engine/emergency/emergency-lab';
 import {
   incidentFrequencyStats,
@@ -24,7 +37,12 @@ import {deferIssue} from '../../engine/experience/review-memory';
 import {membership, phaseScene} from '../../engine/logistics/phases';
 import {type LayoutOptions, redesign} from '../../engine/planning/layout';
 import {useProjectStore} from '../../store/useProjectStore';
-import type {LensMode, PhaseKey, PolygonElement} from '../../types';
+import type {
+  EventDemandConfig,
+  LensMode,
+  PhaseKey,
+  PolygonElement,
+} from '../../types';
 import {PostSimDiagnosticsView} from '../modals/PostSimDiagnosticsView';
 import {SpatialAssistantPanel} from '../review/SpatialAssistantPanel';
 
@@ -58,6 +76,12 @@ export interface SidebarProps {
   onInvestigateIncident?: (incidentId: string | number) => void;
   reviewTick: number;
   safetyStop?: boolean;
+  appliedRunRevision?: number | null;
+  onRequestDemandChange?: (
+    patch: Partial<EventDemandConfig> & {
+      serviceParamsPatch?: Partial<EventDemandConfig['serviceParams']>;
+    }
+  ) => void;
 }
 
 const designHistory = new Map<
@@ -122,6 +146,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onInvestigateIncident,
   reviewTick,
   safetyStop = false,
+  appliedRunRevision = null,
+  onRequestDemandChange,
 }) => {
   const lastSourceRef = useRef<string | null>(null);
   const project = useProjectStore((s) => s.project);
@@ -1924,126 +1950,212 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </details>
             </section>
 
-            <section className="panel-section">
-              <span className="status-chip">ENSAYO · NO ES UN AFORO</span>
-              <label className="form-label">
-                Llegadas por hora
-                <input
-                  id="arrivals"
-                  type="number"
-                  min="0"
-                  max="3000"
-                  step="10"
-                  value={s.base.arrivals}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (!Number.isFinite(v) || v < 0 || v > 3000) {
-                      showToast('Introduce un valor válido');
-                      return;
-                    }
-                    updateScene((sc) => {
-                      sc.base.arrivals = v;
-                    }, true);
-                    if (engine) {
-                      onRecordAction('arrivals', v);
-                      applyLiveArrivals(engine, v);
-                    } else {
-                      onSceneChanged();
-                    }
-                  }}
-                />
-              </label>
-              <label className="form-label">
-                Duración de la jornada
-                <select
-                  id="hours"
-                  value={s.base.hours}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    updateScene((sc) => {
-                      sc.base.hours = v;
-                    }, true);
-                    onSceneChanged();
-                  }}
-                >
-                  {[1, 2, 4, 6, 8, 12].map((n) => (
-                    <option key={n} value={n}>
-                      {n} horas
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-label">
-                Condición climática
-                <select
-                  id="weather"
-                  value={s.base.weather}
-                  onChange={(e) => {
-                    const v = e.target.value as
-                      | 'cloud'
-                      | 'sun'
-                      | 'rain'
-                      | 'wind';
-                    updateScene((sc) => {
-                      sc.base.weather = v;
-                    }, true);
-                    if (engine) {
-                      onRecordAction('weather', v);
-                      applyLiveWeather(engine, v);
-                    } else {
-                      onSceneChanged();
-                    }
-                  }}
-                >
-                  <option value="cloud">Sin lluvia</option>
-                  <option value="sun">Sol</option>
-                  <option value="rain">Lluvia</option>
-                  <option value="wind">Viento</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                id="panel-play"
-                className="dark wide"
-                onClick={onTogglePlay}
-              >
-                {running ? (
-                  <>
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      aria-hidden="true"
+            {(() => {
+              const demandCfg = ensureEventDemandConfig(s);
+              const demandDerived = deriveEventDemand(s, demandCfg);
+              const syncState = getDemandSyncStatus(
+                s,
+                appliedRunRevision,
+                engine?.time || 0
+              );
+              const dispatchDemandPatch = (
+                patch: Partial<EventDemandConfig> & {
+                  serviceParamsPatch?: Partial<EventDemandConfig['serviceParams']>;
+                }
+              ) => {
+                if (onRequestDemandChange) {
+                  onRequestDemandChange(patch);
+                  return;
+                }
+                updateScene((sc) => {
+                  updateEventDemand(sc, patch);
+                }, true);
+                onSceneChanged();
+              };
+
+              const simTimeSec = engine?.time || 0;
+              const currentHourIdx = Math.min(
+                Math.max(0, demandDerived.hourly.length - 1),
+                Math.floor(simTimeSec / 3600)
+              );
+              const currentSlot = demandDerived.hourly[currentHourIdx];
+              const clockNow = formatClockHour(demandCfg.startHour, simTimeSec);
+              const hmLive = engine?.getHumanMetricsSummary?.();
+
+              return (
+                <>
+                  <section className="panel-section demand-sidebar-card">
+                    <div className="demand-sidebar-head">
+                      <span className="section-label" style={{margin: 0}}>
+                        AFLUENCIA DEL EVENTO
+                      </span>
+                      <DemandSyncBadge
+                        state={syncState.state}
+                        label={syncState.label}
+                        detail={syncState.detail}
+                      />
+                    </div>
+
+                    <div className="demand-sidebar-controls">
+                      <AudienceTotalInput
+                        id="sidebar-unique-attendees"
+                        value={demandCfg.uniqueAttendees}
+                        compact
+                        onChange={(nextTotal) =>
+                          dispatchDemandPatch({
+                            uniqueAttendees: nextTotal,
+                            provenance: 'manual',
+                          })
+                        }
+                      />
+                      <EventDurationInput
+                        idHours="hours"
+                        idStart="sidebar-start-hour"
+                        hours={demandCfg.hours}
+                        startHour={demandCfg.startHour}
+                        compact
+                        onChangeHours={(h) =>
+                          dispatchDemandPatch({hours: h, provenance: 'manual'})
+                        }
+                        onChangeStartHour={(st) =>
+                          dispatchDemandPatch({startHour: st, provenance: 'manual'})
+                        }
+                      />
+                      <AttendanceProfileSelector
+                        id="sidebar-curve-profile"
+                        value={demandCfg.curveProfile}
+                        compact
+                        onChange={(prof) =>
+                          dispatchDemandPatch({
+                            curveProfile: prof,
+                            provenance:
+                              prof === 'custom' ? 'manual' : 'curve_preset',
+                          })
+                        }
+                      />
+                      <DwellTimeInput
+                        id="sidebar-dwell-time"
+                        value={demandCfg.dwellTimeMinutes}
+                        compact
+                        onChange={(min) =>
+                          dispatchDemandPatch({
+                            dwellTimeMinutes: min,
+                            provenance: 'manual',
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="demand-sidebar-summary">
+                      <div>
+                        <span>Llegadas medias / pico</span>
+                        <b>
+                          {demandDerived.averageArrivalsPerHour.toLocaleString('es-ES')}/h ·{' '}
+                          punta {demandDerived.peakHourlyArrivals.toLocaleString('es-ES')}/h
+                        </b>
+                      </div>
+                      <div>
+                        <span>Ocupación simultánea máx. prev.</span>
+                        <b>
+                          {demandDerived.peakSimultaneousOccupancy.toLocaleString('es-ES')} pers.
+                          ({demandDerived.peakOccupancyHourLabel})
+                        </b>
+                      </div>
+                      <div>
+                        <span>Aforo autorizado</span>
+                        <b>{demandDerived.capacityStatus.label}</b>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      id="sidebar-edit-demand"
+                      className="quiet wide"
+                      onClick={() => setActiveModal('demand')}
                     >
-                      <rect x="6" y="4" width="4.5" height="16" rx="2" />
-                      <rect x="13.5" y="4" width="4.5" height="16" rx="2" />
-                    </svg>
-                    <span>Pausar ensayo</span>
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
+                      Editar curva horaria y servicios
+                    </button>
+
+                    <button
+                      type="button"
+                      id="panel-play"
+                      className="dark wide"
+                      style={{marginTop: '8px'}}
+                      onClick={onTogglePlay}
                     >
-                      <polygon points="7 4 19 12 7 20 7 4" />
-                    </svg>
-                    <span>{engine ? 'Continuar ensayo' : 'Iniciar ensayo'}</span>
-                  </>
-                )}
-              </button>
-              <p className="small-note">
-                Modificar el plano o estos parámetros reinicia los resultados.
-                Cada punto representa una persona.
-              </p>
-            </section>
+                      {running ? (
+                        <>
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <rect x="6" y="4" width="4.5" height="16" rx="2" />
+                            <rect x="13.5" y="4" width="4.5" height="16" rx="2" />
+                          </svg>
+                          <span>Pausar ensayo</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <polygon points="7 4 19 12 7 20 7 4" />
+                          </svg>
+                          <span>
+                            {engine ? 'Continuar ensayo' : 'Iniciar ensayo'}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                    <p className="small-note">
+                      Calculadora, Simular y Necesidades leen la misma configuración compartida.
+                    </p>
+                  </section>
+
+                  <section className="panel-section demand-live-moment-card">
+                    <div className="section-label">
+                      EN ESTE MOMENTO — {clockNow}
+                    </div>
+                    <div className="demand-moment-grid">
+                      <div className="demand-moment-row">
+                        <span>Previsto ({currentSlot?.label || '—'})</span>
+                        <b>
+                          {currentSlot ? `${currentSlot.entries}/h · máx. ${currentSlot.peakOccupancy} occ.` : '—'}
+                        </b>
+                      </div>
+                      <div className="demand-moment-row">
+                        <span>Observado en este ensayo</span>
+                        <b>
+                          {hmLive
+                            ? `${hmLive.population.simultaneousOccupancy} dentro · ${
+                                engine?.attendance.hourlyObservedEntries[currentHourIdx] ?? 0
+                              } entradas franja`
+                            : 'Sin iniciar'}
+                        </b>
+                      </div>
+                      <div className="demand-moment-row">
+                        <span>Acumulado del ensayo</span>
+                        <b>
+                          {hmLive
+                            ? `${hmLive.population.uniqueAttendees} únicos · ${hmLive.population.reentries} reentradas`
+                            : '0 / ' + demandDerived.plannedUniqueAttendees.toLocaleString('es-ES')}
+                        </b>
+                      </div>
+                    </div>
+                  </section>
+                </>
+              );
+            })()}
 
             <section className="panel-section">
               <div className="section-label">LECTURA DEL ENSAYO</div>
