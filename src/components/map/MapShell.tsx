@@ -110,6 +110,10 @@ export interface MapShellProps {
   onSceneChanged: () => void;
   onUndoRedo: (isRedo?: boolean) => void;
   onInvestigateIncident?: (incidentId: string | number) => void;
+  onQuickInspectMarker?: (info: {
+    congestionId?: string;
+    incidentId?: string | number;
+  } | null) => void;
   engine?: EventEngine | null;
   onTriggerContextualIncident?: (
     targetId: string,
@@ -158,6 +162,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       onSceneChanged,
       onUndoRedo,
       onInvestigateIncident,
+      onQuickInspectMarker,
       engine = null,
       onTriggerContextualIncident,
       onScheduleContextualIncident,
@@ -2387,6 +2392,20 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       const p = getPointerCoords(e);
       if (panel === 'simulate') {
         if (!d.moved) {
+          const targetEl = e.target as HTMLElement | null;
+          const congEl = targetEl?.closest?.('[data-inspect-congestion]') as HTMLElement | null;
+          const incEl = targetEl?.closest?.('[data-investigate-incident]') as HTMLElement | null;
+          if (congEl?.dataset.inspectCongestion && onQuickInspectMarker) {
+            onQuickInspectMarker({congestionId: congEl.dataset.inspectCongestion});
+            setSelectedIds([]);
+            return;
+          }
+          if (incEl?.dataset.investigateIncident && onQuickInspectMarker) {
+            onQuickInspectMarker({incidentId: incEl.dataset.investigateIncident});
+            setSelectedIds([]);
+            return;
+          }
+          onQuickInspectMarker?.(null);
           if (d.id) {
             setSelectedIds([d.id]);
           } else {

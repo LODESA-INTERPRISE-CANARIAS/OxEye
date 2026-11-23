@@ -465,9 +465,219 @@ export interface CustomActivityItem {
   area: number;
 }
 
+/** Perfil horario de curva de afluencia del evento. */
+export type AttendanceCurveProfile =
+  | 'morning'
+  | 'afternoon'
+  | 'night'
+  | 'full_day'
+  | 'family'
+  | 'trade_fair'
+  | 'festival'
+  | 'street_market'
+  | 'custom';
+
+/** Configuración de afluencia dinámica centrada en asistentes únicos y curva horaria. */
+export interface AttendanceConfig {
+  /** ¿Cuántas personas distintas esperas recibir durante el evento? */
+  uniqueAttendees: number;
+  /** Perfil de curva horaria seleccionado o personalizado. */
+  curveProfile: AttendanceCurveProfile;
+  /** Pesos personalizados por hora (longitud = base.hours), modificables gráficamente. */
+  customWeights?: number[];
+  /** Ocupación simultánea máxima estimada (referencia/tope). */
+  maxSimultaneousTarget?: number;
+  /** Capacidad autorizada del recinto (si se conoce). */
+  authorizedCapacity?: number;
+  /** Fracción de visitantes que salen y vuelven a entrar más tarde (0–0.5). */
+  reentryShare?: number;
+  /** Fracción de transeúntes previos que descubren el evento y deciden entrar (0–1). */
+  spontaneousDiscoveryShare?: number;
+  /** Público y personal ya presente antes de la apertura oficial. */
+  preOpeningAmbient?: {
+    passersby: number;
+    waitingEarly: number;
+    workers: number;
+    earlyGroups: number;
+  };
+}
+
+/** Modo de intervención del personal ante congestiones. */
+export type CongestionInterventionMode =
+  | 'none'
+  | 'major_only'
+  | 'all_compatible';
+
+/** Umbrales calibrables para detección y clasificación objetiva de aglomeraciones. */
+export interface CongestionThresholds {
+  densityWarn: number;
+  densityCritical: number;
+  minSpeedMs: number;
+  minDurationSec: number;
+  minPeople: number;
+}
+
+/** Configuración de comportamiento humano, consultas, falsas alarmas y escalabilidad. */
+export interface CrowdBehaviorConfig {
+  interventionMode: CongestionInterventionMode;
+  thresholds?: Partial<CongestionThresholds>;
+  maxRenderedAgents?: number;
+  enableEverydayInteractions?: boolean;
+  enableFalseAlarms?: boolean;
+  enableSocialGroups?: boolean;
+}
+
+/** Necesidades fisiológicas y de confort dinámicas de un agente. */
+export interface HumanNeedsState {
+  hunger: number;
+  thirst: number;
+  fatigue: number;
+  toiletNeed: number;
+  shadeNeed: number;
+  shelterNeed: number;
+  quietPreference: number;
+  accessibilityNeed: number;
+}
+
+/** Personalidad funcional extendida del visitante sintético. */
+export interface AgentPersonality {
+  patience: number;
+  impulsivity: number;
+  curiosity: number;
+  planning: number;
+  spontaneity: number;
+  commercialInterest: number;
+  gastronomicInterest: number;
+  quietPreference: number;
+  priceSensitivity: number;
+  waitTolerance: number;
+  familiarity: number;
+  activityKnowledge: number;
+  congestionReaction: 'avoid' | 'tolerate' | 'wait';
+}
+
+export type VisitorRoutineKind =
+  | 'post_work'
+  | 'morning_family'
+  | 'quick_market'
+  | 'concert_evening'
+  | 'split_reentry'
+  | 'spontaneous_passerby'
+  | 'full_day_explorer';
+
+export interface VisitorRoutine {
+  kind: VisitorRoutineKind;
+  arrivalTimeSec: number;
+  plannedDepartureSec: number;
+  canReenter: boolean;
+  reentered?: boolean;
+  returnAfterSec?: number;
+}
+
+export type SocialGroupKind =
+  | 'family'
+  | 'couple'
+  | 'friends'
+  | 'tour_group'
+  | 'workshop_peers'
+  | 'solo';
+
+export type CongestionClassification =
+  | 'spectators'
+  | 'organized_queue'
+  | 'pedestrian_congestion'
+  | 'corridor_block'
+  | 'persistent_accumulation'
+  | 'potentially_dangerous';
+
+export type GuidanceResponseKind =
+  | 'accept'
+  | 'hesitate'
+  | 'reject'
+  | 'follow_group'
+  | 'request_support';
+
+export interface CongestionZoneEvent {
+  id: string;
+  cell: number;
+  point: Point2D;
+  classification: CongestionClassification;
+  status: 'active' | 'mitigating' | 'resolved';
+  startedAt: number;
+  lastSeenAt: number;
+  durationSec: number;
+  peopleCount: number;
+  densityPerM2: number;
+  avgSpeedMs: number;
+  stoppedCount: number;
+  usefulWidthM: number;
+  opposingFlows: boolean;
+  possibleCause: string;
+  nearStage: boolean;
+  isQueue: boolean;
+  assignedStewardId?: string;
+  assignedStewardName?: string;
+  alternativeRoutesCount: number;
+  recommendedTargetPoint?: Point2D;
+  recommendedTargetLabel?: string;
+  guidedCount: number;
+  acceptedCount: number;
+  hesitatedCount: number;
+  rejectedCount: number;
+  followGroupCount: number;
+  supportRequestCount: number;
+  sideEffectLoadDelta?: number;
+  sideEffectNote?: string;
+}
+
+export interface EverydayInteractionRecord {
+  id: string;
+  kind: string;
+  label: string;
+  agentId: number;
+  stewardId?: string;
+  stewardName?: string;
+  startedAt: number;
+  completedAt?: number;
+  durationSec: number;
+  resolved: boolean;
+  resourceFound: boolean;
+  outcomeText: string;
+  point: Point2D;
+}
+
+export type FalseAlarmKind =
+  | 'vapor_smoke'
+  | 'setup_noise'
+  | 'resolved_dispute'
+  | 'oriented_person'
+  | 'forgotten_bag';
+
+export interface FalseAlarmRecord {
+  id: string;
+  kind: FalseAlarmKind;
+  label: string;
+  status: 'reported' | 'verifying' | 'confirmed_false_alarm' | 'escalated_real';
+  reportedAt: number;
+  verifyingAt?: number;
+  resolvedAt?: number;
+  verificationSeconds?: number;
+  stewardId?: string;
+  stewardName?: string;
+  resourcesUsed: string[];
+  outcome: string;
+  waitingImpactCount: number;
+  point: Point2D;
+}
+
 /** Parámetros de entrada para el cálculo de demanda de servicios. */
 export interface DemandInputs {
   arrivals: number;
+  uniqueAttendees?: number;
+  curveProfile?: AttendanceCurveProfile;
+  hours?: number;
+  maxSimultaneousTarget?: number;
+  authorizedCapacity?: number;
   area: number;
   stayMinutes: number;
   foodShare: number;
@@ -730,6 +940,10 @@ export interface Scene {
   };
   /** Configuración editable de la camilla sanitaria (`stretcher`). */
   stretcher?: Partial<StretcherConfig>;
+  /** Modelo de afluencia dinámica centrado en asistentes únicos y curva horaria. */
+  attendance?: AttendanceConfig;
+  /** Configuración de comportamiento humano, congestiones, consultas y falsas alarmas. */
+  crowdBehavior?: CrowdBehaviorConfig;
   meta?: {
     version: number;
     grid: number;
@@ -882,6 +1096,18 @@ export interface Agent {
   persona?: any;
   born?: number;
   state?: string;
+  populationRole?: 'public' | 'passerby' | 'early_waiter' | 'worker' | 'early_group';
+  uniqueVisitorId?: string;
+  isReentry?: boolean;
+  routine?: VisitorRoutine;
+  humanNeeds?: HumanNeedsState;
+  personality?: AgentPersonality;
+  groupId?: string;
+  groupRole?: 'leader' | 'member';
+  knownStationIds?: string[];
+  lastSpeedMs?: number;
+  guidanceCooldownUntil?: number;
+  destinationChanges?: number;
   [key: string]: any;
 }
 

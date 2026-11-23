@@ -30,6 +30,19 @@ import {VehicleManager} from '../mobility/vehicle-system';
 import {FeedbackLog} from './feedback';
 import {buildGrid, flow, rng} from './grid-flow';
 import {pickPersona} from './personas';
+import {AttendanceModel} from './attendance-model';
+import {
+  buildAgentPersonality,
+  DailySchedule,
+  DecisionEngine,
+  NeedsEngine,
+  SocialGroupManager,
+} from './human-behavior';
+import {
+  FalseAlarmManager,
+  ServiceInteractionManager,
+} from './everyday-interactions';
+import {CrowdGuidanceManager} from './crowd-guidance';
 import {
   buildRouteNetwork,
   routeBranchBias,
@@ -87,6 +100,7 @@ export class EventEngine {
   furniture: Point[][];
   furnitureZones: Map<string, Point[][]>;
   random: () => number;
+  humanRandom: () => number;
   time: number;
   closing: boolean;
   flowCache: Map<number, Int32Array>;
@@ -133,6 +147,11 @@ export class EventEngine {
   emergency: EmergencyLab;
   dining: Dining;
   stewards: StewardSystem;
+  attendance: AttendanceModel;
+  socialGroups: SocialGroupManager;
+  everydayInteractions: ServiceInteractionManager;
+  falseAlarms: FalseAlarmManager;
+  crowdGuidance: CrowdGuidanceManager;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   experience?: any;
   reviewRunId?: string;
@@ -169,6 +188,7 @@ export class EventEngine {
       }
     }
     this.random = rng(this.s.seed);
+    this.humanRandom = rng(((this.s.seed || 1) ^ 0x517cc1b7) >>> 0);
     this.time = 0;
     this.closing = false;
     this.flowCache = new Map();
@@ -434,6 +454,11 @@ export class EventEngine {
     }
 
     this.coverLoad = new Map();
+    this.attendance = new AttendanceModel(this.s);
+    this.socialGroups = new SocialGroupManager();
+    this.everydayInteractions = new ServiceInteractionManager();
+    this.falseAlarms = new FalseAlarmManager();
+    this.crowdGuidance = new CrowdGuidanceManager();
     this.hourly = this.arrivalProfile();
     this.shelters = buildShelters(this);
     this.emergency = new EmergencyLab(this);
@@ -450,6 +475,9 @@ export class EventEngine {
       if (c.length === hours && c.every((n) => Number.isFinite(n) && n >= 0)) {
         return c;
       }
+    }
+    if (this.s.attendance && this.attendance) {
+      return this.attendance.plan.hourlyEntries;
     }
     const loss = weather === 'rain' ? 0.4 : weather === 'wind' ? 0.25 : 0;
     const weights = Array.from(
@@ -648,7 +676,13 @@ export class EventEngine {
     return this.feedback.list();
   }
 
-  spawn(): void {
+  spawn(opts?: {
+    isReentry?: boolean;
+    uniqueVisitorId?: string;
+    profile?: CrowdProfileKey;
+    groupId?: string;
+    populationRole?: 'public' | 'passerby' | 'early_waiter' | 'worker' | 'early_group';
+  }): Agent | void {
     this.stats.arrivals++;
     if (this.agents.length >= this.capacity) {
       this.stats.rejected++;
@@ -735,8 +769,27 @@ export class EventEngine {
       st.arrivals++;
       st.hourCount++;
     }
-    const profile = this.pickProfile();
+    const profile = opts?.profile || this.pickProfile();
     const persona = pickPersona(profile, this.random, this.s.variety ?? 1);
+    const hRand = this.humanRandom;
+    const personality = buildAgentPersonality(persona, hRand, this.behavior);
+    const startHour = Number.isFinite(this.s.base.start) ? Number(this.s.base.start) : 10;
+    const absHour = startHour + this.time / 3600;
+    const routine = DailySchedule.assignRoutine(
+      this.time,
+      this.duration,
+      startHour,
+      profile,
+      this.attendance.plan.curveProfile,
+      hRand,
+      this.s.base.stay || 60,
+      persona.stayFactor || 1,
+      this.attendance.config.reentryShare ?? 0.08
+    );
+    const humanNeeds = NeedsEngine.init(profile, personality, hRand, absHour);
+    const populationRole = opts?.populationRole || 'public';
+    const uniqueVisitorId = opts?.uniqueVisitorId || `v-${this.nextId}`;
+    const isReentry = !!opts?.isReentry;
     // Aplicar hipótesis de comportamiento SOLO si fueron confirmadas explícitamente en Objetivos SMART
     if (this.behavior) {
       persona.patience *= this.behavior.queueToleranceMultiplier || 1;
@@ -778,6 +831,16 @@ export class EventEngine {
       r: this.s.diameter / 2,
       profile,
       persona,
+      personality,
+      humanNeeds,
+      routine,
+      populationRole,
+      uniqueVisitorId,
+      isReentry,
+      groupId: opts?.groupId,
+      knownStationIds: [],
+      lastSpeedMs: persona.pace,
+      destinationChanges: 0,
       rebel,
       spent: 0,
       goals,
@@ -786,14 +849,16 @@ export class EventEngine {
       failed: 0,
       born: this.time,
       deadline:
-        this.time +
-        Math.max(
-          600,
-          this.s.base.stay *
-            60 *
-            persona.stayFactor *
-            (0.85 + this.random() * 0.3)
-        ),
+        this.s.attendance != null
+          ? Math.max(this.time + 600, routine.plannedDepartureSec)
+          : this.time +
+            Math.max(
+              600,
+              this.s.base.stay *
+                60 *
+                persona.stayFactor *
+                (0.85 + this.random() * 0.3)
+            ),
       speed: persona.pace * (0.9 + this.random() * 0.2),
       state: 'walk',
       target: null,
@@ -805,12 +870,43 @@ export class EventEngine {
     this.byId.set(a.id, a);
     this.insert(a);
     this.stats.admitted++;
+    if (populationRole !== 'worker' && populationRole !== 'passerby') {
+      if (isReentry) {
+        this.attendance.recordReentry(uniqueVisitorId, this.time);
+      } else {
+        this.attendance.recordUniqueEntry(uniqueVisitorId, this.time);
+      }
+    }
+    DecisionEngine.observeNearbyStations(this, a);
+    if (
+      this.s.crowdBehavior?.enableSocialGroups !== false &&
+      !opts?.groupId &&
+      !isReentry &&
+      this.agents.length >= 2 &&
+      hRand() < 0.22
+    ) {
+      const peer = this.agents.find(
+        (other) =>
+          other.id !== a.id &&
+          !other.groupId &&
+          other.state !== 'gone' &&
+          Math.hypot(other.x - a.x, other.y - a.y) <= 8
+      );
+      if (peer) {
+        this.socialGroups.createGroup(
+          hRand() < 0.45 ? 'friends' : 'couple',
+          [peer, a],
+          [a.x, a.y]
+        );
+      }
+    }
     if (profile === 'walker') {
       a.state = 'roam';
       this.roam(a);
     } else {
       this.assign(a);
     }
+    return a;
   }
 
   roam(a: Agent): void {
@@ -1003,45 +1099,50 @@ export class EventEngine {
       this.exit(a);
       return;
     }
+    DecisionEngine.observeNearbyStations(this, a);
     const wants = a.persona?.needs || PROFILES[a.profile].needs;
-    const need =
+    const baseNeed =
       wants[
         this.random() < (a.persona?.spontaneity || 0)
           ? Math.floor(this.random() * wants.length)
           : Math.min(a.completed + a.failed, wants.length - 1)
       ];
+    const urgent = NeedsEngine.dominantUrgentNeed(a, (t) =>
+      this.stations.some((st) => st.type === t && this.available(st))
+    );
+    const need = urgent || baseNeed;
+    if (urgent && a.target) a.destinationChanges = (a.destinationChanges || 0) + 1;
     const cell = this.g.index(a.x, a.y);
     const rebelFlowCheck = a.rebel && this.fenceSegments.length > 0;
-    const options = this.stations
-      .filter(
-        (b) =>
-          b.capacity > 0 &&
-          b.type === need &&
-          b.cell >= 0 &&
-          (b.field[cell] >= 0 ||
-            (rebelFlowCheck && this.getRebelFlow(b.cell)[cell] >= 0)) &&
-          this.available(b)
-      )
-      .map((b) => {
-        const distCells =
-          b.field[cell] >= 0
-            ? b.field[cell]
-            : this.getRebelFlow(b.cell)[cell];
-        const distributeLocalCommerce =
-          b.type === 'commerce' &&
-          (this.behavior?.destinationBoosts?.commerce || 1) >= 1.2;
-        const spreadPenalty = distributeLocalCommerce
-          ? 1 + (b.served || 0) * 0.22 + (b.queue.length || 0) * 0.6
-          : 1;
-        return {
-          b,
-          score:
-            ((b.interest || 1) / spreadPenalty) /
-            (1 +
-              (distCells * this.g.cell) / 600 +
-              ((b.queue.length / Math.max(1, b.capacity)) * b.minutes) / 10),
-        };
-      });
+    const filteredStations = this.stations.filter(
+      (b) =>
+        b.capacity > 0 &&
+        b.type === need &&
+        b.cell >= 0 &&
+        (b.field[cell] >= 0 ||
+          (rebelFlowCheck && this.getRebelFlow(b.cell)[cell] >= 0)) &&
+        this.available(b)
+    );
+    const options = filteredStations.map((b) => {
+      const distCells =
+        b.field[cell] >= 0
+          ? b.field[cell]
+          : this.getRebelFlow(b.cell)[cell];
+      const distributeLocalCommerce =
+        b.type === 'commerce' &&
+        (this.behavior?.destinationBoosts?.commerce || 1) >= 1.2;
+      const spreadPenalty = distributeLocalCommerce
+        ? 1 + (b.served || 0) * 0.22 + (b.queue.length || 0) * 0.6
+        : 1;
+      return {
+        b,
+        score:
+          ((b.interest || 1) / spreadPenalty) /
+          (1 +
+            (distCells * this.g.cell) / 600 +
+            ((b.queue.length / Math.max(1, b.capacity)) * b.minutes) / 10),
+      };
+    });
     if (!options.length) {
       if (
         this.stations.some(
@@ -1065,10 +1166,23 @@ export class EventEngine {
       else this.exit(a);
       return;
     }
-    const sum = options.reduce((n, o) => n + o.score, 0);
-    let n = this.random() * sum;
-    const choice =
-      options.find((o) => (n -= o.score) <= 0) || options[options.length - 1];
+    const useUtilityChoice =
+      (this.s.attendance != null || this.s.crowdBehavior != null) &&
+      filteredStations.length > 1 &&
+      (!this.behavior?.destinationBoosts?.commerce ||
+        this.behavior.destinationBoosts.commerce < 1.2);
+    let choiceB = options[0].b;
+    if (useUtilityChoice) {
+      choiceB =
+        DecisionEngine.selectStationByUtility(this, a, filteredStations, cell) ||
+        options[0].b;
+    } else {
+      const sum = options.reduce((n, o) => n + o.score, 0);
+      let n = this.random() * sum;
+      choiceB =
+        (options.find((o) => (n -= o.score) <= 0) || options[options.length - 1]).b;
+    }
+    const choice = {b: choiceB};
     a.target = choice.b.id;
     const rest = choice.b.type === 'rest';
     const occupied = new Set(
@@ -1164,6 +1278,19 @@ export class EventEngine {
   depart(a: Agent): void {
     if (a.state === 'gone') return;
     this.dining?.release(a);
+    const willReenter =
+      !!a.routine?.canReenter &&
+      !a.routine.reentered &&
+      !this.closing &&
+      this.time + (a.routine.returnAfterSec || 1800) < this.duration - 600;
+    this.attendance.recordExit(a, this.time, willReenter);
+    if (willReenter && a.routine) {
+      a.routine.reentered = true;
+      this.attendance.scheduleReentry(
+        a,
+        this.time + (a.routine.returnAfterSec || 1800)
+      );
+    }
     a.state = 'gone';
     this.remove(a);
     this.byId.delete(a.id);
@@ -1304,8 +1431,11 @@ export class EventEngine {
       moved += step;
     }
     if (moved) {
+      a.lastSpeedMs = Number((moved / Math.max(0.05, dt)).toFixed(2));
       a.heading = Math.atan2(a.y - oldY, a.x - oldX);
       recordMovement(this, a, oldX, oldY);
+    } else {
+      a.lastSpeedMs = 0;
     }
     a.stuck = moved < distance * 0.12 ? a.stuck + dt : 0;
     if (a.stuck > 15) {
@@ -1380,6 +1510,15 @@ export class EventEngine {
     this.time = Math.min(this.duration + 1800, this.time + dt);
     this.vehicleManager?.update(dt);
     if (this.time < this.duration) {
+      const dueReentries = this.attendance.popDueReentries(this.time);
+      for (const re of dueReentries) {
+        this.spawn({
+          isReentry: true,
+          uniqueVisitorId: re.uniqueVisitorId,
+          profile: re.profile,
+          groupId: re.groupId,
+        });
+      }
       this.accumulator +=
         (this.hourly[
           Math.min(this.hourly.length - 1, Math.floor(this.time / 3600))
@@ -1491,6 +1630,7 @@ export class EventEngine {
         }
         b.served++;
         this.stats.served++;
+        NeedsEngine.satisfyAfterService(a, b.type);
         a.completed++;
         a.left--;
         let meal = false;
@@ -1585,10 +1725,26 @@ export class EventEngine {
       }
     }
 
+    const absHour = (Number.isFinite(this.s.base.start) ? Number(this.s.base.start) : 10) + this.time / 3600;
+    const activeWeather = this.s.base.weather || 'sun';
+    for (const a of this.agents) {
+      if (a.state === 'gone') continue;
+      NeedsEngine.update(a, dt, {
+        absHour,
+        weather: activeWeather,
+        nearStage: false,
+        resting: a.state === 'dining' || (a.state === 'service' && a.target === 'rest'),
+      });
+    }
+    this.socialGroups.update(this);
+    this.everydayInteractions.update(this);
+    this.falseAlarms.update(this);
+    this.crowdGuidance.update(this);
     this.emergency.update(dt);
     this.stewards.step(dt);
     this.startServices();
     this.agents = this.agents.filter((a) => a.state !== 'gone');
+    this.attendance.commitConservationStep(this.time);
     const counts = new Map<number, number>();
     for (const a of this.agents) {
       const k = this.g.index(a.x, a.y);
@@ -1607,6 +1763,65 @@ export class EventEngine {
       this.finished = true;
       this.record();
     }
+  }
+
+  /** Devuelve los indicadores de población, comportamiento, consultas cotidianas y congestión (Sección 15). */
+  getHumanMetricsSummary() {
+    const cohorts = this.attendance.getPopulationCohorts(
+      this.agents.length,
+      this.s.crowdBehavior?.maxRenderedAgents ?? 450
+    );
+    const activeCount = this.agents.length;
+    const avgStayMin = this.stats.departed
+      ? Math.round(
+          this.history.reduce((a, h) => a + (h.present || 0), 0) /
+            Math.max(1, this.stats.departed)
+        )
+      : Math.round((this.s.base.stay || 60));
+    return {
+      population: {
+        uniqueAttendees: this.attendance.uniqueAttendeesCount,
+        plannedUniqueAttendees: this.attendance.plan.uniqueAttendees,
+        entriesTotal: this.attendance.entriesTotal,
+        exitsTotal: this.attendance.exitsTotal,
+        simultaneousOccupancy: this.attendance.simultaneousOccupancy,
+        activeAgents: activeCount,
+        reentries: this.attendance.reentriesTotal,
+        earlyDepartures: this.attendance.earlyDepartures,
+        avgStayMin,
+        hourlyEntries: this.attendance.hourlyObservedEntries,
+        hourlyExits: this.attendance.hourlyObservedExits,
+        cohorts,
+      },
+      behavior: {
+        activitiesVisited: this.stats.served,
+        destinationChanges: this.agents.reduce(
+          (acc, ag) => acc + (ag.destinationChanges || 0),
+          0
+        ),
+        avgWaitSec: this.stats.servedWaitCount
+          ? Math.round(this.stats.waitingSeconds / this.stats.servedWaitCount)
+          : 0,
+        shelterSeconds: Math.round(this.stats.shelterSeconds),
+        syntheticSalesEur: Math.round(this.stats.sales),
+        satisfactionRate:
+          this.stats.satisfied + this.stats.dissatisfied > 0
+            ? Math.round(
+                (this.stats.satisfied /
+                  (this.stats.satisfied + this.stats.dissatisfied)) *
+                  100
+              )
+            : null,
+      },
+      publicService: {
+        ...this.everydayInteractions.getMetrics(),
+        falseAlarmsTotal: this.falseAlarms.records.length,
+        falseAlarmsConfirmed: this.falseAlarms.records.filter(
+          (f) => f.status === 'confirmed_false_alarm'
+        ).length,
+      },
+      congestion: this.crowdGuidance.getMetrics(),
+    };
   }
 
   record(): void {

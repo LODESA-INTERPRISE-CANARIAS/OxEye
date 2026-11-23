@@ -230,18 +230,21 @@ export class StewardSystem {
         continue;
       }
 
-      // Prioridad 3: Gestión de aglomeraciones / cuellos de botella
-      const congestedVisitor = visitors.find((a) => {
-        const d = Math.hypot(a.x - sw.home[0], a.y - sw.home[1]);
-        if (d > sw.patrolRadius) return false;
-        const k = e.g.index(a.x, a.y);
-        return a.stuck > 4 || (k >= 0 && e.hashDensity(k) >= 4);
-      });
-      if (congestedVisitor) {
-        sw.state = 'decongest';
-        sw.target = [congestedVisitor.x, congestedVisitor.y];
-        sw.note = TASK_LABELS.decongest;
-        continue;
+      // Prioridad 3: Gestión de aglomeraciones / cuellos de botella (respetando modo de intervención)
+      const mode = e.s?.crowdBehavior?.interventionMode || 'major_only';
+      if (mode !== 'none') {
+        const congestedVisitor = visitors.find((a) => {
+          const d = Math.hypot(a.x - sw.home[0], a.y - sw.home[1]);
+          if (d > sw.patrolRadius) return false;
+          const k = e.g.index(a.x, a.y);
+          return a.stuck > 4 || (k >= 0 && e.hashDensity(k) >= 4);
+        });
+        if (congestedVisitor) {
+          sw.state = 'decongest';
+          sw.target = [congestedVisitor.x, congestedVisitor.y];
+          sw.note = TASK_LABELS.decongest;
+          continue;
+        }
       }
 
       // Prioridad 4: Orientación a visitantes en tránsito con dudas o percepción reducida
@@ -257,8 +260,13 @@ export class StewardSystem {
         continue;
       }
 
+      // Mantener tarea de congestión asignada desde CrowdGuidanceManager si sigue activa
+      if (sw.state === 'decongest' && sw.target) {
+        continue;
+      }
+
       // Redistribución dinámica hacia el foco de mayor demanda si está libre
-      if (hotspot && sw.state === 'patrol') {
+      if (hotspot && sw.state === 'patrol' && mode !== 'none') {
         const dHot = Math.hypot(hotspot[0] - sw.home[0], hotspot[1] - sw.home[1]);
         if (dHot <= sw.patrolRadius * 1.5) {
           sw.state = 'decongest';

@@ -1560,6 +1560,72 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     graves. Ajusta la intensidad en Revisar riesgos. Son
                     supuestos de demostración.
                   </p>
+                  {engine && (() => {
+                    const hm = engine.getHumanMetricsSummary?.();
+                    if (!hm) return null;
+                    return (
+                      <div className="sim-human-live-card" role="status">
+                        <div>
+                          <b>Asistentes únicos:</b> {hm.population.uniqueAttendees} ·{' '}
+                          <b>Simultáneos:</b> {hm.population.simultaneousOccupancy} ·{' '}
+                          <b>Reentradas:</b> {hm.population.reentries}
+                        </div>
+                        <div>
+                          <b>Consultas cotidianas:</b>{' '}
+                          {hm.publicService.resolvedQueries}/{hm.publicService.totalQueries} ·{' '}
+                          <b>Falsas alarmas:</b>{' '}
+                          {hm.publicService.falseAlarmsConfirmed}/{hm.publicService.falseAlarmsTotal}
+                        </div>
+                        <div>
+                          <b>Congestiones activas:</b> {hm.congestion.activeCount} ·{' '}
+                          <b>Orientadas:</b> {hm.congestion.totalGuided}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="sub-label" style={{marginTop: '6px'}}>
+                    ORIENTACIÓN ANTE CONGESTIONES
+                  </div>
+                  <div
+                    className="incident-mode-switch"
+                    role="group"
+                    aria-label="Modo de intervención ante congestiones"
+                  >
+                    {(
+                      [
+                        ['none', 'Sin auto'],
+                        ['major_only', 'Importantes'],
+                        ['all_compatible', 'Todas'],
+                      ] as const
+                    ).map(([cKey, cLabel]) => {
+                      const activeC = s.crowdBehavior?.interventionMode || 'major_only';
+                      return (
+                        <button
+                          key={cKey}
+                          type="button"
+                          data-crowd-intervention={cKey}
+                          className={activeC === cKey ? 'is-active' : ''}
+                          onClick={() => {
+                            onRecordAction('crowdInterventionMode', cKey);
+                            updateScene((sc) => {
+                              sc.crowdBehavior = {
+                                ...sc.crowdBehavior,
+                                interventionMode: cKey,
+                              };
+                            });
+                            if (engine) {
+                              engine.s.crowdBehavior = {
+                                ...engine.s.crowdBehavior,
+                                interventionMode: cKey,
+                              };
+                            }
+                          }}
+                        >
+                          {cLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <div id="service-load" role="status">
                     {engine &&
                       serviceLoad(engine.emergency)

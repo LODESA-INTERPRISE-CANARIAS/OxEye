@@ -188,6 +188,40 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
       <div id="day-body">
         {!plan && data?.engine && (
           <>
+            {(() => {
+              const hm = data.engine.getHumanMetricsSummary?.();
+              if (!hm) return null;
+              return (
+                <section
+                  className="shift-visual-card"
+                  style={{marginBottom: '12px', fontSize: '0.84rem'}}
+                >
+                  <b>Balance humano y atención al público</b>
+                  <p style={{margin: '6px 0'}}>
+                    Asistentes únicos: <b>{hm.population.uniqueAttendees}</b> · Reentradas:{' '}
+                    <b>{hm.population.reentries}</b> · Abandono anticipado:{' '}
+                    <b>{hm.population.earlyDepartures}</b> · Cambios de destino:{' '}
+                    <b>{hm.behavior.destinationChanges}</b>
+                  </p>
+                  <p style={{margin: '4px 0'}}>
+                    Consultas cotidianas resueltas:{' '}
+                    <b>
+                      {hm.publicService.resolvedQueries}/{hm.publicService.totalQueries}
+                    </b>{' '}
+                    ({hm.publicService.staffTimeSec} s de personal) · Falsas alarmas comprobadas:{' '}
+                    <b>
+                      {hm.publicService.falseAlarmsConfirmed}/{hm.publicService.falseAlarmsTotal}
+                    </b>
+                  </p>
+                  <p style={{margin: '4px 0 0'}}>
+                    Congestiones detectadas: <b>{hm.congestion.detectedTotal}</b> · Personas
+                    orientadas: <b>{hm.congestion.totalGuided}</b> (aceptan:{' '}
+                    <b>{hm.congestion.totalAccepted}</b>) · Efectos secundarios:{' '}
+                    <b>{hm.congestion.sideEffectsCount}</b>
+                  </p>
+                </section>
+              );
+            })()}
             <PostSimDiagnosticsView
               engine={data.engine}
               onSceneChanged={onSceneChanged}
@@ -337,7 +371,14 @@ export const ClosingDialog: React.FC<ClosingDialogProps> = ({
               onClick={() =>
                 downloadFile(
                   'Conclusiones_de_jornada.json',
-                  JSON.stringify(currentScene().lastSessionReview, null, 2)
+                  JSON.stringify(
+                    {
+                      review: currentScene().lastSessionReview,
+                      humanMetrics: data?.engine?.getHumanMetricsSummary?.() || null,
+                    },
+                    null,
+                    2
+                  )
                 )
               }
             >

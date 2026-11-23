@@ -10,6 +10,7 @@ import {type ProposalState, Sidebar} from './components/layout/Sidebar';
 import {SourceBar} from './components/layout/SourceBar';
 import {WorkspaceBar} from './components/layout/WorkspaceBar';
 import {MapShell, type MapShellHandle} from './components/map/MapShell';
+import {IncidentQuickInspector} from './components/map/IncidentQuickInspector';
 import {GameMenu} from './components/menu/GameMenu';
 import {
   ClosingDialog,
@@ -125,6 +126,10 @@ export const App: React.FC = () => {
     viewMode: 'focus' | 'context';
     privacyMode: 'public' | 'authorized_synthetic';
   } | null>(null);
+  const [quickInspect, setQuickInspect] = useState<{
+    congestionId?: string;
+    incidentId?: string | number;
+  } | null>(null);
   const investigationStateRef = useRef(investigationState);
   investigationStateRef.current = investigationState;
 
@@ -180,7 +185,9 @@ export const App: React.FC = () => {
             highlightIncidentId: inv?.incidentId ?? null,
             viewMode: inv?.viewMode || 'context',
             privacyMode: inv?.privacyMode || 'public',
-          }) + (engine.stewards?.svg() || '')
+          }) +
+          (engine.stewards?.svg() || '') +
+          (engine.crowdGuidance?.svg() || '')
         : '';
     }
     if (cornerEl) {
@@ -238,7 +245,15 @@ export const App: React.FC = () => {
 
     const peopleEl = document.getElementById('people-layer');
     if (peopleEl) {
-      const peopleSvg = engine.agents
+      const renderCap = Math.max(
+        60,
+        engine.s.crowdBehavior?.maxRenderedAgents ?? 450
+      );
+      const visibleAgents =
+        engine.agents.length <= renderCap
+          ? engine.agents
+          : engine.agents.slice(0, renderCap);
+      const peopleSvg = visibleAgents
         .map(
           (a) =>
             `<circle cx="${a.x}" cy="${a.y}" r="${Math.max(
@@ -536,6 +551,13 @@ export const App: React.FC = () => {
       } else if (kind === 'cancel_scheduled_incident') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (eng.emergency as any).cancelScheduledIncident?.(String(value));
+      } else if (kind === 'dispatch_steward_congestion') {
+        eng.crowdGuidance?.dispatchStewardToZone(eng, String(value));
+      } else if (kind === 'crowdInterventionMode') {
+        eng.s.crowdBehavior = {
+          ...eng.s.crowdBehavior,
+          interventionMode: value as import('./types').CongestionInterventionMode,
+        };
       } else if (kind === 'weather') {
         applyLiveWeather(eng, value as 'sun' | 'cloud' | 'rain' | 'wind');
       } else if (kind === 'arrivals') {
@@ -934,6 +956,13 @@ export const App: React.FC = () => {
             } else if (kind === 'cancel_scheduled_incident') {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).cancelScheduledIncident?.(String(value));
+            } else if (kind === 'dispatch_steward_congestion') {
+              invEng.crowdGuidance?.dispatchStewardToZone(invEng, String(value));
+            } else if (kind === 'crowdInterventionMode') {
+              invEng.s.crowdBehavior = {
+                ...invEng.s.crowdBehavior,
+                interventionMode: value as import('./types').CongestionInterventionMode,
+              };
             } else if (kind === 'incidentMode') {
               invEng.s.incidentMode = value as import('./types').IncidentGenerationMode;
               invEng.s.autoIncidents = value !== 'manual';
@@ -982,6 +1011,13 @@ export const App: React.FC = () => {
             } else if (kind === 'cancel_scheduled_incident') {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).cancelScheduledIncident?.(String(value));
+            } else if (kind === 'dispatch_steward_congestion') {
+              invEng.crowdGuidance?.dispatchStewardToZone(invEng, String(value));
+            } else if (kind === 'crowdInterventionMode') {
+              invEng.s.crowdBehavior = {
+                ...invEng.s.crowdBehavior,
+                interventionMode: value as import('./types').CongestionInterventionMode,
+              };
             } else if (kind === 'incidentMode') {
               invEng.s.incidentMode = value as import('./types').IncidentGenerationMode;
               invEng.s.autoIncidents = value !== 'manual';
@@ -1006,6 +1042,7 @@ export const App: React.FC = () => {
 
   const openInvestigation = useCallback(
     (incidentId: string | number) => {
+      setQuickInspect(null);
       const activeMain = mainEngineRef.current || engineRef.current;
       if (!activeMain) return;
       runningRef.current = false;
@@ -1521,12 +1558,38 @@ export const App: React.FC = () => {
             setTimeout(() => mapRef.current?.fit(), 20);
           }}
           onInvestigateIncident={openInvestigation}
+          onQuickInspectMarker={setQuickInspect}
           engine={engineInstance}
           onTriggerContextualIncident={handleTriggerContextualIncident}
           onScheduleContextualIncident={handleScheduleContextualIncident}
           onCancelScheduledIncident={handleCancelScheduledIncident}
           activeWeather={activeWeather}
         />
+        {quickInspect && !investigationState && engineInstance && (
+          <IncidentQuickInspector
+            engine={engineInstance}
+            selectedCongestionId={quickInspect.congestionId || null}
+            selectedIncidentId={quickInspect.incidentId ?? null}
+            onClose={() => setQuickInspect(null)}
+            onFocusPoint={(pt, w) => mapRef.current?.focusPoint(pt, w || 50, true)}
+            onDispatchSteward={(congId) => {
+              recordAction('dispatch_steward_congestion', congId);
+              const assigned = engineInstance.crowdGuidance?.dispatchStewardToZone(
+                engineInstance,
+                congId
+              );
+              showToast(
+                assigned
+                  ? `${assigned.name} enviado hacia la congestión`
+                  : 'No hay auxiliares configurados en el plano'
+              );
+              paintPeople();
+              syncDirectorOverlays();
+            }}
+            onOpenFullAnalysis={(id) => openInvestigation(id)}
+            onOpenComparison={() => setActiveModal('comparison')}
+          />
+        )}
         {investigationState &&
           (investigationEngineRef.current || mainEngineRef.current) &&
           (() => {

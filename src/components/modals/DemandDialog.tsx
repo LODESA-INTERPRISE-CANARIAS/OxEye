@@ -5,12 +5,19 @@ import {
   demandPlan,
   suggestDemandInputsFromObjectives,
 } from '../../engine/planning/demand';
+import {
+  ATTENDANCE_CURVE_PRESETS,
+  buildHourlyAttendancePlan,
+} from '../../engine/crowd/attendance-model';
 import {ensureProjectObjectives} from '../../engine/planning/objectives';
 import {useProjectStore} from '../../store/useProjectStore';
-import type {DemandInputs, DemandPlanOutput} from '../../types';
+import type {
+  AttendanceCurveProfile,
+  DemandInputs,
+  DemandPlanOutput,
+} from '../../types';
 
-const labels: Record<keyof DemandInputs, string> = {
-  arrivals: 'Llegadas por hora',
+const labels: Partial<Record<keyof DemandInputs, string>> = {
   area: 'Superficie disponible (m²)',
   stayMinutes: 'Estancia media (min)',
   foodShare: 'Compra comida (%)',
@@ -48,6 +55,23 @@ export const DemandDialog: React.FC = () => {
   const objectives = useMemo(() => ensureProjectObjectives(scene), [scene]);
 
   const [tab, setTab] = useState<DemandTab>('demand');
+  const [uniqueAttendees, setUniqueAttendees] = useState<number>(
+    scene.attendance?.uniqueAttendees ??
+      Math.round((scene.base?.arrivals || 180) * (scene.base?.hours || 6) * 0.72)
+  );
+  const [curveProfile, setCurveProfile] = useState<AttendanceCurveProfile>(
+    scene.attendance?.curveProfile || 'full_day'
+  );
+  const [eventHours, setEventHours] = useState<number>(scene.base?.hours || 6);
+  const [customWeights, setCustomWeights] = useState<number[]>(
+    scene.attendance?.customWeights || []
+  );
+  const [maxSimultaneousTarget, setMaxSimultaneousTarget] = useState<number>(
+    scene.attendance?.maxSimultaneousTarget || 0
+  );
+  const [authorizedCapacity, setAuthorizedCapacity] = useState<number>(
+    scene.attendance?.authorizedCapacity || 0
+  );
   const [values, setValues] = useState<DemandInputs>({
     ...demandDefaults,
     ...scene.demandInputs,
@@ -59,7 +83,22 @@ export const DemandDialog: React.FC = () => {
     if (!dlg) return;
     if (isOpen && !dlg.open) {
       const sc = currentScene();
-      const baseVals = {...demandDefaults, ...sc.demandInputs};
+      const hrs = sc.base?.hours || 6;
+      const uniq =
+        sc.attendance?.uniqueAttendees ??
+        Math.round((sc.base?.arrivals || 180) * hrs * 0.72);
+      const prof = sc.attendance?.curveProfile || (hrs >= 10 ? 'full_day' : 'trade_fair');
+      const baseVals = {
+        ...demandDefaults,
+        ...sc.demandInputs,
+        arrivals: Math.max(1, Math.round(uniq / Math.max(1, hrs * 0.65))),
+      };
+      setUniqueAttendees(uniq);
+      setCurveProfile(prof);
+      setEventHours(hrs);
+      setCustomWeights(sc.attendance?.customWeights || []);
+      setMaxSimultaneousTarget(sc.attendance?.maxSimultaneousTarget || 0);
+      setAuthorizedCapacity(sc.attendance?.authorizedCapacity || 0);
       setValues(baseVals);
       setResult(demandPlan(baseVals));
       setTab('demand');
@@ -68,6 +107,20 @@ export const DemandDialog: React.FC = () => {
       dlg.close();
     }
   }, [isOpen, currentScene]);
+
+  const previewAttendance = useMemo(() => {
+    const tempScene = {
+      ...scene,
+      base: {...scene.base, hours: eventHours},
+    };
+    return buildHourlyAttendancePlan(tempScene, {
+      uniqueAttendees,
+      curveProfile,
+      customWeights: customWeights.length === eventHours ? customWeights : undefined,
+      maxSimultaneousTarget: maxSimultaneousTarget || undefined,
+      authorizedCapacity: authorizedCapacity || undefined,
+    });
+  }, [scene, eventHours, uniqueAttendees, curveProfile, customWeights, maxSimultaneousTarget, authorizedCapacity]);
 
   const report = useMemo(
     () => buildObjectiveDemandReport(scene, values),
@@ -80,10 +133,35 @@ export const DemandDialog: React.FC = () => {
       showToast('Revisa las edades o los tiempos de comida.');
       return;
     }
+    const peakHourly = Math.max(1, ...previewAttendance.hourlyEntries);
+    const updatedVals: DemandInputs = {
+      ...values,
+      arrivals: peakHourly,
+      uniqueAttendees,
+      curveProfile,
+      hours: eventHours,
+      maxSimultaneousTarget: maxSimultaneousTarget || previewAttendance.peakSimultaneous,
+      authorizedCapacity: authorizedCapacity || undefined,
+    };
+    setValues(updatedVals);
     updateScene((s) => {
-      s.demandInputs = {...values};
+      s.base.hours = eventHours;
+      s.base.arrivals = peakHourly;
+      s.demandInputs = {...updatedVals};
+      s.attendance = {
+        ...s.attendance,
+        uniqueAttendees,
+        curveProfile,
+        customWeights:
+          curveProfile === 'custom'
+            ? [...previewAttendance.weights]
+            : s.attendance?.customWeights,
+        maxSimultaneousTarget:
+          maxSimultaneousTarget || previewAttendance.peakSimultaneous,
+        authorizedCapacity: authorizedCapacity || undefined,
+      };
     });
-    setResult(demandPlan(values));
+    setResult(demandPlan(updatedVals));
     setTab('needs');
   };
 
@@ -153,6 +231,150 @@ export const DemandDialog: React.FC = () => {
               </button>
             </div>
             <form id="demand-form" onSubmit={handleSubmit}>
+              <section
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line-strong)',
+                  background: 'var(--surface-subtle)',
+                  marginBottom: '12px',
+                }}
+              >
+                <div className="demand-grid" style={{marginBottom: '8px'}}>
+                  <label>
+                    <b>¿Cuántas personas distintas esperas recibir durante el evento?</b>
+                    <input
+                      id="unique-attendees-input"
+                      type="number"
+                      min={1}
+                      max={100000}
+                      value={uniqueAttendees}
+                      onChange={(e) =>
+                        setUniqueAttendees(Math.max(1, Number(e.target.value) || 1))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Perfil de curva horaria
+                    <select
+                      id="attendance-curve-select"
+                      value={curveProfile}
+                      onChange={(e) => {
+                        const next = e.target.value as AttendanceCurveProfile;
+                        setCurveProfile(next);
+                        if (next === 'custom' && customWeights.length !== eventHours) {
+                          setCustomWeights([...previewAttendance.weights]);
+                        }
+                      }}
+                    >
+                      {(Object.values(ATTENDANCE_CURVE_PRESETS)).map((preset) => (
+                        <option key={preset.key} value={preset.key}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Duración de la jornada (h)
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={eventHours}
+                      onChange={(e) =>
+                        setEventHours(Math.max(1, Math.min(24, Number(e.target.value) || 6)))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Ocupación simultánea máxima estimada (opcional)
+                    <input
+                      type="number"
+                      min={0}
+                      max={50000}
+                      value={maxSimultaneousTarget}
+                      onChange={(e) =>
+                        setMaxSimultaneousTarget(Math.max(0, Number(e.target.value) || 0))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Capacidad autorizada del recinto (opcional)
+                    <input
+                      type="number"
+                      min={0}
+                      max={50000}
+                      value={authorizedCapacity}
+                      onChange={(e) =>
+                        setAuthorizedCapacity(Math.max(0, Number(e.target.value) || 0))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div style={{fontSize: '0.8rem', marginBottom: '6px'}}>
+                  <b>Curva horaria editable</b> · Pico de entradas: <b>{Math.max(...previewAttendance.hourlyEntries)} pers/h</b> ·{' '}
+                  Ocupación simultánea máx. prevista: <b>{previewAttendance.peakSimultaneous} pers.</b>{' '}
+                  <span style={{color: 'var(--muted)'}}>(haz clic en una barra para subir o ajusta por hora)</span>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${previewAttendance.hours}, minmax(26px, 1fr))`,
+                    gap: '4px',
+                    alignItems: 'end',
+                    height: '86px',
+                    padding: '6px',
+                    background: 'var(--paper)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--line)',
+                  }}
+                >
+                  {previewAttendance.hourlyEntries.map((cnt, hIdx) => {
+                    const maxE = Math.max(1, ...previewAttendance.hourlyEntries);
+                    const pct = Math.max(10, Math.round((cnt / maxE) * 100));
+                    const hourLabel = `${(previewAttendance.startHour + hIdx) % 24}h`;
+                    return (
+                      <button
+                        key={hIdx}
+                        type="button"
+                        title={`${hourLabel}: ${cnt} entradas · ${previewAttendance.expectedOccupancy[hIdx]} presentes (clic para ajustar peso)`}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          height: '100%',
+                          padding: '2px',
+                          border: 'none',
+                          background: 'transparent',
+                        }}
+                        onClick={() => {
+                          const curW =
+                            customWeights.length === eventHours
+                              ? [...customWeights]
+                              : [...previewAttendance.weights];
+                          curW[hIdx] = Number(((curW[hIdx] % 1.8) + 0.3).toFixed(2));
+                          setCurveProfile('custom');
+                          setCustomWeights(curW);
+                        }}
+                      >
+                        <span style={{fontSize: '9px', color: 'var(--ink)'}}>{cnt}</span>
+                        <span
+                          style={{
+                            width: '100%',
+                            height: `${Math.round(pct * 0.56)}px`,
+                            background: 'var(--purple)',
+                            borderRadius: '3px 3px 0 0',
+                          }}
+                        />
+                        <span style={{fontSize: '9px', color: 'var(--muted)'}}>{hourLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
               <div className="demand-grid">
                 {(Object.entries(labels) as Array<[keyof DemandInputs, string]>).map(
                   ([k, label]) => (
@@ -187,7 +409,7 @@ export const DemandDialog: React.FC = () => {
                             : 20000
                         }
                         name={k}
-                        value={values[k]}
+                        value={Number(values[k] ?? 0)}
                         onChange={(e) =>
                           setValues((prev) => ({
                             ...prev,
