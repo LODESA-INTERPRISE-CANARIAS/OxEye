@@ -203,11 +203,19 @@ export function incidentStatusHeadline(
   fireCordonState?: string
 ): string {
   if (row.type === 'fire') {
-    if (fireCordonState === 'approaching') return 'Incendio extinguido — Zona pendiente de asegurar';
-    if (fireCordonState === 'installing') return 'Incendio extinguido — Montando vallas de protección';
-    if (fireCordonState === 'fenced') return 'Zona de cenizas asegurada y vallada';
-    if (fireCordonState === 'cleanup') return 'Retirada de restos en curso';
-    if (fireCordonState === 'reopened') return 'Zona reabierta tras retirada de restos';
+    const stageState = fireCordonState || row.fireStage;
+    if (stageState === 'hot_zone') return 'Incendio extinguido — Zona caliente en enfriamiento';
+    if (stageState === 'approaching') return 'Incendio extinguido — Zona pendiente de asegurar';
+    if (stageState === 'installing') return 'Incendio extinguido — Montando vallas de protección';
+    if (stageState === 'fenced') return 'Zona de cenizas asegurada y vallada';
+    if (stageState === 'cleanup') return 'Retirada de restos en curso';
+    if (stageState === 'inspection') return 'Inspección técnica previa a reapertura';
+    if (stageState === 'reopened') return 'Zona reabierta tras retirada de restos';
+    if (stageState === 'propagacion' && row.status !== 'resolved') return 'Incendio activo · propagación térmica';
+    if (stageState === 'exposicion' && row.status !== 'resolved') return 'Incendio desarrollado · exposición próxima';
+    if (stageState === 'controlado' && row.status !== 'resolved') return 'Incendio contenido · enfriamiento';
+    if (stageState === 'desarrollado' && row.status !== 'resolved') return 'Incendio desarrollado';
+    if (stageState === 'conato' && row.status !== 'resolved') return 'Conato localizado';
   }
   if (row.category === 'violet_point' || row.type === 'violet_point') {
     if (row.status === 'resolved') return 'Atención reservada finalizada — Punto Violeta';
@@ -467,6 +475,12 @@ export function syncIncidentHistory(engine: any): void {
           string,
           {kind: IncidentTimelineEvent['kind']; label: string; detail: string}
         > = {
+          hot_zone: {
+            kind: 'hot_zone',
+            label: 'Zona caliente en enfriamiento',
+            detail:
+              'Foco extinguido con perímetro térmico aún caliente y acceso restringido.',
+          },
           approaching: {
             kind: 'cordon_approach',
             label: 'Zona caliente · equipo de montaje en camino',
@@ -490,6 +504,12 @@ export function syncIncidentHistory(engine: any): void {
             label: 'Retirada de restos y enfriamiento',
             detail:
               'Saneamiento del área afectada antes de valorar la reapertura.',
+          },
+          inspection: {
+            kind: 'inspection',
+            label: 'Inspección técnica previa a reapertura',
+            detail:
+              'Verificación de estabilidad, ausencia de rescoldos y seguridad estructural.',
           },
           reopened: {
             kind: 'reopened',

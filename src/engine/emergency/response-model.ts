@@ -1,13 +1,22 @@
 import type {
   Agent,
   EmergencyIncident,
+  IncidentOriginMode,
+  IncidentSeverityLevel,
   Infrastructure,
   Point,
   ResponseConditions,
   ResponseProfile,
+  ScheduledIncident,
   VehiclePose,
 } from '../../types';
 import {
+  getContextualTemplateById,
+  hasGasCompatibleInstallation,
+  resolveIncidentGenerationMode,
+} from './contextual-incidents';
+import {
+  appendIncidentMilestone,
   categoryForIncidentType,
   formatIncidentCode,
   INCIDENT_CATEGORIES,
@@ -474,6 +483,8 @@ export class ResponseSimulation extends EmergencyLab {
   autoSkipped: number;
   incoming: Map<string, number>;
   fire: FireModel;
+  scheduledIncidents: ScheduledIncident[];
+  private scheduledSeq = 1;
 
   override isClosed(id: string): boolean {
     return super.isClosed(id) || !!this.fire?.isClosed(id);
@@ -490,6 +501,380 @@ export class ResponseSimulation extends EmergencyLab {
     this.autoSkipped = 0;
     this.incoming = new Map();
     this.fire = new FireModel(e);
+    this.scheduledIncidents = [];
+  }
+
+  /** Localiza cualquier objeto del plano (puesto, infraestructura, acceso o valla) por ID. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private findSceneTarget(targetId: string): {obj: any; point: Point} | null {
+    const e = this.e;
+    const m = e.g.m;
+    const obj =
+      [
+        ...(e.s.base?.booths || []),
+        ...(e.s.infrastructure || []),
+        ...(e.s.entrances || []),
+      ].find((o: {id: string}) => o.id === targetId) ||
+      (e.s.fences || []).find((f: {id?: string}) => f.id === targetId);
+    if (!obj) return null;
+    if (Array.isArray(obj.points) && obj.points.length) {
+      const mid = obj.points[Math.floor(obj.points.length / 2)];
+      return {
+        obj,
+        point: [(mid[0] * m.widthMeters) / 100, (mid[1] * m.heightMeters) / 100],
+      };
+    }
+    return {
+      obj,
+      point: [(obj.x * m.widthMeters) / 100, (obj.y * m.heightMeters) / 100],
+    };
+  }
+
+  /**
+   * Provoca una incidencia contextual sobre un elemento concreto usando el mismo
+   * motor de simulación, marcando `originMode` para no contaminar tasas espontáneas.
+   */
+  triggerContextualIncident(
+    targetId: string,
+    templateId: string,
+    opts?: {
+      severity?: IncidentSeverityLevel;
+      originMode?: IncidentOriginMode;
+      immediateDetect?: boolean;
+      customParams?: {hasGas?: boolean; fireGrowthRate?: number};
+    }
+  ): EmergencyIncident | null {
+    const e = this.e;
+    if (this.events.length >= 100 || e.finished) return null;
+    const target = this.findSceneTarget(targetId);
+    const tpl = getContextualTemplateById(templateId);
+    if (!target || !tpl) return null;
+
+    const anchor = e.g.nearest(target.point[0], target.point[1], 14);
+    const cell = anchor >= 0 ? anchor : e.entries[0]?.cell;
+    if (cell === undefined || cell < 0) return null;
+
+    const cat = tpl.category || categoryForIncidentType(tpl.engineType);
+    this.categoryCounts[cat] = (this.categoryCounts[cat] || 0) + 1;
+    const severity = opts?.severity || tpl.defaultSeverity;
+    const sensitive = !!tpl.sensitive || cat === 'violet_point';
+    const hasGas =
+      opts?.customParams?.hasGas ?? hasGasCompatibleInstallation(target.obj);
+
+    const responseMode =
+      tpl.engineType === 'accessibility'
+        ? 'yellow_tent'
+        : tpl.engineType === 'violet_point'
+          ? 'violet_point'
+          : tpl.engineType === 'fire'
+            ? 'fire'
+            : [
+                  'conflict',
+                  'orientation',
+                  'obstacle',
+                  'fence_breach',
+                  'congestion',
+                ].includes(tpl.engineType)
+              ? this.e.s.policeMode || 'security'
+              : this.e.s.responseMode || 'firstaid';
+
+    const row: EmergencyIncident = {
+      id: this.next++,
+      code: formatIncidentCode(cat, this.categoryCounts[cat]),
+      category: cat,
+      severity,
+      sensitive,
+      originMode: opts?.originMode ?? 'manual',
+      targetObjectId: target.obj.id,
+      targetObjectName: target.obj.name || target.obj.id,
+      contextualTemplateId: tpl.id,
+      hasGasInstallation: hasGas,
+      hasPreDetectionData: true,
+      type: tpl.engineType,
+      name: `${tpl.label} · ${target.obj.name || target.obj.id}`,
+      created: e.time,
+      cell,
+      point: [target.point[0], target.point[1]],
+      stationId: target.obj.id,
+      status: opts?.immediateDetect ? 'pending' : 'unreported',
+      afterReportStatus: 'pending',
+      reportedAt: opts?.immediateDetect ? e.time : undefined,
+      reporters: [],
+      responseMode,
+      phase: 'alert',
+      note: sensitive
+        ? 'Solicitud reservada registrada en el servicio.'
+        : `${tpl.label} en ${target.obj.name || target.obj.id}.`,
+      model: 'Incidencia contextual · mismo motor de simulación',
+    };
+
+    this.events.push(row);
+    if (tpl.engineType === 'fire') {
+      this.fire.ignite(target.obj, row, {
+        initialIntensity: tpl.fireConfig?.initialIntensity,
+        growthRate:
+          opts?.customParams?.fireGrowthRate ?? tpl.fireConfig?.growthRate,
+      });
+    }
+    syncIncidentHistory(this.e);
+    return row;
+  }
+
+  /** Programa una incidencia contextual para una hora, retardo o condición futura. */
+  scheduleIncident(
+    spec: Omit<ScheduledIncident, 'id' | 'executed' | 'scheduledAtSec'>
+  ): ScheduledIncident {
+    const entry: ScheduledIncident = {
+      ...spec,
+      id: `sched-${this.scheduledSeq++}`,
+      scheduledAtSec: this.e.time,
+      executed: false,
+    };
+    this.scheduledIncidents.push(entry);
+    if (entry.trigger === 'immediate') {
+      const spawned = this.triggerContextualIncident(entry.targetId, entry.templateId, {
+        severity: entry.severity,
+        originMode: 'manual',
+        customParams: entry.customParams,
+      });
+      entry.executed = true;
+      entry.executedAt = this.e.time;
+      if (spawned) entry.spawnedIncidentId = spawned.id;
+    }
+    return entry;
+  }
+
+  cancelScheduledIncident(id: string): boolean {
+    const before = this.scheduledIncidents.length;
+    this.scheduledIncidents = this.scheduledIncidents.filter((s) => s.id !== id);
+    return this.scheduledIncidents.length !== before;
+  }
+
+  private evaluateScheduledIncidents(): void {
+    const e = this.e;
+    for (const s of this.scheduledIncidents) {
+      if (s.executed) continue;
+      let shouldFire = false;
+      if (s.trigger === 'immediate') {
+        shouldFire = true;
+      } else if (s.trigger === 'at_time') {
+        shouldFire = e.time >= (s.triggerAtSec ?? 0);
+      } else if (s.trigger === 'after_delay') {
+        const baseT = s.scheduledAtSec ?? 0;
+        shouldFire = e.time >= baseT + (s.delaySec ?? 0);
+      } else if (s.trigger === 'condition') {
+        if (s.condition === 'crowd_threshold') {
+          const present = (e.agents || []).filter(
+            (a: Agent) => a.state !== 'gone'
+          ).length;
+          shouldFire = present >= (s.conditionValue ?? 50);
+        } else if (s.condition === 'active_fire') {
+          shouldFire = this.events.some(
+            (ev) => ev.type === 'fire' && ev.status !== 'resolved'
+          );
+        } else if (s.condition === 'after_incident') {
+          const ref = this.events.find(
+            (ev) => String(ev.id) === String(s.conditionIncidentId)
+          );
+          shouldFire = !!ref && (ref.status === 'resolved' || ref.reportedAt != null);
+        }
+      }
+      if (shouldFire) {
+        const spawned = this.triggerContextualIncident(s.targetId, s.templateId, {
+          severity: s.severity,
+          originMode: 'manual',
+          customParams: s.customParams,
+        });
+        s.executed = true;
+        s.executedAt = e.time;
+        if (spawned) s.spawnedIncidentId = spawned.id;
+      }
+    }
+  }
+
+  /**
+   * Crea una incidencia y foco independiente cuando la exposición térmica alcanza
+   * ignición en una instalación vecina compatible, manteniendo trazabilidad causal.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  spawnSecondaryFire(
+    parentRow: EmergencyIncident,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _parentNode: any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    targetObj: any
+  ): EmergencyIncident | null {
+    const e = this.e;
+    const m = e.g.m;
+    const pt: Point = [
+      (targetObj.x * m.widthMeters) / 100,
+      (targetObj.y * m.heightMeters) / 100,
+    ];
+    const anchor = e.g.nearest(pt[0], pt[1], 14);
+    const cell = anchor >= 0 ? anchor : e.entries[0]?.cell ?? 0;
+
+    this.categoryCounts.fire = (this.categoryCounts.fire || 0) + 1;
+    const childCode = formatIncidentCode('fire', this.categoryCounts.fire);
+    const parentCode = parentRow.code || `FUE-${parentRow.id}`;
+    const spreadCause = `${parentCode} → SPREAD → ${childCode}`;
+
+    const childRow: EmergencyIncident = {
+      id: this.next++,
+      code: childCode,
+      category: 'fire',
+      severity: 'critica',
+      sensitive: false,
+      originMode: 'spread',
+      parentIncidentId: parentRow.id,
+      parentCode,
+      spreadCause,
+      targetObjectId: targetObj.id,
+      targetObjectName: targetObj.name || targetObj.id,
+      hasPreDetectionData: true,
+      type: 'fire',
+      name: `Propagación de incendio · ${targetObj.name || targetObj.id}`,
+      created: e.time,
+      reportedAt: e.time,
+      cell,
+      point: pt,
+      stationId: targetObj.id,
+      status: 'pending',
+      responseMode: 'fire',
+      phase: 'approach',
+      fireStage: 'conato',
+      note: `Foco secundario por exposición térmica desde ${parentCode} (${spreadCause}).`,
+      model: 'Propagación física multifoco',
+    };
+    this.events.push(childRow);
+    this.fire.ignite(targetObj, childRow, {
+      parentRowId: parentRow.id,
+      initialIntensity: 0.22,
+    });
+
+    appendIncidentMilestone(parentRow, {
+      time: e.time,
+      kind: 'spread',
+      label: `Propagación hacia ${targetObj.name || targetObj.id} (${childCode})`,
+      detail: `Transferencia térmica continuada: ${spreadCause}.`,
+      status: parentRow.status,
+      severity: 'critica',
+      point: pt,
+    });
+    appendIncidentMilestone(childRow, {
+      time: e.time,
+      kind: 'origin',
+      label: `Nuevo foco independiente por propagación (${spreadCause})`,
+      detail: `Ignición por exposición térmica acumulada desde ${parentCode}.`,
+      status: 'pending',
+      severity: 'critica',
+      point: pt,
+    });
+
+    this.evacuation.order(childRow);
+    this.evaluateFireForceCapacity(childRow, parentRow);
+    syncIncidentHistory(e);
+    return childRow;
+  }
+
+  /**
+   * Evalúa los recursos reales de bomberos al aparecer un foco nuevo o secundario:
+   * primero comprueba capacidad libre en unidades reales; si están ocupadas, intenta
+   * redistribución parcial sin fabricar camiones ni efectivos inexistentes.
+   */
+  evaluateFireForceCapacity(
+    row: EmergencyIncident,
+    parentRow?: EmergencyIncident
+  ): void {
+    const e = this.e;
+    if (row.type !== 'fire' || row.status === 'resolved') return;
+
+    if (this.fleet) {
+      const existing = this.fleet.missions.get(row.id);
+      if (existing && existing.stage !== 'completed') return;
+
+      const summary = this.fleet.getFireCapacitySummary();
+      if (summary.availableUnits > 0) {
+        const mission = this.fleet.dispatchForIncident(row, 'fire');
+        if (mission) {
+          if (parentRow) {
+            appendIncidentMilestone(row, {
+              time: e.time,
+              kind: 'reinforcement',
+              label: `Refuerzo de bomberos despachado (${row.resourceName || mission.unitId})`,
+              detail:
+                'Nueva unidad real movilizada desde su base para atender el foco secundario sin duplicar efectivos.',
+              status: row.status,
+              severity: 'critica',
+              resourceId: mission.unitId,
+              resourceName: row.resourceName,
+            });
+          }
+          return;
+        }
+      }
+
+      // Si no hay camiones adicionales configurados, valorar redistribución de dotación cercana
+      const rp = row.point || [0, 0];
+      const donor = summary.busySplitCandidates.find(
+        (u) =>
+          u.assignedIncidentId !== row.id &&
+          !this.events.some((ev) => ev.redistributedFromUnitId === u.resourceId && ev.status !== 'resolved') &&
+          Math.hypot(u.currentPosition[0] - rp[0], u.currentPosition[1] - rp[1]) <= 38
+      );
+      if (donor) {
+        const footPath = [donor.currentPosition, rp] as Point[];
+        row.redistributedFromUnitId = donor.resourceId;
+        row.resourceId = donor.resourceId;
+        row.resourceName = `${donor.name} (dotación redistribuida)`;
+        row.assigned = e.time;
+        row.alertDelay = 0;
+        row.handling = 420;
+        row.footDeployment = true;
+        row.profile = {
+          name: 'Dotación redistribuida a pie',
+          width: 0.7,
+          length: 0.9,
+          speed: 1.4,
+          staff: 2,
+        };
+        row.path = footPath;
+        row.pathLength = dist(donor.currentPosition, rp);
+        row.vehicleDistance = 0;
+        row.vehiclePose = poseAt(footPath, 0);
+        row.status = 'assigned';
+        row.phase = 'approach';
+        row.note = `Dotación redistribuida parcialmente desde ${donor.name} al no haber otro camión de bomberos libre.`;
+        appendIncidentMilestone(row, {
+          time: e.time,
+          kind: 'reinforcement',
+          label: 'Redistribución de dotación entre focos',
+          detail: row.note,
+          status: row.status,
+          severity: 'critica',
+          resourceId: donor.resourceId,
+          resourceName: row.resourceName,
+        });
+        return;
+      }
+
+      // Limitación explícita sin inventar vehículos
+      row.status = 'waiting';
+      row.resourceLimitation =
+        summary.totalUnits === 0
+          ? 'No hay camiones de bomberos configurados en el diseño.'
+          : `Todos los camiones de bomberos configurados (${summary.busyUnits}/${summary.totalUnits}) están ocupados; sin refuerzos disponibles en diseño.`;
+      row.note = row.resourceLimitation;
+      if (!row.timeline?.some((ev) => ev.kind === 'limitation')) {
+        appendIncidentMilestone(row, {
+          time: e.time,
+          kind: 'limitation',
+          label: 'Limitación de recursos de bomberos',
+          detail: row.resourceLimitation,
+          status: 'waiting',
+          severity: 'critica',
+        });
+      }
+    }
   }
 
   override inject(
@@ -749,6 +1134,12 @@ export class ResponseSimulation extends EmergencyLab {
               );
             }
           )[0] || null;
+
+      // No inventar camiones de bomberos externos inexistentes si el diseño no los ha configurado
+      if (kind === 'fire' && !reserve) {
+        this.evaluateFireForceCapacity(row);
+        return;
+      }
 
       if (!reserve && bestSpawn) {
         const externalId = `ext-${kind}-${Math.round(e.time)}-${this.resources().length + 1}`;
@@ -1361,7 +1752,12 @@ export class ResponseSimulation extends EmergencyLab {
 
   override update(dt: number): void {
     const e = this.e;
-    if (e.s.autoIncidents && e.time < e.duration) {
+    this.evaluateScheduledIncidents();
+
+    const genMode = resolveIncidentGenerationMode(e.s);
+    const allowAuto =
+      (genMode === 'auto' || genMode === 'mixed') && e.s.autoIncidents !== false;
+    if (allowAuto && e.time < e.duration) {
       const rate = Math.max(0, Math.min(1000, e.s.riskInputs?.autoRate ?? 120));
       const chance = -Math.expm1(
         (-rate *
@@ -1376,7 +1772,12 @@ export class ResponseSimulation extends EmergencyLab {
           type !== 'fire' ||
           !this.events.some((r) => r.type === 'fire' && r.status !== 'resolved')
         ) {
-          if (!this.inject(type)) this.autoSkipped++;
+          const inj = this.inject(type);
+          if (!inj) {
+            this.autoSkipped++;
+          } else {
+            inj.originMode = 'auto';
+          }
         }
       }
     }

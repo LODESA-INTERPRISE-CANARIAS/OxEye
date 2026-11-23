@@ -48,7 +48,10 @@ export class Evacuation {
       return;
     }
     const e = this.e;
-    const radius = Math.max(3, Math.min(50, e.s.incidentRadius ?? 8));
+    const radius =
+      row && typeof e.emergency?.fire?.getSafetyRadius === 'function'
+        ? e.emergency.fire.getSafetyRadius(row)
+        : Math.max(3, Math.min(50, e.s.incidentRadius ?? 8));
     const point: Point = row?.point || [0, 0];
     const free = e.g.free.slice();
     for (let k = 0; k < free.length; k++) {
@@ -176,7 +179,10 @@ export class Evacuation {
     const fencedCordons: Array<{rowId: string | number; center: [number, number]}> =
       (this.e.emergency?.fire?.cordons || []).filter(
         (c: {state: string}) =>
-          c.state === 'fenced' || c.state === 'cleanup' || c.state === 'reopened'
+          c.state === 'fenced' ||
+          c.state === 'cleanup' ||
+          c.state === 'inspection' ||
+          c.state === 'reopened'
       );
     return this.orders
       .filter(

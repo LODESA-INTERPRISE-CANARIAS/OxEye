@@ -192,6 +192,10 @@ export interface BoothItem {
   open?: number;
   close?: number;
   locked?: boolean;
+  hasGas?: boolean;
+  noGas?: boolean;
+  combustible?: boolean;
+  material?: string;
   /** Si es `true`, es un elemento permanente del emplazamiento (no se monta ni se desmonta). */
   permanent?: boolean;
   /** Tiempo estimado de montaje en minutos (opcional; si se omite usa el valor por defecto del tipo). */
@@ -235,6 +239,10 @@ export interface InfrastructureItem {
   tableWidth?: number;
   benchWidth?: number;
   locked?: boolean;
+  hasGas?: boolean;
+  noGas?: boolean;
+  combustible?: boolean;
+  material?: string;
   /** Si es `true`, es un elemento permanente del emplazamiento (no se monta ni se desmonta). */
   permanent?: boolean;
   /** Tiempo estimado de montaje en minutos (opcional; si se omite usa el valor por defecto del tipo). */
@@ -635,6 +643,8 @@ export interface Scene {
   privateStaff?: number;
   fireSuccess?: number;
   autoIncidents?: boolean;
+  /** Modo de generación de incidencias: automático, manual o mixto (ambos a la vez). */
+  incidentMode?: IncidentGenerationMode;
   incidentEvery?: number;
   fireFootAccess?: boolean;
   fireBurnSeconds?: number;
@@ -975,6 +985,67 @@ export type IncidentSeverityLevel =
   | 'grave'
   | 'critica';
 
+/** Modo de generación de incidencias durante la simulación. */
+export type IncidentGenerationMode = 'auto' | 'manual' | 'mixed';
+
+/** Origen de creación de una incidencia individual (sin contaminar tasas espontáneas). */
+export type IncidentOriginMode = 'auto' | 'manual' | 'spread';
+
+/** Ciclo de vida detallado de cada foco de incendio y recuperación del entorno. */
+export type FireLifecycleStage =
+  | 'conato'
+  | 'desarrollado'
+  | 'exposicion'
+  | 'propagacion'
+  | 'controlado'
+  | 'extinguido'
+  | 'hot_zone'
+  | 'approaching'
+  | 'installing'
+  | 'fenced'
+  | 'cleanup'
+  | 'inspection'
+  | 'reopened';
+
+/** Modo de disparo para incidencias provocadas o programadas en ensayo. */
+export type ScheduledIncidentTrigger =
+  | 'immediate'
+  | 'at_time'
+  | 'after_delay'
+  | 'condition';
+
+/** Condición operativa para disparar una incidencia programada. */
+export type ScheduledIncidentCondition =
+  | 'crowd_threshold'
+  | 'active_fire'
+  | 'after_incident';
+
+/** Incidencia contextual programada durante la simulación. */
+export interface ScheduledIncident {
+  id: string;
+  targetId: string;
+  targetName: string;
+  templateId: string;
+  incidentType: string;
+  label: string;
+  severity: IncidentSeverityLevel;
+  trigger: ScheduledIncidentTrigger;
+  triggerAtSec?: number;
+  delaySec?: number;
+  scheduledAtSec?: number;
+  condition?: ScheduledIncidentCondition;
+  conditionValue?: number;
+  conditionIncidentId?: string | number;
+  executed?: boolean;
+  executedAt?: number;
+  spawnedIncidentId?: string | number;
+  sensitive?: boolean;
+  customParams?: {
+    hasGas?: boolean;
+    fireGrowthRate?: number;
+  };
+}
+
 /** Evento cronológico registrado en la evolución de una incidencia. */
 export interface IncidentTimelineEvent {
   id: string;
@@ -988,12 +1059,17 @@ export interface IncidentTimelineEvent {
     | 'arrival'
     | 'intervention'
     | 'transfer'
+    | 'spread'
+    | 'reinforcement'
+    | 'limitation'
+    | 'threat'
     | 'extinguished'
     | 'hot_zone'
     | 'cordon_approach'
     | 'cordon_install'
     | 'cordon_fenced'
     | 'cleanup'
+    | 'inspection'
     | 'reopened'
     | 'waiting'
     | 'blocked'
@@ -1022,6 +1098,28 @@ export interface EmergencyIncident {
   severity?: IncidentSeverityLevel | string;
   /** Indica si requiere tratamiento reservado (p. ej. Punto Violeta). */
   sensitive?: boolean;
+  /** Origen (`auto`, `manual`, `spread`) para separar ensayo manual de estadística espontánea. */
+  originMode?: IncidentOriginMode;
+  /** ID del foco padre si esta incidencia surgió por propagación. */
+  parentIncidentId?: number | string;
+  /** Código legible del foco padre (p. ej. `FUE-001`). */
+  parentCode?: string;
+  /** Trazabilidad causal explícita (p. ej. `FUE-001 → SPREAD → FUE-002`). */
+  spreadCause?: string;
+  /** ID del elemento del plano sobre el que se provocó o inició la incidencia. */
+  targetObjectId?: string;
+  /** Nombre legible del elemento origen. */
+  targetObjectName?: string;
+  /** ID de plantilla contextual utilizada cuando proviene del menú contextual. */
+  contextualTemplateId?: string;
+  /** Etapa actual del foco de incendio / recuperación independiente. */
+  fireStage?: FireLifecycleStage;
+  /** Limitación explícita de recursos si no hay camiones/dotación adicional disponible. */
+  resourceLimitation?: string;
+  /** Unidad desde la que se redistribuyó tripulación en refuerzo parcial. */
+  redistributedFromUnitId?: string;
+  /** Indica si el elemento afectado dispone de instalación compatible con gas. */
+  hasGasInstallation?: boolean;
   type: 'fall' | 'cut' | 'fire' | 'conflict' | string;
   name?: string;
   service?: 'medical' | 'fire' | 'security' | 'accessibility' | 'violet_point' | string;

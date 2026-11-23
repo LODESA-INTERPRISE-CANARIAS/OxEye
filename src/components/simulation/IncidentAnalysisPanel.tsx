@@ -144,6 +144,20 @@ export const IncidentAnalysisPanel: React.FC<IncidentAnalysisPanelProps> = ({
       ? formatEventTimeOfDay(incident.reportedAt, win.from, win.to)
       : 'Pendiente';
 
+  const originBadge =
+    incident.originMode === 'spread' || incident.parentIncidentId != null
+      ? 'Propagación térmica'
+      : incident.originMode === 'manual'
+        ? 'Manual contextual'
+        : 'Automática';
+
+  const childSpreadRows = ((engine?.emergency?.events || []) as EmergencyIncident[]).filter(
+    (ev) => ev.parentIncidentId === incident.id
+  );
+  const fireNode = engine?.emergency?.fire?.nodes?.get?.(
+    incident.targetObjectId || incident.stationId
+  );
+
   const locationLabel = isRedactedViolet
     ? 'Servicio Punto Violeta (ubicación individual reservada)'
     : incident.point
@@ -314,6 +328,7 @@ export const IncidentAnalysisPanel: React.FC<IncidentAnalysisPanelProps> = ({
             >
               {sevMeta.label}
             </span>
+            <span className="inc-readonly-chip">{originBadge}</span>
             <span className="inc-readonly-chip">Solo lectura · histórico</span>
           </div>
           <h3>
@@ -381,7 +396,47 @@ export const IncidentAnalysisPanel: React.FC<IncidentAnalysisPanelProps> = ({
                     : 'Entorno de puesto / área afectada'}
               </b>
             </div>
+            {(incident.spreadCause || fireNode || incident.resourceLimitation) && (
+              <div>
+                <span>Foco y propagación</span>
+                <b>
+                  {incident.spreadCause ? `${incident.spreadCause} · ` : ''}
+                  {fireNode
+                    ? `Combustión ${fireNode.combustionRadius.toFixed(1)} m · Seg. ${fireNode.safetyRadius.toFixed(1)} m · ${Math.round(fireNode.damage * 100)} % daño`
+                    : incident.fireStage || 'Registrado'}
+                  {incident.resourceLimitation ? ` · ${incident.resourceLimitation}` : ''}
+                </b>
+              </div>
+            )}
           </div>
+          {(incident.parentIncidentId != null || childSpreadRows.length > 0) && (
+            <div className="inc-simultaneous-box">
+              <small>Cadena causal del incendio:</small>
+              <div className="inc-sim-chips">
+                {incident.parentIncidentId != null && (
+                  <button
+                    type="button"
+                    className="inc-sim-chip"
+                    style={{borderColor: '#D94841'}}
+                    onClick={() => onSelectSimultaneous(incident.parentIncidentId!)}
+                  >
+                    Foco origen: {incident.parentCode || `#${incident.parentIncidentId}`}
+                  </button>
+                )}
+                {childSpreadRows.map((ch) => (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    className="inc-sim-chip"
+                    style={{borderColor: '#D94841'}}
+                    onClick={() => onSelectSimultaneous(ch.id)}
+                  >
+                    Propagado a: {ch.code || `#${ch.id}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="inc-view-toggles">
             <div className="inc-seg-group" role="group" aria-label="Modo de visualización">

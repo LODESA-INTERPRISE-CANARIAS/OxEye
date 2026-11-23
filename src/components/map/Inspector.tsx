@@ -56,6 +56,9 @@ import {
   findItemInScene,
 } from './selectionActions';
 import {MultiSelectionInspector, SubsoilInspector} from './SubsoilInspector';
+import {SimulationInspector} from './SimulationInspector';
+import type {EventEngine} from '../../engine/crowd/event-engine';
+import type {IncidentSeverityLevel, ScheduledIncident} from '../../types';
 
 const AUTHORITY_UNITS: Array<{key: AuthorityAccessUnit; label: string}> = [
   {key: 'foot', label: 'Unidades a pie'},
@@ -70,6 +73,17 @@ const AUTHORITY_UNITS: Array<{key: AuthorityAccessUnit; label: string}> = [
 export interface InspectorProps {
   onSceneChanged: () => void;
   onClearProposal: () => void;
+  engine?: EventEngine | null;
+  onTriggerContextualIncident?: (
+    targetId: string,
+    templateId: string,
+    opts?: {severity?: IncidentSeverityLevel}
+  ) => void;
+  onScheduleContextualIncident?: (
+    spec: Omit<ScheduledIncident, 'id' | 'executed' | 'scheduledAtSec'>
+  ) => void;
+  onCancelScheduledIncident?: (id: string) => void;
+  onInvestigateIncident?: (incidentId: string | number) => void;
 }
 
 const num = (n: number): string =>
@@ -82,6 +96,11 @@ const num = (n: number): string =>
 export const Inspector: React.FC<InspectorProps> = ({
   onSceneChanged,
   onClearProposal,
+  engine = null,
+  onTriggerContextualIncident,
+  onScheduleContextualIncident,
+  onCancelScheduledIncident,
+  onInvestigateIncident,
 }) => {
   const selectedIds = useProjectStore((s) => s.selectedIds);
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
@@ -214,7 +233,35 @@ export const Inspector: React.FC<InspectorProps> = ({
     }
   }, [found, isNote, selectedId]);
 
-  if (panel === 'simulate' || !selectedIds.length) {
+  if (panel === 'simulate') {
+    if (!selectedIds.length || !found) {
+      return <aside id="inspector" className="float-panel inspector" hidden />;
+    }
+    return (
+      <aside
+        id="inspector"
+        className="float-panel inspector"
+        style={inspectorStyle}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setSelectedIds([]);
+        }}
+      >
+        {renderInspectorChrome(() => setSelectedIds([]))}
+        <SimulationInspector
+          item={found}
+          scene={s}
+          mapMeta={m}
+          engine={engine}
+          onTriggerContextualIncident={onTriggerContextualIncident}
+          onScheduleContextualIncident={onScheduleContextualIncident}
+          onCancelScheduledIncident={onCancelScheduledIncident}
+          onInvestigateIncident={onInvestigateIncident}
+        />
+      </aside>
+    );
+  }
+
+  if (!selectedIds.length) {
     return <aside id="inspector" className="float-panel inspector" hidden />;
   }
 

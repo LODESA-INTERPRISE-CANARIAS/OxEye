@@ -36,6 +36,7 @@ export * from './engine/dining/dining';
 export * from './engine/dining/furniture';
 export * from './engine/director/director-logic';
 export * from './engine/emergency/emergency-lab';
+export * from './engine/emergency/contextual-incidents';
 export * from './engine/emergency/evacuation';
 export * from './engine/emergency/fire-model';
 export * from './engine/emergency/incident-crowd';

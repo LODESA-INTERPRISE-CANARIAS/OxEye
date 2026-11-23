@@ -10,6 +10,10 @@ import {
   applyLiveWeather,
 } from '../../engine/director/director-logic';
 import {INCIDENTS} from '../../engine/emergency/emergency-lab';
+import {
+  incidentFrequencyStats,
+  resolveIncidentGenerationMode,
+} from '../../engine/emergency/contextual-incidents';
 import {addResponseExample} from '../../engine/emergency/response-example';
 import {serviceLoad} from '../../engine/emergency/response-model';
 import {
@@ -1450,18 +1454,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       Mismo JSON + misma semilla = mismos fallos y acciones simultáneas.
                     </p>
                   </section>
+                  <div className="incident-mode-switch" role="group" aria-label="Modo de generación de incidencias">
+                    {(
+                      [
+                        ['auto', 'Automático'],
+                        ['manual', 'Manual'],
+                        ['mixed', 'Mixto'],
+                      ] as const
+                    ).map(([mKey, mLabel]) => {
+                      const activeGenMode = resolveIncidentGenerationMode(s);
+                      return (
+                        <button
+                          key={mKey}
+                          type="button"
+                          data-incident-mode={mKey}
+                          className={activeGenMode === mKey ? 'is-active' : ''}
+                          onClick={() => {
+                            const autoOn = mKey !== 'manual';
+                            onRecordAction('incidentMode', mKey);
+                            onRecordAction('autoIncidents', autoOn);
+                            updateScene((sc) => {
+                              sc.incidentMode = mKey;
+                              sc.autoIncidents = autoOn;
+                            });
+                            if (engine) {
+                              engine.s.incidentMode = mKey;
+                              engine.s.autoIncidents = autoOn;
+                            }
+                          }}
+                        >
+                          {mLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {engine && engine.emergency.events.length > 0 && (() => {
+                    const stats = incidentFrequencyStats(engine.emergency.events);
+                    return (
+                      <p className="small-note incident-freq-note">
+                        Espontáneas: <b>{stats.spontaneous}</b> · Manuales: <b>{stats.manual}</b> · Propagadas: <b>{stats.spread}</b>
+                      </p>
+                    );
+                  })()}
                   <label>
                     <input
                       id="auto-incidents"
                       type="checkbox"
-                      checked={!!s.autoIncidents}
+                      checked={resolveIncidentGenerationMode(s) !== 'manual'}
                       onChange={(e) => {
                         const checked = e.target.checked;
+                        const nextMode = checked ? 'mixed' : 'manual';
+                        onRecordAction('incidentMode', nextMode);
                         onRecordAction('autoIncidents', checked);
                         updateScene((sc) => {
+                          sc.incidentMode = nextMode;
                           sc.autoIncidents = checked;
                         });
-                        if (engine) engine.s.autoIncidents = checked;
+                        if (engine) {
+                          engine.s.incidentMode = nextMode;
+                          engine.s.autoIncidents = checked;
+                        }
                       }}
                     />{' '}
                     Activar incidencias automáticas

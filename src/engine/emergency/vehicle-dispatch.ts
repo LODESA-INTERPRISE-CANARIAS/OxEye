@@ -479,6 +479,34 @@ export class EmergencyVehicleFleet {
     }
   }
 
+  /** Resume la capacidad real configurada de unidades de bomberos sin fabricar vehículos externos. */
+  getFireCapacitySummary(): {
+    totalUnits: number;
+    availableUnits: number;
+    busyUnits: number;
+    totalCrew: number;
+    busySplitCandidates: EmergencyUnitRuntime[];
+  } {
+    const fireUnits = this.units.filter((u) => u.kind === 'fire');
+    const availableUnits = fireUnits.filter(
+      (u) =>
+        u.available &&
+        u.availableForReinforcement &&
+        u.assignedIncidentId === null &&
+        u.crewStatus === 'embarked' &&
+        (u.vehicleStatus === 'parked' || u.vehicleStatus === 'patrolling')
+    );
+    const busyUnits = fireUnits.filter((u) => u.assignedIncidentId !== null);
+    const busySplitCandidates = busyUnits.filter((u) => u.crewCapacity >= 4);
+    return {
+      totalUnits: fireUnits.length,
+      availableUnits: availableUnits.length,
+      busyUnits: busyUnits.length,
+      totalCrew: fireUnits.reduce((acc, u) => acc + (u.crewCapacity || 0), 0),
+      busySplitCandidates,
+    };
+  }
+
   /** Devuelve los tipos de vehículo compatibles con un servicio/modo solicitado. */
   compatibleKinds(requestedMode: string): EmergencyVehicleKind[] {
     if (requestedMode === 'ambulance') return ['ambulance'];

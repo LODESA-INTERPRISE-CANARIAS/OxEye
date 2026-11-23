@@ -71,12 +71,15 @@ import {insertStock} from '../../engine/planning/inventory';
 import {coverSubcomponentBallastIds} from '../../engine/planning/ballast';
 import {resolveAccessCategory} from '../../engine/emergency/priority';
 import {useProjectStore} from '../../store/useProjectStore';
+import type {EventEngine} from '../../engine/crowd/event-engine';
 import type {
   Booth,
   GeometryTrace,
+  IncidentSeverityLevel,
   Infrastructure,
   PhaseKey,
   Point,
+  ScheduledIncident,
 } from '../../types';
 import type {ProposalState} from '../layout/Sidebar';
 import {Inspector} from './Inspector';
@@ -107,6 +110,16 @@ export interface MapShellProps {
   onSceneChanged: () => void;
   onUndoRedo: (isRedo?: boolean) => void;
   onInvestigateIncident?: (incidentId: string | number) => void;
+  engine?: EventEngine | null;
+  onTriggerContextualIncident?: (
+    targetId: string,
+    templateId: string,
+    opts?: {severity?: IncidentSeverityLevel}
+  ) => void;
+  onScheduleContextualIncident?: (
+    spec: Omit<ScheduledIncident, 'id' | 'executed' | 'scheduledAtSec'>
+  ) => void;
+  onCancelScheduledIncident?: (id: string) => void;
   activeWeather: string;
 }
 
@@ -145,6 +158,10 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       onSceneChanged,
       onUndoRedo,
       onInvestigateIncident,
+      engine = null,
+      onTriggerContextualIncident,
+      onScheduleContextualIncident,
+      onCancelScheduledIncident,
       activeWeather,
     },
     ref
@@ -1874,9 +1891,7 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       const p = getPointerCoords(e);
       const id =
-        panel === 'simulate'
-          ? null
-          : targetEl.closest<HTMLElement>('[data-id]')?.dataset.id || null;
+        targetEl.closest<HTMLElement>('[data-id]')?.dataset.id || null;
       const s = currentScene();
       const m = currentMap();
       const allItems = [
@@ -2066,9 +2081,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
 
       const isSelectLike = tool === 'select' || tool === 'xray:select';
 
-      // Los elementos bloqueados no se mueven ni se transforman; arrastrar sobre ellos desplaza el plano
-      if (drag.o?.locked) {
-        if (isSelectLike && mapDivRef.current) {
+      // En modo simulación o con elementos bloqueados, arrastrar solo desplaza el plano
+      if (drag.o?.locked || panel === 'simulate') {
+        if ((isSelectLike || panel === 'simulate') && mapDivRef.current) {
           const clientW = mapDivRef.current.clientWidth || 800;
           const clientH = mapDivRef.current.clientHeight || 600;
           viewRef.current.x = drag.view.x - (dx / clientW) * drag.view.w;
@@ -2370,7 +2385,16 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       }
       if (d.panOnly) return;
       const p = getPointerCoords(e);
-      if (panel === 'simulate') return;
+      if (panel === 'simulate') {
+        if (!d.moved) {
+          if (d.id) {
+            setSelectedIds([d.id]);
+          } else {
+            setSelectedIds([]);
+          }
+        }
+        return;
+      }
       if (d.moved) {
         if (d.marquee) {
           if (draftLayerRef.current) draftLayerRef.current.innerHTML = '';
@@ -3077,6 +3101,11 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
           <Inspector
             onSceneChanged={onSceneChanged}
             onClearProposal={onClearProposal}
+            engine={engine}
+            onTriggerContextualIncident={onTriggerContextualIncident}
+            onScheduleContextualIncident={onScheduleContextualIncident}
+            onCancelScheduledIncident={onCancelScheduledIncident}
+            onInvestigateIncident={onInvestigateIncident}
           />
 
           <div

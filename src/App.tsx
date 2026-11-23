@@ -518,6 +518,24 @@ export const App: React.FC = () => {
           typeof injVal === 'string' ? injVal : injVal.type,
           typeof injVal === 'string' ? null : injVal.sourceId || null
         );
+      } else if (kind === 'contextual_incident') {
+        const ctxVal = value as {
+          targetId: string;
+          templateId: string;
+          severity?: import('./types').IncidentSeverityLevel;
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (eng.emergency as any).triggerContextualIncident?.(
+          ctxVal.targetId,
+          ctxVal.templateId,
+          {severity: ctxVal.severity, originMode: 'manual'}
+        );
+      } else if (kind === 'schedule_incident') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (eng.emergency as any).scheduleIncident?.(value);
+      } else if (kind === 'cancel_scheduled_incident') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (eng.emergency as any).cancelScheduledIncident?.(String(value));
       } else if (kind === 'weather') {
         applyLiveWeather(eng, value as 'sun' | 'cloud' | 'rain' | 'wind');
       } else if (kind === 'arrivals') {
@@ -898,6 +916,29 @@ export const App: React.FC = () => {
                 typeof v === 'string' ? v : v.type,
                 typeof v === 'string' ? null : v.sourceId || null
               );
+            } else if (kind === 'contextual_incident') {
+              const cv = value as {
+                targetId: string;
+                templateId: string;
+                severity?: import('./types').IncidentSeverityLevel;
+              };
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).triggerContextualIncident?.(
+                cv.targetId,
+                cv.templateId,
+                {severity: cv.severity, originMode: 'manual'}
+              );
+            } else if (kind === 'schedule_incident') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).scheduleIncident?.(value);
+            } else if (kind === 'cancel_scheduled_incident') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).cancelScheduledIncident?.(String(value));
+            } else if (kind === 'incidentMode') {
+              invEng.s.incidentMode = value as import('./types').IncidentGenerationMode;
+              invEng.s.autoIncidents = value !== 'manual';
+            } else if (kind === 'autoIncidents') {
+              invEng.s.autoIncidents = Boolean(value);
             } else if (kind === 'weather') {
               applyLiveWeather(invEng, value as 'sun' | 'cloud' | 'rain' | 'wind');
             } else if (kind === 'arrivals') {
@@ -923,6 +964,29 @@ export const App: React.FC = () => {
                 typeof v === 'string' ? v : v.type,
                 typeof v === 'string' ? null : v.sourceId || null
               );
+            } else if (kind === 'contextual_incident') {
+              const cv = value as {
+                targetId: string;
+                templateId: string;
+                severity?: import('./types').IncidentSeverityLevel;
+              };
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).triggerContextualIncident?.(
+                cv.targetId,
+                cv.templateId,
+                {severity: cv.severity, originMode: 'manual'}
+              );
+            } else if (kind === 'schedule_incident') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).scheduleIncident?.(value);
+            } else if (kind === 'cancel_scheduled_incident') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (invEng.emergency as any).cancelScheduledIncident?.(String(value));
+            } else if (kind === 'incidentMode') {
+              invEng.s.incidentMode = value as import('./types').IncidentGenerationMode;
+              invEng.s.autoIncidents = value !== 'manual';
+            } else if (kind === 'autoIncidents') {
+              invEng.s.autoIncidents = Boolean(value);
             } else if (kind === 'weather') {
               applyLiveWeather(invEng, value as 'sun' | 'cloud' | 'rain' | 'wind');
             } else if (kind === 'arrivals') {
@@ -1020,6 +1084,77 @@ export const App: React.FC = () => {
     setInvestigationState(null);
     paintPeople();
   }, [paintPeople]);
+
+  const handleTriggerContextualIncident = useCallback(
+    (
+      targetId: string,
+      templateId: string,
+      opts?: {severity?: import('./types').IncidentSeverityLevel}
+    ) => {
+      const eng = engineRef.current;
+      if (!eng) return;
+      recordAction('contextual_incident', {
+        targetId,
+        templateId,
+        severity: opts?.severity,
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const created = (eng.emergency as any).triggerContextualIncident?.(
+        targetId,
+        templateId,
+        {severity: opts?.severity, originMode: 'manual'}
+      );
+      if (created) {
+        showToast(
+          created.sensitive
+            ? `${created.code} · Solicitud reservada registrada`
+            : `${created.code} · ${created.name}`
+        );
+        paintPeople();
+        syncDirectorOverlays();
+        setReviewTick((t) => t + 1);
+      } else {
+        showToast('No se pudo provocar la incidencia en este elemento.', 'error');
+      }
+    },
+    [recordAction, showToast, paintPeople, syncDirectorOverlays]
+  );
+
+  const handleScheduleContextualIncident = useCallback(
+    (
+      spec: Omit<
+        import('./types').ScheduledIncident,
+        'id' | 'executed' | 'scheduledAtSec'
+      >
+    ) => {
+      const eng = engineRef.current;
+      if (!eng) return;
+      recordAction('schedule_incident', spec);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const entry = (eng.emergency as any).scheduleIncident?.(spec);
+      if (entry) {
+        showToast(`Incidencia programada: ${entry.label}`);
+        paintPeople();
+        syncDirectorOverlays();
+        setReviewTick((t) => t + 1);
+      }
+    },
+    [recordAction, showToast, paintPeople, syncDirectorOverlays]
+  );
+
+  const handleCancelScheduledIncident = useCallback(
+    (id: string) => {
+      const eng = engineRef.current;
+      if (!eng) return;
+      recordAction('cancel_scheduled_incident', id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((eng.emergency as any).cancelScheduledIncident?.(id)) {
+        showToast('Incidencia programada anulada');
+        setReviewTick((t) => t + 1);
+      }
+    },
+    [recordAction, showToast]
+  );
 
   useEffect(() => {
     const onCornerClick = (e: MouseEvent) => {
@@ -1386,6 +1521,10 @@ export const App: React.FC = () => {
             setTimeout(() => mapRef.current?.fit(), 20);
           }}
           onInvestigateIncident={openInvestigation}
+          engine={engineInstance}
+          onTriggerContextualIncident={handleTriggerContextualIncident}
+          onScheduleContextualIncident={handleScheduleContextualIncident}
+          onCancelScheduledIncident={handleCancelScheduledIncident}
           activeWeather={activeWeather}
         />
         {investigationState &&
