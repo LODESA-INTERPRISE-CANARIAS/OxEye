@@ -24,12 +24,14 @@ import type {
   LensMode,
   PhaseFilter,
   ProjectFile,
+  ProjectObjectives,
   Scene,
   UserPreferences,
   VenueKey,
   VenueMap,
   WorkShiftDay,
 } from '../types';
+import {summarizeLegacySmartGoal} from '../engine/planning/objectives';
 
 export type OnboardingStage = 'none' | 'perimeter' | 'inventory';
 
@@ -49,6 +51,7 @@ export interface MapFocusRequest {
 
 export type ActiveModal =
   | null
+  | 'objectives'
   | 'demand'
   | 'programme'
   | 'inventory'
@@ -184,6 +187,7 @@ export interface ProjectStoreState {
     from: string;
     to: string;
     goals: string[];
+    objectives?: ProjectObjectives;
     smartGoal?: {
       specific: string;
       metric: string;
@@ -778,8 +782,13 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       startDate: config.startDate,
       endDate: config.endDate,
       endTime: config.endTime,
-      eventGoals: config.goals,
-      smartGoal: config.smartGoal,
+      eventGoals: config.objectives
+        ? [...config.objectives.profile.activeAxes]
+        : config.goals,
+      objectives: config.objectives,
+      smartGoal: config.objectives
+        ? summarizeLegacySmartGoal(config.objectives)
+        : config.smartGoal,
       stockIntroShown: true,
       workDays,
       shiftDays: {
@@ -819,16 +828,18 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     next.base.start = config.start;
     next.base.hours = config.hours;
     for (const b of next.base.booths) b.close = config.hours;
-    next.mix = {
-      buyer: config.goals.includes('local') ? 35 : 15,
-      foodie: config.goals.includes('food') ? 35 : 15,
-      culture:
-        config.goals.includes('culture') || config.goals.includes('family')
-          ? 35
-          : 15,
-      music: config.goals.includes('music') ? 35 : 15,
-      walker: config.goals.includes('comfort') ? 30 : 15,
-    };
+    next.mix = config.objectives?.confirmedHypotheses?.confirmed
+      ? {...config.objectives.confirmedHypotheses.mix}
+      : {
+          buyer: config.goals.includes('local') ? 35 : 15,
+          foodie: config.goals.includes('food') ? 35 : 15,
+          culture:
+            config.goals.includes('culture') || config.goals.includes('family')
+              ? 35
+              : 15,
+          music: config.goals.includes('music') ? 35 : 15,
+          walker: config.goals.includes('comfort') ? 30 : 15,
+        };
     next.safetyReview = assessRisk(next);
     nextProject.scenes.cristo = next;
     nextProject.active = 'cristo';

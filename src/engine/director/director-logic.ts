@@ -55,11 +55,16 @@ export function eventSchedule(
 
 /**
  * Generates an SVG radar chart string for the selected event goals.
+ * Accepts optional continuous `axisScores` (`0..100`) derived from SMART objectives.
  *
  * @param selected - List of selected goal keys.
+ * @param axisScores - Optional weighted intensities per axis (`0..100`).
  * @returns SVG markup string.
  */
-export function goalChart(selected: string[]): string {
+export function goalChart(
+  selected: string[],
+  axisScores?: Partial<Record<string, number>>
+): string {
   const center = [150, 135];
   const radius = 86;
   const points = eventGoals.map((_, i) => {
@@ -98,7 +103,14 @@ export function goalChart(selected: string[]): string {
     '<polygon points="' +
     points
       .map((p, i) => {
-        const scale = selected.includes(eventGoals[i][0]) ? 1 : 0.15;
+        const key = eventGoals[i][0];
+        const rawScore = axisScores?.[key];
+        const scale =
+          typeof rawScore === 'number' && Number.isFinite(rawScore)
+            ? 0.15 + 0.85 * Math.max(0, Math.min(1, rawScore / 100))
+            : selected.includes(key)
+              ? 1
+              : 0.15;
         return [150 + p[0] * 86 * scale, 135 + p[1] * 86 * scale].join(',');
       })
       .join(' ') +

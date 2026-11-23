@@ -1,5 +1,6 @@
 import type {
   Agent,
+  BehaviorHypotheses,
   BoothType,
   CrowdProfileKey,
   Entrance,
@@ -94,6 +95,7 @@ export class EventEngine {
   vehicleManager: VehicleManager;
   rebelGrid: NavigationGrid | null;
   rebelFlowCache: Map<number, Int32Array>;
+  behavior: BehaviorHypotheses | null;
   agents: Agent[];
   nextId: number;
   byId: Map<number, Agent>;
@@ -178,6 +180,9 @@ export class EventEngine {
     this.vehicleManager = new VehicleManager(this);
     this.rebelGrid = null;
     this.rebelFlowCache = new Map();
+    this.behavior = this.s.objectives?.confirmedHypotheses?.confirmed
+      ? this.s.objectives.confirmedHypotheses
+      : null;
     this.agents = [];
     this.nextId = 1;
     this.byId = new Map();
@@ -570,13 +575,17 @@ export class EventEngine {
   }
 
   pickProfile(): CrowdProfileKey {
+    const baseMix = this.s.mix;
     const weights = (
-      Object.entries(this.s.mix) as Array<[CrowdProfileKey, number]>
+      Object.entries(baseMix) as Array<[CrowdProfileKey, number]>
     ).map(
-      ([k, v]) =>
-        [
+      ([k, v]) => {
+        const confirmedW = this.behavior?.mix?.[k];
+        const effectiveW =
+          typeof confirmedW === 'number' ? (v + confirmedW) / 2 : v;
+        return [
           k,
-          Math.max(0, v) *
+          Math.max(0, effectiveW) *
             (this.s.offerMix &&
             ((k === 'foodie' &&
               !this.stations.some((b) => b.type === 'food')) ||
@@ -584,7 +593,8 @@ export class EventEngine {
                 !this.stations.some((b) => b.type === 'stage')))
               ? 0.25
               : 1),
-        ] as [CrowdProfileKey, number]
+        ] as [CrowdProfileKey, number];
+      }
     );
     const sum = weights.reduce((n, [, v]) => n + v, 0);
     let n = this.random() * sum;
@@ -727,6 +737,27 @@ export class EventEngine {
     }
     const profile = this.pickProfile();
     const persona = pickPersona(profile, this.random, this.s.variety ?? 1);
+    // Aplicar hipótesis de comportamiento SOLO si fueron confirmadas explícitamente en Objetivos SMART
+    if (this.behavior) {
+      persona.patience *= this.behavior.queueToleranceMultiplier || 1;
+      persona.stayFactor *= this.behavior.stayMultiplier || 1;
+      persona.shelterPreference = Math.min(
+        1,
+        (persona.shelterPreference || 0.5) + (this.behavior.shelterNeedBonus || 0)
+      );
+      const boosts = this.behavior.destinationBoosts;
+      if (boosts) {
+        const candidates = (
+          ['commerce', 'food', 'workshop', 'stage', 'rest'] as const
+        ).filter((t) => (boosts[t] || 1) >= 1.15 && this.stations.some((st) => st.type === t));
+        if (candidates.length && this.random() < 0.65) {
+          const picked = candidates[Math.floor(this.random() * candidates.length)];
+          if (!persona.needs.includes(picked)) {
+            persona.needs = [picked, ...persona.needs.slice(0, 2)];
+          }
+        }
+      }
+    }
     const rebelShare = Math.max(0, Math.min(1, this.s.rebelShare ?? 0.01));
     const rebelRoll = this.random();
     const rebel = rebelShare > 0 && rebelRoll < rebelShare;
@@ -996,10 +1027,16 @@ export class EventEngine {
           b.field[cell] >= 0
             ? b.field[cell]
             : this.getRebelFlow(b.cell)[cell];
+        const distributeLocalCommerce =
+          b.type === 'commerce' &&
+          (this.behavior?.destinationBoosts?.commerce || 1) >= 1.2;
+        const spreadPenalty = distributeLocalCommerce
+          ? 1 + (b.served || 0) * 0.22 + (b.queue.length || 0) * 0.6
+          : 1;
         return {
           b,
           score:
-            (b.interest || 1) /
+            ((b.interest || 1) / spreadPenalty) /
             (1 +
               (distCells * this.g.cell) / 600 +
               ((b.queue.length / Math.max(1, b.capacity)) * b.minutes) / 10),

@@ -91,6 +91,15 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Menú</span>
         </button>
         <button
+          id="objectives-button"
+          className="quiet"
+          type="button"
+          disabled={isLockedPerimeter}
+          onClick={() => setActiveModal('objectives')}
+        >
+          Objetivos SMART
+        </button>
+        <button
           id="demand"
           className="header-primary-btn header-demand-btn"
           type="button"

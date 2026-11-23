@@ -2,6 +2,10 @@ import React, {useEffect, useRef, useState} from 'react';
 import {downloadFile} from '../../db/repository';
 import {batchMap} from '../../engine/cartography/minimap';
 import {evaluateBatch, goals} from '../../engine/planning/batch';
+import {
+  ensureProjectObjectives,
+  updateObjectivesComparisonWeights,
+} from '../../engine/planning/objectives';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {BatchEvaluationRow, Scene} from '../../types';
 
@@ -58,23 +62,13 @@ export const LaboratoryDialog: React.FC<LaboratoryDialogProps> = ({
     if (isOpen && !dlg.open) {
       if (!batchBusy) {
         const scene = currentScene();
-        const eg = scene.eventGoals || [];
+        const obj = ensureProjectObjectives(scene);
+        const cw = obj.profile.comparisonWeights;
         setWeights({
-          comfort: eg.length
-            ? eg.includes('comfort') || eg.includes('family')
-              ? 80
-              : 30
-            : 50,
-          queues: eg.length ? 80 : 50,
-          emergency: eg.length ? 80 : 50,
-          experience: eg.length
-            ? eg.includes('local') ||
-              eg.includes('culture') ||
-              eg.includes('music') ||
-              eg.includes('food')
-              ? 80
-              : 30
-            : 50,
+          comfort: cw.comfort,
+          queues: cw.queues,
+          emergency: cw.emergency,
+          experience: cw.experience,
         });
         setCitizenWishes(scene.citizenWishes || '');
         setReport([]);
@@ -95,6 +89,8 @@ export const LaboratoryDialog: React.FC<LaboratoryDialogProps> = ({
     }
     updateScene((sc) => {
       sc.citizenWishes = citizenWishes;
+      const baseObj = ensureProjectObjectives(sc);
+      sc.objectives = updateObjectivesComparisonWeights(baseObj, weights);
     });
     const source = structuredClone(currentScene());
     baselineRef.current = JSON.stringify(source);
@@ -316,7 +312,8 @@ export const LaboratoryDialog: React.FC<LaboratoryDialogProps> = ({
             return (
               <article key={r.id} className="batch-card">
                 <h3>
-                  {i + 1}. {r.name} · {r.score.toFixed(1)}/100
+                  {i + 1}. {r.name} · {r.score.toFixed(1)}/100{' '}
+                  {r.viable === false ? '· INVIABLE (restricción crítica)' : ''}
                 </h3>
                 <div
                   dangerouslySetInnerHTML={{
@@ -328,11 +325,29 @@ export const LaboratoryDialog: React.FC<LaboratoryDialogProps> = ({
                     ),
                   }}
                 />
+                {r.explanation && <p>{r.explanation}</p>}
                 <p>
                   {Object.entries(r.averages)
                     .map(([k, v]) => `${goals[k]} ${v.toFixed(0)}/100`)
                     .join(' · ')}
                 </p>
+                {(r.estimatedCost !== undefined || r.setupMinutes !== undefined) && (
+                  <p className="small-note">
+                    <b>Coste orientativo:</b> {r.estimatedCost?.toLocaleString('es-ES')} € ·{' '}
+                    <b>Montaje:</b> {r.setupMinutes} min ·{' '}
+                    <b>Superficie ocupada / libre:</b> {r.occupiedAreaM2} / {r.freeAreaM2} m²
+                  </p>
+                )}
+                {r.advantages && r.advantages.length > 0 && (
+                  <p style={{color: '#15803d', fontSize: '0.84rem'}}>
+                    <b>Ventajas:</b> {r.advantages.join(' · ')}
+                  </p>
+                )}
+                {r.drawbacks && r.drawbacks.length > 0 && (
+                  <p style={{color: '#b45309', fontSize: '0.84rem'}}>
+                    <b>Inconvenientes:</b> {r.drawbacks.join(' · ')}
+                  </p>
+                )}
                 <p>
                   <b>Mejor puntuación</b> {bestGoal} ·{' '}
                   <b>Principal margen de mejora</b> {worstGoal}

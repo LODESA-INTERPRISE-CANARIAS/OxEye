@@ -22,6 +22,7 @@ import {DeveloperReferenceDialog} from './components/modals/DeveloperReferenceDi
 import {InfoDialog} from './components/modals/InfoDialog';
 import {InventoryDialog} from './components/modals/InventoryDialog';
 import {LaboratoryDialog} from './components/modals/LaboratoryDialog';
+import {ObjectivesDialog} from './components/modals/ObjectivesDialog';
 import {OrganizationsDialog} from './components/modals/OrganizationsDialog';
 import {ParametersDialog} from './components/modals/ParametersDialog';
 import {ProgrammeDialog} from './components/modals/ProgrammeDialog';
@@ -1133,6 +1134,7 @@ export const App: React.FC = () => {
         <SourceBar />
       </main>
 
+      <ObjectivesDialog onSceneChanged={handleSceneChanged} />
       <DemandDialog />
       <ProgrammeDialog />
       <InventoryDialog onSceneCommitted={handleSceneChanged} />

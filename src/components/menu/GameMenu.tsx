@@ -14,13 +14,22 @@ import {
   eventSchedule,
   goalChart,
 } from '../../engine/director/director-logic';
+import {
+  createProjectObjectives,
+  OBJECTIVE_BY_ID,
+  summarizeLegacySmartGoal,
+  syncObjectivesFromAxisChange,
+} from '../../engine/planning/objectives';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   CustomLocationConfig,
+  EventAxisKey,
   PaletteId,
+  ProjectObjectives,
   WorkDayKind,
   WorkShiftDay,
 } from '../../types';
+import {ObjectivesConfigurator} from '../planning/ObjectivesConfigurator';
 import {LocationPicker} from './LocationPicker';
 
 const shiftDateByDays = (isoDate: string, delta: number): string => {
@@ -66,6 +75,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const [wizardError, setWizardError] = useState('');
   const [creatingModel, setCreatingModel] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
+  const [smartSubstep, setSmartSubstep] = useState<'cards' | 'priority'>('cards');
   const [settings, setSettings] = useState<{
     name: string;
     locationMode: 'cristo' | 'custom';
@@ -78,6 +88,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     example: boolean;
     startTutorial: boolean;
     workDays: WorkShiftDay[];
+    objectives: ProjectObjectives;
     smartGoal: {
       specific: string;
       metric: string;
@@ -86,50 +97,51 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
       relevant: string;
       deadline: string;
     };
-  }>({
-    name: 'Navidad en el Cristo',
-    locationMode: 'cristo',
-    customLocation: {
-      lat: DEFAULT_MAP_CENTER.lat,
-      lon: DEFAULT_MAP_CENTER.lon,
-      label: DEFAULT_MAP_CENTER.label,
-      sizeMeters: DEFAULT_MAP_CENTER.sizeMeters,
-    },
-    startDate: today,
-    endDate: today,
-    from: '10:00',
-    to: '14:00',
-    goals: ['family', 'local', 'comfort'],
-    example: true,
-    startTutorial: !hasSavedProject,
-    workDays: [
-      {
-        id: 'wd-pre-1',
-        name: 'Montaje previo',
-        kind: 'pre',
-        date: shiftDateByDays(today, -1),
-        from: '08:00',
-        to: '16:00',
-        hours: 8,
+  }>(() => {
+    const defaultObj = createProjectObjectives([
+      {id: 'fam_kids_activities', priority: 'essential'},
+      {id: 'com_boost_sales', priority: 'important'},
+      {id: 'acc_rest', priority: 'important'},
+    ]);
+    return {
+      name: 'Navidad en el Cristo',
+      locationMode: 'cristo',
+      customLocation: {
+        lat: DEFAULT_MAP_CENTER.lat,
+        lon: DEFAULT_MAP_CENTER.lon,
+        label: DEFAULT_MAP_CENTER.label,
+        sizeMeters: DEFAULT_MAP_CENTER.sizeMeters,
       },
-      {
-        id: 'wd-post-1',
-        name: 'Recogida y limpieza',
-        kind: 'post',
-        date: shiftDateByDays(today, 1),
-        from: '08:00',
-        to: '16:00',
-        hours: 8,
-      },
-    ],
-    smartGoal: {
-      specific: '',
-      metric: '',
-      target: '',
-      feasible: '',
-      relevant: '',
-      deadline: '',
-    },
+      startDate: today,
+      endDate: today,
+      from: '10:00',
+      to: '14:00',
+      goals: [...defaultObj.profile.activeAxes],
+      example: true,
+      startTutorial: !hasSavedProject,
+      workDays: [
+        {
+          id: 'wd-pre-1',
+          name: 'Montaje previo',
+          kind: 'pre',
+          date: shiftDateByDays(today, -1),
+          from: '08:00',
+          to: '16:00',
+          hours: 8,
+        },
+        {
+          id: 'wd-post-1',
+          name: 'Recogida y limpieza',
+          kind: 'post',
+          date: shiftDateByDays(today, 1),
+          from: '08:00',
+          to: '16:00',
+          hours: 8,
+        },
+      ],
+      objectives: defaultObj,
+      smartGoal: summarizeLegacySmartGoal(defaultObj),
+    };
   });
 
   const [prefSpeed, setPrefSpeed] = useState(preferences.speed);
@@ -159,18 +171,12 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     setWizardError('');
     try {
       if (step === 0) {
-        const sg = settings.smartGoal;
-        for (const k of [
-          'specific',
-          'metric',
-          'target',
-          'feasible',
-          'relevant',
-          'deadline',
-        ] as const) {
-          if (!sg[k]?.trim()) {
-            throw new Error('Completa los seis campos del objetivo.');
-          }
+        if (!settings.objectives.selected.length) {
+          throw new Error('Selecciona al menos un objetivo para continuar.');
+        }
+        if (smartSubstep === 'cards') {
+          setSmartSubstep('priority');
+          return;
         }
       }
       if (step === 1) {
@@ -250,16 +256,26 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   };
 
   const toggleGoal = (key: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      goals: prev.goals.includes(key)
-        ? prev.goals.filter((g) => g !== key)
-        : [...prev.goals, key],
-    }));
+    setSettings((prev) => {
+      const enabled = !prev.goals.includes(key);
+      const nextObj = syncObjectivesFromAxisChange(
+        prev.objectives,
+        key as EventAxisKey,
+        enabled
+      );
+      return {
+        ...prev,
+        objectives: nextObj,
+        goals: enabled
+          ? [...new Set([...prev.goals, key])]
+          : prev.goals.filter((g) => g !== key),
+        smartGoal: summarizeLegacySmartGoal(nextObj),
+      };
+    });
   };
 
   const titles = [
-    'Objetivo SMART',
+    '¿Qué quieres conseguir con este evento?',
     'Elige el lugar',
     'Fechas y horario',
     'El carácter del evento',
@@ -527,46 +543,30 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
       )}
 
       {screen === 'wizard' && (
-        <main className="game-card wizard">
+        <main className={`game-card wizard ${step === 0 ? 'is-smart-wide' : ''}`}>
           <span className="game-eyebrow">{step + 1} / 5 · NUEVO MODELO</span>
           <h1>{titles[step]}</h1>
           <form id="wizard-form" onSubmit={handleWizardSubmit}>
             {step === 0 && (
               <>
                 <p>
-                  Define primero qué quieres conseguir y cómo comprobarás el
-                  resultado. Es una meta de proyecto; no un resultado calculado.
+                  Selecciona tus prioridades. Ojo de Buey las utilizará para
+                  ayudarte a calcular los recursos necesarios, organizar las
+                  actividades, diseñar el recinto y comparar distintas alternativas.
                 </p>
-                {(
-                  [
-                    ['specific', 'Resultado concreto'],
-                    ['metric', 'Indicador y unidad'],
-                    ['target', 'Valor objetivo'],
-                    ['feasible', 'Recursos y viabilidad'],
-                    ['relevant', 'A quién beneficia y por qué'],
-                    ['deadline', 'Fecha límite'],
-                  ] as const
-                ).map(([k, label]) => (
-                  <label key={k}>
-                    {label}
-                    <input
-                      required
-                      id={`smart-${k}`}
-                      type={k === 'deadline' ? 'date' : 'text'}
-                      maxLength={250}
-                      value={settings.smartGoal[k]}
-                      onChange={(e) =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          smartGoal: {
-                            ...prev.smartGoal,
-                            [k]: e.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ))}
+                <ObjectivesConfigurator
+                  value={settings.objectives}
+                  substep={smartSubstep}
+                  onSubstepChange={setSmartSubstep}
+                  onChange={(nextObj) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      objectives: nextObj,
+                      goals: [...nextObj.profile.activeAxes],
+                      smartGoal: summarizeLegacySmartGoal(nextObj),
+                    }))
+                  }
+                />
               </>
             )}
 
@@ -918,8 +918,8 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
             {step === 3 && (
               <>
                 <p>
-                  Selecciona los objetivos que deberán guiar la propuesta y su
-                  evaluación.
+                  Perfil generado automáticamente desde tus objetivos SMART.
+                  Puedes ajustar un eje y se sincronizarán tus objetivos vinculados.
                 </p>
                 <div className="goal-buttons">
                   {eventGoals.map(([k, label]) => (
@@ -930,17 +930,23 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                       aria-pressed={settings.goals.includes(k)}
                       onClick={() => toggleGoal(k)}
                     >
-                      {label}
+                      {label} ({settings.objectives.profile.radar[k as EventAxisKey] || 0})
                     </button>
                   ))}
                 </div>
                 <div
                   id="wizard-radar"
                   dangerouslySetInnerHTML={{
-                    __html: goalChart(settings.goals),
+                    __html: goalChart(
+                      settings.goals,
+                      settings.objectives.profile.radar
+                    ),
                   }}
                 />
-                <p>El gráfico expresa prioridades seleccionadas.</p>
+                <p>
+                  Fuente única: ajustar estos ejes actualiza las prioridades SMART y
+                  el cálculo de servicios.
+                </p>
               </>
             )}
 
@@ -976,7 +982,13 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                       </dd>
                     </>
                   )}
-                  <dt>Objetivos</dt>
+                  <dt>Objetivos SMART</dt>
+                  <dd>
+                    {settings.objectives.selected
+                      .map((s) => `${OBJECTIVE_BY_ID[s.id]?.label || s.id} (${s.priority === 'essential' ? 'Esencial' : s.priority === 'important' ? 'Importante' : 'Deseable'})`)
+                      .join(' · ')}
+                  </dd>
+                  <dt>Ejes operativos</dt>
                   <dd>
                     {settings.goals
                       .map((k) => eventGoals.find((g) => g[0] === k)?.[1])
@@ -1020,7 +1032,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                   ? 'Preparando cartografía…'
                   : step === 4
                     ? 'Crear modelo y delimitar perímetro'
-                    : 'Siguiente'}
+                    : step === 0
+                      ? 'Continuar'
+                      : 'Siguiente'}
               </button>
             </div>
           </form>

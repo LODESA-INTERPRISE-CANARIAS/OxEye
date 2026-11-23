@@ -16,7 +16,9 @@ import {
   planProgramme,
   providers,
   type ScheduledSession,
+  scoreActivityForObjectives,
 } from '../../engine/planning/programme';
+import {ensureProjectObjectives} from '../../engine/planning/objectives';
 import {useProjectStore} from '../../store/useProjectStore';
 import type {
   ActivityNeed,
@@ -95,6 +97,7 @@ export const ProgrammeDialog: React.FC = () => {
   const [planResult, setPlanResult] = useState<{
     schedule: ScheduledSession[];
     pending: Array<{day: number; reason: string}>;
+    conflicts?: string[];
     spent: number;
     reserved: number;
     unspent: number;
@@ -412,6 +415,7 @@ export const ProgrammeDialog: React.FC = () => {
         finish: hourOf(endTime),
         area,
         items: choices,
+        objectives: ensureProjectObjectives(s),
       };
       const result = planProgramme(s, options);
       setPlanResult(result);
@@ -801,6 +805,11 @@ export const ProgrammeDialog: React.FC = () => {
                     }}
                   />
                   <span>{a.name}</span>
+                  {scoreActivityForObjectives(a, ensureProjectObjectives(s)) >= 15 && (
+                    <span className="activity-badge-custom" style={{background: '#fef3c7', color: '#92400e'}}>
+                      Recomendada por objetivos
+                    </span>
+                  )}
                   {a.custom && (
                     <span className="activity-badge-custom">Propia</span>
                   )}
@@ -1010,6 +1019,14 @@ export const ProgrammeDialog: React.FC = () => {
                       ))}
                   </section>
                 )
+              )}
+              {planResult.conflicts && planResult.conflicts.length > 0 && (
+                <div className="smart-tradeoffs-box" style={{marginBottom: '10px'}}>
+                  <b>Avisos de compatibilidad con objetivos y espacio:</b>
+                  {planResult.conflicts.map((c) => (
+                    <p key={c}>{c}</p>
+                  ))}
+                </div>
               )}
               <p>
                 Las sesiones se programan sucesivamente con 15 minutos de

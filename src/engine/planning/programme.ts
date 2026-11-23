@@ -2,7 +2,8 @@
  * @module engine/planning/programme
  * Multi-day activity programme catalog, local providers reference, and budget-constrained scheduler.
  */
-import type {ActivityNeed, Scene} from '../../types';
+import type {ActivityNeed, ProjectObjectives, Scene} from '../../types';
+import {OBJECTIVE_BY_ID} from './objectives';
 
 export interface ActivitySpec {
   id: string;
@@ -99,12 +100,78 @@ export interface ProgrammePlanOptions {
   finish: number;
   area: number;
   items: ActivitySpec[];
+  objectives?: ProjectObjectives;
 }
 
 export interface ScheduledSession extends ActivitySpec {
   day: number;
   start: number;
   end: number;
+}
+
+/**
+ * Calcula afinidad (`0..100`) de una actividad del catálogo respecto a los objetivos SMART activos.
+ */
+export function scoreActivityForObjectives(
+  act: Pick<ActivitySpec, 'category' | 'need' | 'name'>,
+  objectives?: ProjectObjectives | null
+): number {
+  if (!objectives?.selected?.length) return 0;
+  let score = 0;
+  for (const sel of objectives.selected) {
+    const def = OBJECTIVE_BY_ID[sel.id];
+    if (!def) continue;
+    const weight = sel.weight ?? (sel.priority === 'essential' ? 5 : sel.priority === 'important' ? 3 : 1);
+    if (def.relatedActivityCategories.includes(act.category)) {
+      score += 18 * (weight / 3);
+    }
+    if (
+      act.need === 'stage' &&
+      (sel.id === 'mus_concerts' || sel.id === 'mus_performances' || sel.id === 'cul_shows')
+    ) {
+      score += 12 * (weight / 3);
+    }
+    if (
+      (act.need === 'tables' || act.need === 'roof') &&
+      (sel.id === 'fam_kids_activities' || sel.id === 'cul_workshops')
+    ) {
+      score += 8 * (weight / 3);
+    }
+  }
+  return Math.min(100, Math.round(score));
+}
+
+/**
+ * Detecta incompatibilidades entre actividades programadas, recursos reales del plano
+ * y prioridades como descanso o convivencia acústica.
+ */
+export function detectProgrammeConflicts(
+  schedule: ScheduledSession[],
+  scene: Scene,
+  objectives?: ProjectObjectives | null
+): string[] {
+  const conflicts: string[] = [];
+  const obj = objectives || scene.objectives;
+  if (!schedule.length) return conflicts;
+
+  const hasMusicHeavy = schedule.some((s) => s.need === 'stage' || s.category === 'Música');
+  const wantsQuiet = obj?.selected?.some((s) =>
+    ['mus_acoustic_coexistence', 'acc_inclusive_care', 'fam_rest', 'cul_exhibitions'].includes(s.id)
+  );
+  if (hasMusicHeavy && wantsQuiet) {
+    const stage = scene.base.booths.find((b) => b.type === 'stage');
+    const rest = scene.base.booths.find((b) => b.type === 'rest');
+    if (stage && rest && Math.hypot(stage.x - rest.x, stage.y - rest.y) < 12) {
+      conflicts.push(
+        'Conflicto espacial: la actividad en escenario coincide muy cerca de una zona de descanso con objetivo de convivencia acústica.'
+      );
+    } else if (stage && (stage.sound?.spl || 0) > 80) {
+      conflicts.push(
+        `Presión sonora alta en escenario (${stage.sound?.spl} dB): revisa convivencia con zonas tranquilas o lectura.`
+      );
+    }
+  }
+  return conflicts;
 }
 
 export function planProgramme(scene: Scene, options: ProgrammePlanOptions) {
@@ -114,6 +181,10 @@ export function planProgramme(scene: Scene, options: ProgrammePlanOptions) {
   if (finish <= start) {
     throw new Error('El final debe ser posterior al inicio del programa.');
   }
+  const activeObjectives = options.objectives || scene.objectives;
+  const wantsEconomy = !!activeObjectives?.selected?.some(
+    (s) => s.id === 'eco_reduce_costs' && s.priority === 'essential'
+  );
   const spending = options.budget * (1 - options.reserve / 100);
   const pool = options.items.filter(
     (a) => a.enabled && a.cost >= 0 && Number.isFinite(a.cost)
@@ -144,13 +215,19 @@ export function planProgramme(scene: Scene, options: ProgrammePlanOptions) {
           has[a.need] &&
           !schedule.some((s) => s.day === day && s.id === a.id)
       );
-      choices.sort(
-        (a, b) =>
-          (counts.get(a.id) || 0) - (counts.get(b.id) || 0) ||
-          Number(categories.has(a.category)) -
-            Number(categories.has(b.category)) ||
-          a.cost - b.cost
-      );
+      choices.sort((a, b) => {
+        const countDiff = (counts.get(a.id) || 0) - (counts.get(b.id) || 0);
+        if (countDiff !== 0) return countDiff;
+        // Priorizar afinidad con los objetivos SMART cuando hay objetivos definidos
+        const affDiff =
+          scoreActivityForObjectives(b, activeObjectives) -
+          scoreActivityForObjectives(a, activeObjectives);
+        if (affDiff !== 0) return affDiff;
+        const catDiff =
+          Number(categories.has(a.category)) - Number(categories.has(b.category));
+        if (catDiff !== 0) return catDiff;
+        return wantsEconomy ? a.cost - b.cost : a.cost - b.cost;
+      });
       const choice = choices[0];
       if (!choice) {
         pending.push({
@@ -167,9 +244,11 @@ export function planProgramme(scene: Scene, options: ProgrammePlanOptions) {
       time += choice.minutes + 15;
     }
   }
+  const conflicts = detectProgrammeConflicts(schedule, scene, activeObjectives);
   return {
     schedule,
     pending,
+    conflicts,
     spent,
     reserved: (options.budget * options.reserve) / 100,
     unspent: options.budget - spent,

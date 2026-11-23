@@ -469,6 +469,24 @@ export const ComparisonDialog: React.FC<ComparisonDialogProps> = ({
     >
       <h2>Evaluación automática de mapas</h2>
       <div id="comparison-body">
+        {currentScene().objectives && (
+          <p className="small-note">
+            Evaluando respecto a objetivos SMART:{' '}
+            <b>
+              {currentScene()
+                .objectives!.profile.highlights.join(' · ') ||
+                currentScene().objectives!.profile.activeAxes.join(', ')}
+            </b>{' '}
+            ·{' '}
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => setActiveModal('laboratory')}
+            >
+              Comparar las 3 estrategias completas
+            </button>
+          </p>
+        )}
         {statusMsg && <p>{statusMsg}</p>}
         {!evalResult &&
           !recoveryResult &&

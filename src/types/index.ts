@@ -572,6 +572,8 @@ export interface Scene {
   inspiration?: string;
   designNotes?: string[];
   eventGoals?: string[];
+  objectives?: ProjectObjectives;
+  simulationHistory?: SimulationHistoryEntry[];
   smartGoal?: {
     specific: string;
     metric: string;
@@ -994,12 +996,193 @@ export interface BatchSettings {
   [key: string]: any;
 }
 
+/** Categorías del catálogo extensible de objetivos SMART. */
+export type ObjectiveCategoryKey =
+  | 'families'
+  | 'local_commerce'
+  | 'gastronomy'
+  | 'culture'
+  | 'music'
+  | 'accessibility'
+  | 'safety'
+  | 'logistics'
+  | 'economy'
+  | 'sustainability';
+
+/** Nivel de prioridad del objetivo para el organizador. */
+export type ObjectivePriority = 'essential' | 'important' | 'desirable';
+
+/** Dirección de mejora de los indicadores de un objetivo. */
+export type ObjectiveDirection = 'increase' | 'decrease' | 'maintain';
+
+/** Ejes clásicos de 6 vértices de «Carácter del evento». */
+export type EventAxisKey =
+  | 'family'
+  | 'local'
+  | 'food'
+  | 'culture'
+  | 'music'
+  | 'comfort';
+
+/** Opción contextual desplegada al activar una tarjeta de objetivo. */
+export interface ObjectiveContextOption {
+  key: string;
+  label: string;
+}
+
+/** Definición en catálogo de un objetivo SMART calculable. */
+export interface ObjectiveCatalogItem {
+  id: string;
+  category: ObjectiveCategoryKey;
+  subcategory: string;
+  label: string;
+  shortDesc: string;
+  desiredOutcome: string;
+  indicators: string[];
+  unit: string;
+  direction: ObjectiveDirection;
+  defaultTarget?: number;
+  targetLabel?: string;
+  contextOptions?: ObjectiveContextOption[];
+  relatedResources: string[];
+  relatedActivityCategories: string[];
+  feasibilityConditions: string[];
+  calibrationStatus: 'exploratory' | 'calibrated';
+  axisWeights: Partial<Record<EventAxisKey, number>>;
+  evalWeights: Partial<
+    Record<'comfort' | 'queues' | 'emergency' | 'experience' | 'cost' | 'logistics', number>
+  >;
+}
+
+/** Objetivo SMART concreto seleccionado por el organizador. */
+export interface SelectedObjective {
+  id: string;
+  priority: ObjectivePriority;
+  /** Peso explícito de 0 a 5 en modo avanzado (opcional; si se omite se deriva de `priority`). */
+  weight?: number;
+  /** Meta cuantitativa opcional (p. ej. 10 minutos de espera media). */
+  targetValue?: number;
+  /** Sub-opciones contextuales activadas (p. ej. `['gastronomy', 'toilets']`). */
+  contexts?: string[];
+  /** Horizonte temporal (p. ej. `'Jornada completa'` o `'Horas punta'`). */
+  horizon?: string;
+}
+
+/** Compromiso o conflicto entre objetivos seleccionados simultáneamente. */
+export interface ObjectiveTradeoff {
+  id: string;
+  title: string;
+  description: string;
+  objectiveIds: string[];
+}
+
+/** Hipótesis de demanda y comportamiento de agentes vinculadas a los objetivos. */
+export interface BehaviorHypotheses {
+  /** Origen declarativo para trazabilidad (`'suggested_from_objectives' | 'user_confirmed' | 'legacy_default'`). */
+  origin: 'suggested_from_objectives' | 'user_confirmed' | 'legacy_default';
+  /** Solo si es `true` altera la mezcla y destinos de los agentes en simulación. */
+  confirmed: boolean;
+  /** Mezcla orientativa de arquetipos (`buyer`, `foodie`, `culture`, `music`, `walker`). */
+  mix: Record<CrowdProfileKey, number>;
+  /** Multiplicadores por tipo de destino/actividad (`commerce`, `food`, `workshop`, `stage`, `rest`). */
+  destinationBoosts: Record<'commerce' | 'food' | 'workshop' | 'stage' | 'rest', number>;
+  /** Factor multiplicador sobre estancia media (`stayMinutes`). */
+  stayMultiplier: number;
+  /** Factor sobre tolerancia/paciencia en colas. */
+  queueToleranceMultiplier: number;
+  /** Bonificación de preferencia por refugio/sombra/descanso. */
+  shelterNeedBonus: number;
+  /** Nota de calibración y trazabilidad para el usuario. */
+  rationale: string[];
+}
+
+/** Perfil operativo calculado a partir de los objetivos SMART. */
+export interface OperationalProfile {
+  /** Puntuaciones normalizadas `0–100` en los 6 ejes de «Carácter del evento». */
+  radar: Record<EventAxisKey, number>;
+  /** Claves activas para compatibilidad con `scene.eventGoals`. */
+  activeAxes: EventAxisKey[];
+  /** Pesos de evaluación para comparación unificada (Lista de deseos + Calcular servicios). */
+  comparisonWeights: {
+    comfort: number;
+    queues: number;
+    emergency: number;
+    experience: number;
+    cost: number;
+    logistics: number;
+  };
+  /** Enfoque espacial dominante sugerido para `redesign`. */
+  layoutFocus:
+    | 'family'
+    | 'commerce'
+    | 'gastronomy'
+    | 'music'
+    | 'logistics'
+    | 'economy'
+    | 'balanced';
+  /** Categorías de programa recomendadas. */
+  recommendedActivityCategories: string[];
+  /** Tipos de recursos recomendados del catálogo. */
+  recommendedResources: string[];
+  /** Compromisos detectados entre objetivos en tensión. */
+  tradeoffs: ObjectiveTradeoff[];
+  /** Resumen legible de orientaciones clave. */
+  highlights: string[];
+}
+
+/** Modelo central compartido de objetivos del evento (`Scene.objectives`). */
+export interface ProjectObjectives {
+  version: number;
+  catalogVersion: number;
+  selected: SelectedObjective[];
+  profile: OperationalProfile;
+  suggestedHypotheses: BehaviorHypotheses;
+  confirmedHypotheses: BehaviorHypotheses;
+  /** Texto heredado manual SMART preservado si el proyecto venía de versiones anteriores. */
+  legacySmartGoal?: {
+    specific: string;
+    metric: string;
+    target: string;
+    feasible: string;
+    relevant: string;
+    deadline: string;
+  };
+  updatedAt: string;
+}
+
+/** Registro histórico de ejecución para marcar resultados obsoletos al cambiar objetivos. */
+export interface SimulationHistoryEntry {
+  at: string;
+  seed: number;
+  objectivesVersion: number;
+  stale: boolean;
+  served: number;
+  abandoned: number;
+  score: number;
+  summary: string;
+}
+
 /** Fila de resultado evaluado para una alternativa en el laboratorio. */
 export interface BatchEvaluationRow {
   id: number;
   name: string;
+  strategyKey?:
+    | 'baseline'
+    | 'spatial_efficiency'
+    | 'visitor_experience'
+    | 'economic_balance';
+  viable?: boolean;
+  criticalIssues?: string[];
   score: number;
   averages: Record<string, number>;
+  objectiveScores?: Record<string, number>;
+  estimatedCost?: number;
+  setupMinutes?: number;
+  freeAreaM2?: number;
+  occupiedAreaM2?: number;
+  advantages?: string[];
+  drawbacks?: string[];
+  explanation?: string;
   runs: Array<{
     weather: WeatherKind | string;
     arrivals: number;

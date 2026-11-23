@@ -64,6 +64,15 @@ export interface LayoutOptions {
   onlyMove?: boolean;
   strategy?: number;
   allowReplan?: boolean;
+  objectiveFocus?:
+    | 'spatial_efficiency'
+    | 'visitor_experience'
+    | 'economic_balance'
+    | 'family'
+    | 'commerce'
+    | 'gastronomy'
+    | 'music'
+    | 'logistics';
 }
 
 /**
@@ -932,21 +941,42 @@ export function redesign(
         const y = y0 + j + h / 2;
         const u = (x - x0) / W;
         const v = (y - y0) / H;
+        const focus = opts.objectiveFocus;
         const zone =
           type === 'food'
-            ? 0.22
+            ? focus === 'gastronomy'
+              ? 0.45
+              : 0.22
             : type === 'stage'
-              ? 0.8
-              : type === 'rest'
-                ? 0.38
-                : 0.56;
+              ? focus === 'music'
+                ? 0.52
+                : 0.85
+              : type === 'rest' || type === 'workshop'
+                ? focus === 'family'
+                  ? 0.5
+                  : 0.35
+                : focus === 'commerce'
+                  ? 0.48
+                  : 0.56;
+        const focusBonus =
+          focus === 'family' && (type === 'rest' || type === 'workshop')
+            ? 0.35 * (1 - Math.hypot(u - 0.5, v - 0.5))
+            : focus === 'gastronomy' && type === 'food'
+              ? 0.35 * (1 - Math.abs(v - 0.45))
+              : focus === 'commerce' && type === 'commerce'
+                ? 0.35 * (1 - Math.abs(u - 0.5))
+                : focus === 'music' && type === 'stage'
+                  ? 0.35 * v
+                  : focus === 'spatial_efficiency'
+                    ? 0.3 * Math.hypot(u - 0.5, v - 0.5)
+                    : 0;
         const style =
           strategy === 0
             ? Math.hypot(u - 0.5, v - 0.5)
             : strategy === 1
               ? 1 - Math.abs(v - zone)
               : 1 - Math.hypot(u - zone, v - (type === 'commerce' ? 0.28 : 0.68));
-        const score = style + rand() * 0.45;
+        const score = style + focusBonus + rand() * 0.45;
         if (!choice || score > choice.score) {
           choice = {x, y, i, j, w, h, rot, score};
         }
@@ -1026,6 +1056,7 @@ export function redesign(
     onlyMove: opts.onlyMove,
     strategy: opts.strategy,
     allowReplan: opts.allowReplan,
+    objectiveFocus: opts.objectiveFocus,
   };
 
   if (!best || best.score < 3) {
