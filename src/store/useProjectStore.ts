@@ -63,8 +63,7 @@ export type ActiveModal =
   | 'comparison'
   | 'info'
   | 'risk'
-  | 'small-example'
-  | 'developer-reference';
+  | 'small-example';
 
 export interface ProjectStoreState {
   project: ProjectFile;

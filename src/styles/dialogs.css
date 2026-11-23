@@ -1668,20 +1668,6 @@ dialog p {
   background: var(--purple-mid);
 }
 
-#developer-reference {
-  max-width: 780px;
-  width: 90%;
-  max-height: 85vh;
-  overflow: auto;
-}
-
-#developer-reference ol {
-  font-size: 12.5px;
-  line-height: 1.75;
-  color: var(--ink);
-  padding-left: 20px;
-}
-
 @media (max-width: 650px) {
   #programme-body > label {
     width: 100%;

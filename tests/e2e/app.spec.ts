@@ -66,11 +66,5 @@ test.describe('Ojo de Buey (OxEye) E2E Application Flow', () => {
     );
     await progDialog.locator('form[method="dialog"] button').click();
     await expect(progDialog).toBeHidden();
-
-    await page.locator('#developer-reference-button').click();
-    const devDialog = page.locator('#developer-reference');
-    await expect(devDialog).toBeVisible();
-    await devDialog.locator('form[method="dialog"] button').click();
-    await expect(devDialog).toBeHidden();
   });
 });

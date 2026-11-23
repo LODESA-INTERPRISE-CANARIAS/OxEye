@@ -23,7 +23,6 @@ import {
   type DemandLiveDecision,
 } from './components/modals/DemandChangeDialog';
 import {DemandDialog} from './components/modals/DemandDialog';
-import {DeveloperReferenceDialog} from './components/modals/DeveloperReferenceDialog';
 import {InfoDialog} from './components/modals/InfoDialog';
 import {InventoryDialog} from './components/modals/InventoryDialog';
 import {LaboratoryDialog} from './components/modals/LaboratoryDialog';
@@ -1897,7 +1896,6 @@ export const App: React.FC = () => {
           setTimeout(() => mapRef.current?.fit(), 20);
         }}
       />
-      <DeveloperReferenceDialog />
 
       <GameMenu
         onResume={() => {

@@ -192,14 +192,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           Ficha de producción
         </button>
-        <button
-          id="developer-reference-button"
-          className="quiet"
-          type="button"
-          onClick={() => setActiveModal('developer-reference')}
-        >
-          Guía para programadores
-        </button>
         <span
           id="save-status"
           className={`save-status${saveStatusText.includes('Sin guardar') ? ' is-unsaved' : ''}`}
