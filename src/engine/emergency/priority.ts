@@ -15,6 +15,7 @@ export const AUTHORITY_COMPAT: Record<string, AuthorityAccessUnit[]> = {
   fire: ['heavy_trucks'],
   ambulance: ['passenger_vehicles', 'heavy_trucks'],
   patrol: ['passenger_vehicles', 'light_stretchers'],
+  police_van: ['passenger_vehicles', 'heavy_trucks'],
   stretcher: ['light_stretchers'],
   foot: ['foot'],
 };
@@ -70,7 +71,7 @@ export function gateAllowsAuthority(
 ): boolean {
   const gateRole = g.phases?.event || g.role || 'both';
   const cat = resolveAccessCategory(g);
-  const isVehicle = ['fire', 'ambulance', 'patrol'].includes(mode);
+  const isVehicle = ['fire', 'ambulance', 'patrol', 'police_van'].includes(mode);
 
   if (gateRole === 'closed' || cat === 'physically_blocked') return false;
   if (isVehicle && cat === 'pedestrian_only') return false;

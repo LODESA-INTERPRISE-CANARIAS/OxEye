@@ -38,6 +38,28 @@ export type AccessCategory =
 /** Estado operativo de un acceso condicionado (vallas móviles, bolardos o puertas retirables). */
 export type ConditionalAccessState = 'closed' | 'open_on_demand' | 'open';
 
+/** Modo operativo de un vehículo de emergencias. */
+export type EmergencyOperationalMode =
+  | 'reserve'
+  | 'exterior_patrol'
+  | 'fixed_service';
+
+/** Estado de ciclo de vida de un vehículo de emergencias. */
+export type EmergencyVehicleStatus =
+  | 'parked'
+  | 'patrolling'
+  | 'dispatched'
+  | 'en_route'
+  | 'intervening'
+  | 'returning';
+
+/** Estado de la tripulación embarcada / desplegada a pie. */
+export type EmergencyCrewStatus =
+  | 'embarked'
+  | 'deploying'
+  | 'intervening'
+  | 'returning';
+
 /** Vía vectorial simplificada obtenida de OpenStreetMap para un emplazamiento personalizado. */
 export interface CustomMapStreet {
   name: string;
@@ -211,8 +233,18 @@ export interface InfrastructureItem {
   patrolRadius?: number;
   /** Si es `true` (o `patrolMode === 'fixed'`), la unidad policial mantiene posición fija vigilando su zona en vez de patrullar todo el recinto. */
   fixedPost?: boolean;
-  /** Modo de vigilancia policial: `'patrol'` (patrulla itinerante) o `'fixed'` (posición fija / vigilancia de zona). */
+  /** Modo de vigilancia policial a pie: `'patrol'` (patrulla itinerante) o `'fixed'` (posición fija / vigilancia de zona). */
   patrolMode?: 'patrol' | 'fixed';
+  /** Modo operativo de vehículos de emergencia: reserva/refuerzo (predeterminado), patrulla exterior o servicio fijo. */
+  operationalMode?: EmergencyOperationalMode;
+  /** Identificador de la base o estacionamiento asignado (ID de `EntranceItem` o vacío para usar su posición en el plano). */
+  homeBaseId?: string;
+  /** Si es `true` (por defecto), la unidad responde a solicitudes automáticas de refuerzo (independiente del modo de patrullaje). */
+  availableForReinforcement?: boolean;
+  /** Capacidad de operarios embarcados en el vehículo (p. ej. 2 en coche policial, hasta 8 en furgón policial). */
+  crewCapacity?: number;
+  /** Identificador de ruta de patrullaje exterior (`roadPlans` / `flows`) cuando `operationalMode === 'exterior_patrol'`. */
+  patrolRouteId?: string;
   phaseTags?: PhaseKey[];
   phases?: Record<string, string>;
   coverGroup?: string;

@@ -82,17 +82,34 @@ export function reconcile(
         phaseTags: ['event'],
       };
       if (c.role) {
+        const isEmergencyVeh = ['ambulance', 'patrol', 'police_van', 'fire'].includes(kind);
+        const defaultStaff =
+          kind === 'police_van'
+            ? 8
+            : kind === 'fire'
+              ? 4
+              : c.role === 'emergency'
+                ? 2
+                : 0;
         Object.assign(o, {
           role: c.role,
           capacity:
             kind === 'picnic' ? 6 : c.role === 'emergency' ? 1 : 10,
-          staff: c.role === 'emergency' ? 2 : 0,
+          staff: defaultStaff,
+          ...(isEmergencyVeh
+            ? {
+                operationalMode: 'reserve',
+                availableForReinforcement: true,
+                crewCapacity: defaultStaff,
+              }
+            : {}),
           delay:
             ({
               fire: 90,
               medical: 30,
               security: 15,
               patrol: 30,
+              police_van: 45,
               ambulance: 60,
             } as Record<string, number>)[kind] ?? 60,
           handling:
@@ -101,6 +118,7 @@ export function reconcile(
               medical: 180,
               security: 120,
               patrol: 120,
+              police_van: 150,
               ambulance: 240,
             } as Record<string, number>)[kind] ?? 240,
           active: true,

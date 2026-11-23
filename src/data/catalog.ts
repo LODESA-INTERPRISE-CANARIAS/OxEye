@@ -56,6 +56,8 @@ export const icons: Record<string, string> = {
   medical: '✚',
   ambulance: '✚',
   fire: '▣',
+  patrol: '◈',
+  police_van: '◈',
   security: '◈',
   steward: '✦',
   gate: '⇄',
@@ -210,6 +212,14 @@ export const catalog: Record<string, CatalogEntry> = {
     w: 1.9,
     h: 4.6,
     color: '#6888b5',
+  },
+  police_van: {
+    name: 'Furgón policial',
+    role: 'emergency',
+    w: 2.2,
+    h: 5.8,
+    color: '#47699a',
+    heavyLoad: true,
   },
   security: {
     name: 'Policía a pie',

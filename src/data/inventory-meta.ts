@@ -57,9 +57,19 @@ export const INVENTORY_META: Record<string, InventoryItemMeta> = {
     icon: '🚓',
     accent: '#2563eb',
     tiers: (rc) => ({
-      zero: `0: Sin patrulla fija; cada aviso espera refuerzo desde comisaría/spawn (≈ ${fmtMinSec(rc.detectionSec + rc.policeExternalSec)}).`,
-      one: '1: Atiende la primera incidencia al instante; si está ocupada, solicita refuerzo externo desde el spawn.',
-      multi: '2+: Absorben incidentes paralelos; el refuerzo externo solo actúa cuando todas las unidades se ven sobrepasadas.',
+      zero: `0: Sin patrulla policial configurada; los refuerzos graves esperan unidad externa (≈ ${fmtMinSec(rc.detectionSec + rc.policeExternalSec)}).`,
+      one: '1: Coche policial (2 agentes por defecto, modo reserva o patrulla exterior configurable).',
+      multi: '2+: Varias patrullas disponibles como refuerzo o vigilancia exterior sin circular innecesariamente por el interior.',
+    }),
+  },
+  police_van: {
+    category: 'emergency',
+    icon: '🚐',
+    accent: '#1d4ed8',
+    tiers: (rc) => ({
+      zero: `0: Sin furgón policial de apoyo; refuerzos múltiples dependen de dotación externa (≈ ${fmtMinSec(rc.detectionSec + rc.policeExternalSec)}).`,
+      one: '1: Furgón policial en reserva o servicio fijo con hasta 8 agentes configurables para despliegues a pie.',
+      multi: '2+: Alta capacidad de refuerzo policial ante incidentes graves o control de masas.',
     }),
   },
   security: {

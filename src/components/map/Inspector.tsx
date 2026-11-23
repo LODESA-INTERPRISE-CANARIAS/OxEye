@@ -35,6 +35,7 @@ import type {
   AuthorityAccessUnit,
   Booth,
   ConditionalAccessState,
+  EmergencyOperationalMode,
   Entrance,
   Infrastructure,
   PhaseKey,
@@ -44,6 +45,11 @@ import type {
   SubsoilWall,
 } from '../../types';
 import {resolveAccessCategory} from '../../engine/emergency/priority';
+import {
+  defaultCrewCapacity,
+  isEmergencyVehicleKind,
+  resolveOperationalMode,
+} from '../../engine/emergency/vehicle-dispatch';
 import {
   deleteItemsFromScene,
   duplicateItemsInScene,
@@ -1297,53 +1303,193 @@ export const Inspector: React.FC<InspectorProps> = ({
 
               {(item as Infrastructure).role === 'emergency' && (
                 <>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      id="reserve-resource"
-                      checked={!!(item as Infrastructure).reserve}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
+                  {isEmergencyVehicleKind((item as Infrastructure).kind) ? (
+                    (() => {
+                      const veh = item as Infrastructure;
+                      const vehKind = veh.kind as
+                        | 'ambulance'
+                        | 'patrol'
+                        | 'police_van'
+                        | 'fire';
+                      const opMode = resolveOperationalMode(veh);
+                      const availReinf = veh.availableForReinforcement !== false;
+                      const crewCap =
+                        veh.crewCapacity ??
+                        veh.staff ??
+                        defaultCrewCapacity(vehKind);
+                      const routes = [
+                        ...(s.roadPlans || []),
+                        ...(s.flows || []),
+                      ].filter((r) => r.id && r.points && r.points.length >= 2);
+                      const bases = (s.entrances || []).filter(
+                        (g) => (g.phases?.event || g.role || 'both') !== 'closed'
+                      );
+                      const updateVeh = (patch: Partial<Infrastructure>) => {
                         updateScene((scene) => {
                           const inf = scene.infrastructure.find(
                             (st) => st.id === item.id
                           );
-                          if (inf) {
-                            inf.reserve = checked;
-                            inf.active = !checked;
-                          }
+                          if (inf) Object.assign(inf, patch);
                         }, true);
                         onSceneChanged();
-                      }}
-                    />{' '}
-                    Recurso de reserva: llegará después de solicitar refuerzos
-                  </label>
-                  {(item as Infrastructure).kind === 'patrol' && (
+                      };
+                      return (
+                        <fieldset id="emergency-vehicle-config">
+                          <legend>Despacho y modo operativo</legend>
+                          <label>
+                            Modo operativo
+                            <select
+                              id="edit-operational-mode"
+                              disabled={isLocked}
+                              value={opMode}
+                              onChange={(e) => {
+                                const nextMode = e.target
+                                  .value as EmergencyOperationalMode;
+                                updateVeh({
+                                  operationalMode: nextMode,
+                                  fixedPost: nextMode === 'fixed_service',
+                                  patrolMode:
+                                    nextMode === 'fixed_service'
+                                      ? 'fixed'
+                                      : 'patrol',
+                                  reserve: nextMode === 'reserve',
+                                  active: true,
+                                });
+                              }}
+                            >
+                              <option value="reserve">
+                                Reserva / Refuerzo (estacionado en base hasta incidencia)
+                              </option>
+                              <option value="exterior_patrol">
+                                Patrulla exterior (vías exteriores autorizadas)
+                              </option>
+                              <option value="fixed_service">
+                                Servicio fijo (estacionado en punto asignado)
+                              </option>
+                            </select>
+                          </label>
+                          <label>
+                            Base o estacionamiento asignado
+                            <select
+                              id="edit-home-base"
+                              disabled={isLocked}
+                              value={veh.homeBaseId || ''}
+                              onChange={(e) =>
+                                updateVeh({
+                                  homeBaseId: e.target.value || undefined,
+                                })
+                              }
+                            >
+                              <option value="">
+                                Posición actual en el plano
+                              </option>
+                              {bases.map((b) => (
+                                <option key={b.id} value={b.id}>
+                                  {b.externalBase ? '🅿 ' : '🚪 '}
+                                  {b.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {opMode === 'exterior_patrol' && (
+                            <label>
+                              Ruta de patrulla exterior
+                              <select
+                                id="edit-patrol-route"
+                                disabled={isLocked}
+                                value={veh.patrolRouteId || ''}
+                                onChange={(e) =>
+                                  updateVeh({
+                                    patrolRouteId: e.target.value || undefined,
+                                  })
+                                }
+                              >
+                                <option value="">
+                                  Automática (vías exteriores próximas sin entrar al recinto)
+                                </option>
+                                {routes.map((r) => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          <label className="check">
+                            <input
+                              type="checkbox"
+                              id="edit-available-reinforcement"
+                              disabled={isLocked}
+                              checked={availReinf}
+                              onChange={(e) =>
+                                updateVeh({
+                                  availableForReinforcement: e.target.checked,
+                                })
+                              }
+                            />{' '}
+                            Disponible como refuerzo (responde a incidencias
+                            compatibles)
+                          </label>
+                          <label>
+                            Personal embarcado (tripulación)
+                            <input
+                              id="edit-crew-capacity"
+                              type="number"
+                              min="1"
+                              max={vehKind === 'police_van' ? 12 : 8}
+                              step="1"
+                              disabled={isLocked}
+                              key={`crew-${item.id}-${crewCap}`}
+                              defaultValue={crewCap}
+                              onKeyDown={commitOnEnter}
+                              onBlur={(e) => {
+                                const v = Math.max(
+                                  1,
+                                  Math.min(
+                                    16,
+                                    Math.round(Number(e.target.value) || crewCap)
+                                  )
+                                );
+                                updateVeh({crewCapacity: v, staff: v});
+                              }}
+                            />
+                          </label>
+                          <p className="small-note" id="vehicle-status-summary">
+                            Estado inicial:{' '}
+                            <b>
+                              {opMode === 'exterior_patrol'
+                                ? 'Patrullando exterior'
+                                : 'Estacionado'}
+                            </b>{' '}
+                            · Refuerzo automático:{' '}
+                            <b>{availReinf ? 'Habilitado' : 'Deshabilitado'}</b>
+                            . Los vehículos nunca entran al recinto sin una
+                            incidencia que los requiera.
+                          </p>
+                        </fieldset>
+                      );
+                    })()
+                  ) : (
                     <label className="check">
                       <input
                         type="checkbox"
-                        id="patrol-fixed-post"
-                        disabled={isLocked}
-                        checked={
-                          !!(item as Infrastructure).fixedPost ||
-                          (item as Infrastructure).patrolMode === 'fixed'
-                        }
+                        id="reserve-resource"
+                        checked={!!(item as Infrastructure).reserve}
                         onChange={(e) => {
-                          const isFixed = e.target.checked;
+                          const checked = e.target.checked;
                           updateScene((scene) => {
                             const inf = scene.infrastructure.find(
                               (st) => st.id === item.id
                             );
                             if (inf) {
-                              inf.fixedPost = isFixed;
-                              inf.patrolMode = isFixed ? 'fixed' : 'patrol';
-                              inf.patrolRadius ??= 22;
+                              inf.reserve = checked;
+                              inf.active = !checked;
                             }
                           }, true);
                           onSceneChanged();
                         }}
                       />{' '}
-                      Posición fija: vigilar zona asignada (acceso, vallas o área tensa)
+                      Recurso de reserva: llegará después de solicitar refuerzos
                     </label>
                   )}
                   <div className="two">

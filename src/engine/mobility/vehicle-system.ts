@@ -871,10 +871,14 @@ export class VehicleManager {
   /**
    * Genera un vehículo concreto desde un spawn/base válido y valida su ruta completa
    * antes de iniciar el recorrido.
+   * Los vehículos de emergencia nunca se generan como tráfico aleatorio sin incidencia.
    */
   spawnFrom(spawn: EntranceItem, forcedKind?: VehicleKind): SimVehicle | null {
     const e = this.e;
     const cat = spawn.vehicleCategory || 'all';
+    if (!forcedKind && cat === 'emergency') {
+      return null;
+    }
     const kind: VehicleKind =
       forcedKind ||
       (cat !== 'all'
@@ -1058,15 +1062,11 @@ export class VehicleManager {
 
   update(dt: number): void {
     const e = this.e;
-    const spawns = this.vehicleSpawns();
 
-    // Generación periódica de vehículos desde spawns vehiculares / bases exteriores
-    const activeCount = this.vehicles.filter((v) => v.state !== 'departed').length;
-    if (spawns.length && e.time >= this.nextSpawnAt && activeCount < Math.min(8, spawns.length * 2)) {
-      const chosen = spawns[Math.floor(e.random() * spawns.length)];
-      this.spawnFrom(chosen);
-      this.nextSpawnAt = e.time + 22 + e.random() * 25;
-    }
+    // Durante la fase de Evento en vivo no se genera tráfico ambiental aleatorio
+    // (ni camiones logísticos ni vehículos ordinarios ni emergencias sin misión).
+    // Los accesos vehiculares actúan como corredores de entrada para vehículos
+    // despachados explícitamente (emergencias o maniobras solicitadas vía `spawnFrom`).
 
     for (const v of this.vehicles) {
       if (v.state === 'departed' || v.state === 'blocked') continue;

@@ -72,6 +72,10 @@ import {FireModel} from './fire-model';
 import {IncidentCrowd} from './incident-crowd';
 import {vehiclePath} from './motion';
 import {inVehicle, poseAt} from './priority';
+import {
+  EmergencyVehicleFleet,
+  isEmergencyVehicleKind,
+} from './vehicle-dispatch';
 import {Watch} from './watch';
 
 export const AUTO_INCIDENTS: Array<[string, number]> = [
@@ -108,7 +112,9 @@ export function serviceLoad(emergency: any): ServiceLoadRow[] {
   );
   return ['medical', 'security', 'fire', 'ambulance', 'patrol'].map((kind) => {
     const resources = (emergency.resources() as Infrastructure[]).filter(
-      (r) => r.kind === kind && r.active !== false
+      (r) =>
+        (r.kind === kind || (kind === 'patrol' && r.kind === 'police_van')) &&
+        r.active !== false
     );
     const staffPer =
       kind === 'medical'
@@ -162,7 +168,14 @@ export function serviceLoad(emergency: any): ServiceLoadRow[] {
  * Profiles for emergency response vehicles and teams.
  */
 export const RESPONSE_PROFILES: Record<string, ResponseProfile> = {
-  patrol: {name: 'Coche policial', width: 1.9, length: 4.6, speed: 1.8, staff: 1},
+  patrol: {name: 'Coche policial', width: 1.9, length: 4.6, speed: 1.8, staff: 2},
+  police_van: {
+    name: 'Furgón policial',
+    width: 2.2,
+    length: 5.8,
+    speed: 1.5,
+    staff: 4,
+  },
   firstaid: {
     name: 'Atención en el lugar',
     width: 0.9,
@@ -428,6 +441,7 @@ export class ResponseSimulation extends EmergencyLab {
   declare watch: Watch;
   social: IncidentCrowd;
   evacuation: Evacuation;
+  fleet: EmergencyVehicleFleet;
   nextAuto: number;
   autoSkipped: number;
   incoming: Map<string, number>;
@@ -443,6 +457,7 @@ export class ResponseSimulation extends EmergencyLab {
     this.watch = new Watch(e);
     this.social = new IncidentCrowd(e);
     this.evacuation = new Evacuation(e);
+    this.fleet = new EmergencyVehicleFleet(e);
     this.nextAuto = 120;
     this.autoSkipped = 0;
     this.incoming = new Map();
@@ -505,7 +520,70 @@ export class ResponseSimulation extends EmergencyLab {
 
   assignResource(row: EmergencyIncident): void {
     const e = this.e;
-    const p = RESPONSE_PROFILES[row.responseMode || 'firstaid'];
+    const requestedMode = row.responseMode || 'firstaid';
+
+    // 1. Si es una incidencia leve/moderada atendible a pie, priorizar personal en recinto
+    // y evitar movilizar vehículos innecesariamente cuando existe dotación a pie libre.
+    const isFootMedicalIncident =
+      ['minor', 'fall', 'cut'].includes(row.type) &&
+      row.severity === 'leve' &&
+      requestedMode !== 'ambulance';
+    const isFootSecurityIncident =
+      ['orientation', 'obstacle', 'fence_breach'].includes(row.type) &&
+      row.severity !== 'grave';
+
+    const hasFreeFoot = (footKind: 'medical' | 'security'): boolean => {
+      const prof = RESPONSE_PROFILES[footKind === 'medical' ? 'firstaid' : 'security'];
+      return this.resources().some(
+        (r) =>
+          r.active !== false &&
+          r.kind === footKind &&
+          (r.staff || 0) >= prof.staff &&
+          this.events.filter(
+            (q) =>
+              q !== row &&
+              q.resourceId === r.id &&
+              ['assigned', 'assisting', 'waiting_transport'].includes(q.status)
+          ).length <
+            Math.min(
+              Math.max(0, r.capacity || 0),
+              Math.floor((r.staff || 0) / prof.staff)
+            )
+      );
+    };
+
+    if (isFootMedicalIncident && hasFreeFoot('medical')) {
+      row.responseMode = 'firstaid';
+    } else if (isFootSecurityIncident && hasFreeFoot('security')) {
+      row.responseMode = 'security';
+    }
+
+    const activeMode = row.responseMode || 'firstaid';
+
+    // 2. Despacho inteligente por flota de vehículos (reserva / patrulla exterior / servicio fijo)
+    // cuando el incidente requiere vehículo (ambulancia, bomberos, patrulla/furgón) o refuerzo vehicular
+    // porque el personal a pie en recinto está saturado o no existe.
+    const needsVehicleDispatch =
+      isEmergencyVehicleKind(activeMode) ||
+      (activeMode === 'firstaid' && !hasFreeFoot('medical') && row.severity !== 'leve') ||
+      (activeMode === 'security' && !hasFreeFoot('security') && (row.type === 'conflict' || row.severity === 'grave'));
+
+    if (needsVehicleDispatch && this.fleet) {
+      const fleetMode = isEmergencyVehicleKind(activeMode)
+        ? activeMode
+        : activeMode === 'firstaid'
+          ? 'ambulance'
+          : 'patrol';
+      const mission = this.fleet.dispatchForIncident(row, fleetMode, {
+        needsEvacuation: fleetMode === 'ambulance' && row.severity !== 'leve',
+        preferHighCrew: row.type === 'conflict' && row.severity === 'grave',
+      });
+      if (mission) {
+        return;
+      }
+    }
+
+    const p = RESPONSE_PROFILES[row.responseMode || 'firstaid'] || RESPONSE_PROFILES.firstaid;
     const kind =
       row.responseMode === 'ambulance'
         ? 'ambulance'
@@ -515,7 +593,9 @@ export class ResponseSimulation extends EmergencyLab {
             ? 'security'
             : row.responseMode === 'patrol'
               ? 'patrol'
-              : 'medical';
+              : row.responseMode === 'police_van'
+                ? 'police_van'
+                : 'medical';
     const candidates = this.resources().filter(
       (r) =>
         r.active !== false &&
@@ -1180,8 +1260,10 @@ export class ResponseSimulation extends EmergencyLab {
     this.fire.update(dt, this.events);
     this.social.update();
     this.watch.update(dt, this.events);
+    this.fleet?.update(dt, this.events);
 
     for (const row of this.events) {
+      if (row.fleetMission) continue;
       if (
         row.type === 'fire' &&
         row.reportedAt != null &&
@@ -1286,17 +1368,11 @@ export function responseSVG(engine: any): string {
   const fireSvg = engine.emergency.fire?.svg() || '';
   const evacSvg = engine.emergency.evacuation?.svg() || '';
   const watchSvg = engine.emergency.watch?.svg(engine.emergency.events) || '';
+  const fleetSvg = engine.emergency.fleet?.svg() || '';
   const eventsSvg = (engine.emergency.events as EmergencyIncident[])
     .filter((row) => row.status !== 'resolved' && row.status !== 'unreported')
     .map((row) => {
       const [x, y] = row.point!;
-      const p = row.vehiclePose;
-      const walking =
-        row.footDeployment ||
-        ['firstaid', 'security'].includes(row.responseMode || '');
-      const stretcher = row.responseMode === 'stretcher';
-      const vLen = row.vehicleLength || 2;
-      const vWid = row.vehicleWidth || 2;
       let html = `<circle cx="${x}" cy="${y}" r="2.4" fill="${
         row.status === 'resolved' ? '#93b784' : '#d87956'
       }" fill-opacity=".45" stroke="#c16d48" stroke-width=".3"/><text x="${x}" y="${
@@ -1304,6 +1380,16 @@ export function responseSVG(engine: any): string {
       }" text-anchor="middle" font-size="2.2">${
         row.status === 'resolved' ? '✓' : '!'
       }</text>`;
+      if (row.fleetMission) {
+        return html;
+      }
+      const p = row.vehiclePose;
+      const walking =
+        row.footDeployment ||
+        ['firstaid', 'security'].includes(row.responseMode || '');
+      const stretcher = row.responseMode === 'stretcher';
+      const vLen = row.vehicleLength || 2;
+      const vWid = row.vehicleWidth || 2;
       if (row.path && row.status !== 'resolved') {
         html += `<polyline points="${row.path
           .map((pt) => pt.join(','))
@@ -1362,5 +1448,5 @@ export function responseSVG(engine: any): string {
       return html;
     })
     .join('');
-  return fireSvg + evacSvg + watchSvg + eventsSvg;
+  return fireSvg + evacSvg + watchSvg + fleetSvg + eventsSvg;
 }
