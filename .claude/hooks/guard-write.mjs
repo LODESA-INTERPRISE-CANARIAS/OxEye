@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // PreToolUse guard for Edit, Write, MultiEdit and NotebookEdit.
 // Spec: doc/specs/2026-11-25-claude-code-security-setup.md, section 5.5.
+// v4: the write policy lives in lib/common.mjs (repoWriteProblem) and is shared with guard-bash.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,12 +15,7 @@ import {
   checkRelComponents,
   isProtectedRel,
   outsideAllowed,
-  currentBranch,
-  loadState,
-  approvedPlansForBranch,
-  matchEntry,
-  BRANCH_RE,
-  PLAN_FILE_RE,
+  repoWriteProblem,
 } from './lib/common.mjs';
 
 const TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -48,7 +44,7 @@ runHook('write', (input) => {
     deny(`writing outside the repository is limited to the Claude scratchpad and project memory: ${abs}`);
   }
 
-  // 2. Protected paths (no approval can override this).
+  // 2. Component checks and hard links.
   checkRelComponents(rel);
   if (isProtectedRel(rel)) {
     deny(`protected path: ${rel || '<repository root>'}. Protected configuration is installed manually by the user`);
@@ -59,26 +55,8 @@ runHook('write', (input) => {
     if (e && e.code !== 'ENOENT') throw e;
   }
 
-  // 3. Plan files: writable on any branch unless the plan is approved (frozen).
-  const pm = PLAN_FILE_RE.exec(rel);
-  if (pm) {
-    const { state } = loadState(root);
-    if (Object.prototype.hasOwnProperty.call(state.approvals, pm[1])) {
-      deny(`plan "${pm[1]}" has an active approval and is frozen. The user must send REVOKE IMPLEMENTATION ${pm[1]} before it can be revised`);
-    }
-    return;
-  }
-
-  // 4. Branch.
-  const branch = currentBranch(root);
-  if (!branch || branch === 'main' || branch === 'master' || !BRANCH_RE.test(branch)) {
-    deny(`writes outside doc/specs/ require an approved feat|fix|chore/<slug> branch (current: ${branch ?? 'detached or unknown'})`);
-  }
-
-  // 5-6. Approval and allowed paths.
-  const { plans, notes } = approvedPlansForBranch(root, branch);
-  const why = notes.length ? ` (${notes.join('; ')})` : '';
-  if (!plans.length) deny(`no valid approval for branch ${branch}${why}`);
-  if (plans.some((p) => p.entries.some((e) => matchEntry(rel, e)))) return;
-  deny(`${rel} is not listed under "## Allowed paths" of the approved plan(s): ${plans.map((p) => p.slug).join(', ')}${why}`);
+  // 3. Shared write policy: plan files (frozen once approved), execution logs,
+  //    generated output, and code within the approved scope plus logged extensions.
+  const problem = repoWriteProblem(root, rel);
+  if (problem) deny(problem);
 });

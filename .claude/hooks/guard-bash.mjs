@@ -4,7 +4,11 @@
 // This is defence in depth, not a sandbox. Commands are checked against a
 // command-name allowlist; Git subcommands against a subcommand allowlist.
 // Anything the tokenizer cannot interpret statically is blocked.
+// v4: writes inside the repository (cp, mv, rm, touch, tee, mkdir, redirections,
+// prettier --write, eslint --fix) follow the same policy as guard-write
+// (lib/common.mjs repoWriteProblem). Approved dependencies may be installed.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {
@@ -18,6 +22,10 @@ import {
   currentBranch,
   key,
   BRANCH_RE,
+  repoWriteProblem,
+  approvedPlansForBranch,
+  loadState,
+  parseDepSpec,
 } from './lib/common.mjs';
 import { parse, ParseError, ASSIGN_RE, cmdName } from './lib/shell.mjs';
 
@@ -123,18 +131,23 @@ function checkSegment(seg, ctx) {
     return;
   }
   if (name === 'git') return checkGit(args, ctx);
-  if (name === 'npm') return checkNpm(args);
-  if (name === 'npx') return checkNpx(args);
+  if (name === 'npm') return checkNpm(args, ctx);
+  if (name === 'npx') return checkNpx(args, ctx);
   if (name === 'node') return checkNode(args, ctx);
 
   if (READ_ONLY.has(name)) return checkReadOnly(name, args);
 
   // Write-capable commands.
   if (ctx.cwdProtected) deny('the working directory is inside a protected path');
-  for (const a of args) {
-    if (a.text.startsWith('-') && a.text !== '-') continue;
-    checkWriteTarget(a, ctx, name);
+  const t = args.map((a) => a.text);
+  if (name === 'cp' && t.some((x) => x === '-t' || x.startsWith('--target-directory'))) deny('cp -t is not allowed; put the destination last');
+  const targets = args.filter((a) => !(a.text.startsWith('-') && a.text !== '-'));
+  // cp only writes its destination; the sources are read.
+  const writes = name === 'cp' ? targets.slice(-1) : targets;
+  for (const a of name === 'cp' ? targets.slice(0, -1) : []) {
+    if (a.glob) deny('wildcards in arguments of cp are not allowed');
   }
+  for (const a of writes) checkWriteTarget(a, ctx, name, { dir: name === 'mkdir' || name === 'rmdir' });
 }
 
 function checkReadOnly(name, args) {
@@ -160,7 +173,7 @@ function resolveArg(a, ctx) {
   return canonical(path.resolve(ctx.cwd, t));
 }
 
-function checkWriteTarget(a, ctx, what) {
+function checkWriteTarget(a, ctx, what, { dir = false } = {}) {
   if (a.glob) deny(`wildcards in arguments of ${what} are not allowed`);
   if (a.tilde && !(a.text === '~' || a.text.startsWith('~/'))) deny(`unsupported tilde form: ${a.text}`);
   if (a.text === '/dev/null') return;
@@ -171,6 +184,14 @@ function checkWriteTarget(a, ctx, what) {
     deny(`${what}: path outside the repository and scratchpad: ${a.text}`);
   }
   if (isProtectedRel(rel)) deny(`${what}: protected path: ${rel || '<repository root>'}`);
+  let isDir = dir;
+  try {
+    isDir = isDir || fs.statSync(abs).isDirectory();
+  } catch {
+    /* missing target: treated as a file */
+  }
+  const problem = repoWriteProblem(ctx.root, rel, { dir: isDir });
+  if (problem) deny(`${what}: ${problem}`);
 }
 
 function checkRedirect(r, ctx) {
@@ -323,8 +344,9 @@ function gitConfig(t, refuse) {
 
 // ---------------------------------------------------------------- npm / npx / node
 
-function checkNpm(args) {
+function checkNpm(args, ctx) {
   const t = args.map((a) => a.text);
+  if (['install', 'i', 'add'].includes(t[0]) && t.length > 1) return checkNpmInstall(t.slice(1), ctx);
   const SCRIPTS = ['lint', 'test', 'build', 'test:e2e'];
   if (t[0] === 'run' || t[0] === 'run-script') {
     if (!SCRIPTS.includes(t[1])) deny(`npm run ${t[1] ?? ''} is not allowed (allowed: ${SCRIPTS.join(', ')})`);
@@ -335,19 +357,44 @@ function checkNpm(args) {
   if (t[0] === 'ci' && t.length === 1) return;
   if ((t[0] === 'ls' || t[0] === 'list') && t.slice(1).every((x) => /^(--depth=\d+|--all|--json|[@a-z0-9._/-]+)$/.test(x))) return;
   if (t.length === 1 && (t[0] === '--version' || t[0] === '-v')) return;
-  deny(`npm ${t[0] ?? ''} is not allowed from Claude Code (publication, installs and arbitrary scripts are reserved to the user)`);
+  deny(`npm ${t[0] ?? ''} is not allowed from Claude Code (publication, unapproved installs and arbitrary scripts are reserved to the user)`);
 }
 
-function checkNpx(args) {
+/** npm install of dependencies the user approved with APPROVE DEPENDENCY, on an approved task branch. */
+function checkNpmInstall(t, ctx) {
+  const FLAGS = new Set(['-D', '--save-dev', '-E', '--save-exact', '--ignore-scripts', '--no-audit', '--no-fund']);
+  const specs = [];
+  for (const x of t) {
+    if (FLAGS.has(x)) continue;
+    if (x.startsWith('-')) deny(`npm install option ${x} is not allowed`);
+    specs.push(x);
+  }
+  const branch = currentBranch(ctx.root);
+  if (!branch || !BRANCH_RE.test(branch)) deny(`dependencies can only be installed on an approved feat|fix|chore/<slug> branch (current: ${branch ?? 'detached or unknown'})`);
+  const { plans } = approvedPlansForBranch(ctx.root, branch);
+  if (!plans.length) deny(`no valid approval for branch ${branch}; dependencies are installed as part of an approved plan`);
+  const { state } = loadState(ctx.root);
+  for (const spec of specs) {
+    const dep = parseDepSpec(spec);
+    if (!dep) deny(`"${spec}" is not a plain npm package name (registry packages only; no URLs, paths, tags or aliases)`);
+    const ok = state.dependencies[dep.name];
+    if (!ok) deny(`dependency "${dep.name}" is not approved. Ask the user to review it and reply APPROVE DEPENDENCY ${dep.name}`);
+    if (ok.version && dep.version !== ok.version) deny(`dependency "${dep.name}" was approved for version ${ok.version}; install exactly ${dep.name}@${ok.version}`);
+  }
+}
+
+function checkNpx(args, ctx) {
   const t = args.map((a) => a.text);
   const [pkg, ...r] = t;
+  const rArgs = args.slice(1);
   if (!pkg || pkg.startsWith('-')) deny('npx options are not allowed');
   const has = (...xs) => r.some((x) => xs.includes(x) || xs.some((o) => o.startsWith('--') && x.startsWith(o + '=')));
   switch (pkg) {
     case 'eslint':
-      if (r.some((x) => x.startsWith('--fix')) || has('-c', '--config', '--rulesdir', '--plugin', '--resolve-plugins-relative-to', '-o', '--output-file', '--init', '--inspect-config')) {
-        deny('this eslint option is not allowed (no fixes, custom configs, plugins or output files)');
+      if (has('-c', '--config', '--rulesdir', '--plugin', '--resolve-plugins-relative-to', '-o', '--output-file', '--init', '--inspect-config', '--fix-dry-run')) {
+        deny('this eslint option is not allowed (no custom configs, plugins or output files)');
       }
+      if (r.some((x) => x === '--fix' || x.startsWith('--fix-type'))) return checkFormatTargets(rArgs, ctx, 'eslint --fix', ['--fix-type']);
       return;
     case 'tsc':
       if (has('-w', '--watch', '--init')) deny('tsc watch/init is not allowed');
@@ -361,10 +408,12 @@ function checkNpx(args) {
       if (has('--ui', '-u', '--update-snapshots')) deny('this playwright option is not allowed');
       return;
     case 'prettier':
-      if (!has('--check', '-c') || has('--write', '-w')) deny('only "npx prettier --check" is allowed');
+      if (has('--config', '--plugin', '--ignore-path', '--stdin-filepath', '--cache-location')) deny('this prettier option is not allowed');
+      if (has('--write', '-w')) return checkFormatTargets(rArgs, ctx, 'prettier --write', ['--log-level']);
+      if (!has('--check', '-c', '--list-different', '-l')) deny('use "npx prettier --check <paths>" or "npx prettier --write <files>"');
       return;
     default:
-      deny(`npx ${pkg} is not allowed (allowed: eslint, tsc, vitest run, playwright test, prettier --check)`);
+      deny(`npx ${pkg} is not allowed (allowed: eslint, tsc, vitest run, playwright test, prettier)`);
   }
 }
 
@@ -377,10 +426,41 @@ function checkNode(args, ctx) {
   for (const a of args.slice(1)) {
     if (/^--test-(reporter|name-pattern|concurrency)=[\w.-]+$/.test(a.text)) continue;
     if (a.text.startsWith('-')) deny(`node option ${a.text} is not allowed`);
-    if (a.glob) deny('wildcards are not allowed in node --test paths');
+    if (a.glob && !/^\.claude\/hooks\/test\/[A-Za-z0-9_.*-]+$/.test(a.text)) deny('wildcards in node --test paths are allowed only as .claude/hooks/test/*.test.mjs');
     const k = key(resolveArg(a, ctx));
     if (k !== testDir && !k.startsWith(testDir + '/')) deny('node --test may only run files under .claude/hooks/test');
     paths++;
   }
   if (!paths) deny('node --test requires an explicit path under .claude/hooks/test');
+}
+
+/**
+ * Formatters that rewrite files: every target must be an explicit existing file
+ * (no directories or wildcards) that the write policy allows.
+ */
+function checkFormatTargets(args, ctx, what, valueOpts) {
+  if (ctx.cwdProtected) deny('the working directory is inside a protected path');
+  let files = 0;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.text.startsWith('-')) {
+      if (valueOpts.includes(a.text)) i++;
+      continue;
+    }
+    if (a.glob) deny(`${what}: list explicit files, not wildcards`);
+    const abs = resolveArg(a, ctx);
+    let st;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      deny(`${what}: file not found: ${a.text}`);
+    }
+    if (!st.isFile()) deny(`${what}: list explicit files, not directories: ${a.text}`);
+    const rel = relativeInRepo(abs, ctx.root);
+    if (rel === null) deny(`${what}: file outside the repository: ${a.text}`);
+    const problem = repoWriteProblem(ctx.root, rel);
+    if (problem) deny(`${what}: ${problem}`);
+    files++;
+  }
+  if (!files) deny(`${what} requires explicit file paths`);
 }

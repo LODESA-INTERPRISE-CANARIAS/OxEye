@@ -15,16 +15,28 @@ function run(role, command) {
 
 const CASES = {
   implementer: {
-    allow: ['git status', 'git diff --stat', 'git log --oneline -5', 'git branch --show-current', 'npx eslint src/components/map/Inspector.tsx', 'npx eslint --max-warnings 0 src/a.ts', 'npx tsc --noEmit -p tsconfig.json', 'npx vitest run tests/unit/fences.test.ts'],
-    deny: ['npx eslint --fix src', 'npx eslint -c evil.js src', 'npx tsc -b', 'npx vitest', 'npm run test', 'npx playwright test', 'git commit -m x', 'git -c x=y status', 'git diff --output=x', 'git status && ls', 'ls', 'cat x', 'git status > x', 'X=1 git status', 'npx vitest run tests/unit/*.ts', 'npx vitest run ../outside'],
+    allow: [
+      'git status', 'git diff --stat', 'git log --oneline -5', 'git branch --show-current', 'git grep -n foo',
+      'npx eslint src/components/map/Inspector.tsx', 'npx eslint --max-warnings 0 src/a.ts', 'npx tsc --noEmit -p tsconfig.json',
+      'npx vitest run tests/unit/fences.test.ts', 'npx vitest run tests/unit/*.test.ts', 'npm run test', 'npm run build',
+      'npx playwright test tests/e2e/visual-palettes.spec.ts -g workspace', 'git status && ls', 'ls', 'cat x',
+      'grep -rn foo src | head -5', 'npx tsc --noEmit -p tsconfig.json 2>&1 | tail -20', 'npm run lint > /dev/null; echo done',
+      'npx prettier --check src',
+    ],
+    deny: [
+      'npx eslint --fix src', 'npx eslint -c evil.js src', 'npx tsc -b', 'npx vitest', 'git commit -m x', 'git -c x=y status',
+      'git diff --output=x', 'git status > x', 'X=1 git status', 'npx vitest run ../outside', 'npm install left-pad',
+      'npx playwright install', 'npm run dev', 'npm run format', 'git push', 'git add src/a.ts', 'npx vitest run &',
+      'ls && npm install x', 'npx prettier --write src', 'npx prettier --write src/missing.ts', 'echo x >> src/a.ts', 'node x.js',
+    ],
   },
   reviewer: {
-    allow: ['git diff main...HEAD', 'git show HEAD', 'git merge-base main HEAD', 'npx vitest run'],
-    deny: ['npm run lint', 'git push', 'git branch -a', 'npx playwright test'],
+    allow: ['git diff main...HEAD', 'git show HEAD', 'git merge-base main HEAD', 'npx vitest run', 'npm run lint', 'npx playwright test', 'npm run build'],
+    deny: ['git push', 'git branch -a', 'npx prettier --write src/a.ts', 'npx eslint --fix src/a.ts'],
   },
   qa: {
-    allow: ['npm run test', 'npm run lint', 'npm run test:e2e', 'npm run test -- tests/unit/engine.test.ts', 'npx playwright test tests/e2e/app.spec.ts --project chromium', 'npx vitest run tests/unit/demand-sync.test.ts'],
-    deny: ['npm run build', 'npm install', 'npx playwright install', 'npx playwright test --ui', 'npm run test -- --watch'],
+    allow: ['npm run test', 'npm run lint', 'npm run test:e2e', 'npm run build', 'npm run test -- tests/unit/engine.test.ts', 'npx playwright test tests/e2e/app.spec.ts --project chromium', 'npx vitest run tests/unit/demand-sync.test.ts'],
+    deny: ['npm install', 'npx playwright install', 'npx playwright test --ui', 'npm run test -- --watch'],
   },
 };
 

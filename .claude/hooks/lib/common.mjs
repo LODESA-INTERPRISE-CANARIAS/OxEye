@@ -12,6 +12,19 @@ export const IS_WIN = process.platform === 'win32';
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const BRANCH_RE = /^(feat|fix|chore)\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const PLAN_FILE_RE = /^doc\/specs\/\d{4}-\d{2}-\d{2}-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
+// Execution log that accompanies an approved plan: doc/specs/<date>-<slug>.log.md
+export const LOG_FILE_RE = /^doc\/specs\/\d{4}-\d{2}-\d{2}-([a-z0-9]+(?:-[a-z0-9]+)*)\.log\.md$/;
+// npm package name (optionally scoped) and an optional version or range after "@".
+export const NPM_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+export const NPM_VERSION_RE = /^[~^]?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?$/;
+
+// Git-ignored build and test output: writable without an approval.
+const GENERATED_TOP = new Set(['dist', 'playwright-report', 'test-results', 'coverage']);
+// Top-level areas where the AI Lead may extend an approved scope through the execution log.
+// Root files (package.json, lockfiles, build and tool configuration, index.html) are excluded:
+// changing them needs an amended and re-approved plan.
+const EXTENDABLE_TOP = new Set(['src', 'tests', 'doc', 'public']);
+const MAX_EXTENSIONS = 40;
 
 // Path components that are protected wherever they appear in the repository.
 const PROTECTED_ANYWHERE = new Set([
@@ -292,7 +305,7 @@ export function statePath(root) {
 }
 
 export function emptyState() {
-  return { version: 1, approvals: {}, log: [] };
+  return { version: 1, approvals: {}, dependencies: {}, log: [] };
 }
 
 export function loadState(root) {
@@ -309,6 +322,7 @@ export function loadState(root) {
       throw new Error('unexpected structure');
     }
     if (!Array.isArray(s.log)) s.log = [];
+    if (!s.dependencies || typeof s.dependencies !== 'object' || Array.isArray(s.dependencies)) s.dependencies = {};
     return { state: s };
   } catch (e) {
     return { state: emptyState(), error: `malformed approval state (${e.message}); treated as empty` };
@@ -357,7 +371,137 @@ export function approvedPlansForBranch(root, branch) {
       continue;
     }
     const entries = plan.entries.filter((e) => entryProblem(e) === null);
-    plans.push({ slug, entries });
+    const ext = readExtensions(root, a.planPath);
+    for (const p of ext.problems) notes.push(`execution log ${slug}: ${p}`);
+    plans.push({ slug, entries: [...entries, ...ext.entries], planEntries: entries, extensions: ext.entries });
   }
   return { plans, notes };
+}
+
+// ---------------------------------------------------------------- execution log
+
+export function logPathFor(planPath) {
+  return planPath.replace(/\.md$/, '.log.md');
+}
+
+/** Returns null if a scope-extension entry is acceptable, or a reason string. */
+export function extensionProblem(entry) {
+  const p = entryProblem(entry);
+  if (p) return p;
+  const base = entry.endsWith('/**') ? entry.slice(0, -3) : entry;
+  const comps = base.split('/');
+  if (!EXTENDABLE_TOP.has(comps[0])) return `"${entry}" is outside src/, tests/, doc/ and public/; root files and configuration need an amended plan`;
+  if (comps.length < 2) return `"${entry}" is too broad; name a module or file`;
+  if (comps[0] === 'doc' && comps[1] === 'specs') return `"${entry}": doc/specs is managed by the plan workflow`;
+  return null;
+}
+
+/**
+ * Parses "## Scope extensions" in an execution log. Entries look like
+ *   - `src/engine/emergency/**`: reason
+ * Invalid lines are ignored and reported; they never widen the scope.
+ */
+export function parseLog(text) {
+  const lines = text.split(/\r?\n/);
+  const entries = [];
+  const problems = [];
+  let inSection = false;
+  let inFence = false;
+  for (const l of lines) {
+    if (/^\s*(```|~~~)/.test(l)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (/^## /.test(l)) {
+      inSection = l.trim() === '## Scope extensions';
+      continue;
+    }
+    if (!inSection || !l.trim()) continue;
+    const m = /^- `([^`]+)`\s*(?::|-|\u2014)\s*(\S.*)$/.exec(l);
+    if (!m) {
+      problems.push(`ignored line "${l.trim()}" (expected: - \`path\`: reason)`);
+      continue;
+    }
+    const why = extensionProblem(m[1]);
+    if (why) {
+      problems.push(`ignored extension: ${why}`);
+      continue;
+    }
+    if (entries.length >= MAX_EXTENSIONS) {
+      problems.push(`more than ${MAX_EXTENSIONS} extensions; the rest are ignored (amend the plan instead)`);
+      break;
+    }
+    entries.push(m[1]);
+  }
+  return { entries, problems };
+}
+
+function readExtensions(root, planPath) {
+  let text;
+  try {
+    text = fs.readFileSync(path.join(root, logPathFor(planPath)), 'utf8');
+  } catch {
+    return { entries: [], problems: [] };
+  }
+  return parseLog(text);
+}
+
+// ---------------------------------------------------------------- write policy
+
+/** True if `rel` (file or directory) lies inside the scope described by `entries`. */
+export function inScope(rel, entries, { dir = false } = {}) {
+  return entries.some((e) => matchEntry(rel, e) || (dir && e.endsWith('/**') && matchEntry(rel + '/', e)));
+}
+
+/**
+ * Shared write policy for Edit/Write and for shell commands that write inside the repository.
+ * Returns null when the write is allowed, or the reason it is not.
+ */
+export function repoWriteProblem(root, rel, { dir = false } = {}) {
+  if (isProtectedRel(rel)) return `protected path: ${rel || '<repository root>'}. Protected configuration is installed manually by the user`;
+
+  const top = rel.split('/')[0];
+  if (GENERATED_TOP.has(top) || /^[^/]+\.tsbuildinfo$/.test(rel)) return null;
+
+  const { state } = loadState(root);
+  const pm = PLAN_FILE_RE.exec(rel);
+  if (pm) {
+    if (Object.prototype.hasOwnProperty.call(state.approvals, pm[1])) {
+      return `plan "${pm[1]}" has an active approval and is frozen. Record decisions and scope extensions in ${logPathFor(rel)}; to change requirements the user sends REVOKE IMPLEMENTATION ${pm[1]}`;
+    }
+    return null;
+  }
+
+  const branch = currentBranch(root);
+  const lm = LOG_FILE_RE.exec(rel);
+  if (lm) {
+    const a = state.approvals[lm[1]];
+    if (!a || a.branch !== branch || logPathFor(a.planPath) !== rel) {
+      return `execution log ${rel} is writable only while plan "${lm[1]}" is approved and its branch is checked out`;
+    }
+    return null;
+  }
+
+  if (!branch || branch === 'main' || branch === 'master' || !BRANCH_RE.test(branch)) {
+    return `writes outside doc/specs/ require an approved feat|fix|chore/<slug> branch (current: ${branch ?? 'detached or unknown'})`;
+  }
+  const { plans, notes } = approvedPlansForBranch(root, branch);
+  const why = notes.length ? ` (${notes.join('; ')})` : '';
+  if (!plans.length) return `no valid approval for branch ${branch}${why}`;
+  if (plans.some((p) => inScope(rel, p.entries, { dir }))) return null;
+  return `${rel} is outside the approved scope of ${plans.map((p) => p.slug).join(', ')}. If the solution needs it and it is under src/, tests/, doc/ or public/, add it to "## Scope extensions" in the execution log with a reason; otherwise the plan must be amended${why}`;
+}
+
+// ---------------------------------------------------------------- dependencies
+
+/** Parses "name" or "name@version" (scoped names allowed). Returns {name, version} or null. */
+export function parseDepSpec(spec) {
+  if (typeof spec !== 'string') return null;
+  const at = spec.lastIndexOf('@');
+  const name = at > 0 ? spec.slice(0, at) : spec;
+  const version = at > 0 ? spec.slice(at + 1) : null;
+  if (!NPM_NAME_RE.test(name)) return null;
+  if (version !== null && !NPM_VERSION_RE.test(version)) return null;
+  return { name, version };
 }
