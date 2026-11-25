@@ -1139,3 +1139,114 @@
   margin-top: 12px;
 }
 
+/* OX-03 «Espacio de trabajo» screen */
+.game-card.workspace-card {
+  width: min(820px, 100%);
+}
+
+.ws-notice {
+  border-left: 3px solid var(--gold);
+  padding-left: 10px;
+}
+
+.ws-toolbar,
+.ws-row-actions,
+.ws-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ws-toolbar {
+  margin: 16px 0;
+}
+
+.ws-create {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.ws-create label {
+  flex: 1;
+  margin: 0;
+}
+
+.ws-projects {
+  display: grid;
+  gap: 14px;
+  margin: 10px 0 20px;
+}
+
+.ws-project {
+  border: 1px solid var(--menu-border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.ws-project.is-active {
+  border-color: var(--gold);
+}
+
+.ws-project-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-project-head h2 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-weight: normal;
+  font-size: 22px;
+  color: var(--menu-text);
+}
+
+.ws-events {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ws-event {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-event.is-open {
+  outline: 1px solid var(--gold);
+}
+
+.ws-event-info small {
+  display: block;
+}
+
+.game-menu .ws-row-actions button,
+.game-menu .ws-rename button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.game-card .ws-rename input {
+  width: auto;
+  flex: 1;
+  margin-top: 0;
+  padding: 6px;
+}
+
+.ws-empty {
+  font-style: italic;
+}
+

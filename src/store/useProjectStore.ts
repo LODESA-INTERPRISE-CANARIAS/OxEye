@@ -2,6 +2,7 @@ import {create} from 'zustand';
 import {VENUES} from '../data/catalog';
 import {CARTO_DATA, MAPS_DATA} from '../data/geodata';
 import {
+  createDefaultProject,
   loadPreferences,
   loadProjectFromStorage,
   savePreferences,
@@ -176,6 +177,11 @@ export interface ProjectStoreState {
   ) => void;
   replaceScene: (scene: Scene, recordCheckpoint?: boolean) => void;
   replaceProject: (project: ProjectFile, recordCheckpoint?: boolean) => void;
+  /** Opens another event's payload: replaces the project and clears undo history (OX-03 D11). */
+  openEventPayload: (project: ProjectFile) => void;
+  /** `true` when the active workspace role may not edit the event (local, indicative). */
+  readOnly: boolean;
+  setReadOnly: (readOnly: boolean) => void;
   save: () => void;
   updatePreferences: (partial: Partial<UserPreferences>) => void;
   createFromWizard: (config: {
@@ -604,6 +610,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   undo: (isRedo = false) => {
     const state = get();
     if (state.panel === 'simulate') return;
+    if (state.readOnly) {
+      get().showToast('Tu perfil no permite modificar este evento (modo local).');
+      return;
+    }
     const from = isRedo ? [...state.future] : [...state.history];
     const to = isRedo ? [...state.history] : [...state.future];
     if (!from.length) return;
@@ -630,6 +640,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   updateScene: (updater, recordCheckpoint = false) => {
+    if (get().readOnly) {
+      get().showToast('Tu perfil no permite modificar este evento (modo local).');
+      return;
+    }
     if (recordCheckpoint) get().checkpoint();
     const state = get();
     const nextProject = structuredClone(state.project);
@@ -653,6 +667,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   setCustomMapVectors: (streets, features) => {
+    if (get().readOnly) return;
     const state = get();
     const curMap = state.project.maps[state.activeVenue];
     if (!curMap?.customLocation) return;
@@ -673,6 +688,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   replaceScene: (scene, recordCheckpoint = false) => {
+    if (get().readOnly) {
+      get().showToast('Tu perfil no permite modificar este evento (modo local).');
+      return;
+    }
     if (recordCheckpoint) get().checkpoint();
     const state = get();
     const nextProject = structuredClone(state.project);
@@ -692,6 +711,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   replaceProject: (project, recordCheckpoint = false) => {
+    if (get().readOnly) {
+      get().showToast('Tu perfil no permite modificar este evento (modo local).');
+      return;
+    }
     if (recordCheckpoint) get().checkpoint();
     const state = get();
     const cloned = structuredClone(project);
@@ -714,6 +737,25 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       revision: state.revision + 1,
     });
   },
+
+  openEventPayload: (project) => {
+    // Opening is not an edit: lift the guard; the workspace store recomputes
+    // `readOnly` for the newly opened event right after.
+    set({readOnly: false});
+    get().replaceProject(project, false);
+    const scene = get().currentScene();
+    set({
+      history: [],
+      future: [],
+      activeModal: null,
+      previewCorrection: null,
+      simSeedValue: scene?.seed || 2026,
+      activeRunSeed: null,
+    });
+  },
+
+  readOnly: false,
+  setReadOnly: (readOnly) => set({readOnly}),
 
   save: () => {
     const state = get();
@@ -738,9 +780,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   createFromWizard: (config) => {
-    get().checkpoint();
     const state = get();
-    const nextProject = structuredClone(state.project);
+    // Each wizard run creates a new event: start from a fresh default project so
+    // nothing is inherited from the previously open event (OX-03 D12).
+    const nextProject = createDefaultProject();
     const isCustom = !!config.customLocation;
     const targetMap = isCustom
       ? buildCustomMapMetadata(config.customLocation!)
@@ -859,6 +902,11 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       tutorialActive: config.startTutorial ?? !state.hasSavedProject,
       menuOpen: false,
       activeModal: null,
+      readOnly: false,
+      history: [],
+      future: [],
+      simSeedValue: next.seed || 2026,
+      activeRunSeed: null,
       saveStatusText: 'Guardado en este navegador',
       revision: state.revision + 1,
     });

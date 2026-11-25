@@ -71,6 +71,7 @@ import {
   updateEventDemand,
 } from './engine/planning/event-demand';
 import {useProjectStore} from './store/useProjectStore';
+import {useWorkspaceStore} from './store/useWorkspaceStore';
 import type {EventDemandConfig, PhaseKey, Scene} from './types';
 
 const timeLabel = (t: number): string =>
@@ -184,6 +185,9 @@ export const App: React.FC = () => {
     document.body.classList.toggle('reduce-motion', !!preferences.reduceMotion);
     applyPalette(normalizePaletteId(preferences.palette));
   }, [preferences.speed, preferences.reduceMotion, preferences.palette]);
+
+  // OX-03: load the local workspace (projects, events, users) once.
+  useEffect(() => void useWorkspaceStore.getState().init(), []);
 
   const dismissedIncidentsRef = useRef<Set<string>>(new Set());
 
@@ -399,6 +403,19 @@ export const App: React.FC = () => {
     if (seekEl) seekEl.textContent = '00:00:00';
     setReviewTick((t) => t + 1);
   }, [updateScene, setDiagnosticSimMode]);
+
+  // OX-03: switching to another event (menu, header or wizard) resets the simulation.
+  const activeEventId = useWorkspaceStore((s) => s.activeEventId);
+  const lastEventIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeEventId || activeEventId === lastEventIdRef.current) return;
+    const previous = lastEventIdRef.current;
+    lastEventIdRef.current = activeEventId;
+    if (previous) {
+      setProposal(null);
+      resetSim();
+    }
+  }, [activeEventId, resetSim]);
 
   const triggerDayClose = useCallback(() => {
     const currentPhase = useProjectStore.getState().phase;

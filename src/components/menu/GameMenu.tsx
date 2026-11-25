@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {
   applyPalette,
   COLOR_PALETTES,
@@ -21,6 +21,7 @@ import {
   syncObjectivesFromAxisChange,
 } from '../../engine/planning/objectives';
 import {useProjectStore} from '../../store/useProjectStore';
+import {useWorkspaceStore} from '../../store/useWorkspaceStore';
 import type {
   CustomLocationConfig,
   EventAxisKey,
@@ -31,6 +32,7 @@ import type {
 } from '../../types';
 import {ObjectivesConfigurator} from '../planning/ObjectivesConfigurator';
 import {LocationPicker} from './LocationPicker';
+import {WorkspaceScreen} from './WorkspaceScreen';
 
 const shiftDateByDays = (isoDate: string, delta: number): string => {
   const d = new Date(isoDate + 'T12:00:00Z');
@@ -52,7 +54,13 @@ export interface GameMenuProps {
   onResume: () => void;
 }
 
-type MenuScreen = 'main' | 'wizard' | 'preferences' | 'credits' | 'exit';
+type MenuScreen =
+  | 'main'
+  | 'wizard'
+  | 'preferences'
+  | 'credits'
+  | 'exit'
+  | 'workspace';
 
 /**
  * Fullscreen launch screen & 4-step new-model wizard (`#game-menu`).
@@ -66,14 +74,24 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const setMenuOpen = useProjectStore((s) => s.setMenuOpen);
   const setTutorialActive = useProjectStore((s) => s.setTutorialActive);
   const updatePreferences = useProjectStore((s) => s.updatePreferences);
-  const createFromWizard = useProjectStore((s) => s.createFromWizard);
+  const workspaceReady = useWorkspaceStore((s) => s.ready);
+  const workspaceUnavailable = useWorkspaceStore((s) => s.unavailable);
+  const activeEventId = useWorkspaceStore((s) => s.activeEventId);
   const showToast = useProjectStore((s) => s.showToast);
   const save = useProjectStore((s) => s.save);
 
   const [screen, setScreen] = useState<MenuScreen>('main');
+  // When the menu is closed from outside (e.g. an import from the workspace
+  // screen), reopen it on the main screen next time.
+  const [prevMenuOpen, setPrevMenuOpen] = useState(menuOpen);
+  if (prevMenuOpen !== menuOpen) {
+    setPrevMenuOpen(menuOpen);
+    if (!menuOpen && screen === 'workspace') setScreen('main');
+  }
   const [step, setStep] = useState(0);
   const [wizardError, setWizardError] = useState('');
   const [creatingModel, setCreatingModel] = useState(false);
+  const submittingRef = useRef(false);
   const today = new Date().toISOString().slice(0, 10);
   const [smartSubstep, setSmartSubstep] = useState<'cards' | 'priority'>('cards');
   const [settings, setSettings] = useState<{
@@ -151,7 +169,11 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     normalizePaletteId(preferences.palette)
   );
 
-  const canContinue = hasSavedProject && !!project.scenes.cristo;
+  // With a working workspace, continuing also requires an open event.
+  const canContinue =
+    hasSavedProject &&
+    !!project.scenes.cristo &&
+    (!workspaceReady || workspaceUnavailable || !!activeEventId);
   const activeTitle = currentScene().title;
 
   const handleClose = () => {
@@ -163,6 +185,17 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
         'Inventario → Diseñar → Simular → Revisar. Guarda una copia con Exportar proyecto.'
       );
     }
+  };
+
+  const startWizard = () => {
+    setStep(0);
+    setSmartSubstep('cards');
+    setWizardError('');
+    setSettings((prev) => ({
+      ...prev,
+      startTutorial: !hasSavedProject,
+    }));
+    setScreen('wizard');
   };
 
   const handleWizardSubmit = async (e: React.FormEvent) => {
@@ -237,13 +270,24 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
           };
           setCreatingModel(false);
         }
-        createFromWizard({
-          ...settings,
-          ...schedule,
-          workDays: normalizedWorkDays,
-          customLocation: customLoc,
-          startTutorial: settings.startTutorial,
-        });
+        // Guard against a double submit creating two events while the store awaits.
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+        let created = false;
+        try {
+          created = await useWorkspaceStore.getState().createEventFromWizard({
+            ...settings,
+            ...schedule,
+            workDays: normalizedWorkDays,
+            customLocation: customLoc,
+            startTutorial: settings.startTutorial,
+          });
+        } finally {
+          submittingRef.current = false;
+        }
+        if (!created) {
+          throw new Error('No se pudo crear el evento con tu perfil actual.');
+        }
         setScreen('main');
         onResume();
         return;
@@ -319,17 +363,22 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                 type="button"
                 id="game-new"
                 className={!canContinue ? 'game-primary' : ''}
-                onClick={() => {
-                  setStep(0);
-                  setWizardError('');
-                  setSettings((prev) => ({
-                    ...prev,
-                    startTutorial: !hasSavedProject,
-                  }));
-                  setScreen('wizard');
-                }}
+                onClick={startWizard}
               >
                 Crear nuevo modelo
+              </button>
+              <button
+                type="button"
+                id="game-workspace"
+                disabled={!workspaceReady || workspaceUnavailable}
+                title={
+                  workspaceUnavailable
+                    ? 'El espacio de trabajo no está disponible en este navegador'
+                    : 'Proyectos, eventos y miembros guardados en este navegador'
+                }
+                onClick={() => setScreen('workspace')}
+              >
+                Espacio de trabajo
               </button>
               <button
                 type="button"
@@ -373,6 +422,22 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
             <span>PLANIFICAR · CELEBRAR · RECUPERAR</span>
           </aside>
         </>
+      )}
+
+      {screen === 'workspace' && (
+        <WorkspaceScreen
+          onBack={() => setScreen('main')}
+          onNewEvent={(projectId) => {
+            useWorkspaceStore.getState().setActiveProject(projectId);
+            startWizard();
+          }}
+          onEventOpened={() => {
+            setScreen('main');
+            setMenuOpen(false);
+            onResume();
+          }}
+          onImport={() => document.getElementById('file')?.click()}
+        />
       )}
 
       {screen === 'credits' && (
@@ -1001,10 +1066,17 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                       : 'Desactivado'}
                   </dd>
                 </dl>
-                <p>
-                  Se sustituirá el modelo activo del Cristo. Puedes volver al
-                  menú y exportar el proyecto antes de crear otro.
-                </p>
+                {workspaceReady && !workspaceUnavailable ? (
+                  <p>
+                    Se creará un evento nuevo en el proyecto activo. El evento
+                    abierto se conserva en el espacio de trabajo.
+                  </p>
+                ) : (
+                  <p>
+                    Se sustituirá el modelo activo del Cristo. Puedes volver al
+                    menú y exportar el proyecto antes de crear otro.
+                  </p>
+                )}
               </>
             )}
 

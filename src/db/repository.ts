@@ -23,6 +23,15 @@ import type {
   VenueKey,
   VenueMap,
 } from '../types';
+import type {
+  AccessLogEntry,
+  EventPayload,
+  LocalUser,
+  Membership,
+  Organization,
+  WorkspaceEvent,
+  WorkspaceProject,
+} from '../types/workspace';
 
 export const PROJECT_STORAGE_KEY = 'ojo-de-buey-project-v1';
 export const PREFS_STORAGE_KEY = 'ojo-prefs';
@@ -47,12 +56,29 @@ export interface StoredSimulationRecord {
 export class OxEyeDatabase extends Dexie {
   projects!: Table<StoredProjectRecord, string>;
   simulationRuns!: Table<StoredSimulationRecord, string>;
+  // Workspace tables (OX-03, local mode)
+  organizations!: Table<Organization, string>;
+  users!: Table<LocalUser, string>;
+  memberships!: Table<Membership, string>;
+  workspaceProjects!: Table<WorkspaceProject, string>;
+  events!: Table<WorkspaceEvent, string>;
+  eventPayloads!: Table<EventPayload, string>;
+  accessLog!: Table<AccessLogEntry, string>;
 
   constructor() {
     super('OxEyeDatabase');
     this.version(1).stores({
       projects: 'id, updatedAt',
       simulationRuns: 'id, venueKey, createdAt',
+    });
+    this.version(2).stores({
+      organizations: 'id',
+      users: 'id',
+      memberships: 'id, orgId, userId',
+      workspaceProjects: 'id, orgId',
+      events: 'id, orgId, projectId, importHash',
+      eventPayloads: 'eventId, orgId',
+      accessLog: 'id, orgId, at',
     });
   }
 }
@@ -133,24 +159,7 @@ export function loadProjectFromStorage(): {
     if (!raw) return {project: fallback, hasSaved: false};
     const saved = JSON.parse(raw) as ProjectFile;
     if (saved?.format === 'ojo-de-buey' && saved.version === 1) {
-      for (const k of Object.keys(VENUES) as VenueKey[]) {
-        validateScene(saved.scenes[k]);
-        const sameBase =
-          JSON.stringify(saved.maps?.[k]?.bbox) ===
-          JSON.stringify(MAPS_DATA[k].bbox);
-        if (!sameBase && !isValidCustomMap(saved.maps?.[k])) {
-          throw new Error('La base ha cambiado');
-        }
-        for (const [i, f] of (saved.scenes[k].fences || []).entries()) {
-          f.id ??= 'fence-' + i;
-          f.name ??= 'Valla ' + (i + 1);
-        }
-        migrateSceneContactsAndProgramme(saved.scenes[k]);
-        syncDemandConfigToScene(
-          saved.scenes[k],
-          ensureEventDemandConfig(saved.scenes[k])
-        );
-      }
+      normalizeStoredProject(saved);
       configure(saved.maps);
       return {project: saved, hasSaved: true};
     }
@@ -158,6 +167,35 @@ export function loadProjectFromStorage(): {
     // Fallback to clean project if localStorage is corrupt or outdated
   }
   return {project: fallback, hasSaved: false};
+}
+
+/**
+ * Validates and migrates a stored v1 project in place (same steps as loading
+ * from localStorage). Used for the active cache and for event payloads opened
+ * from IndexedDB (OX-03). Does not call `configure`.
+ *
+ * @throws Error if a scene is invalid or the cartographic base changed.
+ */
+export function normalizeStoredProject(saved: ProjectFile): ProjectFile {
+  for (const k of Object.keys(VENUES) as VenueKey[]) {
+    validateScene(saved.scenes[k]);
+    const sameBase =
+      JSON.stringify(saved.maps?.[k]?.bbox) ===
+      JSON.stringify(MAPS_DATA[k].bbox);
+    if (!sameBase && !isValidCustomMap(saved.maps?.[k])) {
+      throw new Error('La base ha cambiado');
+    }
+    for (const [i, f] of (saved.scenes[k].fences || []).entries()) {
+      f.id ??= 'fence-' + i;
+      f.name ??= 'Valla ' + (i + 1);
+    }
+    migrateSceneContactsAndProgramme(saved.scenes[k]);
+    syncDemandConfigToScene(
+      saved.scenes[k],
+      ensureEventDemandConfig(saved.scenes[k])
+    );
+  }
+  return saved;
 }
 
 /**

@@ -3,6 +3,8 @@ import {MAPS_DATA} from '../../data/geodata';
 import {getPaletteLogoColors} from '../../data/palettes';
 import {downloadFile, parseImportedProject} from '../../db/repository';
 import {useProjectStore} from '../../store/useProjectStore';
+import {useWorkspaceStore} from '../../store/useWorkspaceStore';
+import {ContextHeader} from './ContextHeader';
 
 export interface HeaderProps {
   onProjectImported: () => void;
@@ -47,13 +49,44 @@ export const Header: React.FC<HeaderProps> = ({
         throw new Error('El archivo supera los 5 MB.');
       }
       const text = await f.text();
+      // Wait for the workspace to finish loading so the import never falls
+      // back to replacing the open event while startup is in progress.
+      await useWorkspaceStore.getState().init();
+      const ws = useWorkspaceStore.getState();
+      if (ws.ready && !ws.unavailable) {
+        // D9: an imported file always becomes the first event of a new project.
+        const result = await ws.importAsNewProject(text);
+        if (result) {
+          setMenuOpen(false);
+          onProjectImported();
+          showToast(
+            result.existing
+              ? 'Este archivo ya estaba importado: se abre el evento existente'
+              : 'Importado como evento de un proyecto nuevo'
+          );
+        }
+        // A null result usually means the store refused it and already showed a toast.
+        if (result || !useWorkspaceStore.getState().unavailable) {
+          if (!result && !ws.activeOrgId) {
+            showToast('No se pudo importar el archivo en el espacio de trabajo.', 'error');
+          }
+          e.target.value = '';
+          return;
+        }
+      }
+      // Workspace unavailable: keep the previous single-model behaviour.
       const next = parseImportedProject(text, project, MAPS_DATA);
       replaceProject(next, true);
       setMenuOpen(false);
       onProjectImported();
       showToast('Proyecto abierto. Puedes deshacer la importación.');
-    } catch {
-      showToast('El archivo importado no es un modelo válido', 'error');
+    } catch (err) {
+      // JSON.parse errors carry browser-language text; keep the generic copy for them.
+      const message =
+        err instanceof Error && !(err instanceof SyntaxError) && err.message
+          ? err.message
+          : 'El archivo importado no es un modelo válido';
+      showToast(message, 'error');
     }
     e.target.value = '';
   };
@@ -90,9 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
         </span>
       </a>
       <div className="project-heading">
-        <span className="eyebrow">SAN CRISTÓBAL DE LA LAGUNA</span>
-        <b>Laboratorio de eventos</b>
-        <span className="badge">REFERENCIA · EDICIÓN 21</span>
+        <ContextHeader onEventOpened={onProjectImported} />
       </div>
       <div className="header-actions">
         <button
