@@ -123,12 +123,18 @@ La aplicación debería avisar claramente de que **los datos solo están en ese 
 ## 9. Lo que necesitamos que dirección decida
 
 1. **¿Aprobamos el modelo de organización ahora** (cada dato con un único dueño, camino B) y dejamos el montaje para cuando esté listo?
-2. **¿Usamos nuestros propios equipos como servidor?** Si es así:
+Si, nos quedamos con la opción B.
+2. **¿Usamos nuestros propios equipos como servidor?** Si es así: (si.)
    - ¿Será un ordenador dedicado o uno que también se usa para trabajar?
+      Un ordenador dedicado.
    - ¿Quién del equipo se encarga de mantenerlo?
+      El ingeniero de sistemas.
    - ¿Dónde guardamos las copias de seguridad?
+      En un disco duro externo.
 3. **Punto Violeta:** ¿pueden sus datos guardarse en el servidor compartido, o deben quedarse solo en local?
+En el lugar más privado posible, en el dispositivo de quien los registra.
 4. **Plan B:** ¿es aceptable para el piloto lo que se puede enseñar en modo local (punto 7)?
+No.
 
 ---
 
