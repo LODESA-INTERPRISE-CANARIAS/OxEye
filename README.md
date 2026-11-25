@@ -140,21 +140,48 @@ OxEye/
 ## 🚀 Inicio Rápido
 
 ### Requisitos previos
-- **Node.js** `>= 20` y **npm**.
+- **Node.js 22** (la versión que usa la integración continua) y **npm**. Versiones más recientes también funcionan.
+- **Git**.
+- Conexión a internet en la primera instalación y para usar ubicaciones personalizadas (OpenStreetMap / Nominatim).
 
 ### Instalación y desarrollo
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/FabianGonzalezLence/OxEye.git
+git clone https://github.com/LODESA-INTERPRISE-CANARIAS/OxEye.git
 cd OxEye
 
-# 2. Instalar dependencias
-npm install
+# 2. Instalar dependencias exactamente como en package-lock.json
+npm ci
 
 # 3. Iniciar el servidor de desarrollo
 npm run dev
 ```
+
+Abre `http://localhost:5173` en el navegador. En la primera ejecución no hay proyecto guardado: «Continuar» aparece deshabilitado y hay que crear un proyecto nuevo con el asistente. El proyecto se guarda en el `localStorage` del navegador.
+
+### Comprobaciones
+
+```bash
+npm run lint          # ESLint: debe terminar con 0 errores
+npx tsc --noEmit -p tsconfig.json   # Comprobación de tipos
+npm run test          # Tests unitarios (Vitest)
+npm run build         # Build de producción en dist/
+```
+
+### Tests End-to-End (Playwright)
+
+```bash
+# Solo la primera vez: instalar el navegador de Playwright
+npx playwright install chromium
+
+# Ejecutar la suite
+npm run test:e2e
+```
+
+- Playwright arranca su propio servidor de desarrollo en el puerto `5173`, **salvo que ya haya uno en marcha**: en ese caso lo reutiliza. Cierra cualquier `npm run dev` antes de lanzar los E2E; un servidor antiguo puede impedir que la aplicación cargue y hacer fallar todos los tests.
+- Los resultados se escriben en `playwright-report/` y `test-results/`, que Git ignora.
+- El estado actual de la suite y los problemas conocidos están en `doc/audit/2026-11-25-ox-01-audit.md`.
 
 ### Scripts disponibles
 
