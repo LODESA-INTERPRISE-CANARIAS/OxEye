@@ -137,3 +137,6 @@ dist
 
 # Claude Code machine-local settings
 .claude/settings.local.json
+
+playwright-report/
+test-results/
