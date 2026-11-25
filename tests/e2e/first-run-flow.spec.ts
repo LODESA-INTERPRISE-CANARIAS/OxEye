@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {completeObjectivesStep, WIZARD_SUBMIT} from './helpers';
 
 test.describe('Flujo inicial obligatorio y tutorial de primera ejecución', () => {
   test('disables Continue when no project exists, auto-starts tutorial on first project, enables Continue on reload, and allows recovering guide from Settings', async ({
@@ -13,16 +14,10 @@ test.describe('Flujo inicial obligatorio y tutorial de primera ejecución', () =
 
     // 2. Crear primer proyecto mediante el asistente
     await page.locator('#game-new').click();
-    // Paso 1: Objetivo SMART (rellenar los 6 campos visibles del paso 1)
-    const step0Inputs = page.locator('#wizard-form input, #wizard-form textarea');
-    const count0 = await step0Inputs.count();
-    for (let i = 0; i < count0; i++) {
-      const el = step0Inputs.nth(i);
-      const t = (await el.getAttribute('type')) || 'text';
-      await el.fill(t === 'date' ? '2026-12-20' : 'Meta de prueba');
-    }
-    const nextBtn = page.locator('#wizard-form button[type="submit"]');
-    await nextBtn.click();
+    // Paso 1: Objetivos (selector de tarjetas + jerarquía; sustituye al antiguo
+    // formulario SMART de texto libre). Se mantienen los objetivos por defecto.
+    await completeObjectivesStep(page);
+    const nextBtn = page.locator(WIZARD_SUBMIT);
     // Paso 2: Lugar y nombre
     await expect(page.locator('#game-menu')).toContainText('2 / 5');
     await nextBtn.click();

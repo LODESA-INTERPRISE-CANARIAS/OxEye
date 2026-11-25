@@ -1,11 +1,11 @@
 import {expect, test} from '@playwright/test';
+import {openWorkspaceWithDefaultProject} from './helpers';
 
 test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => {
   test('toggles X-Ray layer, draws subsoil perimeter/column/wall, and tests multi-selection + shortcuts', async ({
     page,
   }) => {
-    await page.goto('/');
-    await page.locator('#game-continue').click();
+    await openWorkspaceWithDefaultProject(page);
     await expect(page.locator('#drawing')).toBeVisible();
 
     // 1. Rayos X está apagado por defecto: #xray-layer vacío y pointer-events="none"
@@ -180,8 +180,7 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
   test('triggers critical risk when a heavy load sits on unsupported garage slab and allows selecting/deleting the garage perimeter', async ({
     page,
   }) => {
-    await page.goto('/');
-    await page.locator('#game-continue').click();
+    await openWorkspaceWithDefaultProject(page);
     await expect(page.locator('#drawing')).toBeVisible();
 
     const mapBox = (await page.locator('#map').boundingBox())!;
@@ -228,8 +227,17 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     await page.keyboard.press('Escape');
     await expect(riskDialog).toBeHidden();
 
-    // 4. Seleccionar el perímetro del garaje haciendo clic sobre su contorno y eliminarlo
-    await page.mouse.click(cx + 80, cy - 10);
+    // 4. Seleccionar el perímetro del garaje haciendo clic sobre su contorno y eliminarlo.
+    // Se usa el lado izquierdo: con el Escenario seleccionado, el inspector
+    // flotante cubre el lado derecho (cx + 80) en el viewport por defecto.
+    const contourX = cx - 70;
+    const contourY = cy - 10;
+    const hitsMap = await page.evaluate(
+      ([x, y]) => !!document.elementFromPoint(x, y)?.closest('#drawing'),
+      [contourX, contourY]
+    );
+    expect(hitsMap).toBe(true);
+    await page.mouse.click(contourX, contourY);
     await expect(page.locator('#inspector')).toContainText(
       'Perímetro del subsuelo'
     );
@@ -240,8 +248,7 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
   test('supports Solo subsuelo view and locking any element against dragging', async ({
     page,
   }) => {
-    await page.goto('/');
-    await page.locator('#game-continue').click();
+    await openWorkspaceWithDefaultProject(page);
     await expect(page.locator('#drawing')).toBeVisible();
 
     const mapBox = (await page.locator('#map').boundingBox())!;

@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {completeObjectivesStep} from './helpers';
 
 test.describe('Guided Tutorial from Wizard Step 2', () => {
   test('enables tutorial in Step 2, runs guided tour prior to everything else, supports pause/resume, and hands off to perimeter onboarding', async ({
@@ -8,14 +9,8 @@ test.describe('Guided Tutorial from Wizard Step 2', () => {
     await page.goto('/');
     await page.click('#game-new');
 
-    // Step 1: SMART goal
-    await page.fill('#smart-specific', 'Evento cultural');
-    await page.fill('#smart-metric', 'Asistentes');
-    await page.fill('#smart-target', '800');
-    await page.fill('#smart-feasible', 'Presupuesto aprobado');
-    await page.fill('#smart-relevant', 'Vecindario');
-    await page.fill('#smart-deadline', '2026-12-20');
-    await page.click('#wizard-form button[type="submit"]');
+    // Step 1: objectives picker (replaces the former free-text SMART form)
+    await completeObjectivesStep(page);
 
     // Step 2: Check "Iniciar tutorial guiado al crear el proyecto"
     await expect(page.locator('#wizard-tutorial')).toBeVisible();

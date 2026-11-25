@@ -1,4 +1,5 @@
 import {test, expect} from '@playwright/test';
+import {persistDefaultProjectAndContinue} from './helpers';
 
 test.describe('Paletas de color en Ajustes', () => {
   test('muestra las 6 paletas predefinidas, aplica cambios en vivo y persiste tras recargar', async ({
@@ -77,7 +78,8 @@ test.describe('Paletas de color en Ajustes', () => {
     expect(bendyBg.toLowerCase()).toBe('#ffffff');
 
     // También funciona dentro del workspace al abrir el proyecto
-    await page.click('#game-continue');
+    // («Continuar» requiere un proyecto guardado: se guarda la sesión con «Salir»)
+    await persistDefaultProjectAndContinue(page);
     await expect(page.locator('#game-menu')).toBeHidden();
     await expect(page.locator('html')).toHaveAttribute(
       'data-palette',

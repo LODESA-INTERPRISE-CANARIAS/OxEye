@@ -1,11 +1,11 @@
 import {test, expect} from '@playwright/test';
+import {openWorkspaceWithDefaultProject} from './helpers';
 
 test.describe('Herramientas de vallas (encadenadas y sueltas)', () => {
   test('permite trazar vallas encadenadas, terminar con Escape y colocar/editar/duplicar una valla suelta', async ({
     page,
   }) => {
-    await page.goto('/');
-    await page.locator('#game-continue').click();
+    await openWorkspaceWithDefaultProject(page);
     await expect(page.locator('#drawing')).toBeVisible();
 
     const initialFenceCount = await page

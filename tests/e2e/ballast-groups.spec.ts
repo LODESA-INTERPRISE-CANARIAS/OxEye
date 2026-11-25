@@ -1,11 +1,11 @@
 import {expect, test} from '@playwright/test';
+import {openWorkspaceWithDefaultProject} from './helpers';
 
 test.describe('Lastres como subcomponentes de carpa y agrupación', () => {
   test('adds ballast subcomponents directly from tent, moves tent+subcomponents together, edits ballast independently, groups/ungroups and undoes', async ({
     page,
   }) => {
-    await page.goto('/');
-    await page.locator('#game-continue').click();
+    await openWorkspaceWithDefaultProject(page);
     await expect(page.locator('#drawing')).toBeVisible();
 
     const mapBox = (await page.locator('#map').boundingBox())!;

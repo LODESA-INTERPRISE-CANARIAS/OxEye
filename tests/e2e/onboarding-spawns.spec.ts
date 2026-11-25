@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {completeObjectivesStep} from './helpers';
 
 test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Access Flows', () => {
   test('creates custom-location scenario, requires perimeter first, auto-detects spawns, opens inventory, and edits access flow', async ({
@@ -71,14 +72,8 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     await page.goto('/');
     await page.click('#game-new');
 
-    // Step 1: SMART goal
-    await page.fill('#smart-specific', 'Feria ciudadana');
-    await page.fill('#smart-metric', 'Asistentes');
-    await page.fill('#smart-target', '1000');
-    await page.fill('#smart-feasible', 'Presupuesto aprobado');
-    await page.fill('#smart-relevant', 'Vecindario');
-    await page.fill('#smart-deadline', '2026-12-20');
-    await page.click('#wizard-form button[type="submit"]');
+    // Step 1: objectives picker (replaces the former free-text SMART form)
+    await completeObjectivesStep(page);
 
     // Step 2: Choose real map & search address
     await page.click('#location-mode-custom');
@@ -89,6 +84,10 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     await page.click('#location-search-results button >> nth=0');
     await page.locator('#location-size-slider').fill('350');
     await expect(page.locator('#location-size-readout')).toContainText('350 × 350 m');
+    // With empty storage the guided tutorial is pre-checked (first run) and is
+    // shown before the perimeter banner; this spec covers the onboarding
+    // without the tour (the tour is covered by tutorial.spec.ts).
+    await page.uncheck('#wizard-tutorial');
     await page.click('#wizard-form button[type="submit"]');
 
     // Step 3: Dates

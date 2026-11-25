@@ -1,12 +1,12 @@
 import {expect, test} from '@playwright/test';
+import {openWorkspaceWithDefaultProject} from './helpers';
 
 test.describe('Programme custom activities, inline contact linking & Contacts custom kinds', () => {
   test('adds custom contact kind, creates custom activity, links inline contact without losing unsaved edits, plans, exports CSV, and persists on reload', async ({
     page,
   }) => {
     await page.setViewportSize({width: 1280, height: 800});
-    await page.goto('/');
-    await page.click('#game-continue');
+    await openWorkspaceWithDefaultProject(page);
 
     // 1. Contacts: add a custom kind via "Otra..." and verify it becomes an option
     await page.click('#contacts');
@@ -51,7 +51,13 @@ test.describe('Programme custom activities, inline contact linking & Contacts cu
     await expect(costInput).toHaveValue('95');
     await expect(contactSelect).toContainText('Taller Sol');
 
-    // 4. Plan programme and verify company appears in proposal
+    // 4. Plan programme and verify company appears in proposal.
+    // planProgramme now ranks the pool by affinity with the project objectives
+    // (src/engine/planning/programme.ts), so the custom activity is not
+    // guaranteed a slot; plan with only the custom activity selected.
+    await page.locator('#programme-toggle-all').uncheck();
+    await page.locator(`input[data-enable="${customId}"]`).check();
+    await expect(costInput).toHaveValue('95');
     await page.click('#programme-plan');
     await expect(page.locator('#programme-result')).toContainText(
       'Propuesta de programa'
