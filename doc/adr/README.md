@@ -28,7 +28,10 @@ Only product direction changes a status from `Propuesto`. Each change records da
 | ADR-024-008 | Territorial data | Not drafted | — | — |
 | ADR-024-009 | Roles and team | Not drafted | OX-24 | — |
 
-Companion document: [Data authority map](../architecture/data-authority-map.md) (owner domain per entity, transition strategy, plan B).
+Companion documents:
+
+- [Data authority map](../architecture/data-authority-map.md) (owner domain per entity, transition strategy, plan B).
+- [Resumen de OX-02 para dirección](../architecture/ox-02-resumen-para-direccion.md) (non-technical summary, in Spanish, for the project director).
 
 ## Template
 
