@@ -10,7 +10,8 @@ const VAR_START = /[A-Za-z0-9_@*#?$!-]/;
 
 /**
  * @param {string} cmd
- * @returns {{words: {text: string, glob: boolean, tilde: boolean}[], redirects: {op: string, target: string}[]}[]}
+ * Each segment records the separator that ended it (`sep`: ';', '&&', '||', '|', '|&', '&', 'newline' or 'end').
+ * @returns {{words: {text: string, glob: boolean, tilde: boolean}[], redirects: {op: string, target: string}[], sep: string}[]}
  */
 export function parse(cmd) {
   if (typeof cmd !== 'string') throw new ParseError('command is not a string');
@@ -49,7 +50,7 @@ export function parse(cmd) {
       if (sep === 'newline' || sep === 'end') return;
       fail(`empty command before "${sep}"`);
     }
-    segments.push({ words, redirects });
+    segments.push({ words, redirects, sep });
     words = [];
     redirects = [];
   };

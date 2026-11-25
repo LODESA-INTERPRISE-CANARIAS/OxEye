@@ -5,7 +5,7 @@ description: "OxEye domain-invariant checks. Use when planning or reviewing any 
 
 # OxEye invariants: anchors and checks
 
-CLAUDE.md section 5 defines the invariants and is authoritative. This skill only maps them to code and verification steps. Anchors were verified at commit `63073a1`. If an anchor is missing, report it; do not assume it moved.
+The "Domain invariants" section of CLAUDE.md defines the invariants and is authoritative. This skill only maps them to code and verification steps. Anchors were verified at commit `63073a1`. If an anchor is missing, report it; do not assume it moved.
 
 ## 1. Trigger table
 
