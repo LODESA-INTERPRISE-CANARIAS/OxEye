@@ -37,7 +37,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleExport = () => {
     save();
-    downloadFile('Ojo_de_Buey_Proyecto.json', JSON.stringify(project, null, 2));
+    // OX-04: composed venue + layout, without the edit-mode locks.
+    const ws = useWorkspaceStore.getState();
+    const exported = Object.keys(ws.activeLayoutIds).length ? ws.exportableProject() : project;
+    downloadFile('Ojo_de_Buey_Proyecto.json', JSON.stringify(exported, null, 2));
     showToast('Proyecto exportado con los tres espacios y sus observaciones.');
   };
 

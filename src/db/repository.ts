@@ -32,6 +32,7 @@ import type {
   WorkspaceEvent,
   WorkspaceProject,
 } from '../types/workspace';
+import type {Layout, Venue} from '../types/venue';
 
 export const PROJECT_STORAGE_KEY = 'ojo-de-buey-project-v1';
 export const PREFS_STORAGE_KEY = 'ojo-prefs';
@@ -64,6 +65,9 @@ export class OxEyeDatabase extends Dexie {
   events!: Table<WorkspaceEvent, string>;
   eventPayloads!: Table<EventPayload, string>;
   accessLog!: Table<AccessLogEntry, string>;
+  // Venue / layout tables (OX-04, local mode)
+  venues!: Table<Venue, string>;
+  layouts!: Table<Layout, string>;
 
   constructor() {
     super('OxEyeDatabase');
@@ -79,6 +83,11 @@ export class OxEyeDatabase extends Dexie {
       events: 'id, orgId, projectId, importHash',
       eventPayloads: 'eventId, orgId',
       accessLog: 'id, orgId, at',
+    });
+    // OX-04: reusable venues and per-event layouts (v2 tables untouched).
+    this.version(3).stores({
+      venues: 'id, orgId',
+      layouts: 'id, orgId, eventId, venueId',
     });
   }
 }

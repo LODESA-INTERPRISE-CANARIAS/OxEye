@@ -12,6 +12,7 @@ import type {
   VenueKey,
 } from '../../types';
 import {cellAt, inside, rect, world} from '../cartography/geometry';
+import {installationsOutsidePerimeter} from '../cartography/perimeter-status';
 import type {EventEngine} from '../crowd/event-engine';
 import {phaseScene} from '../logistics/phases';
 import {evaluateAllCoverBallasts} from '../planning/ballast';
@@ -26,6 +27,9 @@ import {
   isPedestrianOnlyAccess,
   resolveAccessCategory,
 } from './priority';
+
+/** Id prefix of the "installation outside the effective perimeter" issue (VAL-MAP-BOUNDARY-001). */
+export const OUTSIDE_PERIMETER_ISSUE_PREFIX = 'outside-perimeter-';
 
 export interface RiskIssueMeta {
   kind?: string;
@@ -525,6 +529,27 @@ export function assessRisk(
   }
 
   if (venueMap) {
+    // VAL-MAP-BOUNDARY-001: warning only so existing simulations are not blocked;
+    // the layout promotion gate treats this id prefix as blocking.
+    for (const {item, status} of installationsOutsidePerimeter(s, venueMap)) {
+      const where =
+        status.kind === 'outside'
+          ? 'Toda la huella queda fuera del perímetro operativo'
+          : `${status.cornersOutside} de 4 esquinas de la huella quedan fuera del perímetro operativo`;
+      const subtractNote =
+        status.cornersInSubtract > 0
+          ? ` (${status.cornersInSubtract} dentro de una zona restada del perímetro)`
+          : '';
+      add(
+        OUTSIDE_PERIMETER_ISSUE_PREFIX + item.id,
+        'warning',
+        `Instalación fuera del perímetro operativo: ${item.name}`,
+        `${where}${subtractNote}. Muévela dentro del perímetro o amplía el perímetro en «Editar recinto»; no se desplaza automáticamente.`,
+        {targetId: item.id, targetName: item.name},
+        {origin: 'normative'}
+      );
+    }
+
     const interestZones = (s.passages || []).filter(
       (r) => r.origin === 'interest-zone' && r.points.length >= 3
     );

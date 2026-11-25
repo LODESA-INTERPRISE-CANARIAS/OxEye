@@ -71,6 +71,10 @@ import {insertStock} from '../../engine/planning/inventory';
 import {coverSubcomponentBallastIds} from '../../engine/planning/ballast';
 import {resolveAccessCategory} from '../../engine/emergency/priority';
 import {useProjectStore} from '../../store/useProjectStore';
+import {useWorkspaceStore} from '../../store/useWorkspaceStore';
+import {AffectedLayoutsDialog} from '../venue/AffectedLayoutsDialog';
+import {venueOnlyToolHint} from '../venue/editGating';
+import {EditModeBanner} from '../venue/EditModeBanner';
 import type {EventEngine} from '../../engine/crowd/event-engine';
 import type {
   Booth,
@@ -271,8 +275,26 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
     const checkpoint = useProjectStore((s) => s.checkpoint);
     const save = useProjectStore((s) => s.save);
     const showToast = useProjectStore((s) => s.showToast);
+    // OX-04: venue-only tools are refused while editing a layout (D7).
+    const layoutEditing = useWorkspaceStore(
+      (s) => s.editMode === 'layout' && !!s.activeLayoutIds[activeVenue]
+    );
 
     useMapShortcuts(onSceneChanged, onUndoRedo);
+
+    useEffect(() => {
+      if (!layoutEditing || tool === 'select' || tool === 'xray:select') return;
+      const s = currentScene();
+      const stockId = tool.startsWith('stock:') ? tool.slice(6) : null;
+      const stock = stockId ? (s.pendingStock || []).find((o) => o.id === stockId) : undefined;
+      const hint = venueOnlyToolHint(tool, {
+        venueHasPerimeter: (s.boundary || []).length >= 3,
+        stockIsGate: !!stock && (stock.kind === 'gate' || stock.inventoryKind === 'gate'),
+      });
+      if (!hint) return;
+      setTool(tool.startsWith('xray:') ? 'xray:select' : 'select');
+      showToast(hint);
+    }, [layoutEditing, tool, currentScene, setTool, showToast]);
 
     const tagsForNew = useCallback((): PhaseKey[] => {
       return phase === 'all' ? ['event'] : [phase];
@@ -2083,8 +2105,18 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
 
       const isSelectLike = tool === 'select' || tool === 'xray:select';
 
+      // OX-04: elements of the part that is not being edited (e.g. subsoil in
+      // «Editar distribución») cannot be dragged, even without an injected lock.
+      const ws = useWorkspaceStore.getState();
+      const part = drag.o?.id ? ws.partOf(String(drag.o.id)) : null;
+      const otherPart =
+        (ws.editMode === 'venue' && part === 'layout') ||
+        (ws.editMode === 'layout' &&
+          part === 'venue' &&
+          (useProjectStore.getState().currentScene()?.boundary?.length || 0) >= 3);
+
       // En modo simulación o con elementos bloqueados, arrastrar solo desplaza el plano
-      if (drag.o?.locked || panel === 'simulate') {
+      if (drag.o?.locked || otherPart || panel === 'simulate') {
         if ((isSelectLike || panel === 'simulate') && mapDivRef.current) {
           const clientW = mapDivRef.current.clientWidth || 800;
           const clientH = mapDivRef.current.clientHeight || 600;
@@ -3080,6 +3112,9 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
               </div>
             </div>
           )}
+
+          <EditModeBanner />
+          <AffectedLayoutsDialog />
 
           <div className="map-top-note">
             <span className="live-dot" />{' '}

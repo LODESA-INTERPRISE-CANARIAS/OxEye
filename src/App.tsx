@@ -404,18 +404,23 @@ export const App: React.FC = () => {
     setReviewTick((t) => t + 1);
   }, [updateScene, setDiagnosticSimMode]);
 
-  // OX-03: switching to another event (menu, header or wizard) resets the simulation.
+  // OX-03 / OX-04: switching to another event, layout or edit mode resets the simulation.
   const activeEventId = useWorkspaceStore((s) => s.activeEventId);
+  const compositionKey = useWorkspaceStore((s) =>
+    s.activeEventId
+      ? s.activeEventId + '|' + JSON.stringify(s.activeLayoutIds) + '|' + s.editMode
+      : null
+  );
   const lastEventIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeEventId || activeEventId === lastEventIdRef.current) return;
+    if (!activeEventId || !compositionKey || compositionKey === lastEventIdRef.current) return;
     const previous = lastEventIdRef.current;
-    lastEventIdRef.current = activeEventId;
+    lastEventIdRef.current = compositionKey;
     if (previous) {
       setProposal(null);
       resetSim();
     }
-  }, [activeEventId, resetSim]);
+  }, [activeEventId, compositionKey, resetSim]);
 
   const triggerDayClose = useCallback(() => {
     const currentPhase = useProjectStore.getState().phase;

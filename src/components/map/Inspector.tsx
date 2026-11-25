@@ -28,7 +28,9 @@ import {
   evaluateItemSubsoilHeat,
   isHeavyLoadItem,
 } from '../../engine/subsoil/heat';
+import {installationPerimeterStatus} from '../../engine/cartography/perimeter-status';
 import {useProjectStore} from '../../store/useProjectStore';
+import {useWorkspaceStore} from '../../store/useWorkspaceStore';
 import type {
   AccessCategory,
   Annotation,
@@ -90,6 +92,27 @@ const num = (n: number): string =>
   Number(n).toLocaleString('es-ES', {maximumFractionDigits: 1});
 
 /**
+ * OX-04: disables every control of an element stored in the part that is
+ * locked in the current edit mode (its edits would be discarded on save).
+ */
+const PartLock: React.FC<{locked: boolean; children: React.ReactNode}> = ({
+  locked,
+  children,
+}) =>
+  locked ? (
+    <fieldset className="inspector-part-lock" disabled>
+      {children}
+    </fieldset>
+  ) : (
+    <>{children}</>
+  );
+
+const PART_NOTES = {
+  venue: 'Elemento del recinto: se edita en Editar recinto.',
+  layout: 'Elemento de la distribución: se edita en Editar distribución.',
+} as const;
+
+/**
  * Floating right-side inspector panel (`#inspector`) for editing the selected
  * booth, infrastructure, gate, polygon/polyline, or review annotation.
  */
@@ -120,6 +143,18 @@ export const Inspector: React.FC<InspectorProps> = ({
   );
   const updateScene = useProjectStore((s) => s.updateScene);
   const showToast = useProjectStore((s) => s.showToast);
+  // OX-04: part (venue / layout) the selected element is stored in.
+  const editMode = useWorkspaceStore((s) => s.editMode);
+  const selectedPart = useWorkspaceStore((s) =>
+    selectedId ? s.partOf(selectedId) : null
+  );
+  // The element belongs to the part that is locked in the current edit mode.
+  const otherPart = !!selectedPart && selectedPart !== editMode;
+  const activeVenue = useProjectStore((s) => s.activeVenue);
+  // «Permanente» moves an element between venue and layout: venue mode only.
+  const permanentLocked = useWorkspaceStore(
+    (s) => s.editMode === 'layout' && !!s.activeLayoutIds[activeVenue]
+  );
 
   const handleInspectorResizeStart = (
     e: React.PointerEvent<HTMLDivElement>
@@ -295,6 +330,12 @@ export const Inspector: React.FC<InspectorProps> = ({
         }}
       >
         {renderInspectorChrome(() => setSelectedIds([]))}
+        {otherPart && selectedPart && (
+          <p className="part-lock-note" id="part-lock-note">
+            {PART_NOTES[selectedPart]}
+          </p>
+        )}
+        <PartLock locked={otherPart}>
         <SubsoilInspector
           collection={
             subsoilHit.collection as
@@ -307,6 +348,7 @@ export const Inspector: React.FC<InspectorProps> = ({
           }
           onSceneChanged={onSceneChanged}
         />
+        </PartLock>
       </aside>
     );
   }
@@ -317,6 +359,10 @@ export const Inspector: React.FC<InspectorProps> = ({
 
   const item = found as any;
   const isLocked = !!item.locked;
+  // OX-04 D2: a venue access keeps its operational fields editable per layout;
+  // any other element of the locked part is fully read-only.
+  const accessOverrideOnly = otherPart && isEntrance && editMode === 'layout';
+  const partLocked = otherPart && !accessOverrideOnly;
   const currentTags = membership(
     item,
     isArea ? (Object.keys(phases) as PhaseKey[]) : ['event']
@@ -520,7 +566,15 @@ export const Inspector: React.FC<InspectorProps> = ({
         {isNote ? 'OBSERVACIÓN' : 'ELEMENTO SELECCIONADO'}
       </span>
       <h3>{isNote ? 'Revisión del plano' : item.name}</h3>
+      {otherPart && selectedPart && (
+        <p className="part-lock-note" id="part-lock-note">
+          {accessOverrideOnly
+            ? 'Acceso del recinto: su posición y sus datos físicos se editan en Editar recinto. El uso, los flujos, el estado condicionado y el tope de tránsito se ajustan en esta distribución.'
+            : PART_NOTES[selectedPart]}
+        </p>
+      )}
 
+      <PartLock locked={partLocked}>
       {isNote ? (
         <>
           <span className="cell-tag">
@@ -558,6 +612,7 @@ export const Inspector: React.FC<InspectorProps> = ({
             <input
               id="edit-name"
               maxLength={100}
+              disabled={otherPart}
               key={`name-${item.id}-${item.name}`}
               defaultValue={item.name}
               onKeyDown={commitOnEnter}
@@ -822,6 +877,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       min="0.5"
                       max="100"
                       step="0.1"
+                      disabled={otherPart}
                       key={`cw-${item.id}-${(item as Entrance).clearWidth || 4}`}
                       defaultValue={(item as Entrance).clearWidth || 4}
                       onKeyDown={commitOnEnter}
@@ -837,6 +893,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       type="number"
                       min="-360"
                       max="360"
+                      disabled={otherPart}
                       key={`ga-${item.id}-${(item as Entrance).gateAngle || 0}`}
                       defaultValue={(item as Entrance).gateAngle || 0}
                       onKeyDown={commitOnEnter}
@@ -922,6 +979,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                           Clasificación operativa del acceso
                           <select
                             id="edit-accessCategory"
+                            disabled={otherPart}
                             value={resolveAccessCategory(ent)}
                             onChange={(e) => {
                               const cat = e.target.value as AccessCategory;
@@ -1002,6 +1060,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                           Tipo de infraestructura / tráfico
                           <select
                             id="edit-spawnType"
+                            disabled={otherPart}
                             value={spawnType}
                             onChange={(e) =>
                               updateEntrance({
@@ -1033,6 +1092,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                             Categoría de vehículos
                             <select
                               id="edit-vehicleCategory"
+                              disabled={otherPart}
                               value={ent.vehicleCategory || 'all'}
                               onChange={(e) =>
                                 updateEntrance({
@@ -1215,6 +1275,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                               <input
                                 type="checkbox"
                                 data-authority-unit={unit.key}
+                                disabled={otherPart}
                                 checked={checked}
                                 onChange={(e) => {
                                   const isChecked = e.target.checked;
@@ -1602,11 +1663,47 @@ export const Inspector: React.FC<InspectorProps> = ({
                 </>
               )}
 
-              {!inside([item.x, item.y], s.boundary) && (
-                <p className="warning">
-                  Fuera del ámbito de ensayo. Puedes mantenerlo para planificar
-                  el entorno.
-                </p>
+              {isEntrance ? (
+                !inside([item.x, item.y], s.boundary) && (
+                  <p className="warning">
+                    Fuera del ámbito de ensayo. Puedes mantenerlo para planificar
+                    el entorno.
+                  </p>
+                )
+              ) : (
+                (() => {
+                  // OX-04 D10: footprint corners against the effective perimeter.
+                  const st = installationPerimeterStatus(item, s, m);
+                  if (st.kind === 'inside') return null;
+                  if (st.kind === 'no-perimeter') {
+                    return (
+                      <p className="small-note" id="perimeter-status-note">
+                        Sin perímetro operativo definido: no se puede comprobar
+                        si la instalación queda dentro.
+                      </p>
+                    );
+                  }
+                  const inSubtract =
+                    st.cornersInSubtract > 0
+                      ? ` (${st.cornersInSubtract} dentro de un área restada del perímetro)`
+                      : '';
+                  return (
+                    <p
+                      className="warning"
+                      id="perimeter-status-note"
+                      data-perimeter-status={st.kind}
+                    >
+                      {st.kind === 'partial'
+                        ? `Parte de la instalación queda fuera del perímetro operativo: ${st.cornersOutside} de 4 esquinas${inSubtract}.`
+                        : st.cornersInSubtract === st.cornersOutside
+                          ? 'La instalación está dentro de un área restada del perímetro operativo.'
+                          : `La instalación está fuera del perímetro operativo${inSubtract}.`}{' '}
+                      No se mueve automáticamente. Mientras siga así, la
+                      distribución no se puede proponer ni confirmar como
+                      vigente (revisión orientativa).
+                    </p>
+                  );
+                })()
               )}
             </>
           ) : isFence ? (
@@ -2259,6 +2356,7 @@ export const Inspector: React.FC<InspectorProps> = ({
             <input
               type="checkbox"
               id="permanent-item-toggle"
+              disabled={permanentLocked}
               checked={!!item.permanent}
               onChange={(e) => {
                 const checked = e.target.checked;
@@ -2274,6 +2372,12 @@ export const Inspector: React.FC<InspectorProps> = ({
             />{' '}
             Elemento permanente (no se monta ni desmonta; permanece tras recoger)
           </label>
+          {permanentLocked && (
+            <p className="small-note" id="permanent-mode-note">
+              Los elementos permanentes forman parte del recinto: se marcan o
+              desmarcan en Editar recinto.
+            </p>
+          )}
           {!item.permanent && (
             <label>
               Tiempo de montaje (min, opcional)
@@ -2356,6 +2460,7 @@ export const Inspector: React.FC<InspectorProps> = ({
               <input
                 type="checkbox"
                 data-phase-tag={k}
+                disabled={otherPart}
                 checked={currentTags.includes(k)}
                 onChange={(e) => handlePhaseTagToggle(k, e.target.checked)}
               />{' '}
@@ -2371,6 +2476,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         aria-pressed={isLocked}
         className={`lock-btn wide ${isLocked ? 'is-locked' : ''}`}
         style={{marginTop: '12px'}}
+        disabled={otherPart}
         onClick={() => handleToggleLock(!isLocked)}
       >
         {isLocked ? (
@@ -2412,6 +2518,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         id="duplicate-object"
         className="duplicate quiet wide"
         style={{marginTop: '8px'}}
+        disabled={otherPart}
         onClick={handleDuplicate}
       >
         Duplicar {isNote ? 'observación' : 'elemento'}
@@ -2422,10 +2529,12 @@ export const Inspector: React.FC<InspectorProps> = ({
         id="delete-object"
         className="danger quiet wide"
         style={{marginTop: '8px'}}
+        disabled={otherPart}
         onClick={handleDelete}
       >
         Eliminar {isNote ? 'observación' : 'elemento'}
       </button>
+      </PartLock>
     </aside>
   );
 };

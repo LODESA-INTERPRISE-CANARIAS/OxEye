@@ -12,7 +12,10 @@ import {
   useWorkspaceStore,
 } from '../../store/useWorkspaceStore';
 import type {PhaseKey} from '../../types';
+import type {EditMode} from '../../types/venue';
 import {MembersDialog} from '../modals/MembersDialog';
+import {LayoutsDialog} from '../venue/LayoutsDialog';
+import {isLayoutStale, LAYOUT_STATE_LABELS, STALE_LABEL} from '../venue/venueLabels';
 
 export interface ContextHeaderProps {
   /** Called after another event is opened so the simulation resets and the map fits. */
@@ -43,7 +46,13 @@ export const ContextHeader: React.FC<ContextHeaderProps> = ({onEventOpened}) => 
   const project = useProjectStore((s) => s.project);
   const readOnly = useProjectStore((s) => s.readOnly);
   const phase = useProjectStore((s) => s.phase);
+  const activeVenue = useProjectStore((s) => s.activeVenue);
+  const venues = useWorkspaceStore((s) => s.venues);
+  const layouts = useWorkspaceStore((s) => s.layouts);
+  const activeLayoutIds = useWorkspaceStore((s) => s.activeLayoutIds);
+  const editMode = useWorkspaceStore((s) => s.editMode);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [layoutsOpen, setLayoutsOpen] = useState(false);
 
   const projects = useMemo(
     () => (activeUserId ? visibleProjects(activeUserId, data) : []),
@@ -111,11 +120,116 @@ export const ContextHeader: React.FC<ContextHeaderProps> = ({onEventOpened}) => 
     if (opened) onEventOpened();
   };
 
+  // OX-04: Recinto › Distribución of the active venue slot.
+  const openLayoutId = activeEvent ? activeLayoutIds[activeVenue] : undefined;
+  const openLayout = layouts.find((l) => l.id === openLayoutId);
+  const openVenue = openLayout && venues.find((v) => v.id === openLayout.venueId);
+  const layoutChoices = openLayout
+    ? layouts.filter(
+        (l) =>
+          l.eventId === openLayout.eventId &&
+          l.site === openLayout.site &&
+          (l.state !== 'archived' || l.id === openLayout.id)
+      )
+    : [];
+  const canVenue = !!openLayout && useWorkspaceStore.getState().canEditVenue();
+  const venueModeTitle = canVenue
+    ? 'Modo de edición: la distribución de este evento o el recinto común'
+    : 'Tu perfil no permite editar el recinto (permiso provisional; modo local, orientativo).';
+
   return (
     <>
-      <span className="eyebrow ctx-org" title="Espacio de trabajo">
-        {orgName.toUpperCase()}
-      </span>
+      {openLayout && openVenue ? (
+        <div className="ctx-top has-venue">
+          <span className="eyebrow ctx-org" title={`Espacio de trabajo: ${orgName}`}>
+            {orgName.toUpperCase()}
+          </span>
+          <span className="ctx-sep" aria-hidden="true">
+            ·
+          </span>
+          <span
+            id="ctx-venue"
+            className="ctx-venue-name"
+            title={`Recinto: ${openVenue.name} (versión ${openVenue.version})`}
+            aria-label={`Recinto: ${openVenue.name}`}
+          >
+            {openVenue.name}
+          </span>
+          <span className="ctx-sep" aria-hidden="true">
+            ›
+          </span>
+          <select
+            id="ctx-layout"
+            className="ctx-select ctx-layout-select"
+            aria-label="Distribución"
+            title={
+              editMode === 'venue'
+                ? 'Termina la edición del recinto para cambiar de distribución'
+                : 'Distribución'
+            }
+            disabled={editMode === 'venue'}
+            value={openLayout.id}
+            onChange={(e) => void useWorkspaceStore.getState().openLayout(e.target.value)}
+          >
+            {layoutChoices.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+          <span
+            id="ctx-layout-state"
+            className={`badge ctx-layout-state state-${openLayout.state}`}
+            data-state={openLayout.state}
+          >
+            {LAYOUT_STATE_LABELS[openLayout.state]}
+          </span>
+          <span
+            id="ctx-layout-version"
+            className="ctx-layout-version"
+            title="Versión de la distribución"
+          >
+            v{openLayout.version}
+          </span>
+          {isLayoutStale(openLayout, venues) && (
+            <span
+              id="ctx-layout-stale"
+              className="badge ctx-layout-stale"
+              title={`${STALE_LABEL}: el recinto ha cambiado desde la última revisión de esta distribución.`}
+            >
+              {STALE_LABEL}
+            </span>
+          )}
+          <button
+            id="ctx-layouts"
+            type="button"
+            className="ctx-members-btn"
+            onClick={() => setLayoutsOpen(true)}
+          >
+            Distribuciones
+          </button>
+          <select
+            id="ctx-edit-mode"
+            className="ctx-select ctx-mode-select"
+            data-mode={editMode}
+            aria-label="Modo de edición"
+            title={venueModeTitle}
+            value={editMode}
+            onChange={(e) =>
+              void useWorkspaceStore.getState().setEditMode(e.target.value as EditMode)
+            }
+          >
+            <option value="layout">Editar distribución</option>
+            <option value="venue" disabled={!canVenue}>
+              Editar recinto
+            </option>
+          </select>
+        </div>
+      ) : (
+        <span className="eyebrow ctx-org" title="Espacio de trabajo">
+          {orgName.toUpperCase()}
+        </span>
+      )}
       <nav className="ctx-crumbs" aria-label="Contexto de trabajo">
         <select
           id="ctx-project"
@@ -231,6 +345,10 @@ export const ContextHeader: React.FC<ContextHeaderProps> = ({onEventOpened}) => 
         )}
       </div>
       <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)} />
+      <LayoutsDialog
+        open={layoutsOpen && !!openLayout}
+        onClose={() => setLayoutsOpen(false)}
+      />
     </>
   );
 };

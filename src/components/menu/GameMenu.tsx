@@ -77,6 +77,8 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const workspaceReady = useWorkspaceStore((s) => s.ready);
   const workspaceUnavailable = useWorkspaceStore((s) => s.unavailable);
   const activeEventId = useWorkspaceStore((s) => s.activeEventId);
+  // OX-04 D13: venues saved in the organization, reusable by a new event.
+  const savedVenues = useWorkspaceStore((s) => s.venues);
   const showToast = useProjectStore((s) => s.showToast);
   const save = useProjectStore((s) => s.save);
 
@@ -96,7 +98,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const [smartSubstep, setSmartSubstep] = useState<'cards' | 'priority'>('cards');
   const [settings, setSettings] = useState<{
     name: string;
-    locationMode: 'cristo' | 'custom';
+    locationMode: 'cristo' | 'custom' | 'saved';
+    /** Venue reused when `locationMode` is `saved` («Usar un recinto guardado»). */
+    savedVenueId: string;
     customLocation: CustomLocationConfig;
     startDate: string;
     endDate: string;
@@ -124,6 +128,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
     return {
       name: 'Navidad en el Cristo',
       locationMode: 'cristo',
+      savedVenueId: '',
       customLocation: {
         lat: DEFAULT_MAP_CENTER.lat,
         lon: DEFAULT_MAP_CENTER.lon,
@@ -215,6 +220,12 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
       if (step === 1) {
         const trimmed = settings.name.trim();
         if (!trimmed) throw new Error('Escribe un nombre.');
+        if (
+          settings.locationMode === 'saved' &&
+          !savedVenues.some((v) => v.id === settings.savedVenueId)
+        ) {
+          throw new Error('Elige un recinto guardado.');
+        }
         setSettings((prev) => ({...prev, name: trimmed}));
       }
       if (step === 2) {
@@ -273,15 +284,28 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
         // Guard against a double submit creating two events while the store awaits.
         if (submittingRef.current) return;
         submittingRef.current = true;
+        // A saved venue brings its own base map, perimeter and accesses (D13).
+        const savedVenueId =
+          settings.locationMode === 'saved' &&
+          savedVenues.some((v) => v.id === settings.savedVenueId)
+            ? settings.savedVenueId
+            : undefined;
+        if (settings.locationMode === 'saved' && !savedVenueId) {
+          throw new Error('Elige un recinto guardado.');
+        }
         let created = false;
         try {
-          created = await useWorkspaceStore.getState().createEventFromWizard({
-            ...settings,
-            ...schedule,
-            workDays: normalizedWorkDays,
-            customLocation: customLoc,
-            startTutorial: settings.startTutorial,
-          });
+          created = await useWorkspaceStore.getState().createEventFromWizard(
+            {
+              ...settings,
+              ...schedule,
+              example: savedVenueId ? false : settings.example,
+              workDays: normalizedWorkDays,
+              customLocation: customLoc,
+              startTutorial: settings.startTutorial,
+            },
+            savedVenueId ? {venueId: savedVenueId} : undefined
+          );
         } finally {
           submittingRef.current = false;
         }
@@ -476,10 +500,12 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
               className="game-primary"
               onClick={() => {
                 save();
-                downloadFile(
-                  'Ojo_de_Buey_Proyecto.json',
-                  JSON.stringify(project, null, 2)
-                );
+                // OX-04: composed venue + layout, without the edit-mode locks.
+                const ws = useWorkspaceStore.getState();
+                const exported = Object.keys(ws.activeLayoutIds).length
+                  ? ws.exportableProject()
+                  : project;
+                downloadFile('Ojo_de_Buey_Proyecto.json', JSON.stringify(exported, null, 2));
                 showToast(
                   'Proyecto exportado con los tres espacios y sus observaciones.'
                 );
@@ -673,7 +699,56 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                     <b>Elegir en el mapa real</b>
                     <span>Centro libre y área cuadrada editable</span>
                   </button>
+                  <button
+                    type="button"
+                    id="location-mode-saved-venue"
+                    className={`map-choice map-choice-wide ${settings.locationMode === 'saved' ? 'is-selected' : ''}`}
+                    aria-pressed={settings.locationMode === 'saved'}
+                    disabled={!savedVenues.length}
+                    title={
+                      savedVenues.length
+                        ? 'Reutiliza el perímetro, los accesos y el subsuelo de un recinto ya dibujado'
+                        : 'Aún no hay recintos guardados en este espacio de trabajo'
+                    }
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        locationMode: 'saved',
+                        example: false,
+                        savedVenueId: savedVenues.some(
+                          (v) => v.id === prev.savedVenueId
+                        )
+                          ? prev.savedVenueId
+                          : savedVenues[0]?.id || '',
+                      }))
+                    }
+                  >
+                    <b>Usar un recinto guardado</b>
+                    <span>Sin volver a dibujar el perímetro</span>
+                  </button>
                 </div>
+
+                {settings.locationMode === 'saved' && (
+                  <label>
+                    Recinto
+                    <select
+                      id="wizard-saved-venue"
+                      value={settings.savedVenueId}
+                      onChange={(e) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          savedVenueId: e.target.value,
+                        }))
+                      }
+                    >
+                      {savedVenues.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 {settings.locationMode === 'custom' && (
                   <LocationPicker
@@ -710,7 +785,13 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                     }
                   />
                 </label>
-                {settings.locationMode === 'cristo' ? (
+                {settings.locationMode === 'saved' ? (
+                  <p>
+                    El evento usará el recinto elegido tal como está guardado
+                    (mapa base, perímetro, accesos, subsuelo y elementos
+                    permanentes) y empezará con una distribución en borrador.
+                  </p>
+                ) : settings.locationMode === 'cristo' ? (
                   <>
                     <label>
                       <input
@@ -1022,7 +1103,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                   <dd>
                     {settings.locationMode === 'custom'
                       ? `${settings.customLocation.label} · ${settings.customLocation.sizeMeters} × ${settings.customLocation.sizeMeters} m`
-                      : 'Plaza del Cristo'}
+                      : settings.locationMode === 'saved'
+                        ? `Recinto guardado · ${savedVenues.find((v) => v.id === settings.savedVenueId)?.name ?? '—'}`
+                        : 'Plaza del Cristo'}
                   </dd>
                   <dt>Modelo</dt>
                   <dd>{settings.name}</dd>

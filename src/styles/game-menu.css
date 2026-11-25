@@ -456,6 +456,16 @@
   margin-bottom: 14px;
 }
 
+/* OX-04: «Usar un recinto guardado» spans the whole row */
+.map-choice-wide {
+  grid-column: 1 / -1;
+}
+
+.map-choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .map-choice.is-selected {
   background: var(--menu-primary-bg);
   color: var(--menu-primary-ink);

@@ -9,6 +9,7 @@ import {create} from 'zustand';
 import {
   adoptSavedProject,
   bootstrapWorkspace,
+  ensureEventLayouts,
   importV1AsNewProject,
 } from '../db/workspace-migration';
 import {
@@ -23,10 +24,24 @@ import {eventDays} from '../engine/workspace/context';
 import {
   assignableRoles as assignableRolesFor,
   can as canDo,
+  canEditVenue as canEditVenueFor,
   effectiveRole,
   visibleEvents,
 } from '../engine/workspace/permissions';
-import type {ProjectFile} from '../types';
+import {reviewLayoutScene, type LayoutReview} from '../engine/workspace/promotion-review';
+import {
+  affectedLayouts,
+  blankLayout,
+  composedListOverflow,
+  composeScene,
+  contentFingerprint,
+  duplicateLayout,
+  setLayoutState,
+  splitScene,
+  type ComposeMode,
+} from '../engine/workspace/venue-layout';
+import type {MapMetadata, PhaseKey, ProjectFile, VenueKey} from '../types';
+import type {EditMode, Layout, Venue} from '../types/venue';
 import type {
   AccessLogEntry,
   LocalUser,
@@ -49,6 +64,8 @@ interface Selection {
   userId: string | null;
   projectId: string | null;
   eventId: string | null;
+  /** Open layout per slot of `eventId` (OX-04). */
+  layoutIds: Partial<Record<VenueKey, string>>;
 }
 
 function readSelection(): Selection {
@@ -59,9 +76,10 @@ function readSelection(): Selection {
       userId: typeof p.userId === 'string' ? p.userId : null,
       projectId: typeof p.projectId === 'string' ? p.projectId : null,
       eventId: typeof p.eventId === 'string' ? p.eventId : null,
+      layoutIds: p.layoutIds && typeof p.layoutIds === 'object' ? p.layoutIds : {},
     };
   } catch {
-    return {userId: null, projectId: null, eventId: null};
+    return {userId: null, projectId: null, eventId: null, layoutIds: {}};
   }
 }
 
@@ -97,6 +115,67 @@ function writeCacheTag(eventId: string | null): void {
   }
 }
 
+/**
+ * Layouts and edit mode the localStorage cache was composed with (OX-04).
+ * On reload the cache is split back into exactly these records, never into
+ * another layout.
+ */
+export const WORKSPACE_CACHE_COMPOSITION_KEY = 'oxeye-workspace-cache-composition';
+
+interface CacheComposition {
+  eventId: string;
+  layoutIds: Partial<Record<VenueKey, string>>;
+  editMode: EditMode;
+}
+
+function readCacheComposition(): CacheComposition | null {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_CACHE_COMPOSITION_KEY);
+    const p = raw ? JSON.parse(raw) : null;
+    if (!p || typeof p.eventId !== 'string' || typeof p.layoutIds !== 'object') return null;
+    return {
+      eventId: p.eventId,
+      layoutIds: p.layoutIds || {},
+      editMode: p.editMode === 'venue' ? 'venue' : 'layout',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheComposition(c: CacheComposition | null): void {
+  try {
+    if (c) localStorage.setItem(WORKSPACE_CACHE_COMPOSITION_KEY, JSON.stringify(c));
+    else localStorage.removeItem(WORKSPACE_CACHE_COMPOSITION_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/** Same base map, except for OSM vectors fetched for a custom location. */
+function sameMapIgnoringVectors(a: MapMetadata, b: MapMetadata): boolean {
+  const strip = (m: MapMetadata) => {
+    const c = structuredClone(m);
+    if (c.customLocation) {
+      delete c.customLocation.streets;
+      delete c.customLocation.features;
+    }
+    return c;
+  };
+  return contentFingerprint(strip(a)) === contentFingerprint(strip(b));
+}
+
+/** Venues whose version changed while editing them, and their affected layouts. */
+export interface AffectedNotice {
+  venueId: string;
+  venueName: string;
+  layoutIds: string[];
+}
+
+export type LayoutCreateInput =
+  | {kind: 'blank'; name: string}
+  | {kind: 'duplicate'; name: string; sourceId: string};
+
 export interface InviteInput {
   name: string;
   contact?: string;
@@ -120,6 +199,15 @@ export interface WorkspaceStoreState {
   activeProjectId: string | null;
   activeEventId: string | null;
   activeDayId: string | null;
+  /** OX-04: venues and layouts of the active organization. */
+  venues: Venue[];
+  layouts: Layout[];
+  /** Open layout per scene slot of the active event. */
+  activeLayoutIds: Partial<Record<VenueKey, string>>;
+  /** «Editar distribución» (default) or «Editar recinto». */
+  editMode: EditMode;
+  /** Shown after leaving «Editar recinto» when the venue changed (plan D8). */
+  affectedNotice: AffectedNotice | null;
 
   init: (repo?: WorkspaceRepository) => Promise<void>;
   can: (action: WorkspaceAction, target?: Partial<PermissionTarget>) => boolean;
@@ -132,8 +220,11 @@ export interface WorkspaceStoreState {
   renameProject: (projectId: string, name: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   openEvent: (eventId: string) => Promise<boolean>;
-  /** Creates a new event in the active project (or a new default project) from the wizard. */
-  createEventFromWizard: (config: WizardConfig) => Promise<boolean>;
+  /**
+   * Creates a new event in the active project (or a new default project) from
+   * the wizard. `venueId` reuses a saved venue (OX-04 D13, «Usar un recinto guardado»).
+   */
+  createEventFromWizard: (config: WizardConfig, opts?: {venueId?: string}) => Promise<boolean>;
   renameEvent: (eventId: string, name: string) => Promise<void>;
   deleteEvent: (eventId: string) => Promise<void>;
   /** Imports a v1 JSON as the first event of a new project and opens it. */
@@ -143,12 +234,41 @@ export interface WorkspaceStoreState {
   revoke: (membershipId: string) => Promise<void>;
   /** Flushes the pending write of the active event payload. */
   flush: () => Promise<void>;
+
+  // OX-04: venue and layouts
+  /** Whether the active user may edit the venue of the active event (D16, provisional). */
+  canEditVenue: () => boolean;
+  setEditMode: (mode: EditMode) => Promise<boolean>;
+  openLayout: (layoutId: string) => Promise<boolean>;
+  createLayout: (input: LayoutCreateInput) => Promise<Layout | null>;
+  renameLayout: (layoutId: string, name: string) => Promise<void>;
+  setLayoutPhases: (layoutId: string, phases: PhaseKey[]) => Promise<void>;
+  /** Re-evaluates a layout against the current venue (clears «Recinto modificado»). */
+  reviewLayout: (layoutId: string) => Promise<LayoutReview | null>;
+  /** «Confirmar como válida»: blocked with causes when the gate fails (D9). */
+  promoteLayout: (layoutId: string, state: 'proposal' | 'current') => Promise<LayoutReview | null>;
+  archiveLayout: (layoutId: string) => Promise<void>;
+  dismissAffectedNotice: () => void;
+  /** Active project composed without edit locks (export). */
+  exportableProject: () => ProjectFile;
+  /** Part an element of the open scene is stored in (`null`: new or not composed). */
+  partOf: (elementId: string) => 'venue' | 'layout' | null;
 }
 
 let repo: WorkspaceRepository | null = null;
 let writeTimer: ReturnType<typeof setTimeout> | undefined;
 let unsubscribeProject: (() => void) | undefined;
 let initPromise: Promise<void> | null = null;
+/** Venue versions when «Editar recinto» was entered (affected layouts, D8). */
+let venueSessionStart: Array<{venueId: string; version: number}> = [];
+/** Serializes venue/layout writes so a timed flush never interleaves with an action. */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.catch(() => undefined);
+  return run;
+}
 
 const nowIso = () => new Date().toISOString();
 
@@ -186,6 +306,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
       userId: s.activeUserId,
       projectId: s.activeProjectId,
       eventId: s.activeEventId,
+      layoutIds: s.activeLayoutIds,
     });
   }
 
@@ -198,7 +319,11 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
     const s = get();
     const ev = s.data.events.find((e) => e.id === s.activeEventId);
     const editable =
-      !s.ready || s.unavailable || (!!ev && s.can('event.edit', eventTarget(ev)));
+      !s.ready ||
+      s.unavailable ||
+      (!!ev &&
+        s.can('event.edit', eventTarget(ev)) &&
+        (s.editMode !== 'venue' || canEditVenueFor(s.activeUserId, s.data.memberships, eventTarget(ev))));
     useProjectStore.getState().setReadOnly(!editable);
   }
 
@@ -214,6 +339,333 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
     const {project, phase} = useProjectStore.getState();
     const days = eventDays(project);
     return (days.find((d) => d.kind === phase) ?? days[0])?.id ?? null;
+  }
+
+  /* ---------------- OX-04: venue / layout composition ---------------- */
+
+  function activeEvent(): WorkspaceEvent | undefined {
+    const s = get();
+    return s.data.events.find((e) => e.id === s.activeEventId);
+  }
+
+  /** Records the layouts and mode the localStorage cache is composed with. */
+  function tagCacheComposition(eventId: string) {
+    const s = get();
+    writeCacheComposition({eventId, layoutIds: s.activeLayoutIds, editMode: s.editMode});
+  }
+
+  async function loadVenueData(orgId: string) {
+    if (!repo) return;
+    const [venues, layouts] = await Promise.all([repo.listVenues(orgId), repo.listLayouts(orgId)]);
+    set({venues, layouts});
+  }
+
+  /** Layout to open per slot: the preferred one, else the current one, else the latest. */
+  function pickActiveLayouts(
+    eventId: string,
+    preferred: Partial<Record<VenueKey, string>>
+  ): Partial<Record<VenueKey, string>> {
+    const own = get().layouts.filter((l) => l.eventId === eventId);
+    const out: Partial<Record<VenueKey, string>> = {};
+    for (const site of new Set(own.map((l) => l.site))) {
+      const inSite = own.filter((l) => l.site === site);
+      const live = inSite.filter((l) => l.state !== 'archived');
+      const pref = inSite.find((l) => l.id === preferred[site]);
+      const pick =
+        pref ??
+        live.find((l) => l.state === 'current' && l.phases.includes('event')) ??
+        live.find((l) => l.state === 'current') ??
+        [...live].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ??
+        inSite[0];
+      if (pick) out[site] = pick.id;
+    }
+    return out;
+  }
+
+  function recordsFor(site: VenueKey): {venue: Venue; layout: Layout} | null {
+    const s = get();
+    const layout = s.layouts.find((l) => l.id === s.activeLayoutIds[site]);
+    const venue = layout && s.venues.find((v) => v.id === layout.venueId);
+    return layout && venue ? {venue, layout} : null;
+  }
+
+  /** Event payload with every open layout composed on its venue. */
+  function composeProject(payload: ProjectFile, mode: ComposeMode): ProjectFile {
+    const p = structuredClone(payload);
+    for (const site of Object.keys(get().activeLayoutIds) as VenueKey[]) {
+      const r = recordsFor(site);
+      if (!r || !p.scenes[site]) continue;
+      p.scenes[site] = composeScene(p.scenes[site], r.venue, r.layout, mode);
+      p.maps[site] = structuredClone(r.venue.map);
+    }
+    return p;
+  }
+
+  /**
+   * Writes the editable part of the composed project back to its venue and
+   * layout records (inverse of `composeProject`). Content changes bump the
+   * record version (plan D6).
+   */
+  async function persistComposition(project: ProjectFile, mode: EditMode) {
+    if (!repo) return;
+    const s = get();
+    const now = nowIso();
+    const venues = [...s.venues];
+    const layouts = [...s.layouts];
+    const changed: Layout[] = [];
+    for (const site of Object.keys(s.activeLayoutIds) as VenueKey[]) {
+      const li = layouts.findIndex((l) => l.id === s.activeLayoutIds[site]);
+      const layout = layouts[li];
+      const vi = layout ? venues.findIndex((v) => v.id === layout.venueId) : -1;
+      const venue = venues[vi];
+      const scene = project.scenes[site];
+      if (!layout || !venue || !scene) continue;
+      const split = splitScene(scene, venue, layout, mode);
+
+      const venueChanged = contentFingerprint(split.venue) !== contentFingerprint(venue.content);
+      const map = project.maps[site];
+      const mapChanged =
+        !!map &&
+        contentFingerprint(map) !== contentFingerprint(venue.map) &&
+        (mode === 'venue' || sameMapIgnoringVectors(map, venue.map));
+      let nextVenue = venue;
+      if (venueChanged || mapChanged) {
+        nextVenue = {
+          ...venue,
+          content: split.venue,
+          map: mapChanged ? structuredClone(map) : venue.map,
+          version: venueChanged ? venue.version + 1 : venue.version,
+          updatedAt: now,
+        };
+        await repo.putVenue(nextVenue);
+        venues[vi] = nextVenue;
+      }
+
+      const contentChanged =
+        contentFingerprint([split.layout, split.accessOverrides]) !==
+        contentFingerprint([layout.content, layout.accessOverrides]);
+      const safetyChanged = contentFingerprint(split.safety) !== contentFingerprint(layout.safety);
+      // First perimeter drawn while editing this layout: it was evaluated with it.
+      const ownPerimeter = venueChanged && mode === 'layout';
+      if (contentChanged || safetyChanged || ownPerimeter) {
+        const next: Layout = {
+          ...layout,
+          content: split.layout,
+          accessOverrides: split.accessOverrides,
+          safety: split.safety,
+          version: contentChanged ? layout.version + 1 : layout.version,
+          baseVenueVersion: ownPerimeter ? nextVenue.version : layout.baseVenueVersion,
+          updatedAt: now,
+        };
+        layouts[li] = next;
+        changed.push(next);
+      }
+    }
+    if (changed.length) await repo.putLayouts(changed);
+    set({venues, layouts});
+  }
+
+  /**
+   * Opens an event payload through its venue and layouts (lazy migration on
+   * first open, plan D15). `cache` marks the payload as the localStorage copy:
+   * it is first written back into the layouts it was composed with.
+   */
+  async function openComposed(
+    ev: WorkspaceEvent,
+    payload: ProjectFile,
+    opts: {
+      cache?: CacheComposition | null;
+      useVenue?: Partial<Record<VenueKey, Venue>>;
+      newEvent?: boolean;
+    } = {}
+  ): Promise<boolean> {
+    if (!repo) return false;
+    try {
+      return await openComposedUnsafe(ev, payload, opts);
+    } catch {
+      // Venue/layout records unavailable: open the payload as a single scene.
+      set({activeLayoutIds: {}, editMode: 'layout'});
+      useProjectStore.getState().openEventPayload(payload);
+      return true;
+    }
+  }
+
+  async function openComposedUnsafe(
+    ev: WorkspaceEvent,
+    payload: ProjectFile,
+    opts: {
+      cache?: CacheComposition | null;
+      useVenue?: Partial<Record<VenueKey, Venue>>;
+      newEvent?: boolean;
+    }
+  ): Promise<boolean> {
+    if (!repo) return false;
+    const comp = await ensureEventLayouts(repo, ev, payload, {
+      useVenue: opts.useVenue,
+      initialState: opts.newEvent ? 'draft' : 'current',
+      shareVenue: !opts.newEvent,
+    });
+    await loadVenueData(ev.orgId);
+    const sel = readSelection();
+    const cache = opts.cache && opts.cache.eventId === ev.id ? opts.cache : null;
+    const preferred = cache?.layoutIds ?? (sel.eventId === ev.id ? sel.layoutIds : {});
+    set({activeLayoutIds: pickActiveLayouts(ev.id, preferred)});
+    if (cache && !comp.created) {
+      const sameLayouts = Object.entries(cache.layoutIds).every(
+        ([site, id]) => get().activeLayoutIds[site as VenueKey] === id
+      );
+      if (sameLayouts) await persistComposition(payload, cache.editMode);
+    }
+    for (const site of Object.keys(get().activeLayoutIds) as VenueKey[]) {
+      const r = recordsFor(site);
+      if (r && composedListOverflow(r.venue.content, r.layout.content)) {
+        toast('El recinto y la distribución superan 500 elementos en una lista; no se puede abrir.');
+        set({activeLayoutIds: {}});
+        return false;
+      }
+    }
+    // Leaving «Editar recinto» by opening another event still reports affected layouts.
+    set({editMode: 'layout', affectedNotice: closeVenueSession()});
+    useProjectStore.getState().openEventPayload(composeProject(payload, 'layout'));
+    return true;
+  }
+
+  /** Recomposes the open event (layout switch, mode switch) from the live project. */
+  function recompose(mode: EditMode) {
+    const project = useProjectStore.getState().project;
+    useProjectStore.getState().openEventPayload(composeProject(project, mode));
+    const id = get().activeEventId;
+    if (id) tagCacheComposition(id);
+  }
+
+  /**
+   * Ends a «Editar recinto» session: the notice lists the layouts evaluated
+   * against an older version of a venue changed during the session (D8).
+   */
+  function closeVenueSession(): AffectedNotice | null {
+    let notice: AffectedNotice | null = null;
+    for (const start of venueSessionStart) {
+      const venue = get().venues.find((v) => v.id === start.venueId);
+      if (!venue || venue.version === start.version) continue;
+      notice = {
+        venueId: venue.id,
+        venueName: venue.name,
+        layoutIds: affectedLayouts(venue, get().layouts).map((l) => l.id),
+      };
+    }
+    venueSessionStart = [];
+    return notice;
+  }
+
+  function layoutOfActiveEvent(layoutId: string): Layout | undefined {
+    const s = get();
+    return s.layouts.find((l) => l.id === layoutId && l.eventId === s.activeEventId);
+  }
+
+  /**
+   * Re-applies edit locks to the live scene for elements that now belong to
+   * the part not being edited (e.g. accesses stored in the venue with the
+   * first perimeter, or items moved to the layout in venue mode), so later
+   * edits are not silently reverted on the next split. History is kept.
+   */
+  function relockLive() {
+    const s = get();
+    const project = useProjectStore.getState().project;
+    let next: ProjectFile | null = null;
+    for (const site of Object.keys(s.activeLayoutIds) as VenueKey[]) {
+      const r = recordsFor(site);
+      const scene = project.scenes[site];
+      if (!r || !scene) continue;
+      const lockedPart =
+        s.editMode === 'venue'
+          ? r.layout.content
+          : (r.venue.content.boundary || []).length >= 3
+            ? r.venue.content
+            : null;
+      if (!lockedPart) continue;
+      const ids = new Set<string>();
+      for (const list of Object.values(lockedPart)) {
+        if (!Array.isArray(list)) continue;
+        for (const x of list as Array<{id?: unknown}>) {
+          if (x && typeof x.id === 'string') ids.add(x.id);
+        }
+      }
+      const lists = (sc: typeof scene) =>
+        [
+          sc.entrances,
+          sc.base?.booths,
+          sc.infrastructure,
+          sc.passages,
+          sc.reserves,
+          sc.fences,
+          sc.flows,
+          sc.corridors,
+          sc.roadPlans,
+          sc.measurements,
+          sc.annotations,
+        ] as Array<Array<{id?: string; locked?: boolean}> | undefined>;
+      const needs = lists(scene).some((l) => (l || []).some((x) => !!x.id && ids.has(x.id) && !x.locked));
+      if (!needs) continue;
+      next = next ?? structuredClone(project);
+      for (const l of lists(next.scenes[site])) {
+        for (const x of l || []) if (x.id && ids.has(x.id)) x.locked = true;
+      }
+    }
+    if (next) useProjectStore.setState({project: next});
+  }
+
+  async function flushNow() {
+    if (writeTimer) {
+      clearTimeout(writeTimer);
+      writeTimer = undefined;
+    }
+    const s = get();
+    if (!repo || !s.activeEventId) return;
+    const ev = s.data.events.find((e) => e.id === s.activeEventId);
+    if (!ev) return;
+    const project = structuredClone(useProjectStore.getState().project);
+    if (Object.keys(s.activeLayoutIds).length) {
+      try {
+        await persistComposition(project, s.editMode);
+        if (get().activeEventId === ev.id) relockLive();
+      } catch {
+        // Keep the payload write below; the cache still holds the composed copy.
+      }
+    }
+    try {
+      await repo.putPayload({
+        eventId: ev.id,
+        orgId: ev.orgId,
+        project,
+        updatedAt: nowIso(),
+      });
+    } catch {
+      // Ignore IndexedDB errors; the localStorage cache still holds the active event.
+    }
+  }
+
+  /** Common checks for layout actions on the active event. */
+  function layoutActionAllowed(layoutId?: string): {ev: WorkspaceEvent; layout?: Layout} | null {
+    const s = get();
+    const ev = activeEvent();
+    if (!repo || !ev) return null;
+    if (!s.can('event.edit', eventTarget(ev))) {
+      deny('Tu perfil no permite modificar las distribuciones de este evento.');
+      return null;
+    }
+    if (layoutId === undefined) return {ev};
+    const layout = layoutOfActiveEvent(layoutId);
+    return layout ? {ev, layout} : null;
+  }
+
+  /** Runs the promotion review of a layout on its composed scene (D9, D11). */
+  function reviewOf(layout: Layout): LayoutReview | null {
+    const s = get();
+    const venue = s.venues.find((v) => v.id === layout.venueId);
+    const live = useProjectStore.getState().project;
+    const eventScene = live.scenes[layout.site];
+    if (!venue || !eventScene) return null;
+    return reviewLayoutScene(composeScene(eventScene, venue, layout, 'plain'));
   }
 
   async function runInit(repository?: WorkspaceRepository) {
@@ -255,7 +707,8 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
         writeCacheTag(adopted.id);
       }
 
-      // 2. Open the selected event; if it is not the cached one, load it from IndexedDB.
+      // 2. Open the selected event; if it is not the cached one, load it from
+      //    IndexedDB. Either way it is opened through its venue and layouts (OX-04).
       let ev = findEvent(sel.eventId) ?? cacheEvent;
       if (ev && !get().can('event.view', eventTarget(ev))) ev = undefined;
       if (ev && (!ps.hasSavedProject || ev.id !== cacheEvent?.id)) {
@@ -263,16 +716,28 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
         let loaded = false;
         if (stored) {
           try {
-            useProjectStore.getState().openEventPayload(normalizeStoredProject(stored.project));
-            writeCacheTag(ev.id);
-            loaded = true;
+            loaded = await openComposed(ev, normalizeStoredProject(stored.project));
+            if (loaded) writeCacheTag(ev.id);
           } catch {
             loaded = false;
           }
         }
         if (!loaded) ev = ps.hasSavedProject ? cacheEvent : undefined;
+        if (ev && ev.id === cacheEvent?.id) {
+          await openComposed(ev, useProjectStore.getState().project, {
+            cache: readCacheComposition(),
+          });
+        }
+      } else if (ev) {
+        // The editor holds the cached copy of `ev`: write it back, then compose.
+        await openComposed(ev, useProjectStore.getState().project, {
+          cache: readCacheComposition(),
+        });
       }
+      if (ev) tagCacheComposition(ev.id);
 
+      // Saved venues are listed even before any event is open (wizard, D13).
+      if (!ev && get().activeOrgId) await loadVenueData(get().activeOrgId!);
       const {data} = get();
       const projectId =
         ev?.projectId ??
@@ -299,6 +764,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
       if (!id) return;
       // Keep the cache tag in step with the cache content (written by the project store).
       writeCacheTag(id);
+      tagCacheComposition(id);
       schedulePayloadWrite();
     });
   }
@@ -313,6 +779,11 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
     activeProjectId: null,
     activeEventId: null,
     activeDayId: null,
+    venues: [],
+    layouts: [],
+    activeLayoutIds: {},
+    editMode: 'layout',
+    affectedNotice: null,
 
     init: (repository) => {
       // Idempotent: React StrictMode may call it twice; a second concurrent
@@ -367,6 +838,11 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
       }
       if (!s.data.projects.some((p) => p.id === get().activeProjectId)) {
         set({activeProjectId: s.data.projects[0]?.id ?? null});
+      }
+      // A profile that may not edit the venue leaves «Editar recinto».
+      if (get().editMode === 'venue' && !get().canEditVenue()) {
+        set({editMode: 'layout', affectedNotice: closeVenueSession()});
+        recompose('layout');
       }
       persistSelection();
       syncReadOnly();
@@ -461,16 +937,26 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
         return false;
       }
       // Clear the active event first so loading the payload is not written elsewhere.
+      const previous = {
+        activeEventId: s.activeEventId,
+        activeLayoutIds: s.activeLayoutIds,
+        editMode: s.editMode,
+      };
       set({activeEventId: null});
-      useProjectStore.getState().openEventPayload(payload);
+      const opened = await openComposed(ev, payload);
+      if (!opened) {
+        set(previous);
+        return false;
+      }
       set({activeEventId: ev.id, activeProjectId: ev.projectId, activeDayId: pickDay()});
       writeCacheTag(ev.id);
+      tagCacheComposition(ev.id);
       persistSelection();
       syncReadOnly();
       return true;
     },
 
-    createEventFromWizard: async (config) => {
+    createEventFromWizard: async (config, opts) => {
       // Never fall back to the legacy path just because startup is still loading.
       if (initPromise) await initPromise;
       let s = get();
@@ -516,8 +1002,22 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
         syncReadOnly();
         throw err;
       }
+      // The cache now holds the new event: tag it before any await, so a reload
+      // never writes the wizard scene into the previous event's layout.
+      writeCacheTag(event.id);
+      writeCacheComposition({eventId: event.id, layoutIds: {}, editMode: 'layout'});
+      // OX-04: the new event gets its own venue (or the chosen saved venue) and a draft layout.
+      const project = useProjectStore.getState().project;
+      const saved = opts?.venueId ? get().venues.find((v) => v.id === opts.venueId) : undefined;
+      await openComposed(event, project, {
+        newEvent: true,
+        useVenue: saved ? {[project.active]: saved} : undefined,
+      });
       set({activeEventId: event.id, activeProjectId: projectId, activeDayId: pickDay()});
       writeCacheTag(event.id);
+      tagCacheComposition(event.id);
+      // Persist the selection now: a reload during the flush must reopen this event.
+      persistSelection();
       await get().flush();
       persistSelection();
       syncReadOnly();
@@ -691,25 +1191,249 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => {
       syncReadOnly();
     },
 
-    flush: async () => {
-      if (writeTimer) {
-        clearTimeout(writeTimer);
-        writeTimer = undefined;
-      }
+    flush: () => serial(flushNow),
+
+    /* ---------------- OX-04: venue and layouts ---------------- */
+
+    canEditVenue: () => {
       const s = get();
-      if (!repo || !s.activeEventId) return;
-      const ev = s.data.events.find((e) => e.id === s.activeEventId);
-      if (!ev) return;
-      try {
-        await repo.putPayload({
-          eventId: ev.id,
-          orgId: ev.orgId,
-          project: structuredClone(useProjectStore.getState().project),
-          updatedAt: nowIso(),
-        });
-      } catch {
-        // Ignore IndexedDB errors; the localStorage cache still holds the active event.
+      const ev = activeEvent();
+      return !!ev && canEditVenueFor(s.activeUserId, s.data.memberships, eventTarget(ev));
+    },
+
+    setEditMode: (mode) =>
+      serial(async () => {
+        const s = get();
+        const ev = activeEvent();
+        if (mode === s.editMode) return true;
+        if (!repo || !ev || !Object.keys(s.activeLayoutIds).length) return false;
+        if (mode === 'venue' && !get().canEditVenue()) {
+          deny('Tu perfil no permite editar el recinto.');
+          return false;
+        }
+        await flushNow();
+        const venueIds = Object.values(get().activeLayoutIds)
+          .map((id) => get().layouts.find((l) => l.id === id)?.venueId)
+          .filter((x): x is string => !!x);
+        if (mode === 'venue') {
+          venueSessionStart = get()
+            .venues.filter((v) => venueIds.includes(v.id))
+            .map((v) => ({venueId: v.id, version: v.version}));
+        } else {
+          set({affectedNotice: closeVenueSession()});
+        }
+        set({editMode: mode});
+        recompose(mode);
+        syncReadOnly();
+        return true;
+      }),
+
+    openLayout: (layoutId) =>
+      serial(async () => {
+        const s = get();
+        const ev = activeEvent();
+        const layout = layoutOfActiveEvent(layoutId);
+        if (!repo || !ev || !layout) return false;
+        if (s.editMode === 'venue') {
+          toast('Termina la edición del recinto antes de cambiar de distribución.');
+          return false;
+        }
+        if (s.activeLayoutIds[layout.site] === layoutId) return true;
+        const venue = s.venues.find((v) => v.id === layout.venueId);
+        if (!venue || composedListOverflow(venue.content, layout.content)) {
+          toast('El recinto y la distribución superan 500 elementos en una lista; no se puede abrir.');
+          return false;
+        }
+        await flushNow();
+        set({activeLayoutIds: {...get().activeLayoutIds, [layout.site]: layoutId}});
+        recompose('layout');
+        persistSelection();
+        syncReadOnly();
+        return true;
+      }),
+
+    createLayout: (input) =>
+      serial(async () => {
+        const ok = layoutActionAllowed();
+        if (!ok || !repo) return null;
+        const s = get();
+        if (s.editMode === 'venue') {
+          toast('Termina la edición del recinto antes de crear una distribución.');
+          return null;
+        }
+        const site = useProjectStore.getState().activeVenue as VenueKey;
+        const current = s.layouts.find((l) => l.id === s.activeLayoutIds[site]);
+        if (!current) return null;
+        const now = nowIso();
+        const name = input.name.trim() || 'Distribución sin nombre';
+        let layout: Layout;
+        if (input.kind === 'blank') {
+          const venue = s.venues.find((v) => v.id === current.venueId);
+          if (!venue) return null;
+          layout = blankLayout({
+            id: crypto.randomUUID(),
+            orgId: ok.ev.orgId,
+            eventId: ok.ev.id,
+            venue,
+            name,
+            now,
+            site,
+          });
+        } else {
+          const source = s.layouts.find(
+            (l) => l.id === input.sourceId && l.venueId === current.venueId
+          );
+          if (!source) return null;
+          await flushNow();
+          const fresh = get().layouts.find((l) => l.id === source.id)!;
+          layout = {
+            ...duplicateLayout(fresh, {
+              id: crypto.randomUUID(),
+              name,
+              now,
+              newId: () => crypto.randomUUID(),
+            }),
+            eventId: ok.ev.id,
+            site,
+          };
+        }
+        await repo.putLayouts([layout]);
+        set({layouts: [...get().layouts, layout]});
+        return layout;
+      }),
+
+    renameLayout: async (layoutId, name) => {
+      await serial(async () => {
+        const ok = layoutActionAllowed(layoutId);
+        if (!ok?.layout || !repo || !name.trim()) return;
+        const next = {...ok.layout, name: name.trim(), updatedAt: nowIso()};
+        await repo.putLayouts([next]);
+        set({layouts: get().layouts.map((l) => (l.id === next.id ? next : l))});
+      });
+    },
+
+    setLayoutPhases: async (layoutId, phases) => {
+      await serial(async () => {
+        const ok = layoutActionAllowed(layoutId);
+        if (!ok?.layout || !repo) return;
+        if (!phases.length) {
+          toast('Una distribución debe cubrir al menos una fase operativa.');
+          return;
+        }
+        const now = nowIso();
+        const updated: Layout = {...ok.layout, phases: [...phases], updatedAt: now};
+        const list = get().layouts.map((l) => (l.id === layoutId ? updated : l));
+        // A current layout keeps the one-current-per-phase rule (D5).
+        const demoted =
+          updated.state === 'current' ? setLayoutState(list, layoutId, 'current', now) : [];
+        const changed = [updated, ...demoted.filter((l) => l.id !== layoutId)];
+        await repo.putLayouts(changed);
+        set({layouts: list.map((l) => changed.find((c) => c.id === l.id) ?? l)});
+      });
+    },
+
+    reviewLayout: (layoutId) =>
+      serial(async () => {
+        const ok = layoutActionAllowed(layoutId);
+        if (!ok?.layout || !repo) return null;
+        await flushNow();
+        const layout = get().layouts.find((l) => l.id === layoutId)!;
+        const review = reviewOf(layout);
+        if (!review) return null;
+        const venue = get().venues.find((v) => v.id === layout.venueId)!;
+        if (review.gate.ok && layout.baseVenueVersion !== venue.version) {
+          const next = {...layout, baseVenueVersion: venue.version, updatedAt: nowIso()};
+          await repo.putLayouts([next]);
+          set({layouts: get().layouts.map((l) => (l.id === next.id ? next : l))});
+        }
+        return review;
+      }),
+
+    promoteLayout: (layoutId, state) =>
+      serial(async () => {
+        const ok = layoutActionAllowed(layoutId);
+        if (!ok?.layout || !repo) return null;
+        await flushNow();
+        const layout = get().layouts.find((l) => l.id === layoutId)!;
+        const review = reviewOf(layout);
+        if (!review || !review.gate.ok) return review;
+        const venue = get().venues.find((v) => v.id === layout.venueId)!;
+        const now = nowIso();
+        const changed = setLayoutState(get().layouts, layoutId, state, now).map((l) =>
+          l.id === layoutId ? {...l, baseVenueVersion: venue.version} : l
+        );
+        if (!changed.some((l) => l.id === layoutId)) {
+          changed.push({...layout, baseVenueVersion: venue.version, updatedAt: now});
+        }
+        await repo.putLayouts(changed);
+        set({layouts: get().layouts.map((l) => changed.find((c) => c.id === l.id) ?? l)});
+        return review;
+      }),
+
+    archiveLayout: async (layoutId) => {
+      await serial(async () => {
+        const ok = layoutActionAllowed(layoutId);
+        if (!ok?.layout || !repo) return;
+        if (Object.values(get().activeLayoutIds).includes(layoutId)) {
+          toast('No se puede archivar la distribución abierta.');
+          return;
+        }
+        const changed = setLayoutState(get().layouts, layoutId, 'archived', nowIso());
+        await repo.putLayouts(changed);
+        set({layouts: get().layouts.map((l) => changed.find((c) => c.id === l.id) ?? l)});
+      });
+    },
+
+    dismissAffectedNotice: () => set({affectedNotice: null}),
+
+    partOf: (elementId) => {
+      const site = useProjectStore.getState().activeVenue as VenueKey;
+      const r = recordsFor(site);
+      if (!r || !elementId) return null;
+      const has = (lists: Array<Array<{id?: string}> | undefined>) =>
+        lists.some((list) => (list || []).some((x) => x.id === elementId));
+      const v = r.venue.content;
+      if (has([v.entrances, v.booths, v.infrastructure, v.passages, v.reserves])) return 'venue';
+      if (v.subsoil && has([v.subsoil.polygons, v.subsoil.columns, v.subsoil.walls])) return 'venue';
+      const l = r.layout.content;
+      if (
+        has([
+          l.entrances,
+          l.booths,
+          l.infrastructure,
+          l.passages,
+          l.reserves,
+          l.fences,
+          l.flows,
+          l.corridors,
+          l.roadPlans,
+          l.measurements,
+          l.annotations,
+        ])
+      ) {
+        return 'layout';
       }
+      return null;
+    },
+
+    exportableProject: () => {
+      const s = get();
+      const live = useProjectStore.getState().project;
+      const out = structuredClone(live);
+      for (const site of Object.keys(s.activeLayoutIds) as VenueKey[]) {
+        const r = recordsFor(site);
+        const scene = live.scenes[site];
+        if (!r || !scene) continue;
+        // Split the live scene first so unsaved edits are exported, without locks.
+        const split = splitScene(scene, r.venue, r.layout, s.editMode);
+        out.scenes[site] = composeScene(
+          scene,
+          {...r.venue, content: split.venue},
+          {...r.layout, content: split.layout, accessOverrides: split.accessOverrides, safety: split.safety},
+          'plain'
+        );
+      }
+      return out;
     },
   };
 });

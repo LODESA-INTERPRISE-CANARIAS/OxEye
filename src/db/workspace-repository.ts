@@ -14,6 +14,7 @@ import type {
   WorkspaceEvent,
   WorkspaceProject,
 } from '../types/workspace';
+import type {Layout, Venue} from '../types/venue';
 
 export interface WorkspaceRepository {
   isEmpty(): Promise<boolean>;
@@ -32,6 +33,12 @@ export interface WorkspaceRepository {
   appendAccessLog(entry: AccessLogEntry): Promise<void>;
   getPayload(eventId: string): Promise<EventPayload | undefined>;
   putPayload(payload: EventPayload): Promise<void>;
+  // OX-04: venues (organization level) and layouts (event level).
+  listVenues(orgId: string): Promise<Venue[]>;
+  putVenue(venue: Venue): Promise<void>;
+  listLayouts(orgId: string): Promise<Layout[]>;
+  /** Writes several layouts atomically (promotion demotes others, plan D5). */
+  putLayouts(layouts: Layout[]): Promise<void>;
 }
 
 export function emptyWorkspaceData(): WorkspaceData {
@@ -104,11 +111,12 @@ export class DexieWorkspaceRepository implements WorkspaceRepository {
   async deleteProject(id: string) {
     await db.transaction(
       'rw',
-      [db.workspaceProjects, db.events, db.eventPayloads, db.memberships],
+      [db.workspaceProjects, db.events, db.eventPayloads, db.memberships, db.layouts],
       async () => {
         const eventIds = (await db.events.where('projectId').equals(id).toArray()).map(
           (e) => e.id
         );
+        await db.layouts.where('eventId').anyOf(eventIds).delete();
         await db.eventPayloads.bulkDelete(eventIds);
         await db.events.bulkDelete(eventIds);
         const ms = await db.memberships
@@ -123,7 +131,8 @@ export class DexieWorkspaceRepository implements WorkspaceRepository {
     await db.events.put(e);
   }
   async deleteEvent(id: string) {
-    await db.transaction('rw', [db.events, db.eventPayloads, db.memberships], async () => {
+    await db.transaction('rw', [db.events, db.eventPayloads, db.memberships, db.layouts], async () => {
+      await db.layouts.where('eventId').equals(id).delete();
       await db.eventPayloads.delete(id);
       const ms = await db.memberships.filter((m) => m.eventId === id).toArray();
       await db.memberships.bulkDelete(ms.map((m) => m.id));
@@ -145,6 +154,20 @@ export class DexieWorkspaceRepository implements WorkspaceRepository {
   }
   async putPayload(payload: EventPayload) {
     await db.eventPayloads.put(payload);
+  }
+  async listVenues(orgId: string) {
+    return db.venues.where('orgId').equals(orgId).toArray();
+  }
+  async putVenue(venue: Venue) {
+    await db.venues.put(venue);
+  }
+  async listLayouts(orgId: string) {
+    return db.layouts.where('orgId').equals(orgId).toArray();
+  }
+  async putLayouts(layouts: Layout[]) {
+    await db.transaction('rw', db.layouts, async () => {
+      await db.layouts.bulkPut(layouts);
+    });
   }
 }
 
@@ -183,6 +206,9 @@ export class MemoryWorkspaceRepository implements WorkspaceRepository {
   async deleteProject(id: string) {
     const eventIds = this.data.events.filter((e) => e.projectId === id).map((e) => e.id);
     for (const eid of eventIds) this.payloads.delete(eid);
+    for (const l of [...this.layouts.values()]) {
+      if (eventIds.includes(l.eventId)) this.layouts.delete(l.id);
+    }
     this.data.events = this.data.events.filter((e) => e.projectId !== id);
     this.data.memberships = this.data.memberships.filter(
       (m) => m.projectId !== id && !(m.eventId && eventIds.includes(m.eventId))
@@ -194,6 +220,9 @@ export class MemoryWorkspaceRepository implements WorkspaceRepository {
   }
   async deleteEvent(id: string) {
     this.payloads.delete(id);
+    for (const l of [...this.layouts.values()]) {
+      if (l.eventId === id) this.layouts.delete(l.id);
+    }
     this.data.memberships = this.data.memberships.filter((m) => m.eventId !== id);
     this.data.events = this.data.events.filter((e) => e.id !== id);
   }
@@ -210,5 +239,19 @@ export class MemoryWorkspaceRepository implements WorkspaceRepository {
   }
   async putPayload(payload: EventPayload) {
     this.payloads.set(payload.eventId, structuredClone(payload));
+  }
+  venues = new Map<string, Venue>();
+  layouts = new Map<string, Layout>();
+  async listVenues(orgId: string) {
+    return [...this.venues.values()].filter((v) => v.orgId === orgId).map((v) => structuredClone(v));
+  }
+  async putVenue(venue: Venue) {
+    this.venues.set(venue.id, structuredClone(venue));
+  }
+  async listLayouts(orgId: string) {
+    return [...this.layouts.values()].filter((l) => l.orgId === orgId).map((l) => structuredClone(l));
+  }
+  async putLayouts(layouts: Layout[]) {
+    for (const l of layouts) this.layouts.set(l.id, structuredClone(l));
   }
 }

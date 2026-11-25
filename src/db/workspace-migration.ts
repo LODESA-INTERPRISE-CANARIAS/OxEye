@@ -1,9 +1,17 @@
 /**
  * Workspace bootstrap and v1 import (OX-03, plan D8 / D9).
  */
+import {VENUES} from '../data/catalog';
 import {MAPS_DATA} from '../data/geodata';
+import {eventVenues} from '../engine/workspace/context';
 import {contentHash, deterministicId} from '../engine/workspace/ids';
-import type {ProjectFile} from '../types';
+import {
+  ALL_PHASES,
+  contentFingerprint,
+  splitLegacyScene,
+} from '../engine/workspace/venue-layout';
+import type {MapMetadata, ProjectFile, VenueKey} from '../types';
+import type {Layout, Venue, VenueContent} from '../types/venue';
 import type {
   LocalUser,
   Membership,
@@ -186,4 +194,126 @@ export async function importV1AsNewProject(
   await repo.putEvent(event);
   await repo.putPayload({eventId: event.id, orgId, project: payload, updatedAt: now});
   return {existing: false, project, event, payload};
+}
+
+/* ------------------------------------------------------------------ */
+/* OX-04: venues and layouts (plan D13, D15)                            */
+/* ------------------------------------------------------------------ */
+
+/** Display name of a venue drawn in `site` with `map`. */
+export function venueDisplayName(site: VenueKey, map: MapMetadata | undefined): string {
+  const label = map?.customLocation?.label?.trim();
+  return label || VENUES[site]?.name || 'Recinto';
+}
+
+/** Identity hash of venue content drawn on a base map (dedupe across events). */
+export function venueIdentity(site: VenueKey, map: MapMetadata | undefined, content: VenueContent) {
+  return contentFingerprint({site, map: map ?? null, content});
+}
+
+export interface EventComposition {
+  venues: Venue[];
+  layouts: Layout[];
+  /** `true` when venues or layouts were created by this call. */
+  created: boolean;
+}
+
+/**
+ * Makes sure every venue scene of an event has a venue and at least one
+ * layout (lazy migration, plan D15). A scene without layouts is split into a
+ * venue and one `current` layout covering all phases, with deterministic ids,
+ * so running it twice creates nothing new. Identical venue content in the
+ * same organization reuses the same venue. `useVenue` assigns a saved venue
+ * to a site instead of the scene's own venue content (wizard, plan D13).
+ */
+export async function ensureEventLayouts(
+  repo: WorkspaceRepository,
+  event: WorkspaceEvent,
+  payload: ProjectFile,
+  opts: {
+    useVenue?: Partial<Record<VenueKey, Venue>>;
+    /** `current` for legacy content (acceptance criterion); `draft` for new events. */
+    initialState?: Layout['state'];
+    /** `false` for new events: always create the event's own venue. */
+    shareVenue?: boolean;
+    now?: string;
+  } = {}
+): Promise<EventComposition> {
+  const now = opts.now ?? new Date().toISOString();
+  const venues = await repo.listVenues(event.orgId);
+  const layouts = await repo.listLayouts(event.orgId);
+  const own = layouts.filter((l) => l.eventId === event.id);
+  let created = false;
+  const newLayouts: Layout[] = [];
+
+  for (const site of eventVenues(payload)) {
+    if (own.some((l) => l.site === site)) continue;
+    const scene = payload.scenes[site];
+    if (!scene) continue;
+    const split = splitLegacyScene(scene);
+    const map = payload.maps[site];
+    let venue = opts.useVenue?.[site];
+    if (!venue) {
+      const hash = venueIdentity(site, map, split.venue);
+      // Only complete venues (with a perimeter) are shared between events;
+      // a new event's own venue is never shared implicitly.
+      const share = opts.shareVenue !== false && split.venue.boundary.length >= 3;
+      const sharedId = deterministicId('venue:' + event.orgId, hash);
+      const shared = share ? venues.find((v) => v.id === sharedId) : undefined;
+      if (shared && venueIdentity(shared.site, shared.map, shared.content) === hash) {
+        venue = shared;
+      } else {
+        // The shared venue changed since; keep this event's own copy.
+        const id =
+          shared || !share
+            ? deterministicId('venue:' + event.orgId + ':' + event.id + ':' + site, hash)
+            : sharedId;
+        venue = venues.find((v) => v.id === id);
+        if (!venue) {
+          venue = {
+            id,
+            orgId: event.orgId,
+            name: venueDisplayName(site, map),
+            site,
+            version: 1,
+            map: structuredClone(map),
+            content: split.venue,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await repo.putVenue(venue);
+          venues.push(venue);
+          created = true;
+        }
+      }
+    }
+    newLayouts.push({
+      id: deterministicId('layout:' + event.id, site),
+      orgId: event.orgId,
+      eventId: event.id,
+      venueId: venue.id,
+      site,
+      name: 'Distribución principal',
+      state: opts.initialState ?? 'current',
+      phases: [...ALL_PHASES],
+      version: 1,
+      baseVenueVersion: venue.version,
+      content: split.layout,
+      accessOverrides: {},
+      safety: split.safety,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  if (newLayouts.length) {
+    await repo.putLayouts(newLayouts);
+    created = true;
+  }
+  const allLayouts = [...layouts.filter((l) => !newLayouts.some((n) => n.id === l.id)), ...newLayouts];
+  const usedVenueIds = new Set(allLayouts.filter((l) => l.eventId === event.id).map((l) => l.venueId));
+  return {
+    venues: venues.filter((v) => usedVenueIds.has(v.id)),
+    layouts: allLayouts.filter((l) => l.eventId === event.id),
+    created,
+  };
 }

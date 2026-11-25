@@ -171,6 +171,28 @@ export function can(
 }
 
 /**
+ * Roles that may edit a venue (OX-04 plan D16). PROVISIONAL: who edits the
+ * venue is not decided yet (plan §12.7); change it here when OX-20 / OX-24
+ * settle it. Kept outside `ROLE_MATRIX` so `assignableRoles` is unchanged.
+ * Creating, duplicating and promoting layouts use `event.edit`.
+ */
+export const VENUE_EDIT_ROLES: ReadonlySet<WorkspaceRole> = new Set<WorkspaceRole>([
+  'org_admin',
+  'event_coordinator',
+]);
+
+/** Whether `userId` may edit the venue used by `target` (event scope). */
+export function canEditVenue(
+  userId: string | null | undefined,
+  memberships: readonly Membership[],
+  target: PermissionTarget
+): boolean {
+  if (!userId) return false;
+  const role = effectiveRole(userId, memberships, target);
+  return !!role && VENUE_EDIT_ROLES.has(role);
+}
+
+/**
  * Organization ids the user belongs to (any scope). Every listing starts from
  * these, so data of other organizations is never returned (INV-002, local).
  */
