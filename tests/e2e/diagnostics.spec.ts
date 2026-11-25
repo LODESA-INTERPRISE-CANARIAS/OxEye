@@ -2,7 +2,7 @@ import {expect, test} from '@playwright/test';
 import {openWorkspaceWithDefaultProject} from './helpers';
 
 test.describe('Diagnóstico gráfico post-simulación y resolución guiada', () => {
-  // FIXME(OX-01): app defect blocks the simulation. Any project loaded from
+  // FIXME: app defect blocks the simulation. Any project loaded from
   // storage goes through syncDemandConfigToScene(), whose legacyDemandInputs
   // (src/engine/planning/event-demand.ts:689-699) copies non-numeric values
   // into scene.demandInputs (curveProfile string, undefined optional caps).

@@ -70,7 +70,7 @@ async function switchPanelsAndOpenDialogs(page: Page): Promise<void> {
 }
 
 test.describe('Ojo de Buey (OxEye) E2E Application Flow', () => {
-  // FIXME(OX-01): obsolete by product decision (2026-11-25). Plaza del Cristo is
+  // FIXME: obsolete by product decision (2026-11-25). Plaza del Cristo is
   // always the default venue; other locations are chosen as a custom map when
   // creating a new model, not by switching between preset venues. `VenueTabs`
   // (the only producer of `[data-venue]`) is not rendered and `#venue-select`

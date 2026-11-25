@@ -1,13 +1,12 @@
-# OX-01 · Audit of the current OxEye baseline
+# Codebase audit of the OxEye baseline
 
-- Task: OX-01 (HITO-01 · Auditoría y estabilización, [ESP] §20.49)
-- Plan: `doc/specs/2026-11-25-ox-01.md`
+- Scope: first technical audit and stabilisation of the codebase (architecture, persistence, dependencies, invariant tests, E2E repair, known issues)
 - Date: 2026-11-25
 - Audited commit: `9809b13` (`main`), branch `feat/ox-01`
 - Line references (`file:line`) point to commit `b5be350` (branch `feat/ox-01`). In the 25 files touched by the comment cleanup (`adf2973`) they are a few lines lower than at `9809b13`. References were checked against `b5be350` where reviewed; unreviewed ones may be off by a few lines.
 - Version in `package.json`: `0.16.0`
 
-> Status scale ([ESP] §20.13): **Existente y verificado** (works and has automated tests), **Existente parcialmente** (implemented, with limitations or without direct tests), **Prototipado**, **No implementado**, **Desconocido**. An export or a UI button alone never yields "verificado".
+> Status scale: **Existente y verificado** (works and has automated tests), **Existente parcialmente** (implemented, with limitations or without direct tests), **Prototipado**, **No implementado**, **Desconocido**. An export or a UI button alone never yields "verificado".
 >
 > Evidence levels used in this document: *verified* = checked by running a command in this audit; *static* = derived from reading the code; *reported* = taken from earlier documents and not re-checked.
 
@@ -30,7 +29,7 @@ The most important findings are:
 - **KI-28 (blocker):** a project reloaded from storage cannot be simulated, because demand inputs rebuilt from `EventDemandConfig` contain non-numeric values that the risk review treats as critical.
 - **KI-01 to KI-03 (high):** Punto Violeta privacy bypasses in an export, the director log, and the public-mode map and print report (section 7.3).
 
-They are registered here and are not fixed by OX-01.
+They are registered here and were not fixed by the audit.
 
 ## 2. Installation and execution
 
@@ -407,7 +406,7 @@ Not covered by E2E: post-simulation diagnostics, a simulation started from a wiz
 
 ## 9. Known-issues register
 
-Severity: **blocker** (prevents a basic flow or breaks a non-negotiable invariant in normal use), **high**, **medium**, **low**. None of these is fixed by OX-01 except where stated.
+Severity: **blocker** (prevents a basic flow or breaks a non-negotiable invariant in normal use), **high**, **medium**, **low**. None of these was fixed by the audit except where stated.
 
 | Id | Severity | Issue | Cause / location | Status |
 |---|---|---|---|---|
@@ -423,11 +422,11 @@ Severity: **blocker** (prevents a basic flow or breaks a non-negotiable invarian
 | KI-10 | medium | Two runtime import cycles | section 4.2 | registered debt |
 | KI-11 | medium | E2E not run in CI | `.github/workflows/deploy-pages.yml` | open |
 | KI-12 | medium | Programme CSV export has no formula-injection guard | `ProgrammeDialog.tsx:453-480` | open |
-| KI-13 | medium | TypeScript not strict: 48 errors with `strict` + `noImplicitAny`; 189 `any` usages | `tsconfig.json` | deferred to OX-24 |
+| KI-13 | medium | TypeScript not strict: 48 errors with `strict` + `noImplicitAny`; 189 `any` usages | `tsconfig.json` | deferred |
 | KI-14 | low | Duplicated utilities (escape, distance, `gateMode`, PRNG, clamp) | section 6.1 | registered debt |
 | KI-15 | low | Single 1,669 kB JS bundle, no code splitting | `vite.config.ts` | registered debt |
 | KI-16 | low | `oxeye-invariants` skill anchors for routes are inaccurate | `.claude/skills/oxeye-invariants/SKILL.md` | open (config change needs its own plan) |
-| KI-17 | low | Prettier configured but not applied (127 files differ) | — | out of OX-01 scope (D1) |
+| KI-17 | low | Prettier configured but not applied (127 files differ) | — | out of the audit scope |
 | KI-18 | low | Unused dependencies `drizzle-orm`, `drizzle-kit`, `gts`; Dexie written but never read | section 5 | open |
 | KI-19 | low | Dead code: `VenueTabs.tsx`, `venue-maps.ts` `ZONES`, `routeArrows`, `emergencyPanel` | section 6 | open |
 | KI-20 | low | Engine performs network I/O and builds HTML/SVG strings; components inject them with `innerHTML` | section 4.3 | registered debt |
@@ -448,11 +447,9 @@ Issues found while repairing E2E:
 | KI-30 | low | Duplicate DOM ids: `ObjectivesConfigurator` is mounted in the wizard and in `#objectives-dialog` (`#smart-cards-grid`, `#smart-hypotheses`, `#smart-search`…) | `GameMenu.tsx`, `ObjectivesDialog.tsx` | open |
 | KI-31 | low | «Salir» saves the bundled default project even if the user never created one, enabling «Continuar» despite the tooltip «Crea o carga primero un proyecto» | `GameMenu.tsx` | open; E2E helper relies on it |
 
-## 10. Gap matrix ([ESP] §20.14)
+## 10. Gap matrix: non-negotiable invariants
 
-Scope: the task cards OX-02 to OX-24 supplied by the user on 2026-11-25 (the cards are not stored in the repository). The matrix records the audited state and gap only; it does not design or plan those tasks. "Responsable" is the function named by the card when it names one, otherwise *Por asignar* (OX-24 assigns people). "Estado" is the work status of each task at audit time.
-
-### 10.1 Non-negotiable invariants
+The matrix records the audited state and gap only; it does not plan the fixes.
 
 | Requisito | Estado objetivo | Estado actual | Brecha | Prioridad | Dependencia | Responsable | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
@@ -461,49 +458,6 @@ Scope: the task cards OX-02 to OX-24 supplied by the user on 2026-11-25 (the car
 | Punto Violeta privacy | No individual data in public views or exports | Redaction in notifications, SVG label, incident JSON/CSV | **3 high bypasses** (KI-01..03); rule duplicated (KI-05) | Fixed commitment | — | Por asignar | `incident-center.test.ts` › CA 12 & 13 (label only) | **Failing in code** |
 | X-ray and 500 kg/m² (indicative) | Indicative review threshold, never certification | Threshold and slab conflicts implemented; wording indicative | Disclaimer untested, only for ballast; hard-coded | Fixed commitment | — | Por asignar | `ballast-groups.test.ts`, `subsoil.test.ts`; E2E `xray`, `ballast-groups` (pass) | Tested with gaps |
 | `EventDemandConfig` and attendance conservation | Single source of truth; exact conservation | Sync and conservation implemented and tested | 3 bypassing writers (KI-06); the derived `demandInputs` mirror becomes invalid after sync and blocks simulation (KI-28, blocker) | Fixed commitment | — | Por asignar | `demand-sync.test.ts` (Prueba 1-8), `human-behavior-crowd.test.ts` › Prueba A | **Defect open** |
-
-### 10.2 Tasks OX-02 to OX-24
-
-| OX | Requisito | Estado objetivo | Estado actual (auditoría) | Brecha | Prioridad | Dependencia | Responsable | Prueba | Estado |
-|---|---|---|---|---|---|---|---|---|---|
-| OX-02 | Data authority and sharing ([ESP] ADR-024-001/002/005; INV-003, TEC-004, TEC-007) | Approved ADRs; authority table per entity with a single owner; offline policy; no-server plan B | No backend. Source of truth is localStorage `ojo-de-buey-project-v1` (whole project); Dexie written but never read; Drizzle schema unused; JSON export/import v1 without versioned migrations; `EventDemandConfig` is the only single-source precedent and is bypassed by 3 writers (KI-06) | All: no ADRs, no authority map, no entity identities beyond the scene JSON | Núcleo obligatorio | OX-01 | Architecture + product direction | Document review; cross-check OX-03..OX-22 against the authority table | Not started |
-| OX-03 | Users, roles, projects (Organization → Project → Event → Day → Activity; INV-001, INV-002, INV-011, SEC-001) | Stable entities; per-project/event roles; invitations with audit; context header; JSON import as event | Single local project; Plaza del Cristo is the default venue and other places are custom maps chosen in the wizard (preset `constitucion`/`vega` scenes are stored but not reachable, KI-29); no users, roles or permissions; `pre`/`event`/`post` phases and programme days exist; wizard has **5** steps | Entire identity/permission model; server-side checks impossible without OX-02 decision | Núcleo obligatorio | OX-01, OX-02 | Por asignar | Unit permission matrix; reload without duplicates; org isolation; E2E project with two events | Not started |
-| OX-04 | Venue vs layout separation (HITO-03; VAL-MAP-CORE-001, VAL-MAP-BOUNDARY-001, VAL-MAP-FOOTPRINT-001) | Reusable `Recinto`; versioned `Distribución` per event; duplication with new identities; change impact on layouts | Venue and placed items live together in one scene; `permanent` and `locked` flags exist; item limit `CATALOG_ITEM_LIMIT = 500` (`selectionActions.ts:62`); X-ray and ballast checks are per scene; `presets.configure()` mutates global `MAPS` (KI-21) | No venue/layout entities, versions or states; boundary validation not as defined | Núcleo obligatorio | OX-01, OX-03 | Por asignar | Unit duplication; persistence reopen; E2E venue + two layouts; regression X-ray, ballast, routes A/B/C | Not started |
-| OX-05 | Real inventory: model, physical unit, need, reservation (INV-006, INV-013, INV-019; VAL-INV-*) | Coverage/deficit per event; overlap conflicts; unit states; external need on deficit | Inventory is a drawing catalogue (`InventoryDialog.tsx`, `catalog.ts`, `inventory.ts`, `inventory-meta.ts`); no physical units, owners, availability or reservations; ballast manufacturer data in `ballast.ts` | All four entities and coverage logic; concurrency needs OX-02 | Núcleo obligatorio | OX-02, OX-03, OX-04 | Por asignar | Unit coverage/deficit and interval overlap; concurrent reservation; HITO-04 demo | Not started |
-| OX-06 | Calendar with dependencies (INV-005, TEC-006, OPS-006; VAL-CAL-*, VAL-CAL-CHAIN-001) | Activities with typed dependencies, multi-track view, propagation, planned vs actual, explicit time zone | Event days, `pre`/`post` shifts, programme (`programme.ts`), logistics sequencing (`phases.ts`, `shift.ts`), all unit-tested; no dependencies, resource conflicts, actual-time records or explicit `Atlantic/Canary` handling | Dependency model, propagation, conflict detection, time-zone storage | Núcleo obligatorio | OX-03, OX-05 | Por asignar | Unit propagation and cycle rejection with fixed instants; E2E delay flow | Not started |
-| OX-07 | Budget driven by the plan (ECO-005, ECO-007, ECO-010, ECO-011, INV-007, INV-013; VAL-ECO-BIDIRECTIONAL-001 A) | Versioned economic plan; items with source, tax treatment and estimate state; unknown ≠ 0 | `ParametersDialog.tsx` (shift wage cost), companies/crews (`companies.ts`, Parcialmente); programme CSV has an estimated cost column; no budget items linked to map items | Economic entities, declarative rules, versions, protected items (Carpa Amarilla, Punto Violeta, emergency) | Núcleo obligatorio | OX-04, OX-05, OX-06 | Por asignar | Unit rules, rounding, tax; no committed/invoiced/paid states created; integration plan → need → item | Not started |
-| OX-08 | Two-way reconciliation with confirmation (MST-007, VAL-004, ECO-009; VAL-ECO-COMMITMENT-001) | Common reconciliation service, impact report, atomic apply, single-step undo | Precedent: `DemandChangeDialog.tsx` + `EventDemandConfig` sync (demand-sync.test); undo is full-project snapshots in memory (KI-22); business rules partly inside components (`ComparisonDialog`, `RiskDialog`) | Service, impact dialog, protected "not reducible" items, audit log | Núcleo obligatorio | OX-05, OX-06, OX-07 | Por asignar | Unit per domain; property test apply + undo; E2E both directions | Not started |
-| OX-09 | Supplier quotes and total-cost comparison (VAL-CON-QUOTES-001; ECO-006, ANA-006) | Quote requests from deficits; itemised quotes; normalised comparison; selection = "ofertado" only | Companies (`OrganizationsDialog.tsx`, `companies.ts`) and contacts with mailto/WhatsApp and CSV (`ContactsDialog.tsx`, E2E programme-contacts passes); contacts' personal data in project JSON and localStorage | Request/quote entities, comparison, history | Ampliación prioritaria | OX-03, OX-05, OX-07 | Por asignar | Unit normalisation and comparable cost; no commitments created; E2E deficit → 3 quotes → select | Not started |
-| OX-10 | Real deliveries: arrival, parking, unloading, exit (HITO-07; LOG-003..006; VAL-LOG-THREE-001) | Delivery entity with states, zone capacity, access-dimension checks, conflicts, rescheduling, actuals | Simulated logistics only: `shift.ts`, `vehicle-system.ts` (unit-tested), `loadingZone`/`turning` pieces, classified accesses; no real planned deliveries | Delivery model and conflict logic; real vs simulated distinction (INV-009) | Ampliación prioritaria | OX-04, OX-05, OX-06, OX-07 | Por asignar | Unit capacity/overlap/vehicle-access; regression `shift.ts`; E2E 3 deliveries conflict | Not started |
-| OX-11 | Mobile work orders and daily forms (PER-003, PER-005, PER-007, PER-008, UX-009) | Orders from calendar/map; mobile view by expiring token; start/finish/report; downloadable form | Desktop-only SVG UI; no mobile view or worker portal; crews, shift parameters and grid cell references exist | All; server-validated tokens need OX-02; static fallback | Ampliación prioritaria | OX-03, OX-06, OX-10, OX-13 (OX-14 optional) | Por asignar | E2E mobile viewport; unit overlap and token validity; basic accessibility | Not started |
-| OX-12 | Technical production: stage, light, sound (INV-014) | Production entity, technical requirements, indicative power balance, rider ↔ inventory, pre-show checks | Catalogue has stage and `power`; sound friction in dB (`experience-monitor.ts`, Parcialmente); programme activities with company/contact; no production sheets, rider or power balance | All production entities; invalidation of checks when items move | Ampliación prioritaria | OX-05, OX-06, OX-07, OX-14 | Por asignar | Unit power balance and rider comparison; VAL-CORE-INVALIDATION-001; regression X-ray and routes A/B/C | Not started |
-| OX-13 | Real incidents in an operations centre (HITO-08; INV-009, OPS-002..008; VAL-OPS-INCIDENT-001, VAL-SIM-ISOLATION-001) | `IncidenciaReal` separate from simulated incidents; state machine with verification; quick capture; operations centre; daily log; shared taxonomy only | Incident centre exists for **simulation only** (`incident-center.ts` unit-tested, `IncidentAnalysisPanel.tsx` without tests); 8-category taxonomy; inside runtime cycle (KI-10); Punto Violeta bypasses (KI-01..03) and duplicated gating (KI-05) | Entire real-incident domain; a reusable, tested privacy rule is a prerequisite | Núcleo obligatorio | OX-03, OX-04, OX-06 | Por asignar | Unit state machine; Punto Violeta privacy over views and exports; isolation test; E2E capture → close | Not started |
-| OX-14 | Documents linked to decisions (INV-008, DOC-003..015; VAL-DOC-EVIDENCE-001, VAL-CORE-INVALIDATION-001) | Upload with metadata and versions; requirement/evidence states; pending panel; invalidation on map change; per-document permissions | No document storage; exports only (project JSON, CSVs, incident print window — not a real PDF); no requirement entity | All; storage depends on OX-02 | Núcleo obligatorio (basic) | OX-02, OX-03, OX-04 | Por asignar | Unit requirement states and expiry; invalidation; permission test | Not started |
-| OX-15 | Instruction communications with status (INV-010, INTG-003..013, PER-006; VAL-PER-INSTRUCTION-001, VAL-INTG-FAILURE-001) | `Comunicación` with versioned target and honest states; confirmation by link; idempotent retries; phase 1 drafts only | Contacts open `mailto:`/WhatsApp (`ContactsDialog.tsx`); no sending or receipt tracking; no path from simulation to real communications exists | All; real channels need OX-02/OX-24 | Ampliación prioritaria | OX-02, OX-03, OX-11 | Por asignar | Unit state machine and idempotency; simulated mail outage; E2E publish → confirm → V2 | Not started |
-| OX-16 | Versioned, isolated, reproducible simulation (HITO-09; INV-009, INV-016, SEG-005, SIM-003; VAL-SIM-REPEAT-001, VAL-SIM-ISOLATION-001) | Frozen snapshot per run; run record with plan/engine version, seed, params, results; staleness flag; structural edit lock; cycles and engine → store removed | 63 engine modules (45 verificado, 16 parcialmente, 2 prototipado); seed test covers 120 s of crowd only; conservation tested but `EventDemandConfig` bypassed (KI-06) and invalid after reload (KI-28); 2 runtime cycles + 1 type-only; engine → store type import; ~13 engine modules build HTML/SVG strings; simulation on main thread; Dexie `simulationRuns` unused; no run records or engine version | Snapshot and run registry, staleness, edit lock, cycle removal; broader reproducibility test | Investigación (isolation is núcleo) | OX-01, OX-04 | Por asignar | Fixed-seed numeric comparison incl. emergency outcomes; demand/conservation regression; FPS before/after | Not started |
-| OX-17 | Complete virtual emergency response ([ESP] §21.33; SEG-007, INTG-013, PLAN-003) | Gap audit vs the 9-step list; explicit staging, crew descent, foot route, stretcher return with times per leg; per-intervention report | `vehicle-dispatch.ts`, `stretcher-nav.ts`, `vehicle-system.ts` unit-tested; routes A/B/C implemented; mission-path → A/B/C mapping and fallback untested (`vehicle-dispatch.ts:626-630`); `watch.ts`, `motion.ts`, `incident-crowd.ts` Parcialmente | Per-leg timing report, comparison across layouts, real deliveries as obstacles | Investigación | OX-16 | Por asignar | Fixed-seed navigation tests; regression stretcher-nav and vehicle-dispatch; expert review | Not started |
-| OX-18 | Compare three genuinely different layouts (SIM-007, ANA-013, MST-008; VAL-SIM-DIFF-001) | Compare up to 3 saved layouts; data-derived diff; same seed per run; cost, access and A/B/C times; red flag on invariant regressions; propose via OX-08 | Laboratory (`LaboratoryDialog.tsx` without tests, `batch.ts` unit-tested), self-evaluation (`evaluator.ts` Parcialmente; `ComparisonDialog.tsx` runs an engine search inside the UI), 3 layout strategies (`layout.ts`); no saved layouts (OX-04) or costs (OX-07) | Saved-layout comparison, diff engine, invariant red flags | Ampliación prioritaria | OX-04, OX-07, OX-16, OX-17 | Por asignar | Unit diff; reproducible battery with fixed seed; E2E SIM-A/B/C | Not started |
-| OX-19 | Learning from past events (INV-013, INV-020, ANA-002..016; VAL-ANA-MISSING-001) | Event close freezing plan and actuals; plan-vs-actual indicators with source and formula version; edition comparison; learning library | `review-memory.ts`, `post-sim-diagnostics.ts`, `objectives.ts` (unit-tested) work on **simulated** data; `lastSessionReview` stores incident notes (KI-04); no real actuals or archive | Entire real-data history; Punto Violeta aggregate-only rule | Ampliación prioritaria | OX-06, OX-07, OX-13, OX-16 | Por asignar | Unit indicators with missing/partial data; re-identification test; E2E close → next edition | Not started |
-| OX-20 | Common, clear UI per profile (UX-002..009, CUM-014) | Context header; role-based views; semantic status colours identical across palettes; glossary; honest save state | Desktop-only expert UI: 3 workspaces, phase strip, 6 palettes (unit + E2E tested), tutorial overlay, `PlainLanguageEnhancer` (DOM manipulation, no test); hotspots App 1,912 / MapShell 3,268 / Sidebar 2,535 / Inspector 2,432 lines; no component unit tests; duplicate DOM ids (KI-30); save is localStorage only with silent fallback (KI-07) | Context header, profiles, glossary audit, honest save indicator, accessibility checks | Núcleo (navigation and context); profiles ampliación | OX-03, OX-11 | Por asignar | E2E per profile desktop/mobile; contrast check; keyboard test; user observation | Not started |
-| OX-21 | Shared persistence, recovery and protection (INV-004, INV-015, INV-019, MST-006, TEC-007; VAL-CORE-TRANSACTION-001) | Implementation of the OX-02 choice; optimistic versioning; atomic multi-entity writes; backups with tested restore; change history; 0.16.0 JSON import without duplicates | Each browser keeps its own copy in localStorage (Dexie write-only); sharing by sending `Ojo_de_Buey_Proyecto.json`; format `version: 1` only; invalid stored data silently replaced (KI-07); reloaded projects fail risk review (KI-28); undo is in-memory snapshots (KI-22); public repository | All; plan B only without server budget | Núcleo obligatorio | OX-02, OX-03 | Por asignar | Concurrency and transaction integration tests; documented restore drill; idempotency test | Not started |
-| OX-22 | End-to-end test DEMO-CRISTO-001 (HITO-10; VAL-E2E-CRISTO-001, VAL-003, VAL-005) | Versioned fixture (60 × 40 m synthetic site); one-step restore; demo indicator; automated 14-stage test with deferred stages marked; run report | E2E suite repaired in OX-01: 13 tests, 11 pass, 2 `fixme` (KI-28, KI-29); no integral scenario; CI does not run E2E (KI-11); `small-example.ts` and `response-example.ts` are Prototipado demo generators that also seed the default scene | Fixture, restore, automated integral test, E2E in CI | Núcleo obligatorio | All pilot tasks (OX-23) | Por asignar | Automated run in CI; guided manual run by a non-developer | Not started |
-| OX-23 | Pilot scope and maintenance (ADR-024-007, ADR-024-012; PLAN-004..006, TEC-015, EXP-*) | Approved scope document classifying the 24 tasks; exclusions; acceptance conditions; maintenance proposal; milestones without contractual dates | No scope document. This audit is the factual input: prototype strong in simulation, no backend, no multi-user, privacy and reload defects open, UI tested only by E2E | Entire document; product decisions | Núcleo obligatorio | OX-01, OX-02, OX-24 | Product direction + technical coordination | Cross-read against OX-22 stages; non-technical reader review | Not started |
-| OX-24 | Technical decisions and team governance (ADR-024-001..011; [ESP] §20.24, §20.62–§20.63, §24.161) | ADR register; internal decisions (strict, Prettier, E2E in CI, branching, review, merge approval); responsibility matrix; DoR/DoD; follow-up ritual; board | Inputs from this audit: `strict` gives 48 errors and 189 `any` (KI-13); Prettier differs in 127 files (KI-17); E2E not in CI (KI-11); unused dependencies (KI-18); local Claude Code setup under `.claude/` (agents, skills, hooks, plan approval, push blocking) | ADR register, responsibility matrix, DoR/DoD, CI E2E step | Núcleo obligatorio | OX-01 | Product direction + team | ADR review with minutes; first task checked against DoR | Not started |
-
-### 10.3 Task-card statements that differ from the audited code
-
-| Card | Statement | Audited fact |
-|---|---|---|
-| OX-02, OX-21 | Persistence in "Dexie/IndexedDB y localStorage" | localStorage is the only source; Dexie is written and never read |
-| OX-03 | "Wizard de 4 pasos" | 5 steps |
-| OX-04 | "límite de 500 elementos por recinto" | `CATALOG_ITEM_LIMIT = 500` defined in map code (`selectionActions.ts:62`) |
-| OX-13 | Cycle `event-engine → incident-center → emergency-lab`; incident export to "PDF" | Real order `event-engine → emergency-lab → incident-center → event-engine`; the "PDF" is a browser print window |
-| OX-16 | "16 módulos del motor que generan SVG" | About 13 engine modules build HTML/SVG strings; 16 is the number of *Parcialmente* modules |
-| OX-22 | "Los tests E2E (12) fallan en el flujo inicial" | First cause was a stale dev server; outdated flow second; now 11 pass, 2 `fixme` |
-| OX-24 | Agents in `.agents/agents/` | Does not exist; agents are in `.claude/agents/` |
-| OX-02 | `EventDemandConfig` as the solved single-source precedent | Bypassed by 3 writers (KI-06) and broken after reload (KI-28) |
-
-Statements not checked by this audit: tutorial "de 9 pasos" (OX-20) and the Tenerife reference response times (OX-17).
 
 ## 11. Final verification
 
@@ -520,15 +474,15 @@ Run on 2026-11-25 at commit `b5be350` (branch `feat/ox-01`), working tree contai
 Pending human actions (cannot be performed or verified by Claude Code):
 
 - Clean install with `npm ci` and a full run of the checks above (package installs are blocked for Claude Code by the project hooks).
-- A team member who did not take part in the audit installs and runs the project from the README alone ([ESP] §20.49).
-- Cross-review of this document ([ESP] §24.161).
+- A team member who did not take part in the audit installs and runs the project from the README alone.
+- Cross-review of this document.
 
 ## 12. Proposed documentation corrections (not applied)
 
-These are proposals for the user; OX-01 does not edit these files (plan section 4).
+These are proposals for the user; the audit did not edit these files.
 
 `doc/claude/02_ARQUITECTURA_Y_STACK.md`:
-- "React + TypeScript estricto" → TypeScript with `strict: false` (strict mode pending, OX-24).
+- "React + TypeScript estricto" → TypeScript with `strict: false` (strict mode pending, KI-13).
 - "Drizzle ORM + Dexie (IndexedDB) + localStorage" as persistence → localStorage is the source of truth; Dexie is written but never read; Drizzle schema is not used at runtime.
 - "ESLint (`gts` / Google TypeScript Style)" → ESLint 9 with `typescript-eslint`, `react-hooks` and `eslint-config-prettier`; `gts` is not used.
 - "Motor puro … sin dependencias de React ni del DOM" → true for React and DOM, but the engine performs network I/O (`custom-map.ts`), imports a store type (`risk-guidance.ts:7`) and produces HTML/SVG strings.
@@ -541,7 +495,7 @@ These are proposals for the user; OX-01 does not edit these files (plan section 
 - Last commit on `main` `6fd5f76` → `9809b13` at audit time.
 - Add the known-issues summary from section 9 and the E2E status.
 
-`README.md` (outside "🚀 Inicio Rápido", which OX-01 updates):
+`README.md` (outside "🚀 Inicio Rápido", which was updated with the audit):
 - Line 114 "TypeScript estricto" → same correction as above.
 - The audit did not re-check feature claims elsewhere in the README; `04_ESTADO_ACTUAL.md` already lists outdated counts (150 vs 500 pieces, 27-piece catalogue).
 

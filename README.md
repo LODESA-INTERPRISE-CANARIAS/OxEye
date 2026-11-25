@@ -181,7 +181,7 @@ npm run test:e2e
 
 - Playwright arranca su propio servidor de desarrollo en el puerto `5173`, **salvo que ya haya uno en marcha**: en ese caso lo reutiliza. Cierra cualquier `npm run dev` antes de lanzar los E2E; un servidor antiguo puede impedir que la aplicación cargue y hacer fallar todos los tests.
 - Los resultados se escriben en `playwright-report/` y `test-results/`, que Git ignora.
-- El estado actual de la suite y los problemas conocidos están en `doc/audit/2026-11-25-ox-01-audit.md`.
+- El estado actual de la suite y los problemas conocidos están en `doc/audit/2026-11-25-codebase-audit.md`.
 
 ### Scripts disponibles
 
