@@ -70,12 +70,13 @@ async function switchPanelsAndOpenDialogs(page: Page): Promise<void> {
 }
 
 test.describe('Ojo de Buey (OxEye) E2E Application Flow', () => {
-  // FIXME(OX-01): venue switching is no longer reachable in the UI.
-  // `VenueTabs` (the only producer of `[data-venue]`) is not rendered anywhere,
-  // `.venue-tabs button:not([data-venue='cristo'])` is hidden in layout.css and
-  // `#venue-select` (PhaseStrip.tsx) only offers «cristo». Step 4 cannot pass
-  // without an app/product decision; the remaining steps are covered by the
-  // test below.
+  // FIXME(OX-01): obsolete by product decision (2026-11-25). Plaza del Cristo is
+  // always the default venue; other locations are chosen as a custom map when
+  // creating a new model, not by switching between preset venues. `VenueTabs`
+  // (the only producer of `[data-venue]`) is not rendered and `#venue-select`
+  // (PhaseStrip.tsx) only offers «cristo». Kept as fixme until its removal is
+  // decided; the remaining steps are covered by the test below, and custom-map
+  // creation by onboarding-spawns.spec.ts.
   test.fixme(
     'renders main launch menu, enters workspace, switches venues, and opens dialogs',
     async ({page}) => {
