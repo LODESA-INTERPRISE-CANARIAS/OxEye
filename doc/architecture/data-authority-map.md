@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-11-25 |
 | Task | OX-02 |
-| Status | Propuesto (follows the status of [ADR-024-001](../adr/ADR-024-001-physical-architecture.md)) |
+| Status | Aprobado con condiciones (follows the status of [ADR-024-001](../adr/ADR-024-001-physical-architecture.md); updated 2026-11-25) |
 | Spec reference | INV-002, INV-003, INV-006, INV-009, INV-018, TEC-004, TEC-006, TEC-007, INTG-009 |
 
 Purpose: state, for every main entity, **which single domain owns it**, who may read it and who may modify it, so that map, materials, dates and costs consult the same data instead of copies. Other domains reference an entity by its identifier; they never keep an independent editable copy (INV-003).
@@ -60,7 +60,7 @@ Roles are defined in OX-03. This map uses provisional role groups:
 | 14 | Partida económica | Economy | Dirección; Responsable de área (economy) | Responsable de área (economy); Dirección (approval) | `activityPrices`, `programmeOptions.budget`, shift wage parameters | Commercial |
 | 15 | Proveedor | Procurement | Members | Responsable de área; Dirección | `Scene.companies`, `Scene.contacts` (with e-mail/phone) | Personal data (contacts) |
 | 16 | Oferta | Procurement | Dirección; Responsable de área; the offering Proveedor (own only) | Proveedor (own, while open); Responsable de área (selection) | Does not exist | Commercial |
-| 17 | Incidencia (real) | Operations centre | Operaciones; Dirección; **sensitive ones only to authorised Operaciones**; Público never | Operaciones | Does not exist. Only **simulated** incidents exist (`incident-center.ts`, `response-model.ts`); they are runtime state, **but run summaries persisted in `Scene` carry their type and notes** (see row 20) | **Punto Violeta (`sensitive: true`, category `violet_point`)** |
+| 17 | Incidencia (real) | Operations centre | Operaciones; Dirección; **sensitive ones only to authorised Operaciones, and only on the recording device (never central, decided 2026-11-25)**; Público never | Operaciones | Does not exist. Only **simulated** incidents exist (`incident-center.ts`, `response-model.ts`); they are runtime state, **but run summaries persisted in `Scene` carry their type and notes** (see row 20) | **Punto Violeta (`sensitive: true`, category `violet_point`)** |
 | 18 | Documento | Documents | Per-document permissions | Uploader; Coordinación | Does not exist (only exports) | Varies |
 | 19 | Comunicación | Communications | Sender; recipients (own) | Sender (until sent); system (delivery states) | Does not exist (`mailto:`/WhatsApp links only) | Personal data |
 | 20 | Simulación | Simulation | Members | Coordinación (run); nobody edits a finished run | Run summaries persisted in `Scene`: `lastSessionReview` (`src/App.tsx:436`, includes `emergencies[]` with incident `type` and `reason` note — KI-04), `safetyHistory` (`App.tsx:494`), `lastAudit` (`ComparisonDialog.tsx:226`), `reviewMemory`, `directorLog`, `safetyReview`. `simulationHistory` has no writer in `src/` (legacy). Dexie `simulationRuns` unused | **Can contain Punto Violeta-derived data** (`violet_point` entries and their notes) |
@@ -75,8 +75,8 @@ Check: 20 entities, 20 rows, exactly one owner domain each.
 4. **Simulated vs real.** Simulated incidents belong to Simulation and never become Incidencia (real) without an explicit, separate action (INV-009).
 5. **Punto Violeta.** `sensitive: true` data **must be** excluded from public views and exports. This target is **not met today**: the OX-01 audit lists open bypasses (KI-01 `Informe_de_visitantes.json` exports names and notes unfiltered; KI-02 director log; KI-03 public map and print report) and the privacy gate is duplicated in 10+ places (KI-05). Requirements:
    - one shared, tested privacy gate reused by every domain module, instead of re-implementing the rule per domain;
-   - KI-01..03 fixed **before** any central storage or upload of project data;
-   - central storage of sensitive records requires an explicit privacy decision (INV-018) — pending; until then they are not persisted centrally (ADR-024-005).
+   - KI-01..03 fixed **before** any upload of project data to the server;
+   - sensitive records are **never persisted centrally**: they stay only on the device of whoever records them (decided 2026-11-25, ADR-024-005). Central anonymous aggregate counts remain open (default: not shared).
 6. **Secrets** are never part of any entity exported to the browser or to files (INTG-009).
 7. **Organization isolation.** Every entity except Usuario belongs to exactly one Organización, directly or through Proyecto (INV-002).
 
@@ -86,12 +86,14 @@ Check: 20 entities, 20 rows, exactly one owner domain each.
 2. **Format versioning.** Introduce `ProjectFile.version: 2` with an explicit migration chain `v1 → v2` in one module. v1 import keeps working; unknown future versions are rejected with a clear message, never silently replaced (fixes the KI-07 pattern).
 3. **Mapping of a v1 file.** One `ProjectFile` → one Proyecto; each venue scene with content → one Recinto + one Evento + one Distribución (version 1). Contacts/companies → Proveedor. Programme → Actividad. `lastSessionReview`, `safetyHistory`, `lastAudit` → Simulación records (read-only); legacy `simulationHistory` is migrated only if non-empty.
 4. **Time.** Existing free-text dates are interpreted in `Atlantic/Canary` and stored as instants plus the event time zone (TEC-006). `Scene.eventDate`/`startDate`/`endDate` become the Evento dates (authoritative); `EventDemandConfig.date` is reconciled to reference them, and a mismatch is flagged. Ambiguous values are flagged, not guessed.
-5. **Privacy filter on migration and upload.** Before any v1 → v2 migration result is uploaded (step 7), Simulación records are filtered with the shared privacy gate (rule 5): `lastSessionReview.emergencies` entries of category `violet_point` and `directorLog` lines naming them are reduced to counts (subject to the minimum-count threshold of the privacy decision) or removed. No new ad-hoc predicate is written for this.
-6. **Per-domain repositories in the client.** Replace the single `saveProjectToStorage` writer with repositories per domain. In plan B they write to IndexedDB; with a server they call the API. UI code does not change when the backend arrives.
+5. **Privacy filter on migration and upload.** Before any v1 → v2 migration result is uploaded (step 7), Simulación records are filtered with the shared privacy gate (rule 5): `lastSessionReview.emergencies` entries of category `violet_point` and `directorLog` lines naming them are **removed** (Punto Violeta data never reaches the server; anonymous counts only if that open question is later allowed, with a minimum-count threshold). No new ad-hoc predicate is written for this.
+6. **Per-domain repositories in the client.** Replace the single `saveProjectToStorage` writer with repositories per domain. In local mode they write to IndexedDB; with the server they call the API. UI code does not change when the backend arrives.
 7. **Authority switch.** When the server exists, a local project is *uploaded* once (import into a shared event), after the privacy filter of step 5; from then on the server copy is authoritative and the browser keeps cache and drafts (ADR-024-005). The upload is idempotent.
 8. **Simulation stays local.** The engine keeps reading a local snapshot and the scenario seed; nothing in the transition makes simulation depend on the network.
 
-## 5. Plan B — pilot without server budget
+## 5. Local mode (former plan B)
+
+**Rejected as a pilot mode (design decision, 2026-11-25):** the pilot requires the server (ADR-024-001, OX-21). The table below is kept as the description of what local mode can and cannot do — today's development state and the offline/continuity behaviour of ADR-024-005.
 
 What can be demonstrated honestly in local mode (option A of ADR-024-001):
 
@@ -109,13 +111,13 @@ What can be demonstrated honestly in local mode (option A of ADR-024-001):
 | Users and roles | No | Every user of a browser has full access |
 | Persistence | Versioned file export/import; local backups by export | One browser's storage is not a backup; data loss if the browser is cleared |
 
-Mandatory honesty rules in plan B:
+Mandatory honesty rules in local mode:
 
 - The UI states "Modo local: los datos solo están en este navegador" (or equivalent) wherever data looks shared.
 - No screen, export or presentation claims multi-user coordination, confirmed reservations or delivered communications.
 - The demo uses a fixture (OX-22), not real personal data.
 
-Validation of this plan B by product direction is pending (OX-02 acceptance criterion).
+Validation of this plan B (OX-02 acceptance criterion): **not accepted for the pilot** (2026-11-25).
 
 ## 6. Cross-check OX-03 … OX-22
 
@@ -141,7 +143,7 @@ Each task finds the owner of the data it uses in §3.
 | OX-18 Compare layouts | Simulación; reads several Distribución versions, Partida | Simulation; reads Venue & Layout, Economy | Yes (run records only) |
 | OX-19 Learning from past events | Reads Evento (closed), Actividad, Partida, Incidencia (aggregate only for sensitive), Simulación | Project (event close snapshot) | Yes (event close) |
 | OX-20 UI per profile | Reads Usuario roles; save state of every domain | Identity & Access | No (consumer) |
-| OX-21 Shared persistence | All entities | Each owner domain; infrastructure only | No (provides storage) |
+| OX-21 Shared persistence | All entities | Each owner domain; infrastructure only | No (provides storage). **Builds the backend** on the team-owned server (ADR-024-001/002) and completes OX-03's server-side criteria (permission checks, organization isolation) |
 | OX-22 End-to-end test | Fixture across all domains | Each owner domain | No (fixture) |
 
 No OX task requires an entity without an owner, and no entity has two owners.

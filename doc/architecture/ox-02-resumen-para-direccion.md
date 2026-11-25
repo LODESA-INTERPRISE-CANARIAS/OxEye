@@ -56,7 +56,7 @@ OxEye ya hace esto bien en un caso: la configuración de asistencia del evento a
 3. **Mientras tanto, seguir en el camino A** (ver el punto 7, "plan B"), pero preparando la aplicación para que el día que exista el servidor el cambio sea sencillo.
 4. **La simulación seguirá funcionando en el ordenador de cada persona**, con o sin servidor. Nunca dependerá de tener conexión.
 
-> Nota: los documentos técnicos todavía describen el servidor propio como "servidor alquilado de bajo coste". Hay que actualizarlos con la opción de equipos propios cuando dirección dé el visto bueno.
+> Nota: los documentos técnicos (ADR-024-001, 002, 005 y el mapa de autoridad de datos) se actualizaron el 25/11/2026 con las decisiones del punto 9.
 
 ### Qué implica tener el servidor en nuestros equipos
 

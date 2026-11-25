@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Propuesto (recommended outcome: *Aprobado con condiciones*) |
+| Status | Aprobado con condiciones (2026-11-25) |
 | Date | 2026-11-25 |
 | Task | OX-02 |
 | Spec reference | [ESP] §24.144; INV-003, INV-011, TEC-004, TEC-007; §20.23 |
@@ -17,7 +17,7 @@ OxEye v0.16.0 is a static single-page application published on GitHub Pages. Ver
 - There are no users, roles, permissions or server-side checks.
 - The simulation engine runs in the browser on local data with a scenario seed.
 
-The specification requires that shared commitments are not decided by browser state (TEC-004), that local storage is not the only copy of shared data (TEC-007), that critical operations are authorized on a server (INV-011), and that every authoritative datum has one owner domain (INV-003). The 24/11 meeting states that a shared server depends on available budget.
+The specification requires that shared commitments are not decided by browser state (TEC-004), that local storage is not the only copy of shared data (TEC-007), that critical operations are authorized on a server (INV-011), and that every authoritative datum has one owner domain (INV-003). The 24/11 meeting states that a shared server depends on available budget (resolved on 2026-11-25 by using team-owned hardware; see the decision record).
 
 The specification also warns against over-design (§20.23): this ADR fixes the boundaries that prevent contradictions, not every infrastructure detail.
 
@@ -70,6 +70,8 @@ Costs are **estimates, not a budget** (see *Cost estimate* below). Effort is rel
 | OX-21 Shared persistence | **Blocked**; plan B only (versioned file, backup by export) | — | — |
 | OX-04, 06, 07, 10, 12, 16, 17, 18, 22 | Single-user versions possible | — | — |
 
+Since option A is not acceptable for the pilot (decision record, 2026-11-25), every task marked *Blocked* or *Limited* under A needs the server delivered by **OX-21** before it can reach its pilot target. OX-03 (users, roles, projects) was delivered in local mode; its server-side criteria (permission rejection on the server, organization isolation) are completed in OX-21.
+
 ### Cost estimate (indicative, consulted 2026-11-25)
 
 All figures are **estimates** from public price pages and secondary sources, excluding VAT and personnel time. Several sources disagree (e.g. Hetzner raised prices in 2026; Neon is changing its plan model). They must be re-checked against the providers' official pages before any budget request.
@@ -77,6 +79,7 @@ All figures are **estimates** from public price pages and secondary sources, exc
 | Option | Assumed components | Estimate |
 |---|---|---|
 | A | GitHub Pages (current) | ≈ 0 €/month |
+| **B (own hardware, chosen)** | 1 dedicated team-owned computer running API + PostgreSQL; backups on an external hard drive; UPS recommended | Electricity and internet connection; hardware already owned (no figure estimated) |
 | B (self-managed) | 1 small EU VPS (2 vCPU / 4 GB, ≈ 4–7 €/month at Hetzner, plus ≈ 0.50 € IPv4) running API + PostgreSQL; off-site backups (≈ 1–5 €/month); domain (≈ 1 €/month) | ≈ 10–25 €/month |
 | B (managed DB) | Managed PostgreSQL in the EU (e.g. Scaleway, billed hourly plus storage at ≈ 0.10–0.15 €/GB-month and backups at ≈ 0.03 €/GB-month) + small app host | ≈ 20–60 €/month |
 | C | Supabase Pro (25 USD/month per organization, includes 10 USD compute credit = one Micro instance); larger compute adds ≈ 5–50 USD/month. Free tier exists but is not suitable for production | ≈ 25–60 USD/month |
@@ -86,28 +89,36 @@ The dominant cost of B and C is not infrastructure but development and operation
 
 Sources: [Supabase pricing](https://supabase.com/pricing), [Supabase compute usage](https://supabase.com/docs/guides/platform/manage-your-usage/compute), [Hetzner new CX plans](https://www.hetzner.com/pressroom/new-cx-plans), [Hetzner 2026 pricing (bitdoze)](https://www.bitdoze.com/hetzner-cloud-cost-optimized-plans/), [Scaleway managed databases pricing](https://www.scaleway.com/en/pricing/managed-databases-pricing/), [Neon pricing](https://neon.com/pricing).
 
-## Decision (recommended)
+## Decision
 
-1. **Approve the logical architecture now:** option **B**, a single modular backend whose modules match the owner domains of the [data authority map](../architecture/data-authority-map.md). Each domain owns its data and exposes it through its module; no module writes another domain's tables.
-2. **Keep the physical infrastructure conditional on budget.** No provider is contracted by this ADR.
-3. **Option C is acceptable as the physical implementation of B** if, and only if:
-   - authorization and commitment rules run on the server side (database policies or server functions), never only in the SPA;
-   - the schema is plain PostgreSQL and data can be exported without the provider;
-   - an EU region is used and a data-processing agreement is in place.
-4. **Option A is the plan B**, not the target: it is what the pilot uses while there is no server budget (see the data authority map, §Plan B).
+1. **Logical architecture: option B**, a single modular backend whose modules match the owner domains of the [data authority map](../architecture/data-authority-map.md). Each domain owns its data and exposes it through its module; no module writes another domain's tables.
+2. **Physical implementation: team-owned hardware** ("B own hardware" in the cost estimate): one **dedicated** computer, not used for other work, operated and kept up to date by the team's **systems engineer**, with backups on an **external hard drive** (details and restore drill in ADR-024-002 and OX-21). Operational conditions:
+   - it is powered on at least during mounting and event days; a UPS is recommended;
+   - it is reachable from outside the team's premises (e.g. from the venue on event day) only through a secure channel (TLS, no public database access);
+   - backups never live only on the server itself.
+3. **Alternatives kept for traceability:** a rented EU VPS (B self-managed) and option C remain documented fallbacks if the own hardware proves unsuitable; using C still requires the conditions stated before (server-side authorization, plain PostgreSQL schema exportable without the provider, EU region and data-processing agreement). Switching to either requires a new decision record entry.
+4. **Option A is not an acceptable pilot mode.** Local mode remains only as today's development state and as the offline/continuity mode defined in ADR-024-005; the pilot requires the server (OX-21).
 5. Independently of the option, the **simulation engine keeps running in the browser on local data** with the scenario seed. A server may store simulation snapshots and run records but is never required to run a simulation.
 6. The SPA remains deployable as static files (GitHub Pages or equivalent).
 
 ## Consequences
 
-- OX-03, OX-05, OX-11, OX-13, OX-14, OX-15 and OX-21 can be designed against domain modules now and implemented in local mode first, with the same identifiers and states.
-- Code organisation must start separating domains in the client too (repositories per domain instead of one `ProjectFile` writer), so that moving the authority to a server changes the repository implementation, not the UI.
-- Until a server exists, every screen showing shared-looking data must make clear that it is local (honest save state, OX-20 / KI-07).
-- Secrets for external services (mail, storage, maps keys with write rights) never go into SPA code or exports (INTG-009); they require the backend. In plan B, features needing secrets stay disabled.
+- **OX-21 builds the backend** on the team-owned computer (implementation of this ADR and ADR-024-002), including the server-side permission checks and organization isolation left open by OX-03.
+- OX-05, OX-11, OX-13, OX-14 and OX-15 can be designed against domain modules now and implemented in local mode first, with the same identifiers and states; they reach their pilot target once OX-21 exists. OX-03 already follows this pattern (pure permission module, repository behind an interface).
+- Code organisation must keep separating domains in the client (repositories per domain instead of one `ProjectFile` writer), so that moving the authority to the server changes the repository implementation, not the UI.
+- Until the server exists, every screen showing shared-looking data must make clear that it is local (honest save state, OX-20 / KI-07).
+- Secrets for external services (mail, storage, maps keys with write rights) never go into SPA code or exports (INTG-009); they live only in the server's configuration. Without the server, features needing secrets stay disabled.
 
 ## Conditions and open points
 
-- Budget availability (24/11 meeting). Trigger to revisit: budget approved, or a pilot requirement that needs two people editing the same event.
+Open points for OX-21 (not decided here):
+
+- **Secure remote access** to the team-owned computer from outside its network (VPN, tunnel or reverse proxy with TLS).
+- **Authentication method** (open since OX-03: e-mail and password, magic link or institutional account).
+- **Availability:** a single machine is a single point of failure; power (UPS) and recovery time must be accepted explicitly for the event days.
+
+Other:
+
 - ADR-024-004 (simulation execution) may add worker processes; not decided here.
 - ADR-024-006 (integrations) decides mail/storage providers.
 
@@ -116,3 +127,4 @@ Sources: [Supabase pricing](https://supabase.com/pricing), [Supabase compute usa
 | Date | Status | Decided by | Motive |
 |---|---|---|---|
 | 2026-11-25 | Propuesto | AI Lead (draft) | OX-02 deliverable; awaiting product direction |
+| 2026-11-25 | Aprobado con condiciones | Development engineer (design decision) | Option B approved; implemented on a dedicated team-owned computer maintained by the systems engineer, backups on an external hard drive; local-only pilot (option A / plan B) not acceptable. Conditions: the OX-21 open points above |

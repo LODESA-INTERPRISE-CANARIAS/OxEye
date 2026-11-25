@@ -40,7 +40,7 @@ The OX-01 audit gap matrix (`doc/audit/2026-11-25-ox-01-audit.md` §10.2; the ca
    - Blocked/limited table kept as analysis; add note that, with A rejected, these tasks need OX-21 before the pilot.
    - Conditions and open points: remove "budget"; add open points **for OX-21**: secure remote-access method (VPN/tunnel/reverse proxy with TLS), authentication method (open in OX-03), UPS/power, and the fact that the server is a single machine (availability risk).
 2. **ADR-024-002** (`doc/adr/ADR-024-002-database.md`)
-   - Status unchanged (`Propuesto`): U1–U4 do not decide the database engine (see §8 Q1).
+   - Status → `Aprobado con condiciones` (§8 Q1: PostgreSQL approved by the user); PostGIS stays deferred to ADR-024-003 as written.
    - Environments: `pilot` runs on the team's dedicated computer.
    - §8 Backups: daily backup to the external hard drive (U2); add the risk that a drive kept next to the server is not off-site and a recommendation (indicative) to rotate or keep a second copy elsewhere; restore drill unchanged (OX-21).
    - §12 Sensitive data: Punto Violeta records are **never** stored in the central database (U3).
@@ -48,7 +48,7 @@ The OX-01 audit gap matrix (`doc/audit/2026-11-25-ox-01-audit.md` §10.2; the ca
 3. **ADR-024-005** (`doc/adr/ADR-024-005-offline-mode.md`)
    - Punto Violeta section: decided — sensitive records stay only on the capturing device, are never submitted to the server; remove "deleted locally after confirmed submission". Sharing of aggregate counts remains an **open** question (default: not shared) — see §8 Q2.
    - Consequences: replace "In plan B (no server)…" with the U4 position (local mode is offline/continuity, not the pilot).
-   - Status unchanged unless the user answers §8 Q3.
+   - Status → `Aprobado` (§8 Q3); decision record row 2026-11-25, decided by the user.
 4. **Data authority map** (`doc/architecture/data-authority-map.md`)
    - Status follows ADR-024-001 (`Aprobado con condiciones`).
    - Row 17 and rule 5: Punto Violeta records not persisted centrally (decided, U3); KI-01..03 still required before any upload of project data.
@@ -72,9 +72,9 @@ Documentation only. Punto Violeta privacy is strengthened (never central). No ce
 
 ## 8. Open questions (defaults applied if not answered)
 
-- Q1. Database engine: is PostgreSQL (ADR-024-002) approved too? Default: ADR-024-002 stays `Propuesto`.
-- Q2. Punto Violeta aggregates: may anonymous counts reach the server (minimum-count threshold)? Default: not shared; open.
-- Q3. Offline policy (ADR-024-005 table): approve as is? Default: stays `Propuesto` apart from the Punto Violeta decision.
+- Q1. Database engine: is PostgreSQL (ADR-024-002) approved too? **Answered 2026-11-25: yes.**
+- Q2. Punto Violeta aggregates: may anonymous counts reach the server (minimum-count threshold)? **Answered: keep the default** — not shared; stays open.
+- Q3. Offline policy (ADR-024-005 table): approve as is? **Answered 2026-11-25: approved as is** → ADR-024-005 status `Aprobado`.
 
 ## 9. Acceptance criteria
 

@@ -18,11 +18,11 @@ Only product direction changes a status from `Propuesto`. Each change records da
 
 | Code | Title | Status | Task | File |
 |---|---|---|---|---|
-| ADR-024-001 | Physical architecture | Propuesto | OX-02 | [ADR-024-001-physical-architecture.md](ADR-024-001-physical-architecture.md) |
-| ADR-024-002 | Authoritative database | Propuesto | OX-02 | [ADR-024-002-database.md](ADR-024-002-database.md) |
+| ADR-024-001 | Physical architecture | Aprobado con condiciones | OX-02 | [ADR-024-001-physical-architecture.md](ADR-024-001-physical-architecture.md) |
+| ADR-024-002 | Authoritative database | Aprobado con condiciones | OX-02 | [ADR-024-002-database.md](ADR-024-002-database.md) |
 | ADR-024-003 | Cartography engine and representation | Not drafted | — | — |
 | ADR-024-004 | Simulation execution | Not drafted | — | — |
-| ADR-024-005 | Offline mode | Propuesto | OX-02 | [ADR-024-005-offline-mode.md](ADR-024-005-offline-mode.md) |
+| ADR-024-005 | Offline mode | Aprobado | OX-02 | [ADR-024-005-offline-mode.md](ADR-024-005-offline-mode.md) |
 | ADR-024-006 | Integrations | Not drafted | — | — |
 | ADR-024-007 | Pilot scope | Not drafted | OX-23 | — |
 | ADR-024-008 | Territorial data | Not drafted | — | — |
@@ -30,7 +30,7 @@ Only product direction changes a status from `Propuesto`. Each change records da
 
 Companion documents:
 
-- [Data authority map](../architecture/data-authority-map.md) (owner domain per entity, transition strategy, plan B).
+- [Data authority map](../architecture/data-authority-map.md) (owner domain per entity, transition strategy, local mode).
 - [Resumen de OX-02 para dirección](../architecture/ox-02-resumen-para-direccion.md) (non-technical summary, in Spanish, for the project director).
 
 ## Template

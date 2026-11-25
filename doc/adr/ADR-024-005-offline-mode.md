@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Propuesto (recommended outcome: *Aprobado*) |
+| Status | Aprobado (2026-11-25) |
 | Date | 2026-11-25 |
 | Task | OX-02 |
 | Spec reference | [ESP] §24.148; TEC-004, TEC-007, INV-004, INV-009, INV-019 |
@@ -12,7 +12,7 @@
 
 Today OxEye is always "offline": everything happens in one browser and is shared by file. Once a server exists (ADR-024-001), event teams will still work in places with poor coverage (on site at Plaza del Cristo, mounting days). The specification recommends allowing consultation and compatible drafts offline, but no shared confirmations that need central validation.
 
-## Decision (recommended)
+## Decision
 
 ### Principles
 
@@ -36,32 +36,33 @@ Today OxEye is always "offline": everything happens in one browser and is shared
 | Edit budget estimates | ✅ draft | Turn an estimate into commitment, invoice or payment | INV-007 |
 | Select a supplier offer | | ✅ | |
 | Prepare a communication | ✅ draft | **Send**, record delivery/confirmation | INV-010 |
-| Capture a real incident | ✅ queued (quick capture) | Assign, verify, close | Punto Violeta: see below |
+| Capture a real incident | ✅ queued (quick capture) | Assign, verify, close | Punto Violeta records are never queued for the server: they stay on the capturing device (see below) |
 | Upload a document | ✅ queued file | Mark requirement as fulfilled | INV-008 |
 | Change users, roles, permissions, invitations | | ✅ | INV-011 |
 | Run a simulation; compare layouts | ✅ | Store a run record centrally | |
 | Export JSON/CSV of data the user may see | ✅ | | Public exports never include sensitive data |
 | Import a v1 project JSON | ✅ (local) | Import into a shared event | Transition strategy |
 
-### Punto Violeta offline
+### Punto Violeta (online and offline)
 
-- Sensitive incidents (`sensitive: true`) captured offline are kept only in the local queue of the capturing device, never in public views or exports, and are deleted locally after confirmed submission.
-- Whether they may be submitted to a shared server at all is an **open privacy decision** (INV-018); until it is taken, they stay local and only aggregate counts may be shared, subject to a minimum-count threshold (to be set in the privacy decision) so that small counts cannot identify individuals.
-- The privacy rule is applied through one shared, tested gate (see the data authority map, rule 5); known bypasses KI-01..03 must be fixed before any central storage.
+- **Decided (2026-11-25):** sensitive records (`sensitive: true`) are kept **only on the device of whoever records them**, online or offline ("el lugar más privado posible"). They are never submitted to the server, never shown in public views and never included in exports.
+- Whether anonymous **aggregate counts** may reach the server remains **open**; default: they are not shared. If allowed later, a minimum-count threshold must prevent small counts from identifying individuals.
+- The privacy rule is applied through one shared, tested gate (see the data authority map, rule 5); known bypasses KI-01..03 must be fixed before any project data is uploaded to the server.
 
 ## Consequences
 
 - Client storage (Dexie) gains a draft/outbox role; it is never authoritative for shared data (TEC-007).
 - Domain models need explicit states (`draft`, `submitted`, `confirmed`, `rejected`) for operations that require the server.
-- In plan B (no server), every shared-requiring operation stays at `draft`; the UI must say so instead of pretending confirmation.
+- Local-only operation is not an acceptable pilot mode (ADR-024-001). Until the server (OX-21) exists, and whenever the connection is lost, every shared-requiring operation stays at `draft`; the UI must say so instead of pretending confirmation.
 
 ## Conditions and open points
 
 - Exact list of operational flows for on-site work comes from OX-11 and OX-13 (spec: "pendiente de selección de flujos operativos").
-- Privacy decision on central storage of Punto Violeta records.
+- Anonymous aggregate counts of Punto Violeta on the server (default: not shared).
 
 ## Decision record
 
 | Date | Status | Decided by | Motive |
 |---|---|---|---|
 | 2026-11-25 | Propuesto | AI Lead (draft) | OX-02 deliverable; awaiting product direction |
+| 2026-11-25 | Aprobado | Development engineer (design decision) | Operation policy approved as is; Punto Violeta records stay only on the recording device |
