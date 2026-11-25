@@ -124,6 +124,31 @@ test('npm install only for approved dependencies on an approved branch', () => {
   assert.equal(bash(root, 'npm install left-pad').status, 2);
 });
 
+test('v5.1: npm --prefix server installs only approved dependencies, from the root, on an approved branch', () => {
+  const { root } = setup();
+  prompt(root, 'APPROVE DEPENDENCY left-pad');
+  assert.equal(bash(root, 'npm --prefix server install left-pad').status, 0);
+  assert.equal(bash(root, 'npm --prefix=server install -D --save-exact left-pad@1.3.0').status, 0);
+  assert.equal(bash(root, 'npm --prefix server ci').status, 0);
+  assert.equal(bash(root, 'npm --prefix server install lodash').status, 2, 'unapproved dependency');
+  assert.equal(bash(root, 'npm --prefix server install').status, 2, 'bare install');
+  assert.equal(bash(root, 'npm --prefix server run dev').status, 2, 'scripts are not allowed');
+  assert.equal(bash(root, 'npm --prefix server ci --ignore-scripts').status, 2);
+  assert.equal(bash(root, 'npm --prefix src install left-pad').status, 2, 'only server/');
+  assert.equal(bash(root, 'npm --prefix ../server install left-pad').status, 2);
+  assert.equal(bash(root, 'npm --prefix server install left-pad --registry=https://evil').status, 2);
+  const sub = path.join(root, 'src');
+  const fromSub = runScript(
+    'guard-bash.mjs',
+    { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm --prefix server install left-pad' }, cwd: sub },
+    { env: { CLAUDE_PROJECT_DIR: root } },
+  );
+  assert.equal(fromSub.status, 2, 'must run from the repository root');
+  assert.equal(agent(root, 'implementer', 'npm --prefix server install left-pad').status, 2, 'subagents never install');
+  setBranch(root, 'main');
+  assert.equal(bash(root, 'npm --prefix server install left-pad').status, 2, 'not on main');
+});
+
 test('subagents may chain allowed commands but not background or write output', () => {
   const { root } = setup();
   assert.equal(agent(root, 'implementer', 'npx tsc --noEmit -p tsconfig.json && npx vitest run tests/unit/emergency.test.ts').status, 0);

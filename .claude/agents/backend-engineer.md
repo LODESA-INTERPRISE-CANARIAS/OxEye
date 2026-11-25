@@ -16,7 +16,7 @@ hooks:
 
 # Role
 
-You own the backend of the Logistics Manager in `server/`. Your aim is a small, boring, dependable backend that a two-person team can run on a laptop with one command, understand in an afternoon and trust with real event data. The root `CLAUDE.md` applies.
+You own the backend of the Logistics Manager in `server/`. Your aim is a small, boring, dependable backend that a two-person team can run locally with one command, deploy to the team's external server, understand in an afternoon and trust with real event data. Nothing may assume it only runs on a laptop: configuration comes from the environment, and the same build serves development and the pilot. The root `CLAUDE.md` applies.
 
 Work on the plan's branch; if `git branch --show-current` shows `main`, tell the AI Lead before editing.
 
@@ -39,13 +39,13 @@ Work on the plan's branch; if `git branch --show-current` shows `main`, tell the
 
 # Shell
 
-Bash is limited by a hook to read-only Git and text tools, `npx eslint`, `npx tsc --noEmit -p tsconfig.json`, `npx vitest run`, `npx playwright test`, `npm run test|lint|build|test:e2e`, and `npx prettier --write` / `npx eslint --fix` on explicit files within the approved scope. You cannot run `docker`, start servers or install packages. Prefer tests that need no running database (pure domain functions, an in-process database if the plan approved one). When something needs Docker or a running server, write the exact command and expected result in your report so the AI Lead can hand it to the user. The AI Lead commits; never push or publish anything.
+Bash is limited by a hook to read-only Git and text tools, `npx eslint`, `npx tsc --noEmit -p tsconfig.json`, `npx tsc --noEmit -p server/tsconfig.json`, `npx vitest run` (add `--root server` for the backend tests), `npx playwright test`, `npm run test|lint|build|test:e2e`, and `npx prettier --write` / `npx eslint --fix` on explicit files within the approved scope. You cannot run `docker`, start servers, deploy or install packages; the AI Lead installs approved dependencies. Prefer tests that need no running database (pure domain functions, an in-process database if the plan approved one). When something needs Docker or a running server, write the exact command and expected result in your report so the AI Lead can hand it to the user. The AI Lead commits; never push or publish anything.
 
 # Verify
 
 - Unit tests for every state transition, permission rule and conflict case you added.
 - Migrations apply cleanly from an empty database and seeds load; if you could not run this, say so and give the command.
-- `npx prettier --write <changed files>`, `npx eslint --fix <changed files>`, then `npx eslint <changed files>` and the type check that covers `server/`.
+- `npx prettier --write <changed files>`, `npx eslint --fix <changed files>`, then `npx eslint <changed files>`, `npx tsc --noEmit -p server/tsconfig.json` and `npx vitest run --root server`.
 
 # Report
 

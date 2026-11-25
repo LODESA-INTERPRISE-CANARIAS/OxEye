@@ -7,6 +7,8 @@
 // v4: writes inside the repository (cp, mv, rm, touch, tee, mkdir, redirections,
 // prettier --write, eslint --fix) follow the same policy as guard-write
 // (lib/common.mjs repoWriteProblem). Approved dependencies may be installed.
+// v5.1: approved dependencies may also be installed into server/ with
+// "npm --prefix server install"; "npm --prefix server ci" is allowed.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -346,6 +348,17 @@ function gitConfig(t, refuse) {
 
 function checkNpm(args, ctx) {
   const t = args.map((a) => a.text);
+  // v5.1: the Logistics Manager backend has its own package.json in server/.
+  // Only "npm --prefix server install <approved dependency>" and
+  // "npm --prefix server ci", run from the repository root.
+  const prefixLen = t[0] === '--prefix' && t[1] === 'server' ? 2 : t[0] === '--prefix=server' ? 1 : 0;
+  if (prefixLen) {
+    if (key(ctx.cwd) !== key(ctx.root)) deny('npm --prefix server must be run from the repository root');
+    const r = t.slice(prefixLen);
+    if (['install', 'i', 'add'].includes(r[0]) && r.length > 1) return checkNpmInstall(r.slice(1), ctx);
+    if (r[0] === 'ci' && r.length === 1) return;
+    deny('npm --prefix server only allows "install <approved dependency>" and "ci"');
+  }
   if (['install', 'i', 'add'].includes(t[0]) && t.length > 1) return checkNpmInstall(t.slice(1), ctx);
   const SCRIPTS = ['lint', 'test', 'build', 'test:e2e'];
   if (t[0] === 'run' || t[0] === 'run-script') {

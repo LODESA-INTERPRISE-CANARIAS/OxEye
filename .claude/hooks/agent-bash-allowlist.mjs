@@ -5,8 +5,9 @@
 // The project-level guard-bash.mjs also runs for subagents and keeps enforcing
 // its own rules (credentials, find -exec, sed, protected paths...). This hook
 // narrows subagents to a per-role allowlist:
-// - every role: read-only Git, read-only text tools, eslint, tsc, vitest,
-//   playwright test, npm run test|lint|build|test:e2e, chained with ; && || |
+// - every role: read-only Git, read-only text tools, eslint, tsc (root or
+//   server/ project), vitest (optionally --root server), playwright test,
+//   npm run test|lint|build|test:e2e, chained with ; && || |
 // - implementer and qa: prettier --write / eslint --fix on explicit files that
 //   the approved plan allows (qa: only under tests/)
 // - never: installs, Git writes, commits, background jobs, file redirections,
@@ -24,6 +25,9 @@ const PATH_RE = /^[A-Za-z0-9_@*?[\]][A-Za-z0-9_./@:*?[\]-]*$/;
 // Read-only text tools. guard-bash still applies its finer rules to them.
 const READ_TOOLS = new Set(['ls', 'cat', 'head', 'tail', 'wc', 'grep', 'rg', 'sort', 'uniq', 'cut', 'tr', 'nl', 'diff', 'echo', 'pwd', 'find', 'sed', 'tree', 'basename', 'dirname', 'file', 'stat', 'du', 'true', 'false', 'test']);
 const NPM_SCRIPTS = ['test', 'lint', 'build', 'test:e2e'];
+// v5.1: the Logistics Manager backend in server/ has its own tsconfig and
+// Vitest root. Only these exact values are accepted.
+const TSC_PROJECTS = ['tsconfig.json', 'server/tsconfig.json'];
 const SEPARATORS = new Set([';', '&&', '||', '|', '|&', 'newline', 'end']);
 
 const role = process.argv[2];
@@ -75,9 +79,9 @@ function allowed(t, words, ctx) {
   if (t[0] !== 'npx') return false;
   switch (t[1]) {
     case 'tsc':
-      return t.length === 5 && t[2] === '--noEmit' && t[3] === '-p' && t[4] === 'tsconfig.json';
+      return t.length === 5 && t[2] === '--noEmit' && t[3] === '-p' && TSC_PROJECTS.includes(t[4]);
     case 'vitest':
-      return t[2] === 'run' && optionsAllowed(t.slice(3), ['--reporter', '-t', '--testNamePattern'], []);
+      return t[2] === 'run' && optionsAllowed(withoutServerRoot(t.slice(3)), ['--reporter', '-t', '--testNamePattern'], []);
     case 'playwright':
       return t[2] === 'test' && optionsAllowed(t.slice(3), ['--project', '--grep', '-g', '--reporter', '--workers'], []);
     case 'eslint':
@@ -95,6 +99,29 @@ function gitAllowed(a) {
   if (a.length === 2 && a[0] === 'branch' && a[1] === '--show-current') return true;
   if (!GIT_SUBS.has(a[0])) return false;
   return a.slice(1).every((x) => !GIT_BAD.test(x) && !/^(ext|fd)::/i.test(x));
+}
+
+/**
+ * Removes one "--root server" (or "--root=server") pair so vitest can run the
+ * backend suite. Any other --root value is left in place and then rejected by
+ * optionsAllowed as an unknown option.
+ */
+function withoutServerRoot(a) {
+  const out = [];
+  let seen = false;
+  for (let i = 0; i < a.length; i++) {
+    if (!seen && a[i] === '--root' && a[i + 1] === 'server') {
+      seen = true;
+      i++;
+      continue;
+    }
+    if (!seen && a[i] === '--root=server') {
+      seen = true;
+      continue;
+    }
+    out.push(a[i]);
+  }
+  return out;
 }
 
 /** Paths, value options (separate or --opt=value) and boolean flags from explicit lists only. */

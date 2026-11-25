@@ -46,6 +46,8 @@ A separate window inside the OxEye hub, a pause from simulation, for managing th
 
 Product vision: `doc/product/logistics-manager.md`. It is the source of truth for intent and is written by product direction; read it before designing anything for this module and propose changes to it rather than silently diverging. If it is missing or still a placeholder, work from the idea you were given and say so.
 
+Design references (concept, not implemented; they illustrate intent and are not a pixel specification): `doc/logistic/OxEye_Operaciones_Especificacion_Equipo_A4.pdf` (functional specification: P0/P1 scope, acceptance tests for the field demo) and `doc/logistic/OxEye_Operaciones_Workflow_Visual_A4.pdf` (screen-by-screen workflow). Adapt them to OxEye's identity and palettes rather than copying their look.
+
 Existing code worth reusing before writing new code: `src/engine/logistics/` (assembly phases, companies, shifts). The module is built from `main`. The parked branches `feat/ox-03-proyectos-permisos` and `feat/ox-04-recinto-distribuciones` are left untouched; you may propose reusing a specific piece of them as an option, but never merge, cherry-pick or copy from them without the user's explicit go.
 
 ## 3. Product and design ownership
@@ -88,7 +90,7 @@ Initiative should make the product better, not just make the codebase bigger.
 - Feature in one domain: a short plan, a small team.
 - Cross-cutting or safety-critical change: deeper research, explicit contracts, more review.
 
-A plan exists to make execution good, not to be a project of its own. Write it in `doc/specs/<YYYY-MM-DD>-<slug>.md`. The approval hook requires `- Slug: <slug>` (lowercase kebab-case, unique), `- Branch: feat|fix|chore/<slug>` and a `## Allowed paths` section. Beyond that, include only what helps: goal and intended experience, approach, included improvements, work packages and agents, invariants touched, acceptance criteria, how it will be verified.
+A plan exists to make execution good, not to be a project of its own. Write it in `doc/specs/<YYYY-MM-DD>-<slug>.md`. The approval hook requires ``- Slug: `<slug>` `` (lowercase kebab-case, unique, value in backticks), ``- Branch: `feat|fix|chore/<slug>` `` (value in backticks) and one `## Allowed paths` section containing only ``- `path` `` lines (no sub-headings or prose inside it). Each `APPROVE`/`REVOKE` token must be sent by the user as its own message, with nothing else in it. Beyond that, include only what helps: goal and intended experience, approach, included improvements, work packages and agents, invariants touched, acceptance criteria, how it will be verified.
 
 **Draw allowed paths around the natural shape of the solution**, using `dir/**` where a module will reasonably need new or adjusted files, so details can be solved during execution without coming back. Keep them tight around hotspots and protected areas.
 
@@ -121,7 +123,7 @@ These protections are absolute and enforced by hooks and permissions in `.claude
 
 ## 7. Codebase essentials
 
-Frontend: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vitest, Playwright. The simulation remains browser-only. The Logistics Manager adds a backend in `server/` (Node + TypeScript, PostgreSQL, run locally with Docker Compose); its stack and conventions are recorded in `server/README.md` and `doc/adr/` once the foundation plan is approved. 3D remains a future direction.
+Frontend: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vitest, Playwright. The simulation remains browser-only. The Logistics Manager adds a backend in `server/` (Node + TypeScript, PostgreSQL). Development runs locally with Docker Compose; the pilot runs on an external server chosen by the team. Its stack, hosting and conventions are recorded in `server/README.md` and `doc/adr/`. 3D remains a future direction.
 
 | Path | Role |
 |---|---|
@@ -140,7 +142,8 @@ Frontend: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vitest, Pla
 - No new circular dependencies; agree shared types and contracts before dependent work.
 - Hotspots, one writer at a time: `src/types/index.ts`, `src/App.tsx`, `src/components/map/MapShell.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/map/Inspector.tsx`, `src/engine/emergency/response-model.ts`, `src/engine/crowd/event-engine.ts`.
 - Backend rules: the database is the authority for shared logistics data and Dexie is only cache and drafts; versioned SQL migrations in the repository, and a destructive migration needs the user's explicit approval; UUIDs, never array positions; instants in UTC with the event's time zone (`Atlantic/Canary` by default); optimistic concurrency with a `version` field so a stale write is rejected, never silently applied; validate every input at the API boundary; secrets only in an untracked `server/.env` (commit `server/.env.example`); the API never serves the simulation's sensitive data.
-- Commands you cannot run here (`docker`, starting servers, scripts outside the allowlist): give the user the exact command, tell them what result to expect, and keep working on what does not depend on it. Prefer tests that need no running database.
+- Backend checks you can run: `npx tsc --noEmit -p server/tsconfig.json` and `npx vitest run --root server` (also allowed for subagents), and `npm --prefix server install <approved dependency>` (AI Lead only, approved branch). File operations: `git rm`, `git mv` and `git add -A` are blocked; use `rm`/`mv` on allowed paths and `git add <explicit paths>`.
+- Commands you cannot run here (`docker`, starting servers, deploying, scripts outside the allowlist): give the user the exact command, tell them what result to expect, and keep working on what does not depend on it. Prefer tests that need no running database.
 - Known debt is recorded in `doc/audit/2026-11-25-codebase-audit.md`. Fix it when it is in the way of the task; otherwise leave it.
 - The code is the source of truth over any document, this one included.
 

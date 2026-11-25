@@ -22,12 +22,19 @@ const CASES = {
       'npx playwright test tests/e2e/visual-palettes.spec.ts -g workspace', 'git status && ls', 'ls', 'cat x',
       'grep -rn foo src | head -5', 'npx tsc --noEmit -p tsconfig.json 2>&1 | tail -20', 'npm run lint > /dev/null; echo done',
       'npx prettier --check src',
+      // v5.1: Logistics Manager backend checks
+      'npx tsc --noEmit -p server/tsconfig.json', 'npx vitest run --root server', 'npx vitest run --root=server',
+      'npx vitest run --root server tests/orders.test.ts -t conflict', 'npx tsc --noEmit -p server/tsconfig.json && npx vitest run --root server',
     ],
     deny: [
       'npx eslint --fix src', 'npx eslint -c evil.js src', 'npx tsc -b', 'npx vitest', 'git commit -m x', 'git -c x=y status',
       'git diff --output=x', 'git status > x', 'X=1 git status', 'npx vitest run ../outside', 'npm install left-pad',
       'npx playwright install', 'npm run dev', 'npm run format', 'git push', 'git add src/a.ts', 'npx vitest run &',
       'ls && npm install x', 'npx prettier --write src', 'npx prettier --write src/missing.ts', 'echo x >> src/a.ts', 'node x.js',
+      // v5.1: only the exact server project and root are accepted; subagents never install
+      'npx tsc --noEmit -p server/other.json', 'npx tsc --noEmit -p ../tsconfig.json', 'npx tsc -p server/tsconfig.json',
+      'npx vitest run --root ..', 'npx vitest run --root src', 'npx vitest run --root', 'npx vitest run --root server --root server',
+      'npx vitest run --root=../server', 'npm --prefix server install left-pad', 'npm --prefix server ci', 'npm --prefix server run test',
     ],
   },
   reviewer: {
