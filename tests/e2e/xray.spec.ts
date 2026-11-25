@@ -1,5 +1,5 @@
 import {expect, test} from '@playwright/test';
-import {openWorkspaceWithDefaultProject} from './helpers';
+import {enterVenueMode, exitVenueMode, openWorkspaceWithDefaultProject} from './helpers';
 
 test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => {
   test('toggles X-Ray layer, draws subsoil perimeter/column/wall, and tests multi-selection + shortcuts', async ({
@@ -34,6 +34,8 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     const cy = mapBox.y + mapBox.height * 0.42;
 
     await test.step('2. Dibujar perímetro subsuelo (+ Shift / − Ctrl)', async () => {
+      // OX-04: el subsuelo pertenece al recinto y solo se edita en «Editar recinto».
+      await enterVenueMode(page);
       await page.locator('[data-action="xray:boundary"]').click();
       await expect(xrayLayer).toHaveAttribute('pointer-events', 'auto');
       await page.mouse.click(cx - 70, cy - 40);
@@ -187,7 +189,8 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     const cx = mapBox.x + mapBox.width * 0.55;
     const cy = mapBox.y + mapBox.height * 0.42;
 
-    // 1. Dibujar un perímetro amplio de garaje subterráneo
+    // 1. Dibujar un perímetro amplio de garaje subterráneo (OX-04: en «Editar recinto»)
+    await enterVenueMode(page);
     await page.locator('[data-action="xray:boundary"]').click();
     await page.mouse.click(cx - 70, cy - 45);
     await page.mouse.click(cx + 80, cy - 45);
@@ -199,7 +202,9 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
       page.locator('#xray-layer [data-xray-heat-perimeter]')
     ).toHaveCount(4);
 
-    // 2. Colocar una carga pesada (Escenario) en el vano hueco central del garaje (sin pilares)
+    // 2. Colocar una carga pesada (Escenario) en el vano hueco central del garaje (sin pilares).
+    // OX-04: el escenario es de la distribución; se vuelve a «Editar distribución».
+    await exitVenueMode(page, true);
     await page.locator('[data-place="stage"]').click();
     await page.mouse.click(cx + 5, cy - 10);
     await expect(page.locator('#heavy-load-toggle')).toBeChecked();
@@ -230,6 +235,8 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     // 4. Seleccionar el perímetro del garaje haciendo clic sobre su contorno y eliminarlo.
     // Se usa el lado izquierdo: con el Escenario seleccionado, el inspector
     // flotante cubre el lado derecho (cx + 80) en el viewport por defecto.
+    // OX-04: el perímetro del subsuelo es del recinto; se edita en «Editar recinto».
+    await enterVenueMode(page);
     const contourX = cx - 70;
     const contourY = cy - 10;
     const hitsMap = await page.evaluate(
@@ -256,6 +263,8 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     const cy = mapBox.y + mapBox.height * 0.45;
 
     // 1. Colocar una columna de subsuelo y activar «Solo subsuelo» desde la barra de fases
+    // (OX-04: el subsuelo se edita en «Editar recinto»)
+    await enterVenueMode(page);
     await page.locator('[data-action="xray:column"]').click();
     await page.mouse.click(cx - 40, cy);
     await expect(page.locator('#xray-layer .xray-column')).toHaveCount(1);
@@ -270,7 +279,8 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     await expect(page.locator('#xray-layer .xray-column')).toBeVisible();
 
     // Volver a fase Evento restaura la capa de superficie y oculta el subsuelo
-    await page.locator('[data-phase="event"]').click();
+    // OX-04: the layouts dialog also renders `input[data-phase]` checkboxes.
+    await page.locator('button[data-phase="event"]').click();
     await expect(page.locator('#phase-subsoil-only')).toHaveAttribute(
       'aria-pressed',
       'false'
@@ -279,6 +289,8 @@ test.describe('Capa Rayos X (subsuelo, mapa de calor y multiselección)', () => 
     await expect(page.locator('#xray-layer .xray-column')).toHaveCount(0);
 
     // 2. Colocar un elemento, bloquearlo con el botón verde y comprobar que no se mueve al arrastrar
+    // (OX-04: los elementos no permanentes se colocan en «Editar distribución»)
+    await exitVenueMode(page, true);
     await page.locator('[data-place="stage"]').click();
     await page.mouse.click(cx, cy);
     await expect(page.locator('#inspector')).toBeVisible();

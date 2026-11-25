@@ -34,6 +34,33 @@ export async function openWorkspaceWithDefaultProject(page: Page): Promise<void>
 }
 
 /**
+ * OX-04: switches the editor to «Editar recinto» (venue mode). Venue-only
+ * tools (subsoil, accesses, perimeter) are refused in «Editar distribución».
+ */
+export async function enterVenueMode(page: Page): Promise<void> {
+  await page.locator('#ctx-edit-mode').selectOption('venue');
+  await expect(page.locator('#ctx-edit-mode')).toHaveAttribute('data-mode', 'venue');
+  await expect(page.locator('#venue-mode-banner')).toBeVisible();
+}
+
+/**
+ * OX-04: leaves venue mode through «Terminar edición del recinto». When the
+ * venue changed during the session the affected-layouts dialog opens; it is
+ * closed here and its presence is asserted against `venueChanged`.
+ */
+export async function exitVenueMode(page: Page, venueChanged: boolean): Promise<void> {
+  await page.locator('#venue-mode-exit').click();
+  await expect(page.locator('#ctx-edit-mode')).toHaveAttribute('data-mode', 'layout');
+  await expect(page.locator('#venue-mode-banner')).toHaveCount(0);
+  const dialog = page.locator('#affected-dialog');
+  if (venueChanged) {
+    await expect(dialog).toBeVisible();
+    await page.locator('#affected-close').click();
+  }
+  await expect(dialog).toBeHidden();
+}
+
+/**
  * Wizard step 1/5 («¿Qué quieres conseguir con este evento?»). The free-text
  * SMART form (`#smart-specific`, …) was replaced by an objective-card picker
  * with two sub-steps: cards (three objectives preselected by default) and
