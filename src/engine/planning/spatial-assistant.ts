@@ -292,7 +292,6 @@ function findMinimalDisplacement(
 export function analyzeSpatialCorrections(
   scene: Scene,
   map: MapMetadata,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   engine?: any
 ): SpatialCorrectionProposal[] {
   const proposals: SpatialCorrectionProposal[] = [];

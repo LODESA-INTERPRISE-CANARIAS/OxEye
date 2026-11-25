@@ -58,7 +58,6 @@ export function satisfaction(a: Agent): {
  * @param a - Agent position `{x, y}`.
  * @returns Estimated SPL in dB, or `null` if no sound sources are active.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function soundAt(e: any, a: {x: number; y: number}): number | null {
   let energy = 0;
   for (const b of e.stations as SimStation[]) {
@@ -81,7 +80,6 @@ export function soundAt(e: any, a: {x: number; y: number}): number | null {
  * Monitors synthetic visitor experience episodes (price, queue, shelter, sound, blocked, exit).
  */
 export class ExperienceMonitor {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   rows: Map<string, ExperienceEpisode>;
   next: number;
@@ -89,7 +87,6 @@ export class ExperienceMonitor {
   episode: number;
   active: Map<string, ExperienceEpisode>;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.rows = new Map();
@@ -286,7 +283,6 @@ const polygonOverlap = (a: Point[], b: Point[]): boolean => {
  * @param point - Point `[x, y]` in meters where congestion/blockage occurred.
  * @returns Candidate move metadata or `null`.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function moveCandidate(e: any, point: Point) {
   const objects = [
     ...e.s.base.booths,
@@ -437,7 +433,6 @@ export function moveCandidate(e: any, point: Point) {
  * @param e - EventEngine instance.
  * @returns Array of grouped diagnostic issues with suggested actions.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function analyze(e: any) {
   const rows: ExperienceEpisode[] =
     e.experience?.list().filter((r: ExperienceEpisode) => r.status === 'active') ||

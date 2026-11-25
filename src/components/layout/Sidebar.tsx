@@ -47,9 +47,7 @@ import {PostSimDiagnosticsView} from '../modals/PostSimDiagnosticsView';
 import {SpatialAssistantPanel} from '../review/SpatialAssistantPanel';
 
 export interface ProposalState {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   moves: any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   objects: any[];
   zones: Array<{id: string; x: number; y: number; w: number; h: number}>;
   routing?: {
@@ -1886,7 +1884,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         if (!engine) onTogglePlay();
                         if (engine) {
                           onRecordAction('evacuate', true);
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           (engine.emergency as any).evacuation?.order(
                             null,
                             true
@@ -1909,7 +1906,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 (r) => r.kind === k && (r.staff || 0) > 0
                               )
                           );
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           const em = engine.emergency as any;
                           const ev = em.evacuation?.stats || {
                             warned: 0,
@@ -2324,7 +2320,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     showToast('Inicia un ensayo primero');
                     return;
                   }
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   const em = engine.emergency as any;
                   downloadFile(
                     'Informe_de_visitantes.json',

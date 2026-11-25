@@ -18,7 +18,6 @@ export interface CombustibilityProfile {
 }
 
 export interface FireNode {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   o: any;
   rowId: string | number;
   litAt: number;
@@ -82,7 +81,6 @@ export interface FireCordon {
   inspectionAt?: number;
   blockedApplied: boolean;
   blockedCells?: number[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   crew: any[];
   targetCell: number;
   field: Int32Array | null;
@@ -108,7 +106,6 @@ const NON_COMBUSTIBLE_KINDS = new Set([
 ]);
 
 /** Perfil físico de combustibilidad según tipo, material y atributos reales del elemento. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getCombustibilityProfile(o: any): CombustibilityProfile {
   if (!o) {
     return {
@@ -270,16 +267,13 @@ function rectEdgeGap(polyA: Point[], polyB: Point[]): number {
 }
 
 export class FireModel {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   nodes: Map<string, FireNode>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   workers: any[];
   usedExtinguishers: Set<string>;
   cordons: FireCordon[];
   serviceThreats: SensitiveServiceThreat[];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.nodes = new Map();
@@ -290,7 +284,6 @@ export class FireModel {
   }
 
   /** Localiza cualquier objeto instalable del plano por su ID. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   findObject(objectId: string | undefined): any {
     if (!objectId) return null;
     return (
@@ -389,7 +382,6 @@ export class FireModel {
     return true;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ignite(
     o: any,
     row: EmergencyIncident,

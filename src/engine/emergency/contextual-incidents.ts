@@ -59,7 +59,6 @@ export function resolveIncidentGenerationMode(scene: Partial<Scene> | undefined)
 }
 
 /** Determina si una instalación dispone de gas compatible según sus propiedades reales. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function hasGasCompatibleInstallation(item: any): boolean {
   if (!item) return false;
   if (item.hasGas === false || item.noGas === true) return false;
@@ -73,7 +72,6 @@ export function hasGasCompatibleInstallation(item: any): boolean {
 }
 
 /** Clasifica cualquier elemento del plano para determinar su catálogo contextual compatible. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function classifyInstallableObject(item: any, scene?: Scene): ContextualObjectProfile {
   if (!item) return 'generic';
   const kind = String(item.kind || item.inventoryKind || '').toLowerCase();
@@ -780,7 +778,6 @@ export function getContextualTemplateById(
  * Devuelve las situaciones compatibles con un elemento real del plano, filtrando
  * opciones dependientes de propiedades concretas (p. ej. fuga de gas solo si tiene gas).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getContextualIncidentsForItem(item: any, scene?: Scene): ContextualIncidentTemplate[] {
   const profile = classifyInstallableObject(item, scene);
   const templates = TEMPLATES_BY_PROFILE[profile] || TEMPLATES_BY_PROFILE.generic;

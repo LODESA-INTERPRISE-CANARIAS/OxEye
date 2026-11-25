@@ -1010,7 +1010,6 @@ export function planVehicleRoute(
  * `spawn conectado -> entrada -> operación (estacionar/descargar/servicio) -> ruta de salida -> abandono`.
  */
 export class VehicleManager {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   private _vehGrid: NavigationGrid | null = null;
   vehicles: SimVehicle[];
@@ -1026,7 +1025,6 @@ export class VehicleManager {
   nextSpawnAt: number;
   seq: number;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.vehicles = [];

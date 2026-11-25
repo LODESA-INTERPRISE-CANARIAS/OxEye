@@ -80,7 +80,6 @@ export class CrowdGuidanceManager {
     this.pendingDispatches = new Map();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   thresholds(engine: any): CongestionThresholds {
     return {
       ...DEFAULT_CONGESTION_THRESHOLDS,
@@ -88,18 +87,15 @@ export class CrowdGuidanceManager {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   interventionMode(engine: any): CongestionInterventionMode {
     return engine.s.crowdBehavior?.interventionMode || 'major_only';
   }
 
   /** Verifica rutas alternativas practicables que no crucen emergencias ni incendios. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   findViableAlternatives(engine: any, zone: CongestionZoneEvent): ViableAlternativeOption[] {
     const out: ViableAlternativeOption[] = [];
     const fireNodes = [...(engine.emergency?.fire?.nodes?.values?.() || [])];
     const evacOrders = engine.emergency?.evacuation?.orders || [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isNearEmergency = (pt: Point): boolean => {
       for (const fn of fireNodes) {
         if (Math.hypot(pt[0] - fn.ignitionPoint[0], pt[1] - fn.ignitionPoint[1]) <= (fn.safetyRadius || 6) + 2) {
@@ -165,7 +161,6 @@ export class CrowdGuidanceManager {
   }
 
   /** Evalúa una alternativa sin aplicarla ni mover visitantes (estudio contextual). */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   studyAlternative(engine: any, zoneId: string): {
     alternatives: ViableAlternativeOption[];
     recommended?: ViableAlternativeOption;
@@ -191,7 +186,6 @@ export class CrowdGuidanceManager {
    * nunca asigna obediencia automática del 100 %.
    */
   evaluateVisitorResponse(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     agent: Agent,
     steward: StewardAgent,
@@ -224,7 +218,6 @@ export class CrowdGuidanceManager {
    * consumiendo tiempo y redirigiendo únicamente a quienes aceptan o siguen al grupo.
    */
   guideGroupAtZone(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     steward: StewardAgent,
     zone: CongestionZoneEvent
@@ -296,7 +289,6 @@ export class CrowdGuidanceManager {
   }
 
   private applyAlternativeToAgent(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     agent: Agent,
     alt: ViableAlternativeOption
@@ -328,7 +320,6 @@ export class CrowdGuidanceManager {
   }
 
   /** Asigna manualmente (o en automático) un auxiliar libre hacia una congestión. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dispatchStewardToZone(engine: any, zoneId: string): StewardAgent | null {
     const zone = this.zones.get(zoneId);
     if (!zone || zone.status === 'resolved') return null;
@@ -354,7 +345,6 @@ export class CrowdGuidanceManager {
     return chosen;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   update(engine: any): void {
     const th = this.thresholds(engine);
     const mode = this.interventionMode(engine);
@@ -575,7 +565,6 @@ export class CrowdGuidanceManager {
   }
 
   /** Construye datos contextuales para el Inspector, usando «Dato no disponible» sin inventar métricas. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   buildInspectorData(zoneId: string, engine: any): CongestionInspectorData | null {
     const z = this.zones.get(zoneId);
     if (!z) return null;

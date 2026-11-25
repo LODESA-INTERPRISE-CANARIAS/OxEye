@@ -160,7 +160,6 @@ export function generateLayout(
   const maxY = Math.max(...boundary.map((p) => p[1]));
   const weights = kinds.map((k) => Math.max(0, opts[k.weight] || 0));
   const sum = weights.reduce((a, b) => a + b, 0);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const objects: any[] = [];
   const used = [0, 0, 0];
   if (!sum) {
@@ -179,7 +178,6 @@ export function generateLayout(
       const y = minY + (maxY - minY) * next();
       const k = grid.index(x, y);
       if (k < 0 || !grid.free[k] || (reference && reference[k] < 0)) continue;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const o: any = {
         id: 'auto-' + opts.seed + '-' + i,
         name: kind.name + ' · ' + (i + 1),
@@ -273,7 +271,6 @@ export function rebalance(
   whole: Scene = scene
 ) {
   const working = structuredClone(whole);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moves: any[] = [];
   const boxes = (): Array<Booth | Infrastructure> => [
     ...working.base.booths,
@@ -376,7 +373,6 @@ export function rebalance(
     }
     const from = pt(o);
     const old = penalty(o, solid);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let best: any = null;
     for (const meters of [2, 4, 6, 9, 13]) {
       for (let bearing = (opts.seed || 0) % 30; bearing < 360; bearing += 30) {
@@ -545,7 +541,6 @@ export function composeAreas(
     ...fixed.map((o) => rect(o, map)),
     ...scene.entrances.map((g) => rect({...g, width: 4, depth: 4}, map)),
   ];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moves: any[] = [];
   const changes: string[] = [];
   const used = new Set<Array<Booth | Infrastructure>>();
@@ -866,13 +861,11 @@ export function redesign(
 
   const strategy = opts.strategy || 0;
   const names = ['Patio central', 'Paseo longitudinal', 'Islas de actividad'];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let best: any = null;
   const fixedMask = mask.slice();
 
   for (let trial = 0; trial < 80; trial++) {
     mask.set(fixedMask);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const moves: any[] = [];
     const zones: Array<{id: string; x: number; y: number; w: number; h: number}> =
       [];

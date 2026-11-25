@@ -152,7 +152,6 @@ export class EventEngine {
   everydayInteractions: ServiceInteractionManager;
   falseAlarms: FalseAlarmManager;
   crowdGuidance: CrowdGuidanceManager;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   experience?: any;
   reviewRunId?: string;
 
@@ -1560,10 +1559,8 @@ export class EventEngine {
     this.dining.update(dt);
     for (const a of this.agents) {
       if (a.state === 'gone' || a.state === 'transport') continue;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((this.emergency as any)?.evacuation?.step(a, dt)) continue;
       if (yieldForPriority(this, a, dt)) continue;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((this.emergency as any)?.social?.step(a, dt)) continue;
       if (this.dining.step(a, dt)) continue;
       const k = this.g.index(a.x, a.y);

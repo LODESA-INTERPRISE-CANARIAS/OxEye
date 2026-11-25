@@ -19,7 +19,6 @@ import type {
 } from '../../types';
 
 export interface SimulationInspectorProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: any;
   scene: Scene;
   mapMeta: VenueMap;
@@ -112,7 +111,6 @@ export const SimulationInspector: React.FC<SimulationInspectorProps> = ({
       : world([item.x ?? 50, item.y ?? 50], mapMeta);
   const cellLabel = cellAt(coords, scene.meta?.grid || 10);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resp: any = engine?.emergency;
   const fireNode = resp?.fire?.nodes?.get?.(item.id);
   const objectIncidents: EmergencyIncident[] = (resp?.events || []).filter(

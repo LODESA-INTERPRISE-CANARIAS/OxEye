@@ -121,7 +121,6 @@ export interface ServiceLoadRow {
   overloaded: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function serviceLoad(emergency: any): ServiceLoadRow[] {
   const active = (emergency.events as EmergencyIncident[]).filter(
     (q) => !['resolved', 'unreported'].includes(q.status)
@@ -259,7 +258,6 @@ export const RESPONSE_PROFILES: Record<string, ResponseProfile> = {
  * @param l - Footprint length in meters.
  * @returns `true` if every sampled point lies in a free cell.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function footprintClear(e: any, pose: VehiclePose, w: number, l: number): boolean {
   const nx = Math.max(1, Math.ceil(l / 0.3));
   const ny = Math.max(1, Math.ceil(w / 0.3));
@@ -294,7 +292,6 @@ const pathLength = (p: Point[]): number =>
  * @returns Route result `{path, length}` or `{error}`.
  */
 export function responseRoute(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any,
   origin: Point,
   destination: Point,
@@ -490,7 +487,6 @@ export class ResponseSimulation extends EmergencyLab {
     return super.isClosed(id) || !!this.fire?.isClosed(id);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     super(e);
     this.watch = new Watch(e);
@@ -505,7 +501,6 @@ export class ResponseSimulation extends EmergencyLab {
   }
 
   /** Localiza cualquier objeto del plano (puesto, infraestructura, acceso o valla) por ID. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private findSceneTarget(targetId: string): {obj: any; point: Point} | null {
     const e = this.e;
     const m = e.g.m;
@@ -696,12 +691,9 @@ export class ResponseSimulation extends EmergencyLab {
    * Crea una incidencia y foco independiente cuando la exposición térmica alcanza
    * ignición en una instalación vecina compatible, manteniendo trazabilidad causal.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   spawnSecondaryFire(
     parentRow: EmergencyIncident,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _parentNode: any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     targetObj: any
   ): EmergencyIncident | null {
     const e = this.e;
@@ -1907,7 +1899,6 @@ export interface ResponseSvgOptions {
  * @param opts - Optional highlight, focus/context mode, and privacy settings for incident playback.
  * @returns SVG markup string.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function responseSVG(engine: any, opts?: ResponseSvgOptions): string {
   const fireSvg = engine.emergency.fire?.svg() || '';
   const evacSvg = engine.emergency.evacuation?.svg() || '';

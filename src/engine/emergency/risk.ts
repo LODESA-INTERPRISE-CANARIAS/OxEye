@@ -106,7 +106,6 @@ export function safetyFingerprint(s: Scene): string {
     'ballastRequiredMassKg',
     'attachedCoverId',
   ];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const objects = (a?: any[]) =>
     (a || []).map((o) =>
       Object.fromEntries(
@@ -967,7 +966,6 @@ export function assessRisk(
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function liveFailures(e: any): RiskIssue[] {
   const rows = (e.emergency.events as EmergencyIncident[]).filter(
     (r) => !['resolved', 'unreported'].includes(r.status)
@@ -1098,7 +1096,6 @@ export function riskHTML(r: RiskAssessmentReport): string {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function resultHTML(e: any, stopped = false): string {
   const d = e.dining?.summary() || {};
   const rows = (e.emergency?.events || []) as EmergencyIncident[];

@@ -15,9 +15,7 @@ export interface EvacuationOrder {
 
 export interface EvacuationTask {
   order: EvacuationOrder;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fields: Array<{gate: any; field: Int32Array}>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   escape?: Array<{gate: any; field: Int32Array}>;
   react: number;
   started?: boolean;
@@ -25,13 +23,11 @@ export interface EvacuationTask {
 }
 
 export class Evacuation {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   orders: EvacuationOrder[];
   pending: Map<number, EvacuationTask>;
   stats: {warned: number; departed: number; blocked: number};
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.orders = [];
@@ -60,12 +56,10 @@ export class Evacuation {
     }
     const grid = {...e.g, free};
     const exits = e.entries.filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (g: any) =>
         ['out', 'both', 'free'].includes(g.phases?.event || g.role || 'both') &&
         free[g.cell]
     );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fields = exits.map((g: any) => ({gate: g, field: flow(grid, g.cell)}));
     const order: EvacuationOrder = {
       id: row?.id || 'all',

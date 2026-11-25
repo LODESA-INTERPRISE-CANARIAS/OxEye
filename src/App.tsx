@@ -426,7 +426,6 @@ export const App: React.FC = () => {
 
     if (!plan && eng) {
       const recommendations = analyze(eng);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const em = eng.emergency as any;
       const runSeed =
         eng?.s.seed ??
@@ -545,7 +544,6 @@ export const App: React.FC = () => {
     ) {
       const {kind, value} = replayLogRef.current[replayCursorRef.current++];
       if (kind === 'evacuate') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (eng.emergency as any).evacuation?.order(null, true);
       } else if (kind === 'inject') {
         const injVal = value as string | {type: string; sourceId?: string | null};
@@ -559,17 +557,14 @@ export const App: React.FC = () => {
           templateId: string;
           severity?: import('./types').IncidentSeverityLevel;
         };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (eng.emergency as any).triggerContextualIncident?.(
           ctxVal.targetId,
           ctxVal.templateId,
           {severity: ctxVal.severity, originMode: 'manual'}
         );
       } else if (kind === 'schedule_incident') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (eng.emergency as any).scheduleIncident?.(value);
       } else if (kind === 'cancel_scheduled_incident') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (eng.emergency as any).cancelScheduledIncident?.(String(value));
       } else if (kind === 'dispatch_steward_congestion') {
         eng.crowdGuidance?.dispatchStewardToZone(eng, String(value));
@@ -955,7 +950,6 @@ export const App: React.FC = () => {
           while (cursor < log.length && log[cursor].time <= invEng.time) {
             const {kind, value} = log[cursor++];
             if (kind === 'evacuate') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).evacuation?.order(null, true);
             } else if (kind === 'inject') {
               const v = value as string | {type: string; sourceId?: string | null};
@@ -969,17 +963,14 @@ export const App: React.FC = () => {
                 templateId: string;
                 severity?: import('./types').IncidentSeverityLevel;
               };
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).triggerContextualIncident?.(
                 cv.targetId,
                 cv.templateId,
                 {severity: cv.severity, originMode: 'manual'}
               );
             } else if (kind === 'schedule_incident') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).scheduleIncident?.(value);
             } else if (kind === 'cancel_scheduled_incident') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).cancelScheduledIncident?.(String(value));
             } else if (kind === 'dispatch_steward_congestion') {
               invEng.crowdGuidance?.dispatchStewardToZone(invEng, String(value));
@@ -1014,7 +1005,6 @@ export const App: React.FC = () => {
           while (cursor < log.length && log[cursor].time <= invEng.time) {
             const {kind, value} = log[cursor++];
             if (kind === 'evacuate') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).evacuation?.order(null, true);
             } else if (kind === 'inject') {
               const v = value as string | {type: string; sourceId?: string | null};
@@ -1028,17 +1018,14 @@ export const App: React.FC = () => {
                 templateId: string;
                 severity?: import('./types').IncidentSeverityLevel;
               };
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).triggerContextualIncident?.(
                 cv.targetId,
                 cv.templateId,
                 {severity: cv.severity, originMode: 'manual'}
               );
             } else if (kind === 'schedule_incident') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).scheduleIncident?.(value);
             } else if (kind === 'cancel_scheduled_incident') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (invEng.emergency as any).cancelScheduledIncident?.(String(value));
             } else if (kind === 'dispatch_steward_congestion') {
               invEng.crowdGuidance?.dispatchStewardToZone(invEng, String(value));
@@ -1168,7 +1155,6 @@ export const App: React.FC = () => {
         templateId,
         severity: opts?.severity,
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const created = (eng.emergency as any).triggerContextualIncident?.(
         targetId,
         templateId,
@@ -1200,7 +1186,6 @@ export const App: React.FC = () => {
       const eng = engineRef.current;
       if (!eng) return;
       recordAction('schedule_incident', spec);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const entry = (eng.emergency as any).scheduleIncident?.(spec);
       if (entry) {
         showToast(`Incidencia programada: ${entry.label}`);
@@ -1217,7 +1202,6 @@ export const App: React.FC = () => {
       const eng = engineRef.current;
       if (!eng) return;
       recordAction('cancel_scheduled_incident', id);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((eng.emergency as any).cancelScheduledIncident?.(id)) {
         showToast('Incidencia programada anulada');
         setReviewTick((t) => t + 1);
@@ -1438,7 +1422,6 @@ export const App: React.FC = () => {
       }
       const allObjs = [...s.base.booths, ...s.infrastructure, ...s.entrances];
       for (const move of proposal.moves) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const obj = allObjs.find((o) => o.id === move.id) as any;
         if (obj) {
           obj.x = move.x;

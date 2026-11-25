@@ -19,7 +19,6 @@ export interface GroupableItemEntry {
   id: string;
   kind: GroupableKind;
   isSubsoil: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: any;
 }
 

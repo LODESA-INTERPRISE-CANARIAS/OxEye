@@ -146,7 +146,6 @@ export class ServiceInteractionManager {
    * y actualiza el destino o conocimiento del visitante.
    */
   requestQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     agent: Agent,
     kind: string
@@ -156,12 +155,10 @@ export class ServiceInteractionManager {
       EVERYDAY_QUERY_CATALOG[0];
 
     const stewards = (engine.stewards?.agents || []).filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sw: any) => sw.busyUntil <= engine.time
     );
     const chosenSteward =
       stewards.sort(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (a: any, b: any) =>
           Math.hypot(a.x - agent.x, a.y - agent.y) -
           Math.hypot(b.x - agent.x, b.y - agent.y)
@@ -173,11 +170,9 @@ export class ServiceInteractionManager {
 
     // Buscar recurso real en el diseño
     const m = engine.g.m;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const infraMatches = (engine.s.infrastructure || []).filter((o: any) =>
       tpl.lookupResourceKinds.includes(o.kind || o.role || '')
     );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const boothMatches = (engine.s.base?.booths || []).filter((o: any) =>
       tpl.lookupResourceKinds.includes(o.type || '')
     );
@@ -239,7 +234,6 @@ export class ServiceInteractionManager {
     return rec;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   update(engine: any): void {
     // Atender cola pendiente si un auxiliar queda libre
     if (this.pendingQueue.length && engine.stewards?.agents?.length) {
@@ -307,7 +301,6 @@ export class FalseAlarmManager {
 
   /** Registra un aviso preventivo que requiere comprobación física antes de descartarse. */
   reportSuspectedAlarm(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     kind: FalseAlarmKind,
     point: Point,
@@ -329,7 +322,6 @@ export class FalseAlarmManager {
     return rec;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   update(engine: any): void {
     for (const rec of this.records) {
       if (rec.status === 'reported') {

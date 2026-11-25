@@ -5,26 +5,21 @@
  */
 
 export class Watch {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   nextScan: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   patrols: Array<Record<string, any>>;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.nextScan = 0;
     this.patrols = e.s.infrastructure
       .filter(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (o: any) =>
           o.role === 'emergency' &&
           o.kind === 'security' &&
           o.active !== false &&
           (o.staff || 0) > 0,
       )
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((r: any, i: number) => {
         const hx = (r.x * e.g.m.widthMeters) / 100;
         const hy = (r.y * e.g.m.heightMeters) / 100;
@@ -56,7 +51,6 @@ export class Watch {
       .filter(Boolean);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   update(dt: number, events: Array<Record<string, any>>) {
     const e = this.e;
     for (const p of this.patrols) {
@@ -131,7 +125,6 @@ export class Watch {
       const agents = this.patrols.filter(
         (p) => Math.hypot(p.x - rx, p.y - ry) <= Math.max(16, p.fixed ? p.radius || 18 : 16),
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       row.reporters = people.map((a: any) => ({
         id: a.id,
         label: a.persona?.personName || 'Visitante ' + a.id,
@@ -164,7 +157,6 @@ export class Watch {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   svg(events: Array<Record<string, any>>): string {
     return this.patrols
       .filter(

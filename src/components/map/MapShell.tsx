@@ -190,7 +190,6 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       client: Point;
       view: {x: number; y: number; w: number; h: number};
       id: string | null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       o: any;
       old: Point | null;
       handle: string | null;
@@ -205,7 +204,6 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
       groupRotate?: boolean;
       groupPivot?: Point | null;
       groupStartAngle?: number;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       snapshot: any;
       moved: boolean;
       checkpoint: boolean;
@@ -1912,7 +1910,6 @@ export const MapShell = forwardRef<MapShellHandle, MapShellProps>(
         ...(s.passages || []),
       ];
       let resolvedId = id;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let o: any =
         !subsoilOnly && resolvedId
           ? allItems.find((item) => item.id === resolvedId) || null

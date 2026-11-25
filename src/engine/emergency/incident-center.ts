@@ -291,7 +291,6 @@ export function appendIncidentMilestone(
  * Observa los cambios en tiempo real de todas las incidencias del motor y registra
  * hitos, estados, relaciones simultáneas y evolución post-incendio.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function syncIncidentHistory(engine: any): void {
   const events: EmergencyIncident[] = engine?.emergency?.events || [];
   const t: number = engine?.time || 0;
@@ -560,7 +559,6 @@ export interface IncidentEvaluationMetrics {
  */
 export function evaluateIncidentManagement(
   row: EmergencyIncident,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   engine: any
 ): IncidentEvaluationMetrics {
   const created = row.created ?? 0;
@@ -857,7 +855,6 @@ export function runAlternativeIncidentTrial(
 /** Construye la ficha exportable JSON respetando privacidad en incidencias sensibles. */
 export function buildIncidentExportPayload(
   row: EmergencyIncident,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   engine: any,
   metrics: IncidentEvaluationMetrics,
   privacyMode: 'public' | 'authorized_synthetic',

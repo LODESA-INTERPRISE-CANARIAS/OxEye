@@ -195,7 +195,6 @@ export const NeedsEngine = {
 /** Motor de observación progresiva del recinto y decisión multicriterio por utilidad. */
 export const DecisionEngine = {
   observeNearbyStations(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     agent: Agent
   ): void {
@@ -213,7 +212,6 @@ export const DecisionEngine = {
   },
 
   selectStationByUtility(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     engine: any,
     agent: Agent,
     candidates: SimStation[],
@@ -326,7 +324,6 @@ export class SocialGroupManager {
   }
 
   /** Comparte información conocida entre integrantes del mismo grupo. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   shareKnowledge(group: SocialGroup, engine: any): void {
     for (const mid of group.memberIds) {
       const m = engine.byId.get(mid) as Agent | undefined;
@@ -346,7 +343,6 @@ export class SocialGroupManager {
    * Separa temporalmente un grupo en actividades complementarias (ej. comida + mesa/descanso + comercio)
    * fijando un punto de encuentro posterior.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   splitGroupForActivities(group: SocialGroup, engine: any, durationSec = 420): void {
     if (group.memberIds.length < 2) return;
     group.state = 'split';
@@ -374,7 +370,6 @@ export class SocialGroupManager {
   }
 
   /** Coordina el reencuentro del grupo en el punto acordado y ajusta planes si alguien se marcha. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   update(engine: any): void {
     for (const group of this.groups.values()) {
       group.memberIds = group.memberIds.filter((id) => {

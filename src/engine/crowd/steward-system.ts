@@ -61,13 +61,11 @@ const TASK_LABELS: Record<StewardState, string> = {
  * Gestor de agentes autónomos de asistencia y orientación acoplado a `EventEngine`.
  */
 export class StewardSystem {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   agents: StewardAgent[];
   lastEvalTime: number;
   metrics: StewardMetrics;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(engine: any) {
     this.e = engine;
     this.agents = [];

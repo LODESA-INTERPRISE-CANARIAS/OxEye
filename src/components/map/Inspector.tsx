@@ -315,7 +315,6 @@ export const Inspector: React.FC<InspectorProps> = ({
     return <aside id="inspector" className="float-panel inspector" hidden />;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const item = found as any;
   const isLocked = !!item.locked;
   const currentTags = membership(

@@ -9,12 +9,10 @@ function distance(a: Point, b: Point): number {
 }
 
 export class IncidentCrowd {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   next: number;
   stats: {curious: number; avoid: number; dispersed: number; unable: number};
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.next = 0;

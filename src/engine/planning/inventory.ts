@@ -46,7 +46,6 @@ export function reconcile(
   const next = structuredClone(scene);
   const pending = next.pendingStock || [];
   const remove: string[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const add: any[] = [];
 
   for (const [kind, count] of Object.entries(counts)) {
@@ -69,7 +68,6 @@ export function reconcile(
     for (const o of ordered.slice(count)) remove.push(o.id);
     for (let i = current.length; i < count; i++) {
       const c = catalog[kind];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const o: any = {
         id: crypto.randomUUID(),
         inventoryKind: kind,
@@ -194,7 +192,6 @@ export function reconcile(
  * @param scene - Target scene.
  * @param o - Item to insert.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function insertStock(scene: Scene, o: any): void {
   if (classify(o) === 'gate') {
     scene.entrances.push(o as Entrance);
@@ -270,7 +267,6 @@ export function arrangeStock(raw: Scene, map: VenueMap, seed: number): Scene {
 
   for (const o of list) {
     if (classify(o) === 'gate') continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawItem = o as any;
     for (let attempt = 0; attempt < 1200; attempt++) {
       const covers = s.infrastructure.filter((inf) => inf.role === 'cover');

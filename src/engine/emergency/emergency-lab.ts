@@ -171,7 +171,6 @@ export function ensureEmergencyResources(s: Scene): Scene {
  * Base emergency response simulation laboratory.
  */
 export class EmergencyLab {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any;
   events: EmergencyIncident[];
   next: number;
@@ -179,10 +178,8 @@ export class EmergencyLab {
   seed?: number;
   random: () => number;
   nextRandom: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   watch?: any;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(e: any) {
     this.e = e;
     this.events = [];
@@ -510,7 +507,6 @@ const statusLabels: Record<string, string> = {
  * @param e - EventEngine instance.
  * @returns SVG markup string.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function emergencySVG(e: any): string {
   const m = e.g.m;
   let html = '';
@@ -635,7 +631,6 @@ export function emergencySVG(e: any): string {
  * @param e - EventEngine instance.
  * @returns HTML string.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function emergencyPanel(e: any): string {
   const r = e.emergency.snapshot();
   return (
