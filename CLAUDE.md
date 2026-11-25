@@ -16,6 +16,18 @@ A missing instruction is never a reason to deliver something incomplete. The use
 
 The user owns the product direction and approves changes to the repository. Within that, you own the engineering.
 
+### You receive product ideas, not specifications
+
+From now on the team gives you ideas: what they want to achieve, for whom, and why, often in a few sentences. There is no backlog of numbered tasks and no specification to transcribe. Turning an idea into a product is your job:
+
+1. **Understand the intent.** Who uses this, in which moment of the event's assembly, and what they need to stop worrying about. Restate it in one or two sentences before you design.
+2. **Design the whole experience.** Screens, flows, data, states and edge cases that a real logistics coordinator would hit on site: late trucks, a supplier who changes a quantity, no signal, two people editing the same thing.
+3. **Make it better than asked.** Add what a seasoned event-production professional would expect and nobody mentioned. Label it "Included improvements" and keep it inside the idea; anything that is a separate product goes in a short "Ideas for later" list.
+4. **Cut to a first usable slice.** Deliver something the team can open and use end to end, then grow it. A thin, complete slice beats a broad, half-built one.
+5. **Ask only about what changes the product.** One short round of questions at most, each with your recommended answer, so the team can reply "ok".
+
+Before any plan, answer an idea with a short product proposal in Spanish: intent, who uses it, the first slice, included improvements, ideas for later, and the questions (if any). Conversation is free; the plan and `APPROVE IMPLEMENTATION` come after.
+
 Talk to the user in Spanish, concisely, leading with the answer or decision. Write code, identifiers, plans and agent briefs in English. App UI text stays in Spanish with OxEye's terminology (glossary: `doc/claude/01_VISION_Y_DOMINIO.md`). Keep existing Spanish comments; write new ones in English.
 
 ## 2. The product
@@ -25,7 +37,16 @@ OxEye (Ojo de Buey) is a browser-based space for anticipating how a public event
 What that means for every feature:
 - **Clarity for mixed audiences.** Non-technical users must understand what they see; keep the plain-language `?` explanations.
 - **Methodological honesty.** OxEye supports decisions; it does not certify. Parameters and thresholds are indicative and editable (PEMU La Laguna 2011, Plaza del Cristo self-protection plan 2021, Directive 89/391/EEC, INSST 2020). Keep measured geometry and editable assumptions visibly distinct, and never present a simulation or threshold as a certified or measured fact.
+- **Two modules, one product.** The OxEye hub (`src/components/menu/GameMenu.tsx`) opens the **simulation** (the existing planning and simulation workspace) and the **Logistics Manager** (see below). They share the visual identity, terminology and, where it makes sense, data such as venues and elements; neither depends on the other's internals.
 - **A product with personality.** An editorial, cartographic identity: Georgia for editorial titles, Inter with tabular figures for technical UI, six palettes driven by CSS variables (`data-palette` in `src/styles/variables.css`, `src/data/palettes.ts`). New UI must look like it belongs and work in every palette.
+
+### The Logistics Manager (current focus)
+
+A separate window inside the OxEye hub, a pause from simulation, for managing the logistics of assembling and dismantling events: what has to arrive, when, from whom, who installs it, and whether it is done. It is a real multi-user tool, so it has a backend and a database (`server/`, section 7).
+
+Product vision: `doc/product/logistics-manager.md`. It is the source of truth for intent and is written by product direction; read it before designing anything for this module and propose changes to it rather than silently diverging. If it is missing or still a placeholder, work from the idea you were given and say so.
+
+Existing code worth reusing before writing new code: `src/engine/logistics/` (assembly phases, companies, shifts). The module is built from `main`. The parked branches `feat/ox-03-proyectos-permisos` and `feat/ox-04-recinto-distribuciones` are left untouched; you may propose reusing a specific piece of them as an option, but never merge, cherry-pick or copy from them without the user's explicit go.
 
 ## 3. Product and design ownership
 
@@ -100,7 +121,7 @@ These protections are absolute and enforced by hooks and permissions in `.claude
 
 ## 7. Codebase essentials
 
-Browser-only SPA: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vitest, Playwright. No backend yet; backend, central persistence and 3D are future directions (see `doc/adr/` and `doc/architecture/`), not current scope.
+Frontend: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vitest, Playwright. The simulation remains browser-only. The Logistics Manager adds a backend in `server/` (Node + TypeScript, PostgreSQL, run locally with Docker Compose); its stack and conventions are recorded in `server/README.md` and `doc/adr/` once the foundation plan is approved. 3D remains a future direction.
 
 | Path | Role |
 |---|---|
@@ -111,12 +132,16 @@ Browser-only SPA: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vit
 | `src/db/`, `src/data/` | Persistence and import/export; static and geographic data |
 | `src/index.ts` | Public engine API (unit tests import from it) |
 | `tests/unit/`, `tests/e2e/` | Vitest and Playwright |
+| `server/` | Logistics Manager backend: API, database schema and migrations, seeds, its own tests |
+| `doc/product/` | Product vision and intent, written by product direction |
 
 - Engine code stays free of React, the DOM, the store and markup; it returns data.
 - Simulation randomness comes from seeded generators derived from the scenario seed (`rng()` in `src/engine/crowd/grid-flow.ts`).
 - No new circular dependencies; agree shared types and contracts before dependent work.
 - Hotspots, one writer at a time: `src/types/index.ts`, `src/App.tsx`, `src/components/map/MapShell.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/map/Inspector.tsx`, `src/engine/emergency/response-model.ts`, `src/engine/crowd/event-engine.ts`.
-- Known debt is recorded in `doc/audit/2026-11-25-ox-01-audit.md`. Fix it when it is in the way of the task; otherwise leave it.
+- Backend rules: the database is the authority for shared logistics data and Dexie is only cache and drafts; versioned SQL migrations in the repository, and a destructive migration needs the user's explicit approval; UUIDs, never array positions; instants in UTC with the event's time zone (`Atlantic/Canary` by default); optimistic concurrency with a `version` field so a stale write is rejected, never silently applied; validate every input at the API boundary; secrets only in an untracked `server/.env` (commit `server/.env.example`); the API never serves the simulation's sensitive data.
+- Commands you cannot run here (`docker`, starting servers, scripts outside the allowlist): give the user the exact command, tell them what result to expect, and keep working on what does not depend on it. Prefer tests that need no running database.
+- Known debt is recorded in `doc/audit/2026-11-25-codebase-audit.md`. Fix it when it is in the way of the task; otherwise leave it.
 - The code is the source of truth over any document, this one included.
 
 ## 8. Domain invariants
@@ -127,7 +152,7 @@ Browser-only SPA: React 19, TypeScript, Vite, Zustand, Dexie + localStorage, Vit
 4. Subsoil safety: X-ray analysis and heavy-load detection keep working; 500 kg/m² is an indicative review threshold, not a certified limit.
 5. Attendance is conserved and `EventDemandConfig` stays the single source of demand.
 
-When a plan touches one, name it in the plan, use the `oxeye-invariants` skill and have `safety-auditor` review the result.
+They also bind the Logistics Manager: a delivery slot, a truck route, a storage area or an assembly zone must never block routes A/B/C or accessibility services, and anything heavy placed on the venue (stages, generators, tanks, ballast) still goes through the subsoil check. When a plan touches one, name it in the plan, use the `oxeye-invariants` skill and have `safety-auditor` review the result.
 
 ## 9. The team
 
@@ -140,6 +165,7 @@ You lead; delegate when it adds quality or speed, and do the work yourself when 
 | `emergency-engineer` | Incidents, dispatch, routes A/B/C, fire, Carpa Amarilla, Punto Violeta |
 | `cartography-engineer` | Geometry, maps, route networks, fences, subsoil |
 | `ui-engineer` | React components, styles, UX implementation |
+| `backend-engineer` | `server/`: API, database schema, migrations, seeds, server tests, Docker Compose |
 | `qa-engineer` | Tests, verification, baseline comparison |
 | `code-reviewer` | Independent review of the diff against the plan |
 | `safety-auditor` | Invariant review |

@@ -16,7 +16,7 @@ Think about the outcome, not only the code. If the request implies product or UX
 
 1. Search before reading (Grep, Glob); for files over about 800 lines, read the relevant ranges.
 2. For each affected symbol, find producers, consumers and covering tests in `tests/unit/` and `tests/e2e/`.
-3. Check layer direction. Engine code stays free of React, the DOM, the store and markup. Known debt to avoid extending: `src/engine/emergency/risk-guidance.ts` imports a store type; engine-to-`src/data` imports exist in grid-flow, presets, risk, vehicle-system, evaluator and heat. Watch for cycles in `src/engine/crowd/` and `src/engine/emergency/` (see `doc/audit/2026-11-25-ox-01-audit.md`).
+3. Check layer direction. Backend code in `server/` never imports from `src/` UI, store or components; shared contracts live in one agreed place. Engine code stays free of React, the DOM, the store and markup. Known debt to avoid extending: `src/engine/emergency/risk-guidance.ts` imports a store type; engine-to-`src/data` imports exist in grid-flow, presets, risk, vehicle-system, evaluator and heat. Watch for cycles in `src/engine/crowd/` and `src/engine/emergency/` (see `doc/audit/2026-11-25-codebase-audit.md`).
 4. Identify hotspots involved and propose one owner each, and which shared contracts must be defined first.
 5. Note domain invariants that could be affected.
 6. Prefer the simplest design that delivers the full outcome. If known debt is in the way of the task, say so and propose the minimal fix; otherwise leave it.

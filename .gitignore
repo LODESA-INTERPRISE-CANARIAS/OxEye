@@ -140,3 +140,8 @@ dist
 
 playwright-report/
 test-results/
+
+# Logistics Manager backend: local secrets and data
+server/.env
+server/.env.local
+server/pgdata/
