@@ -331,22 +331,7 @@
   box-shadow: 0 0 0 4px var(--lx-accent-soft);
 }
 
-.lx .lx-sync--offline {
-  --lx-btn-border: var(--lx-control-border);
-  border-style: dotted;
-  color: var(--lx-muted);
-}
-
-.lx .lx-sync--unavailable {
-  --lx-btn-bg: var(--lx-danger-soft);
-  --lx-btn-border: var(--lx-danger);
-  --lx-btn-bg-hover: var(--lx-danger-soft);
-  color: var(--lx-ink);
-}
-
-.lx .lx-sync--unavailable .lx-icon {
-  color: var(--lx-danger);
-}
+/* States (synced, syncing, offline, local_only, attention): offline.css. */
 
 @media (pointer: coarse) {
   .lx .lx-sync {

@@ -125,6 +125,12 @@ export const HypothesisSheet: React.FC<{
   const deleteHypothesis = useLogisticsStore(s => s.deleteHypothesis);
   const applyHypothesis = useLogisticsStore(s => s.applyHypothesis);
   const toast = useLogisticsStore(s => s.toast);
+  // M6: hypotheses are never queued; applying needs the plan as the server
+  // has it, so both wait for the connection.
+  const noServer = useLogisticsStore(
+    s => s.connection === 'offline' || s.fromCache,
+  );
+  const unsent = useLogisticsStore(s => s.unsent);
   const nowRef = useRef(Date.now());
 
   const opened = start.kind === 'saved' ? start.hypothesis : null;
@@ -264,6 +270,15 @@ export const HypothesisSheet: React.FC<{
   };
 
   const shifted = analysis?.impact.shifted ?? [];
+  // Tasks of this plan with a change still on this device: the server would
+  // compare against versions it has not seen yet.
+  const waitingTasks =
+    !!root && [root.id, ...shifted.map(s => s.id)].some(id => unsent.has(id));
+  const offlineReason = noServer
+    ? 'Sin conexión: la hipótesis se puede explorar, pero guardarla o aplicarla al plan necesita el servidor.'
+    : waitingTasks
+      ? 'Hay cambios de estas tareas guardados solo en este dispositivo: aplica la hipótesis cuando se hayan enviado.'
+      : null;
   const canMarkDelayed =
     !!root && (root.status === 'planned' || root.status === 'confirmed');
 
@@ -458,7 +473,8 @@ export const HypothesisSheet: React.FC<{
         <Button
           id="lx-hypo-save"
           busy={busy === 'save'}
-          disabled={!analysis || busy === 'apply'}
+          disabled={!analysis || busy === 'apply' || noServer}
+          aria-describedby={noServer ? 'lx-hypo-offline' : undefined}
           onClick={() => void save()}
         >
           {busy === 'save' ? 'Guardando…' : 'Guardar hipótesis'}
@@ -467,7 +483,8 @@ export const HypothesisSheet: React.FC<{
       <Button
         variant="primary"
         id="lx-hypo-apply"
-        disabled={!analysis || !!busy}
+        disabled={!analysis || !!busy || !!offlineReason}
+        aria-describedby={offlineReason ? 'lx-hypo-offline' : undefined}
         onClick={() => {
           setNotice(null);
           setConfirmedKey(shiftKey);
@@ -524,6 +541,12 @@ export const HypothesisSheet: React.FC<{
           >
             <Icon name={notice.tone === 'error' ? 'alert' : 'eye'} size={16} />
             {notice.text}
+          </p>
+        )}
+        {canWrite && offlineReason && (
+          <p className="lx-notice" role="status" id="lx-hypo-offline">
+            <Icon name={noServer ? 'cloudOff' : 'clock'} size={16} />
+            {offlineReason}
           </p>
         )}
 

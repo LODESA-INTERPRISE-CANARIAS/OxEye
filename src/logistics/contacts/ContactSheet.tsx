@@ -45,6 +45,8 @@ import {
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
 import {tasksOfContact} from '../lib/directory';
+import {UnsentMark} from '../offline/PendingMark';
+import type {FormReview} from '../offline/review';
 import {WorkOrderSheet} from '../orders/WorkOrderSheet';
 import {SOURCE_LABEL, sortEvents, VERIFICATION_LABEL} from '../lib/events';
 import {dayMonthShort, plural} from '../lib/format';
@@ -60,8 +62,18 @@ type RescuedValues = Record<string, unknown>;
 
 export type ContactSheetMode =
   | {kind: 'view'; contact: Contact}
-  | {kind: 'create'; prefill?: ContactPrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; contact: Contact; rescued?: RescuedValues};
+  | {
+      kind: 'create';
+      prefill?: ContactPrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {
+      kind: 'edit';
+      contact: Contact;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    };
 
 interface FormValues {
   name: string;
@@ -239,6 +251,7 @@ const ContactView: React.FC<{
       title={contact.name}
       meta={
         <>
+          <UnsentMark id={contact.id} />
           {contact.isDemo && <DemoChip />}
           <VerificationChip verification={contact.verification} />
           {(contact.role || contact.company) && (
@@ -480,6 +493,7 @@ const ContactForm: React.FC<{
   const updateContact = useLogisticsStore(s => s.updateContact);
   const deleteContact = useLogisticsStore(s => s.deleteContact);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const contacts = useLogisticsStore(s => s.contacts);
   const companies = useLogisticsStore(s => s.companies);
   const events = useLogisticsStore(s => s.events);
@@ -509,6 +523,7 @@ const ContactForm: React.FC<{
     blank,
     toValues: toValuesCb,
     rescued: mode.rescued,
+    review: mode.review,
     fromRescue,
     serverField: SERVER_FIELD,
     // Leaving an edit goes back to the card; leaving a new one closes.
@@ -555,8 +570,8 @@ const ContactForm: React.FC<{
     f.setErrors({});
     try {
       if (!base) {
-        const created = await createContact(inputFrom(values));
-        toast(`Persona guardada: ${created.name}`, 'success');
+        const created = await createContact(inputFrom(values), f.writeOptions);
+        toastSaved(created, `Persona guardada: ${created.name}`);
         f.markSaved();
         if (next) {
           f.startNext({
@@ -591,12 +606,13 @@ const ContactForm: React.FC<{
       }
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        f.settleReview();
         onSaved(base);
         return;
       }
-      const updated = await updateContact(base.id, patch);
+      const updated = await updateContact(base.id, patch, f.writeOptions);
       f.markSaved();
-      toast(`Cambios guardados: ${updated.name}`, 'success');
+      toastSaved(updated, `Cambios guardados: ${updated.name}`);
       onSaved(updated);
     } catch (err) {
       f.applyServerError(err, 'save');
@@ -711,6 +727,7 @@ const ContactForm: React.FC<{
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <VerificationChip verification={base.verification} />
           </>

@@ -25,8 +25,13 @@ export function registerEventRoutes(
 
   api.post('/events', auth, async c => {
     const input = await jsonBody(c, createEventSchema);
-    const event = await createEvent(deps.db, c.get('user'), input, deps.now());
-    return c.json(event, 201);
+    const created = await createEvent(
+      deps.db,
+      c.get('user'),
+      input,
+      deps.now(),
+    );
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/events/:id', auth, async c => {

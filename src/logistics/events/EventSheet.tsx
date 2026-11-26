@@ -65,6 +65,8 @@ import {
 } from '../lib/events';
 import {longDate} from '../lib/format';
 import {clearRescue, saveRescue} from '../lib/rescue';
+import {UnsentMark} from '../offline/PendingMark';
+import {replacing, type FormReview} from '../offline/review';
 import {recordSlot} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
@@ -85,8 +87,13 @@ import {EventTasks} from './EventTasks';
 export type RescuedValues = Record<string, unknown>;
 
 export type EventSheetMode =
-  | {kind: 'create'; rescued?: RescuedValues}
-  | {kind: 'edit'; event: LogisticsEvent; rescued?: RescuedValues}
+  | {kind: 'create'; rescued?: RescuedValues; review?: FormReview}
+  | {
+      kind: 'edit';
+      event: LogisticsEvent;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
   | {kind: 'view'; event: LogisticsEvent};
 
 interface FormValues extends SlotValues {
@@ -249,6 +256,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({
         title={mode.event.name}
         meta={
           <>
+            <UnsentMark id={mode.event.id} />
             {mode.event.isDemo && <DemoChip />}
             <StatusChip status={mode.event.status} />
             <VerificationChip verification={mode.event.verification} />
@@ -343,6 +351,8 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
   const createEvent = useLogisticsStore(s => s.createEvent);
   const updateEvent = useLogisticsStore(s => s.updateEvent);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
+  const discardEntry = useLogisticsStore(s => s.discardEntry);
   const venues = useLogisticsStore(s => s.venues);
   const userId = useLogisticsStore(s => s.session?.user.id ?? null);
   const orgId = useLogisticsStore(s => s.orgId);
@@ -354,7 +364,11 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
   const [base, setBase] = useState<LogisticsEvent | null>(editing);
   const initial = useMemo(() => (base ? valuesFromEvent(base) : EMPTY), [base]);
   const [values, setValues] = useState<FormValues>(() =>
-    mode.rescued ? valuesFromRescue(mode.rescued, initial) : initial,
+    mode.review
+      ? valuesFromEvent(mode.review.mine as LogisticsEvent)
+      : mode.rescued
+        ? valuesFromRescue(mode.rescued, initial)
+        : initial,
   );
   const [rescuedNotice, setRescuedNotice] = useState(!!mode.rescued);
   const [errors, setErrors] = useState<Errors>({});
@@ -476,6 +490,19 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
     setErrors({form: `No se ha guardado. ${errorMessage(err)}`});
   };
 
+  // M6: a reviewed queued change shows the server's answer once open.
+  const reviewError = useRef(mode.review?.error ?? null);
+  const applyRef = useRef(applyServerError);
+  useLayoutEffect(() => {
+    applyRef.current = applyServerError;
+  });
+  useLayoutEffect(() => {
+    const err = reviewError.current;
+    reviewError.current = null;
+    if (err) applyRef.current(err);
+  }, []);
+  const writeOptions = replacing(mode.review);
+
   const submit = async (next: boolean) => {
     if (saving) return;
     const found = validate(values);
@@ -489,16 +516,19 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
     setErrors({});
     try {
       if (!base) {
-        const created = await createEvent({
-          name: values.name.trim(),
-          venueName: nullIfEmpty(values.venueName),
-          ...slotInput(values),
-          status: values.status,
-          notes: nullIfEmpty(values.notes),
-          source: values.source,
-          verification: values.verification,
-        });
-        toast(`Evento guardado: ${created.name}`, 'success');
+        const created = await createEvent(
+          {
+            name: values.name.trim(),
+            venueName: nullIfEmpty(values.venueName),
+            ...slotInput(values),
+            status: values.status,
+            notes: nullIfEmpty(values.notes),
+            source: values.source,
+            verification: values.verification,
+          },
+          writeOptions,
+        );
+        toastSaved(created, `Evento guardado: ${created.name}`);
         if (mode.rescued) clearRescue();
         setRescuedNotice(false);
         if (next) {
@@ -535,11 +565,12 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
       }
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        if (mode.review) void discardEntry(mode.review.entryId);
         close();
         return;
       }
-      const updated = await updateEvent(base.id, patch);
-      toast(`Cambios guardados: ${updated.name}`, 'success');
+      const updated = await updateEvent(base.id, patch, writeOptions);
+      toastSaved(updated, `Cambios guardados: ${updated.name}`);
       close();
     } catch (err) {
       applyServerError(err);
@@ -590,6 +621,7 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <StatusChip status={base.status} />
             <VerificationChip verification={base.verification} />

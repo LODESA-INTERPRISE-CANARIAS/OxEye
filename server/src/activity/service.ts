@@ -7,6 +7,7 @@ import {toIso} from '../db/db.ts';
 import type {
   ActivityAction,
   ActivityEntry,
+  ChangesResponse,
 } from '../../../shared/logistics/contracts.ts';
 
 export interface ActivityInput {
@@ -76,15 +77,22 @@ export const HISTORY_ENTITY_TYPES = [
 
 export type HistoryEntityType = (typeof HISTORY_ENTITY_TYPES)[number];
 
+/** A `from` ≤ at < `to` window of the log (M6, the day close). */
+export interface ActivityRange {
+  from: Date;
+  to: Date;
+}
+
 /**
- * Newest first: the organization's recent activity, or the history of one
- * record when `entity` is given.
+ * Newest first: the organization's recent activity, the history of one
+ * record when `entity` is given, or the entries of a time range (M6).
  */
 export async function listActivity(
   db: Queryable,
   organizationId: string,
   limit = ACTIVITY_DEFAULT_LIMIT,
   entity: {type: HistoryEntityType; id: string} | null = null,
+  range: ActivityRange | null = null,
 ): Promise<ActivityEntry[]> {
   const rows = await db.query<ActivityRow>(
     `SELECT a.id, a.user_id, u.display_name, a.entity_type, a.entity_id,
@@ -92,9 +100,18 @@ export async function listActivity(
        FROM activity_log a JOIN users u ON u.id = a.user_id
       WHERE a.organization_id = $1
         AND ($3::text IS NULL OR (a.entity_type = $3 AND a.entity_id = $4::uuid))
+        AND ($5::timestamptz IS NULL OR a.at >= $5::timestamptz)
+        AND ($6::timestamptz IS NULL OR a.at < $6::timestamptz)
       ORDER BY a.at DESC, a.seq DESC
       LIMIT $2`,
-    [organizationId, limit, entity?.type ?? null, entity?.id ?? null],
+    [
+      organizationId,
+      limit,
+      entity?.type ?? null,
+      entity?.id ?? null,
+      range?.from.toISOString() ?? null,
+      range?.to.toISOString() ?? null,
+    ],
   );
   return rows.map(r => ({
     id: r.id,
@@ -106,6 +123,71 @@ export async function listActivity(
     changedFields: parseFields(r.changed_fields),
     at: toIso(r.at),
   }));
+}
+
+/** Largest `seq` PostgreSQL can hold (bigint). */
+const MAX_SEQ = 9_223_372_036_854_775_807n;
+
+/**
+ * The cursor sent back as `since`, or null when it is missing or malformed
+ * (not a canonical non-negative integer that fits a bigint).
+ */
+export function parseCursor(raw: string | undefined): bigint | null {
+  if (raw === undefined || !/^(0|[1-9][0-9]{0,18})$/.test(raw)) return null;
+  const value = BigInt(raw);
+  return value <= MAX_SEQ ? value : null;
+}
+
+/**
+ * M6 cheap refresh: the organization's cursor (its largest activity `seq`,
+ * "0" for an empty log) and which record types were written after `since`
+ * or in the last `overlapSeconds` (a transaction that took a lower `seq` but
+ * committed later is still reported). No cursor, or one ahead of the log
+ * (the log shrinks when the demo is removed) → `full`.
+ *
+ * With a cursor, one statement, so the cursor and the types come from the
+ * same snapshot: a row committed after it is above the cursor and shows up
+ * on the next poll. Without one only the cursor is read (a full reload needs
+ * no types).
+ */
+export async function changesSince(
+  db: Queryable,
+  organizationId: string,
+  since: bigint | null,
+  now: Date,
+  overlapSeconds: number,
+): Promise<ChangesResponse> {
+  if (since === null) {
+    const [only] = await db.query<{max_seq: string | null}>(
+      `SELECT max(seq)::text AS max_seq FROM activity_log
+        WHERE organization_id = $1`,
+      [organizationId],
+    );
+    return {
+      cursor: BigInt(only?.max_seq ?? '0').toString(),
+      types: [],
+      full: true,
+    };
+  }
+  const rows = await db.query<{max_seq: string | null; types: unknown}>(
+    `SELECT (SELECT max(seq) FROM activity_log WHERE organization_id = $1)::text
+              AS max_seq,
+            (SELECT COALESCE(json_agg(t.entity_type ORDER BY t.entity_type), '[]'::json)
+               FROM (SELECT DISTINCT entity_type FROM activity_log
+                      WHERE organization_id = $1
+                        AND (seq > $2::bigint OR at >= $3::timestamptz)) t)
+              AS types`,
+    [
+      organizationId,
+      since.toString(),
+      new Date(now.getTime() - overlapSeconds * 1000).toISOString(),
+    ],
+  );
+  const row = rows[0];
+  const max = BigInt(row?.max_seq ?? '0');
+  const cursor = max.toString();
+  if (since > max) return {cursor, types: [], full: true};
+  return {cursor, types: parseFields(row?.types), full: false};
 }
 
 function parseFields(value: unknown): string[] {

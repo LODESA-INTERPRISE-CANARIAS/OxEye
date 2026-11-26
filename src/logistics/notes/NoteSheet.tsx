@@ -48,6 +48,8 @@ import {
   ReadOnlyNotice,
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
+import {UnsentMark} from '../offline/PendingMark';
+import type {FormReview} from '../offline/review';
 import {SOURCE_LABEL, sortEvents, VERIFICATION_LABEL} from '../lib/events';
 import {dayMonthShort} from '../lib/format';
 import {isOpenNote, NOTE_KIND_ICON, resolvedLabel} from '../lib/inventory';
@@ -71,8 +73,13 @@ type RescuedValues = Record<string, unknown>;
 
 export type NoteSheetMode =
   | {kind: 'view'; note: Note}
-  | {kind: 'create'; prefill?: NotePrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; note: Note; rescued?: RescuedValues};
+  | {
+      kind: 'create';
+      prefill?: NotePrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {kind: 'edit'; note: Note; rescued?: RescuedValues; review?: FormReview};
 
 interface FormValues {
   kind: NoteKind;
@@ -244,6 +251,7 @@ const NoteView: React.FC<{
   const events = useLogisticsStore(s => s.events);
   const updateNote = useLogisticsStore(s => s.updateNote);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const {canWrite, openEvent} = useActions();
   const openRef = useOpenRef();
   const note = live ?? opened;
@@ -262,9 +270,9 @@ const NoteView: React.FC<{
         version: note.version,
         resolved: !note.resolved,
       });
-      toast(
+      toastSaved(
+        updated,
         `${noteLabel(updated)}: ${resolvedLabel(updated)?.toLocaleLowerCase('es-ES')}`,
-        'success',
       );
     } catch (err) {
       toast(
@@ -287,6 +295,7 @@ const NoteView: React.FC<{
       title={aboutTitle(note)}
       meta={
         <>
+          <UnsentMark id={note.id} />
           {note.isDemo && <DemoChip />}
           {status && (
             <Chip
@@ -442,6 +451,7 @@ const NoteForm: React.FC<{
   const updateNote = useLogisticsStore(s => s.updateNote);
   const deleteNote = useLogisticsStore(s => s.deleteNote);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const events = useLogisticsStore(s => s.events);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
 
@@ -467,6 +477,7 @@ const NoteForm: React.FC<{
     blank,
     toValues: toValuesCb,
     rescued: mode.rescued,
+    review: mode.review,
     fromRescue,
     serverField: SERVER_FIELD,
     onClose: () => (f.base ? onSaved(f.base) : onClose()),
@@ -503,9 +514,9 @@ const NoteForm: React.FC<{
     f.setErrors({});
     try {
       if (!base) {
-        const created = await createNote(inputFrom(values));
+        const created = await createNote(inputFrom(values), f.writeOptions);
         f.markSaved();
-        toast(`Guardada: ${noteLabel(created)}`, 'success');
+        toastSaved(created, `Guardada: ${noteLabel(created)}`);
         if (next) {
           // The next note about the same thing: kind, event and link stay.
           f.startNext({
@@ -536,12 +547,13 @@ const NoteForm: React.FC<{
       if (f.changed('verification')) patch.verification = full.verification;
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        f.settleReview();
         onSaved(base);
         return;
       }
-      const updated = await updateNote(base.id, patch);
+      const updated = await updateNote(base.id, patch, f.writeOptions);
       f.markSaved();
-      toast(`Cambios guardados: ${noteLabel(updated)}`, 'success');
+      toastSaved(updated, `Cambios guardados: ${noteLabel(updated)}`);
       onSaved(updated);
     } catch (err) {
       f.applyServerError(err, 'save');
@@ -655,6 +667,7 @@ const NoteForm: React.FC<{
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <VerificationChip verification={base.verification} />
           </>

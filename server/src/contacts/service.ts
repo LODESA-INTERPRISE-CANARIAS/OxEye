@@ -20,6 +20,8 @@ import {
 } from '../companies/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {promoteDemo} from '../records/find-or-create.ts';
 import {byId, parseIds} from '../records/ids.ts';
 import {lockCatalogue, lockGraph} from '../records/locks.ts';
@@ -290,10 +292,22 @@ export async function createContact(
   actor: SessionUser,
   input: CreateContactBody,
   now: Date,
-): Promise<Contact> {
-  return db.transaction(async tx => {
+): Promise<Created<Contact>> {
+  const device: DeviceCreate<Contact> = {
+    table: 'contacts',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadContact(q, id);
+      return row && toContact(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     await lockCatalogue(tx, org.id);
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
     const eventIds = input.eventIds ?? [];
 
     const fields: Record<string, string> = {};
@@ -316,9 +330,10 @@ export async function createContact(
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO contacts
          (organization_id, company_id, name, role, phone, email, description,
-          notes, source, verification, created_by, created_at, updated_by, updated_at)
+          notes, source, verification, created_by, created_at, updated_by, updated_at,
+          id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::timestamptz,
-               $11, $12::timestamptz)
+               $11, $12::timestamptz, COALESCE($13::uuid, gen_random_uuid()))
        RETURNING id`,
       [
         org.id,
@@ -333,6 +348,7 @@ export async function createContact(
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
+        input.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -346,7 +362,7 @@ export async function createContact(
       action: 'create',
       at: now,
     });
-    return toContact((await loadContact(tx, id)) as ContactRow, actor);
+    return fresh(toContact((await loadContact(tx, id)) as ContactRow, actor));
   });
 }
 

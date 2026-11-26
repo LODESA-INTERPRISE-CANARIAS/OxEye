@@ -8,6 +8,8 @@ import {toIsoOrNull} from '../db/db.ts';
 import {AppError, notFound, validationError} from '../errors.ts';
 import {appendActivity} from '../activity/service.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
 import {forViewer} from '../records/redact.ts';
@@ -131,9 +133,21 @@ export async function createEvent(
   actor: SessionUser,
   input: CreateEventBody,
   now: Date,
-): Promise<LogisticsEvent> {
-  return db.transaction(async tx => {
+): Promise<Created<LogisticsEvent>> {
+  const device: DeviceCreate<LogisticsEvent> = {
+    table: 'events',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadEvent(q, id);
+      return row && toEvent(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
     const resolved = resolveSlot(input, null, org.timezone);
     if (!resolved.ok) throw validationError(resolved.fields);
     const {slot} = resolved;
@@ -152,9 +166,10 @@ export async function createEvent(
       `INSERT INTO events
          (organization_id, name, venue_id, local_date, end_date, starts_at, ends_at,
           timezone, status, notes, source, verification,
-          created_by, created_at, updated_by, updated_at)
+          created_by, created_at, updated_by, updated_at, id)
        VALUES ($1, $2, $3, $4::date, $5::date, $6::timestamptz, $7::timestamptz,
-               $8, $9, $10, $11, $12, $13, $14::timestamptz, $13, $14::timestamptz)
+               $8, $9, $10, $11, $12, $13, $14::timestamptz, $13, $14::timestamptz,
+               COALESCE($15::uuid, gen_random_uuid()))
        RETURNING id`,
       [
         org.id,
@@ -171,6 +186,7 @@ export async function createEvent(
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
+        input.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -183,7 +199,7 @@ export async function createEvent(
       action: 'create',
       at: now,
     });
-    return toEvent((await loadEvent(tx, id)) as EventRow, actor);
+    return fresh(toEvent((await loadEvent(tx, id)) as EventRow, actor));
   });
 }
 

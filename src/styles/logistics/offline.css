@@ -1,0 +1,318 @@
+/**
+ * «Sin cobertura» (M6): the sync chip's states, «Pendiente de enviar» marks,
+ * «Cambios pendientes» and the leave confirmation. Dotted means «saved here,
+ * not confirmed by the server yet», the same grammar as «Pendiente de
+ * verificar». Colours only from the tokens (all six palettes).
+ */
+
+/* ============================================================ sync chip */
+.lx .lx-sync--synced .lx-sync__dot {
+  background: var(--lx-accent);
+}
+
+.lx .lx-sync--syncing {
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-bg: var(--lx-accent-soft);
+}
+
+.lx .lx-sync--offline {
+  --lx-btn-border: var(--lx-control-border);
+  border-style: dotted;
+  color: var(--lx-heading);
+}
+
+.lx .lx-sync--offline .lx-icon {
+  color: var(--lx-muted);
+}
+
+.lx .lx-sync--local_only {
+  --lx-btn-bg: var(--lx-danger-soft);
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-bg-hover: var(--lx-danger-soft);
+  border-style: dotted;
+  color: var(--lx-ink);
+}
+
+.lx .lx-sync--local_only .lx-icon,
+.lx .lx-sync--attention .lx-icon {
+  color: var(--lx-danger);
+}
+
+.lx .lx-sync--attention {
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-bg-hover: var(--lx-danger-soft);
+  --lx-btn-border-w: 2px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-sync__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-heading);
+  color: var(--lx-surface);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lx .lx-sync--attention .lx-sync__count,
+.lx .lx-sync--local_only .lx-sync__count {
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+/* ============================================================ unsent mark */
+.lx .lx-unsent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: var(--lx-pill);
+  border: 1.5px dotted var(--lx-accent);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  justify-self: start;
+}
+
+.lx .lx-unsent .lx-chip__dot {
+  width: 8px;
+  height: 8px;
+  color: var(--lx-accent);
+}
+
+.lx .lx-unsent--review {
+  border-color: var(--lx-danger);
+  background: var(--lx-danger-soft);
+  color: var(--lx-ink);
+}
+
+.lx .lx-unsent--review .lx-icon {
+  color: var(--lx-danger);
+}
+
+.lx .lx-unsent--compact {
+  padding: 3px;
+}
+
+/* A row with a change only on this device keeps a dotted edge. */
+.lx .lx-taskrow--unsent {
+  outline: 1.5px dotted var(--lx-accent);
+  outline-offset: -1.5px;
+}
+
+/* ============================================================ outbox sheet */
+.lx .lx-outbox {
+  display: grid;
+  gap: 18px;
+}
+
+.lx .lx-outbox__status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-line);
+  background: var(--lx-surface-2);
+  color: var(--lx-ink);
+  font-size: 14px;
+}
+
+.lx .lx-outbox__status p {
+  margin: 0;
+}
+
+.lx .lx-outbox__status p + p {
+  margin-top: 4px;
+}
+
+.lx .lx-outbox__status-label {
+  font-weight: 700;
+  color: var(--lx-heading);
+  font-size: 15px;
+}
+
+.lx .lx-outbox__status--offline {
+  border-style: dotted;
+  border-color: var(--lx-control-border);
+}
+
+.lx .lx-outbox__status--local_only,
+.lx .lx-outbox__status--attention {
+  border-color: var(--lx-danger);
+  background: var(--lx-danger-soft);
+}
+
+.lx .lx-outbox__status--local_only .lx-icon,
+.lx .lx-outbox__status--attention .lx-icon {
+  color: var(--lx-danger);
+}
+
+.lx .lx-outbox__status--synced .lx-icon,
+.lx .lx-outbox__status--syncing .lx-icon {
+  color: var(--lx-accent);
+}
+
+.lx .lx-outbox section {
+  display: grid;
+  gap: 10px;
+}
+
+.lx .lx-outbox__list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: outbox;
+}
+
+.lx .lx-outbox__item {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px dotted var(--lx-control-border);
+  background: var(--lx-surface);
+}
+
+.lx .lx-outbox__item--conflict,
+.lx .lx-outbox__item--duplicate,
+.lx .lx-outbox__item--rejected {
+  border-style: solid;
+  border-color: var(--lx-danger);
+}
+
+.lx .lx-outbox__item--sending {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-outbox__head {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.lx .lx-outbox__mark {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  color: var(--lx-accent);
+}
+
+.lx .lx-outbox__item--conflict .lx-outbox__mark,
+.lx .lx-outbox__item--duplicate .lx-outbox__mark,
+.lx .lx-outbox__item--rejected .lx-outbox__mark {
+  color: var(--lx-danger);
+}
+
+.lx .lx-outbox__label {
+  margin: 0;
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-outbox__meta {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-outbox__state {
+  font-weight: 600;
+  color: var(--lx-ink);
+}
+
+.lx .lx-outbox__error,
+.lx .lx-outbox__note {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-outbox__note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.lx .lx-outbox__note .lx-icon {
+  margin-top: 2px;
+  color: var(--lx-muted);
+  flex-shrink: 0;
+}
+
+.lx .lx-outbox__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lx .lx-outbox__confirm {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-danger-soft);
+  color: var(--lx-ink);
+  font-size: 14px;
+}
+
+.lx .lx-outbox__confirm p {
+  margin: 0;
+}
+
+/* ============================================================ leave confirm */
+.lx .lx-leave {
+  display: grid;
+  gap: 12px;
+  font-size: 15px;
+}
+
+.lx .lx-leave p {
+  margin: 0;
+}
+
+.lx .lx-leave__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-leave__list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lx-heading);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-leave__list .lx-chip__dot {
+  color: var(--lx-accent);
+}
+
+.lx .lx-leave__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 520px) {
+  .lx .lx-leave__actions .lx-btn {
+    flex: 1 1 100%;
+  }
+}

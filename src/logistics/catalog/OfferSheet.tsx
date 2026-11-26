@@ -49,6 +49,8 @@ import {
   ReadOnlyNotice,
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
+import {UnsentMark} from '../offline/PendingMark';
+import type {FormReview} from '../offline/review';
 import {
   categoryNames,
   euroProblem,
@@ -76,8 +78,13 @@ type RescuedValues = Record<string, unknown>;
 
 export type OfferSheetMode =
   | {kind: 'view'; offer: Offer}
-  | {kind: 'create'; prefill?: OfferPrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; offer: Offer; rescued?: RescuedValues};
+  | {
+      kind: 'create';
+      prefill?: OfferPrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {kind: 'edit'; offer: Offer; rescued?: RescuedValues; review?: FormReview};
 
 type Vat = 'yes' | 'no' | 'unknown';
 
@@ -299,6 +306,7 @@ const OfferView: React.FC<{
       title={offer.name}
       meta={
         <>
+          <UnsentMark id={offer.id} />
           {offer.isDemo && <DemoChip />}
           <VerificationChip verification={offer.verification} />
           {company ? (
@@ -646,6 +654,7 @@ const OfferForm: React.FC<{
   const updateOffer = useLogisticsStore(s => s.updateOffer);
   const deleteOffer = useLogisticsStore(s => s.deleteOffer);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const companies = useLogisticsStore(s => s.companies);
   const [savedName, setSavedName] = useState<string | null>(null);
 
@@ -671,6 +680,7 @@ const OfferForm: React.FC<{
     blank,
     toValues: toValuesCb,
     rescued: mode.rescued,
+    review: mode.review,
     fromRescue,
     serverField: SERVER_FIELD,
     onClose: () => (f.base ? onSaved(f.base) : onClose()),
@@ -722,9 +732,9 @@ const OfferForm: React.FC<{
     f.setErrors({});
     try {
       if (!base) {
-        const created = await createOffer(inputFrom(values));
+        const created = await createOffer(inputFrom(values), f.writeOptions);
         f.markSaved();
-        toast(`Oferta guardada: ${created.name}`, 'success');
+        toastSaved(created, `Oferta guardada: ${created.name}`);
         if (next) {
           // Next offer of the same supplier and category.
           // What carries over is the new baseline, not a change of its own.
@@ -769,12 +779,13 @@ const OfferForm: React.FC<{
       if (f.changed('verification')) patch.verification = full.verification;
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        f.settleReview();
         onSaved(base);
         return;
       }
-      const updated = await updateOffer(base.id, patch);
+      const updated = await updateOffer(base.id, patch, f.writeOptions);
       f.markSaved();
-      toast(`Cambios guardados: ${updated.name}`, 'success');
+      toastSaved(updated, `Cambios guardados: ${updated.name}`);
       onSaved(updated);
     } catch (err) {
       f.applyServerError(err, 'save');
@@ -903,6 +914,7 @@ const OfferForm: React.FC<{
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <VerificationChip verification={base.verification} />
           </>

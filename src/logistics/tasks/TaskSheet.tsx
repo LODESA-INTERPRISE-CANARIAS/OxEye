@@ -88,6 +88,8 @@ import {
 import {SOURCE_LABEL, sortEvents, VERIFICATION_LABEL} from '../lib/events';
 import {dayMonthShort, longDate} from '../lib/format';
 import {clearRescue, saveRescue} from '../lib/rescue';
+import {UnsentMark} from '../offline/PendingMark';
+import {replacing, type FormReview} from '../offline/review';
 import {
   dependentsOf,
   HEAVY_LOAD_HELP,
@@ -130,8 +132,13 @@ import {
 export type RescuedValues = Record<string, unknown>;
 
 export type TaskSheetMode =
-  | {kind: 'create'; prefill?: TaskPrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; task: Task; rescued?: RescuedValues}
+  | {
+      kind: 'create';
+      prefill?: TaskPrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {kind: 'edit'; task: Task; rescued?: RescuedValues; review?: FormReview}
   | {kind: 'view'; task: Task};
 
 type Heavy = 'yes' | 'no' | 'unknown';
@@ -482,6 +489,7 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
       title={task.title}
       meta={
         <>
+          <UnsentMark id={task.id} />
           {task.isDemo && <DemoChip />}
           <TaskStatusChip status={task.status} />
           <VerificationChip verification={task.verification} />
@@ -714,6 +722,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
   const updateTask = useLogisticsStore(s => s.updateTask);
   const deleteTask = useLogisticsStore(s => s.deleteTask);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
+  const discardEntry = useLogisticsStore(s => s.discardEntry);
   const venues = useLogisticsStore(s => s.venues);
   const companies = useLogisticsStore(s => s.companies);
   const tasks = useLogisticsStore(s => s.tasks);
@@ -737,7 +747,11 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     [base, prefilled],
   );
   const [values, setValues] = useState<FormValues>(() =>
-    mode.rescued ? valuesFromRescue(mode.rescued, initial) : initial,
+    mode.review
+      ? valuesFromTask(mode.review.mine as Task)
+      : mode.rescued
+        ? valuesFromRescue(mode.rescued, initial)
+        : initial,
   );
   const [rescuedNotice, setRescuedNotice] = useState(!!mode.rescued);
   const [errors, setErrors] = useState<Errors>({});
@@ -1034,6 +1048,20 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     setErrors({form: `No se ha ${what}. ${errorMessage(err)}`});
   };
 
+  // M6: a reviewed queued change shows the server's answer once open (the
+  // merge of a 409 resets the subsoil tick as usual).
+  const reviewError = useRef(mode.review?.error ?? null);
+  const applyRef = useRef(applyServerError);
+  useLayoutEffect(() => {
+    applyRef.current = applyServerError;
+  });
+  useLayoutEffect(() => {
+    const err = reviewError.current;
+    reviewError.current = null;
+    if (err) applyRef.current(err, 'save');
+  }, []);
+  const writeOptions = replacing(mode.review);
+
   const inputFrom = (v: FormValues): TaskInput => ({
     title: v.title.trim(),
     kind: v.kind,
@@ -1070,8 +1098,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     setErrors({});
     try {
       if (!base) {
-        const created = await createTask(inputFrom(values));
-        toast(`Tarea guardada: ${created.title}`, 'success');
+        const created = await createTask(inputFrom(values), writeOptions);
+        toastSaved(created, `Tarea guardada: ${created.title}`);
         if (mode.rescued) clearRescue();
         setRescuedNotice(false);
         if (next) {
@@ -1136,11 +1164,12 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       }
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        if (mode.review) void discardEntry(mode.review.entryId);
         close();
         return;
       }
-      const updated = await updateTask(base.id, patch);
-      toast(`Cambios guardados: ${updated.title}`, 'success');
+      const updated = await updateTask(base.id, patch, writeOptions);
+      toastSaved(updated, `Cambios guardados: ${updated.title}`);
       close();
     } catch (err) {
       applyServerError(err, 'save');
@@ -1312,6 +1341,7 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <TaskStatusChip status={base.status} />
             <VerificationChip verification={base.verification} />

@@ -16,6 +16,8 @@ import {
 } from '../categories/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {
   findOrCreateByName,
   normalizeName,
@@ -287,10 +289,23 @@ export async function createCompany(
   actor: SessionUser,
   input: CreateCompanyBody,
   now: Date,
-): Promise<Company> {
-  return db.transaction(async tx => {
+): Promise<Created<Company>> {
+  const device: DeviceCreate<Company> = {
+    table: 'companies',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadCompany(q, id);
+      return row && toCompany(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     await lockCatalogue(tx, org.id);
+    // A replay wins before the name check: it is this very company.
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
     const name = normalizeName(input.name) as string;
     const categoryIds = input.categoryIds ?? [];
 
@@ -304,9 +319,9 @@ export async function createCompany(
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO companies
          (organization_id, name, kind, phone, email, website, notes, source,
-          verification, created_by, created_at, updated_by, updated_at)
+          verification, created_by, created_at, updated_by, updated_at, id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::timestamptz,
-               $10, $11::timestamptz)
+               $10, $11::timestamptz, COALESCE($12::uuid, gen_random_uuid()))
        ON CONFLICT (organization_id, (lower(name))) DO NOTHING
        RETURNING id`,
       [
@@ -321,6 +336,7 @@ export async function createCompany(
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
+        input.id ?? null,
       ],
     );
     const created = inserted[0];
@@ -339,7 +355,9 @@ export async function createCompany(
       action: 'create',
       at: now,
     });
-    return toCompany((await loadCompany(tx, created.id)) as CompanyRow, actor);
+    return fresh(
+      toCompany((await loadCompany(tx, created.id)) as CompanyRow, actor),
+    );
   });
 }
 

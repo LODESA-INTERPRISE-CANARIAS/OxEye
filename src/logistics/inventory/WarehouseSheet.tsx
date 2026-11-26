@@ -44,6 +44,8 @@ import {
   useAlertFocus,
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
+import {UnsentMark} from '../offline/PendingMark';
+import type {FormReview} from '../offline/review';
 import {categoryNames} from '../lib/directory';
 import {SOURCE_LABEL, VERIFICATION_LABEL} from '../lib/events';
 import {plural} from '../lib/format';
@@ -57,8 +59,18 @@ type RescuedValues = Record<string, unknown>;
 
 export type WarehouseSheetMode =
   | {kind: 'view'; warehouse: Warehouse}
-  | {kind: 'create'; prefill?: WarehousePrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; warehouse: Warehouse; rescued?: RescuedValues};
+  | {
+      kind: 'create';
+      prefill?: WarehousePrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {
+      kind: 'edit';
+      warehouse: Warehouse;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    };
 
 interface FormValues {
   name: string;
@@ -187,6 +199,7 @@ const WarehouseView: React.FC<{
       title={w.name}
       meta={
         <>
+          <UnsentMark id={w.id} />
           {w.isDemo && <DemoChip />}
           <VerificationChip verification={w.verification} />
           <span className="lx-sheet__sub lx-num">
@@ -343,6 +356,7 @@ const WarehouseForm: React.FC<{
   const updateWarehouse = useLogisticsStore(s => s.updateWarehouse);
   const deleteWarehouse = useLogisticsStore(s => s.deleteWarehouse);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const warehouses = useLogisticsStore(s => s.warehouses);
   const [duplicate, setDuplicate] = useState<Warehouse | null>(null);
   const duplicateRef = useAlertFocus(duplicate);
@@ -364,6 +378,7 @@ const WarehouseForm: React.FC<{
     blank,
     toValues: toValuesCb,
     rescued: mode.rescued,
+    review: mode.review,
     fromRescue,
     serverField: SERVER_FIELD,
     onClose: () => (f.base ? onShow(f.base) : onClose()),
@@ -407,9 +422,12 @@ const WarehouseForm: React.FC<{
     setDuplicate(null);
     try {
       if (!base) {
-        const created = await createWarehouse(inputFrom(values));
+        const created = await createWarehouse(
+          inputFrom(values),
+          f.writeOptions,
+        );
         f.markSaved();
-        toast(`Almacén guardado: ${created.name}`, 'success');
+        toastSaved(created, `Almacén guardado: ${created.name}`);
         onSaved(created);
         return;
       }
@@ -426,12 +444,13 @@ const WarehouseForm: React.FC<{
       }
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        f.settleReview();
         onSaved(base);
         return;
       }
-      const updated = await updateWarehouse(base.id, patch);
+      const updated = await updateWarehouse(base.id, patch, f.writeOptions);
       f.markSaved();
-      toast(`Cambios guardados: ${updated.name}`, 'success');
+      toastSaved(updated, `Cambios guardados: ${updated.name}`);
       onSaved(updated);
     } catch (err) {
       f.applyServerError(err, 'save');
@@ -525,6 +544,7 @@ const WarehouseForm: React.FC<{
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <VerificationChip verification={base.verification} />
           </>
@@ -580,7 +600,15 @@ const WarehouseForm: React.FC<{
                 variant="primary"
                 id="lx-warehouse-open-existing"
                 onClick={() =>
-                  f.leaveFor(duplicate.name, () => onShow(duplicate), ['name'])
+                  f.leaveFor(
+                    duplicate.name,
+                    () => {
+                      // A reviewed queued change gives way to the existing one.
+                      f.settleReview();
+                      onShow(duplicate);
+                    },
+                    ['name'],
+                  )
                 }
               >
                 Abrir el existente

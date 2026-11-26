@@ -200,6 +200,9 @@ describe('route surface', () => {
         'POST /api/hypotheses',
         'DELETE /api/hypotheses/:id',
         'POST /api/hypotheses/:id/apply',
+        // Milestone 6: cheap refresh (the day close reads the activity route
+        // with from and to; there is no report route).
+        'GET /api/organizations/:orgId/changes',
       ].sort(),
     );
   });

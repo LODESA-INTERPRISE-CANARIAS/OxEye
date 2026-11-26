@@ -48,6 +48,8 @@ import {
   useAlertFocus,
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
+import {UnsentMark} from '../offline/PendingMark';
+import type {FormReview} from '../offline/review';
 import {
   categoryNames,
   contactsOfCompany,
@@ -85,8 +87,18 @@ type RescuedValues = Record<string, unknown>;
 
 export type CompanySheetMode =
   | {kind: 'view'; company: Company}
-  | {kind: 'create'; prefill?: CompanyPrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; company: Company; rescued?: RescuedValues};
+  | {
+      kind: 'create';
+      prefill?: CompanyPrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {
+      kind: 'edit';
+      company: Company;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    };
 
 interface FormValues {
   name: string;
@@ -300,6 +312,7 @@ const CompanyView: React.FC<{
       title={company.name}
       meta={
         <>
+          <UnsentMark id={company.id} />
           {company.isDemo && <DemoChip />}
           <KindChip kind={company.kind} />
           <VerificationChip verification={company.verification} />
@@ -629,6 +642,7 @@ const CompanyForm: React.FC<{
   const updateCompany = useLogisticsStore(s => s.updateCompany);
   const deleteCompany = useLogisticsStore(s => s.deleteCompany);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const companies = useLogisticsStore(s => s.companies);
   const contacts = useLogisticsStore(s => s.contacts);
   const offers = useLogisticsStore(s => s.offers);
@@ -653,6 +667,7 @@ const CompanyForm: React.FC<{
     blank,
     toValues: toValuesCb,
     rescued: mode.rescued,
+    review: mode.review,
     fromRescue,
     serverField: SERVER_FIELD,
     onClose: () => (f.base ? onShow(f.base) : onClose()),
@@ -711,9 +726,9 @@ const CompanyForm: React.FC<{
       if (!base) {
         const {mainContactId: _main, ...input} = inputFrom(values);
         void _main;
-        const created = await createCompany(input);
+        const created = await createCompany(input, f.writeOptions);
         f.markSaved();
-        toast(`Empresa o entidad guardada: ${created.name}`, 'success');
+        toastSaved(created, `Empresa o entidad guardada: ${created.name}`);
         onSaved(created);
         return;
       }
@@ -736,12 +751,13 @@ const CompanyForm: React.FC<{
       }
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        f.settleReview();
         onSaved(base);
         return;
       }
-      const updated = await updateCompany(base.id, patch);
+      const updated = await updateCompany(base.id, patch, f.writeOptions);
       f.markSaved();
-      toast(`Cambios guardados: ${updated.name}`, 'success');
+      toastSaved(updated, `Cambios guardados: ${updated.name}`);
       onSaved(updated);
     } catch (err) {
       f.applyServerError(err, 'save');
@@ -840,6 +856,7 @@ const CompanyForm: React.FC<{
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <VerificationChip verification={base.verification} />
           </>
@@ -895,7 +912,15 @@ const CompanyForm: React.FC<{
                 variant="primary"
                 id="lx-company-open-existing"
                 onClick={() =>
-                  f.leaveFor(duplicate.name, () => onShow(duplicate), ['name'])
+                  f.leaveFor(
+                    duplicate.name,
+                    () => {
+                      // A reviewed queued change gives way to the existing one.
+                      f.settleReview();
+                      onShow(duplicate);
+                    },
+                    ['name'],
+                  )
                 }
               >
                 Abrir la existente

@@ -22,6 +22,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {MAX_RESOURCES_PER_TASK} from '../../../shared/logistics/rules.ts';
 import {
   MAX_DEPENDENCIES,
@@ -84,6 +85,7 @@ const common = {
 };
 
 export const createTaskSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   title: requiredText(NAME_MAX),
   ...common,

@@ -36,6 +36,8 @@ import {
 import type {ContactRef} from '../contacts/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {normalizeName} from '../records/find-or-create.ts';
 import {parseIds} from '../records/ids.ts';
 import {lockCatalogue, lockGraph} from '../records/locks.ts';
@@ -325,12 +327,24 @@ export async function createTask(
   actor: SessionUser,
   input: CreateTaskBody,
   now: Date,
-): Promise<Task> {
-  return db.transaction(async tx => {
+): Promise<Created<Task>> {
+  const device: DeviceCreate<Task> = {
+    table: 'tasks',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadTask(q, id);
+      return row && toTask(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     const dependsOn = input.dependsOn ?? [];
     if (dependsOn.length > 0) await lockGraph(tx, org.id);
     if (touchesCatalogue(input)) await lockCatalogue(tx, org.id);
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
 
     const fields: Record<string, string> = {};
     const event = input.eventId
@@ -395,11 +409,11 @@ export async function createTask(
          (organization_id, event_id, venue_id, company_id, title, kind, status,
           local_date, end_date, starts_at, ends_at, timezone, heavy_load, notes,
           source, verification, created_by, created_at, updated_by, updated_at,
-          contact_id, subsoil_reviewed_by, subsoil_reviewed_at)
+          contact_id, subsoil_reviewed_by, subsoil_reviewed_at, id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9::date,
                $10::timestamptz, $11::timestamptz, $12, $13, $14, $15, $16,
                $17, $18::timestamptz, $17, $18::timestamptz, $19, $20,
-               $21::timestamptz)
+               $21::timestamptz, COALESCE($22::uuid, gen_random_uuid()))
        RETURNING id`,
       [
         org.id,
@@ -424,6 +438,7 @@ export async function createTask(
         contact?.id ?? null,
         review.ok ? (review.review?.by ?? null) : null,
         review.ok ? (review.review?.at ?? null) : null,
+        input.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -438,7 +453,7 @@ export async function createTask(
       action: 'create',
       at: now,
     });
-    return toTask((await loadTask(tx, id)) as TaskRow, actor);
+    return fresh(toTask((await loadTask(tx, id)) as TaskRow, actor));
   });
 }
 

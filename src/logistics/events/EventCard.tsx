@@ -7,6 +7,7 @@ import React from 'react';
 import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
 import {TimeWindow} from '../common/TimeWindow';
 import {shortDate} from '../lib/format';
+import {UnsentMark} from '../offline/PendingMark';
 import {recordDate, recordDays} from '../lib/tasks';
 import {Button, Icon, Pending} from '../ui';
 import {DemoChip, StatusChip, VerificationChip} from './EventChips';
@@ -60,6 +61,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         {whenText(event, showDate, today)}
       </p>
       <div className="lx-event__chips">
+        <UnsentMark id={event.id} />
         {event.isDemo && <DemoChip />}
         <StatusChip status={event.status} />
       </div>

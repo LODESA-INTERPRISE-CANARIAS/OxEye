@@ -31,13 +31,13 @@ export function registerResourceRoutes(
 
   api.post('/resources', auth, async c => {
     const input = await jsonBody(c, createResourceSchema);
-    const resource = await createResource(
+    const created = await createResource(
       deps.db,
       c.get('user'),
       input,
       deps.now(),
     );
-    return c.json(resource, 201);
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/resources/:id', auth, async c => {

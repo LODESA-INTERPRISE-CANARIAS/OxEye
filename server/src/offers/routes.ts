@@ -23,8 +23,13 @@ export function registerOfferRoutes(
 
   api.post('/offers', auth, async c => {
     const input = await jsonBody(c, createOfferSchema);
-    const offer = await createOffer(deps.db, c.get('user'), input, deps.now());
-    return c.json(offer, 201);
+    const created = await createOffer(
+      deps.db,
+      c.get('user'),
+      input,
+      deps.now(),
+    );
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/offers/:id', auth, async c => {

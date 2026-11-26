@@ -17,6 +17,8 @@ import {
 } from '../companies/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {normalizeName} from '../records/find-or-create.ts';
 import {lockCatalogue} from '../records/locks.ts';
 import {unlinkResources} from '../resources/links.ts';
@@ -195,10 +197,22 @@ export async function createOffer(
   actor: SessionUser,
   input: CreateOfferBody,
   now: Date,
-): Promise<Offer> {
-  return db.transaction(async tx => {
+): Promise<Created<Offer>> {
+  const device: DeviceCreate<Offer> = {
+    table: 'offers',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadOffer(q, id);
+      return row && toOffer(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     await lockCatalogue(tx, org.id);
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
 
     const fields: Record<string, string> = {};
     const companyById = input.companyId
@@ -229,10 +243,11 @@ export async function createOffer(
          (organization_id, company_id, category_id, name, description, price,
           unit, custom_unit, transport_cost, assembly_cost, maintenance_cost,
           conditions, vat_included, source, verification,
-          created_by, created_at, updated_by, updated_at)
+          created_by, created_at, updated_by, updated_at, id)
        VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9::numeric,
                $10::numeric, $11::numeric, $12, $13, $14, $15,
-               $16, $17::timestamptz, $16, $17::timestamptz)
+               $16, $17::timestamptz, $16, $17::timestamptz,
+               COALESCE($18::uuid, gen_random_uuid()))
        RETURNING id`,
       [
         org.id,
@@ -252,6 +267,7 @@ export async function createOffer(
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
+        input.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -264,7 +280,7 @@ export async function createOffer(
       action: 'create',
       at: now,
     });
-    return toOffer((await loadOffer(tx, id)) as OfferRow, actor);
+    return fresh(toOffer((await loadOffer(tx, id)) as OfferRow, actor));
   });
 }
 

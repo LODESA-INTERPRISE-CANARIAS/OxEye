@@ -10,6 +10,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {
   NOTE_KINDS,
   NOTE_REF_TYPES,
@@ -57,6 +58,7 @@ const common = {
 };
 
 export const createNoteSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   kind,
   text: requiredText(NOTE_TEXT_MAX),

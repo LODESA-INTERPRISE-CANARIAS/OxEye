@@ -1,0 +1,1077 @@
+/**
+ * Cierre de jornada (milestone 6): the screen, the A4 page (screen preview
+ * and printed copy share the markup) and the «Vista para imprimir» sheet.
+ *
+ * Like the work order, the page reads palette tokens on screen; the printed
+ * copy lives in `.lx-day-root`, outside `.lx`, so the same rules fall back to
+ * the system's paper colours (Canvas / CanvasText / GrayText). The print
+ * rules apply only while the day-close screen is open (the root exists) and
+ * step aside whenever a work order's print root is also there, so neither
+ * the work-order print nor the simulator's printing is affected.
+ */
+
+/* ============================================================ screen */
+.lx .lx-dayclose {
+  display: grid;
+  gap: 18px;
+  container-type: inline-size;
+}
+
+.lx .lx-dayclose__grid {
+  display: grid;
+  gap: 22px;
+  align-items: start;
+}
+
+@container (min-width: 940px) {
+  .lx .lx-dayclose__grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+  }
+}
+
+.lx .lx-dayclose__col {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.lx .lx-dayclose__notice {
+  align-items: center;
+}
+
+.lx .lx-dayclose__notice > p,
+.lx .lx-dayclose__notice > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.lx .lx-dayclose__unsent {
+  align-items: flex-start;
+  border-style: dashed;
+  border-color: var(--lx-control-border);
+}
+
+.lx .lx-dayclose__unsentlist {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-dayclose__unsentlist li::before {
+  content: '· ';
+}
+
+.lx .lx-dayclose__more {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.lx .lx-dayclose__quiet {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-dayclose__quiet .lx-icon {
+  margin-top: 2px;
+  color: var(--lx-accent-strong);
+}
+
+.lx .lx-dayclose__fine {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--lx-muted);
+}
+
+/* ---------------------------------------------------------- header */
+.lx .lx-dayhead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'titles actions'
+    'nav nav';
+  align-items: end;
+  gap: 14px 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--lx-line);
+}
+
+.lx .lx-dayhead__titles {
+  grid-area: titles;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lx .lx-dayhead__title {
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: clamp(24px, 3.4vw, 32px);
+  line-height: 1.12;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-dayhead__sub {
+  font-size: 14px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-dayhead__nav {
+  grid-area: nav;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-dayhead__dateinput {
+  min-height: var(--lx-target);
+  width: auto;
+  min-width: 160px;
+}
+
+.lx .lx-dayhead__actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@container (max-width: 640px) {
+  .lx .lx-dayhead {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'titles'
+      'nav'
+      'actions';
+  }
+
+  .lx .lx-dayhead__actions {
+    justify-content: stretch;
+  }
+
+  .lx .lx-dayhead__actions > .lx-btn {
+    flex: 1 1 160px;
+  }
+
+  .lx .lx-dayhead__date {
+    flex: 1 1 140px;
+  }
+
+  .lx .lx-dayhead__dateinput {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ---------------------------------------------------------- summary */
+.lx .lx-daysum {
+  container-type: inline-size;
+}
+
+.lx .lx-daysum__body {
+  display: grid;
+  gap: 18px;
+}
+
+@container (min-width: 600px) {
+  .lx .lx-daysum__body {
+    grid-template-columns: minmax(0, 1fr) 220px;
+    align-items: start;
+  }
+}
+
+.lx .lx-daysum__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.lx .lx-daysum__tile {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  padding: 10px 12px 11px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface-2);
+  border: 1px solid var(--lx-line);
+  min-width: 0;
+}
+
+.lx .lx-daysum__tilehead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lx-muted);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-daysum__fig {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--lx-heading);
+}
+
+.lx .lx-daysum__detail {
+  font-size: 12.5px;
+  color: var(--lx-ink);
+}
+
+/* Nothing that day: the tile steps back, the figure stays readable. */
+.lx .lx-daysum__tile.is-zero {
+  background: transparent;
+  border-style: dashed;
+}
+
+.lx .lx-daysum__tile.is-zero .lx-daysum__fig,
+.lx .lx-daysum__tile.is-zero .lx-daysum__detail {
+  color: var(--lx-muted);
+  font-weight: 600;
+}
+
+.lx .lx-daysum__pending {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.lx .lx-daysum__pending .lx-gauge {
+  width: 100%;
+  max-width: 220px;
+}
+
+.lx .lx-daysum__pendingnote {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13.5px;
+  color: var(--lx-ink);
+  text-align: center;
+}
+
+.lx .lx-daysum__people {
+  display: grid;
+  gap: 2px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-daysum__peoplelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.lx .lx-daysum__person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-daysum__person > span:last-child {
+  display: grid;
+  line-height: 1.25;
+}
+
+.lx .lx-daysum__name {
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-daysum__changes {
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+/* ---------------------------------------------------------- groups and lines */
+.lx .lx-dayrecords__groups {
+  display: grid;
+  gap: 18px;
+}
+
+.lx .lx-daygroup {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lx .lx-daygroup + .lx-daygroup {
+  padding-top: 14px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-daygroup__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.lx .lx-daygroup__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lx-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--lx-heading);
+}
+
+.lx .lx-daygroup__title .lx-icon {
+  color: var(--lx-muted);
+}
+
+.lx .lx-daylines {
+  display: grid;
+  gap: 2px;
+}
+
+.lx .lx-dayline {
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  display: flex;
+  align-items: center;
+  gap: 6px 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: var(--lx-radius-sm);
+  text-align: left;
+}
+
+.lx .lx-dayline__icon {
+  align-self: flex-start;
+  margin-top: 2px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-dayline__main {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.lx .lx-dayline__name {
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-dayline__detail {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  font-size: 13.5px;
+  color: var(--lx-ink);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-dayline__meta {
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-dayline__change {
+  font-weight: 600;
+}
+
+/* New records read first: heading ink keeps contrast in every palette. */
+.lx .lx-dayline__change.is-new {
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-dayline__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 50%;
+}
+
+.lx .lx-dayline__go {
+  flex-shrink: 0;
+  color: var(--lx-muted);
+}
+
+@container (max-width: 520px) {
+  .lx .lx-dayline {
+    flex-wrap: wrap;
+  }
+
+  .lx .lx-dayline__main {
+    flex-basis: calc(100% - 64px);
+  }
+
+  .lx .lx-dayline__chips {
+    order: 3;
+    max-width: none;
+    justify-content: flex-start;
+    padding-left: 30px;
+  }
+}
+
+/* «Pendiente de enviar»: dashed and dotted, like anything not yet certain. */
+.lx .lx-unsent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 1px 8px;
+  border-radius: var(--lx-pill);
+  border: 1.5px dashed var(--lx-control-border);
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- notes */
+.lx .lx-daynote__earlier {
+  font-style: italic;
+}
+
+.lx .lx-daynote__text {
+  margin: 0 10px 8px 40px;
+  padding: 6px 12px;
+  border-left: 3px solid var(--lx-line-strong);
+  background: var(--lx-surface-2);
+  border-radius: 0 var(--lx-radius-sm) var(--lx-radius-sm) 0;
+  font-size: 14px;
+  color: var(--lx-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-daytoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  padding: 0 12px 0 10px;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid var(--lx-control-border);
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lx .lx-daytoggle:hover {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-daytoggle:has(input:checked) {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-daytoggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--lx-accent);
+}
+
+.lx .lx-daytoggle:has(input:focus-visible) {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-daytoggle input:focus-visible {
+  outline: none;
+}
+
+.lx .lx-daytoggle__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--lx-muted);
+}
+
+.lx .lx-daytoggle__hint .lx-icon {
+  margin-top: 2px;
+}
+
+.lx .lx-dayconfirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-danger);
+  background: var(--lx-danger-soft);
+  font-size: 14px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-dayconfirm__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-dayconfirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------- hypotheses */
+/* Always hatched, explored or applied: a hypothesis is never a fact. */
+.lx .lx-dayhypo {
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-border: color-mix(in srgb, var(--lx-accent) 45%, transparent);
+  --lx-btn-border-hover: var(--lx-accent);
+  --lx-btn-bg:
+    repeating-linear-gradient(
+      -45deg,
+      var(--lx-hatch-color) 0 2px,
+      transparent 2px 6px
+    ),
+    var(--lx-surface);
+  --lx-btn-bg-hover:
+    repeating-linear-gradient(
+      -45deg,
+      var(--lx-hatch-color) 0 2px,
+      transparent 2px 6px
+    ),
+    var(--lx-accent-soft);
+  border-style: dashed;
+}
+
+.lx .lx-daylines:has(.lx-dayhypo) {
+  gap: 6px;
+}
+
+.lx .lx-dayhypo.is-applied {
+  border-style: solid;
+}
+
+.lx .lx-dayhypo__word {
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------- guests */
+.lx .lx-dayguest__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 14px;
+  color: var(--lx-ink);
+}
+
+/* ---------------------------------------------------------- safety */
+.lx .lx-daysoil__state {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-daysoil.is-finished_unreviewed .lx-dayline__icon,
+.lx .lx-daysoil.is-pending .lx-dayline__icon {
+  color: var(--lx-danger);
+}
+
+.lx .lx-daysoil.is-finished_unreviewed .lx-daysoil__state {
+  color: var(--lx-danger);
+}
+
+.lx .lx-daysoil.is-unknown_load .lx-daysoil__state {
+  font-weight: 500;
+  color: var(--lx-muted);
+}
+
+.lx .lx-daysoil.is-declared .lx-daysoil__state {
+  font-weight: 500;
+  color: var(--lx-ink);
+}
+
+.lx .lx-dayroutes {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 2px solid var(--lx-accent);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.lx .lx-dayroutes .lx-icon {
+  margin-top: 1px;
+}
+
+/* ---------------------------------------------------------- plan lines */
+.lx .lx-daytask__when {
+  align-self: flex-start;
+  min-width: 96px;
+  margin-top: 1px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-daytask__when.is-pending {
+  font-weight: 500;
+  color: var(--lx-muted);
+}
+
+@container (max-width: 520px) {
+  .lx .lx-daytask__when {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}
+
+/* ============================================================ print sheet */
+@media (min-width: 900px) {
+  .lx .lx-sheet--dayprint {
+    --lx-sheet-max: min(94dvh, 1100px);
+    width: min(940px, calc(100vw - 48px));
+  }
+}
+
+.lx .lx-dayprint {
+  display: grid;
+  gap: 14px;
+}
+
+.lx .lx-dayprint .lx-notice p + p {
+  margin-top: 2px;
+}
+
+.lx .lx-dayprint__paper {
+  padding: 18px;
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-3);
+  overflow-x: auto;
+}
+
+/* ============================================================ the page */
+:is(.lx, .lx-day-root) .lx-dayp {
+  --dp-ink: var(--lx-ink, CanvasText);
+  --dp-heading: var(--lx-heading, CanvasText);
+  --dp-muted: var(--lx-muted, GrayText);
+  --dp-line: var(--lx-line, GrayText);
+  --dp-accent: var(--lx-accent, CanvasText);
+  --dp-paper: var(--lx-canvas, Canvas);
+  --dp-soft: var(--lx-accent-soft, Canvas);
+  --dp-hatch: var(
+    --lx-hatch-color,
+    color-mix(in srgb, CanvasText 22%, transparent)
+  );
+  --dp-serif: var(--lx-serif, Georgia, 'Times New Roman', serif);
+  --dp-sans: var(
+    --lx-font,
+    Inter,
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    Roboto,
+    Arial,
+    sans-serif
+  );
+  display: grid;
+  gap: 16px;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 26px 28px 22px;
+  background: var(--dp-paper);
+  color: var(--dp-ink);
+  font-family: var(--dp-sans);
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.lx .lx-dayp {
+  border: 1px solid var(--lx-line);
+  border-radius: 6px;
+  box-shadow: var(--lx-shadow-card);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp * {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp ul {
+  padding: 0;
+  list-style: none;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__eyebrow {
+  font-family: var(--dp-serif);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--dp-muted);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__title {
+  font-family: var(--dp-serif);
+  font-size: 25px;
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__sub {
+  margin-top: 3px;
+  font-weight: 600;
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--dp-serif);
+  font-size: 14px;
+  line-height: 1.1;
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__brand small {
+  font-family: var(--dp-sans);
+  font-size: 11px;
+  color: var(--dp-muted);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__block {
+  display: grid;
+  gap: 6px;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__h2 {
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--dp-line);
+  font-family: var(--dp-serif);
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--dp-heading);
+  break-after: avoid;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__h3 {
+  margin-top: 4px;
+  font-family: var(--dp-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dp-heading);
+  break-after: avoid;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__group {
+  display: grid;
+  gap: 3px;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__counts {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__counts th,
+:is(.lx, .lx-day-root) .lx-dayp__counts td {
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--dp-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__counts thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dp-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__counts tbody th {
+  font-weight: 600;
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__counts td:nth-child(2) {
+  width: 56px;
+  font-weight: 700;
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__counts tr.is-zero > * {
+  color: var(--dp-muted);
+  font-weight: 400;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__fact {
+  color: var(--dp-ink);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__fact strong {
+  color: var(--dp-heading);
+}
+
+/* Note text inside: stated at the top of the page, solid, never missed. */
+:is(.lx, .lx-day-root) .lx-dayp__textnote {
+  padding: 6px 10px;
+  border: 2px solid var(--dp-heading);
+  border-radius: 6px;
+  color: var(--dp-ink);
+  break-inside: avoid;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__textnote strong {
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__caveat {
+  padding: 6px 10px;
+  border: 1.5px dotted var(--dp-muted);
+  border-radius: 6px;
+  font-style: italic;
+  color: var(--dp-ink);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__empty {
+  font-style: italic;
+  color: var(--dp-muted);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__list {
+  display: grid;
+  gap: 3px;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__list > li {
+  break-inside: avoid;
+  overflow-wrap: anywhere;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__list strong {
+  color: var(--dp-heading);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__muted {
+  color: var(--dp-muted);
+}
+
+/* Certainty grammar in ink: validated solid, the rest dotted. */
+:is(.lx, .lx-day-root) .lx-dayp__cert {
+  display: inline-block;
+  min-width: 78px;
+  padding: 0 6px;
+  border: 1.5px dotted var(--dp-muted);
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--dp-ink);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__cert.is-validated {
+  border: 1.5px solid var(--dp-heading);
+  background: var(--dp-heading);
+  color: var(--dp-paper);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px dashed var(--dp-muted);
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--dp-ink);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__quote {
+  margin: 2px 0 4px 12px;
+  padding-left: 10px;
+  border-left: 3px solid var(--dp-line);
+  white-space: pre-wrap;
+  color: var(--dp-ink);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__hypo {
+  padding: 3px 8px;
+  border: 1.5px dashed var(--dp-muted);
+  border-radius: 6px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--dp-hatch) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__fine {
+  font-size: 11px;
+  color: var(--dp-muted);
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__routes {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 2px solid var(--dp-accent);
+  border-radius: 8px;
+  background: var(--dp-soft);
+  color: var(--dp-heading);
+  font-weight: 600;
+  break-inside: avoid;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__routes svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__tasks {
+  display: grid;
+  gap: 3px;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__tasks > li {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  break-inside: avoid;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__time {
+  font-weight: 700;
+  color: var(--dp-heading);
+  white-space: nowrap;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__time.is-pending {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--dp-muted);
+  white-space: normal;
+}
+
+:is(.lx, .lx-day-root) .lx-dayp__foot {
+  display: grid;
+  gap: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dp-line);
+  font-size: 11px;
+  color: var(--dp-muted);
+}
+
+@media (max-width: 560px) {
+  .lx .lx-dayprint__paper {
+    padding: 8px;
+  }
+
+  .lx .lx-dayp {
+    padding: 18px 16px;
+  }
+
+  .lx .lx-dayp__head {
+    flex-wrap: wrap;
+  }
+
+  .lx .lx-dayp__tasks > li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+/* ============================================================ printing */
+/* Only the portalled copy prints, only while it exists, and never over a
+   work order's own print root. */
+.lx-day-root {
+  display: none;
+}
+
+.lx-day-root .lx-eyemark__bg {
+  fill: CanvasText;
+}
+
+.lx-day-root .lx-eyemark__lid {
+  stroke: Canvas;
+}
+
+.lx-day-root .lx-eyemark__iris {
+  fill: Canvas;
+}
+
+.lx-day-root .lx-eyemark__pupil {
+  fill: CanvasText;
+}
+
+@page lx-day {
+  size: A4;
+  margin: 14mm 14mm 16mm;
+}
+
+@media print {
+  html:has(> body > .lx-day-root):not(:has(> body > .lx-print-root)),
+  body:has(> .lx-day-root):not(:has(> .lx-print-root)) {
+    height: auto !important;
+    overflow: visible !important;
+    background: Canvas !important;
+  }
+
+  body:has(> .lx-day-root):not(:has(> .lx-print-root)) > *:not(.lx-day-root) {
+    display: none !important;
+  }
+
+  body:not(:has(> .lx-print-root)) > .lx-day-root {
+    display: block;
+    page: lx-day;
+    color-scheme: light;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .lx-day-root .lx-dayp {
+    max-width: none;
+    padding: 0;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

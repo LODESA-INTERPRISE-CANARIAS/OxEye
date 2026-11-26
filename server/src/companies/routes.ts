@@ -31,13 +31,13 @@ export function registerCompanyRoutes(
 
   api.post('/companies', auth, async c => {
     const input = await jsonBody(c, createCompanySchema);
-    const company = await createCompany(
+    const created = await createCompany(
       deps.db,
       c.get('user'),
       input,
       deps.now(),
     );
-    return c.json(company, 201);
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/companies/:id', auth, async c => {

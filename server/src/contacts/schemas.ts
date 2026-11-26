@@ -15,6 +15,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {
   MAX_EVENTS_PER_CONTACT,
   ROLE_MAX,
@@ -37,6 +38,7 @@ const common = {
 };
 
 export const createContactSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   ...common,

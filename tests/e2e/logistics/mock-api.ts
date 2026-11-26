@@ -7,6 +7,8 @@ import {
 } from '../../../shared/logistics/followup.ts';
 import {hypothesisLabel, noteLabel} from '../../../shared/logistics/history.ts';
 import {
+  ACTIVITY_RANGE_MAX,
+  ACTIVITY_RANGE_MAX_DAYS,
   BUILT_IN_RESOURCE_CATEGORIES,
   HYPOTHESIS_NOTE_MAX,
   MAX_RESOURCES_PER_TASK,
@@ -30,7 +32,7 @@ import {
 
 /**
  * Stateful in-memory mock of the Logistics Manager API for behavioural E2E
- * tests (milestones 1 to 5). It follows the route table and error bodies of
+ * tests (milestones 1 to 6). It follows the route table and error bodies of
  * `shared/logistics/contracts.ts` and `server/src`, keeps events, tasks,
  * venues and companies so refetches after a write see the change, and
  * records every request so tests can assert what the UI actually sent.
@@ -69,6 +71,21 @@ import {
  * hypotheses and unlinks applied ones; deleting a resource clears the subsoil
  * mark of the tasks that used it, and changing its quantity, unit or
  * dimensions clears it on the live tasks that use it.
+ *
+ * Milestone 6 rules mirrored from `server/src/{records/device-id,activity}`:
+ * the eight creates accept a device `id` (a free UUID creates the record
+ * with it, 201; the same user's id again is a replay, 200 with the record as
+ * it is and no side effect; anyone else's use is 400 `fields.id`).
+ * `GET …/changes?since=` hands out integer cursors; without one, or with an
+ * unknown one, it answers `full: true`; otherwise the types whose list
+ * changed since that cursor (by fingerprint, so direct edits of `state`
+ * count). `/activity?from=&to=` is the day-close range (`from` ≤ at < `to`,
+ * same 400s). Faults for offline specs: `unreachable` (every call fails at
+ * network level), `loseResponse` (handled, answer dropped), `forceConflict`
+ * (next PATCH of a record is a 409), `rejectWrite` (next matching write is a
+ * 400), `failActivityRange`, `changesSupported = false` (404, older server).
+ * Guests are withheld `MOCK_WITHHELD`, a hand-written copy of the shared
+ * `WITHHELD_FROM_GUESTS` (equality asserted in `mock-contract.spec.ts`).
  *
  * Only `/api/*` is intercepted: Vite module URLs such as
  * `/src/logistics/api/client.ts` must reach the dev server.
@@ -545,6 +562,40 @@ export interface MockApi {
   sessionExpired: boolean;
   /** When true writes (POST/PATCH/DELETE) fail at network level. */
   writesOffline: boolean;
+  /**
+   * M6: when true every `/api` call, `/health` included, fails at network
+   * level (the network is there, the server is not).
+   */
+  unreachable: boolean;
+  /** M6: false makes `GET …/changes` answer 404, as an older server. */
+  changesSupported: boolean;
+  /**
+   * M6: a server bug. Guests receive the withheld fields (still marked
+   * `restricted: true`), so a spec can check the device cache withholds them
+   * again by itself.
+   */
+  leakToGuests: boolean;
+  /** M6: day-close activity requests (`from`/`to`) that answer 500 next. */
+  failActivityRange: number;
+  /**
+   * M6: the next PATCH of record `id` answers 409 VERSION_CONFLICT with the
+   * record as it is (another person's change that the device has not seen).
+   */
+  forceConflict: (id: string, times?: number) => void;
+  /**
+   * M6: the next matching request is handled (the server keeps its effect)
+   * but its answer never reaches the browser: a lost response.
+   */
+  loseResponse: (method: string, path: string | RegExp, times?: number) => void;
+  /** M6: the next matching write answers 400 VALIDATION with `fields`. */
+  rejectWrite: (
+    method: string,
+    path: string | RegExp,
+    fields: Record<string, string>,
+    times?: number,
+  ) => void;
+  /** M6: the cursors `GET …/changes` handed out (index = cursor). */
+  cursors: number;
   /** Server-side records; tests may edit them to simulate another user. */
   events: Json[];
   tasks: Json[];
@@ -594,6 +645,63 @@ export interface MockApi {
     by?: typeof dailos,
   ) => Json;
 }
+
+/**
+ * Same withholding as `WITHHELD_FROM_GUESTS` in
+ * `shared/logistics/redaction.ts` (the server and the device cache apply
+ * it): guests never receive contact details, prices or free-text
+ * observations. Written out by hand on purpose, so a change to the shared
+ * list is a visible decision here too; `mock-contract.spec.ts` asserts that
+ * both lists are equal.
+ */
+export const MOCK_WITHHELD = {
+  event: ['notes'],
+  task: ['notes'],
+  contact: ['phone', 'email', 'description', 'notes'],
+  company: ['phone', 'email', 'notes'],
+  offer: [
+    'price',
+    'transportCost',
+    'assemblyCost',
+    'maintenanceCost',
+    'conditions',
+  ],
+  warehouse: ['address', 'notes'],
+  resource: ['location', 'notes'],
+  note: ['text'],
+  hypothesis: ['note'],
+} as const;
+
+/** The eight creates that accept a device id (M6), by path. */
+const DEVICE_ID_CREATES = {
+  '/events': 'events',
+  '/tasks': 'tasks',
+  '/companies': 'companies',
+  '/contacts': 'contacts',
+  '/offers': 'offers',
+  '/warehouses': 'warehouses',
+  '/resources': 'resources',
+  '/notes': 'notes',
+} as const;
+type DeviceIdList = (typeof DEVICE_ID_CREATES)[keyof typeof DEVICE_ID_CREATES];
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Lists `GET …/changes` reports, with the activity type each one stands for. */
+const CHANGE_TYPES = {
+  events: 'event',
+  tasks: 'task',
+  venues: 'venue',
+  companies: 'company',
+  categories: 'category',
+  contacts: 'contact',
+  offers: 'offer',
+  warehouses: 'warehouse',
+  resources: 'resource',
+  notes: 'note',
+  hypotheses: 'hypothesis',
+} as const;
 
 const VENUES = [
   {id: 'v1', name: 'Plaza del Cristo'},
@@ -665,11 +773,49 @@ export async function mockApi(
   let historyGate: Promise<void> | null = null;
   /** Time of milestone 4 writes: the page's fixed clock when a spec sets it. */
   const clock = () => opts.now ?? new Date().toISOString();
+  // M6 one-shot faults, matched against method + path.
+  type Fault = {method: string; path: string | RegExp; times: number};
+  const lost: Fault[] = [];
+  const rejected: (Fault & {fields: Record<string, string>})[] = [];
+  const conflicts = new Map<string, number>();
+  const takeFault = <F extends Fault>(
+    list: F[],
+    method: string,
+    path: string,
+  ): F | null => {
+    const f = list.find(
+      x =>
+        x.times > 0 &&
+        x.method === method &&
+        (typeof x.path === 'string' ? x.path === path : x.path.test(path)),
+    );
+    if (!f) return null;
+    f.times--;
+    return f;
+  };
+  /** Fingerprints of every list per cursor handed out by `…/changes`. */
+  const snapshots: Record<string, string>[] = [];
 
   const state: MockApi = {
     health: opts.health ?? 'ok',
     sessionExpired: false,
     writesOffline: false,
+    unreachable: false,
+    changesSupported: true,
+    leakToGuests: false,
+    failActivityRange: 0,
+    forceConflict: (id, times = 1) => {
+      conflicts.set(id, (conflicts.get(id) ?? 0) + times);
+    },
+    loseResponse: (method, path, times = 1) => {
+      lost.push({method, path, times});
+    },
+    rejectWrite: (method, path, fields, times = 1) => {
+      rejected.push({method, path, fields, times});
+    },
+    get cursors() {
+      return snapshots.length;
+    },
     events: opts.events ?? defaultEvents(),
     tasks: opts.tasks ?? [],
     venues: opts.venues ?? VENUES.map(v => ({...v})),
@@ -736,6 +882,18 @@ export async function mockApi(
 
   const orgs = [{id: ORG, name: 'Ayuntamiento de La Laguna', timezone: TZ}];
 
+  /**
+   * M6: the id of a new record. A create may carry a device id (already
+   * checked to be a free UUID by the device-id gate); otherwise the mock's
+   * own sequence.
+   */
+  const newId = (input: unknown, fallback: string): string => {
+    const id = (input as Json | null)?.id;
+    return typeof id === 'string' && UUID_RE.test(id)
+      ? id.toLowerCase()
+      : fallback;
+  };
+
   /** Find or create by name, case-insensitive, as the server does. */
   const venueRef = (name: unknown) => {
     const n = text(name);
@@ -781,27 +939,16 @@ export async function mockApi(
       }),
     );
   const isGuest = (role: string) => role === 'guest';
-  // Same withholding as server/src/records/redact.ts: guests never receive
-  // contact details, prices or free-text observations. The field lists below
-  // are a hand-written copy of `WITHHELD_FROM_GUESTS` in that file (the mock
-  // cannot import server code): keep them in step when it changes.
-  // Milestone 4: event and task notes, warehouse address and notes, resource
-  // location and notes, and the text of every note. Milestone 5: the note of
-  // a delay hypothesis.
-  const WITHHELD = {
-    event: ['notes'],
-    task: ['notes'],
-    warehouse: ['address', 'notes'],
-    resource: ['location', 'notes'],
-    note: ['text'],
-    hypothesis: ['note'],
-  } as const;
+  const WITHHELD = MOCK_WITHHELD;
   const redact = (
     kind: keyof typeof WITHHELD,
     record: Json,
     role: string,
   ): Json => {
     if (!isGuest(role)) return {...record, restricted: false};
+    // M6: a server bug that forgets the withholding (the device cache must
+    // still never store a withheld value for a guest).
+    if (state.leakToGuests) return {...record, restricted: true};
     const out: Json = {...record, restricted: true};
     for (const k of WITHHELD[kind]) out[k] = null;
     return out;
@@ -889,33 +1036,41 @@ export async function mockApi(
         o => (o.company as Json | null)?.id === c.id,
       ).length,
     };
-    return isGuest(role)
-      ? {...counted, phone: null, email: null, notes: null, restricted: true}
-      : counted;
+    return isGuest(role) ? redact('company', counted, role) : counted;
   };
   const viewContact = (c: Json, role: string): Json =>
-    isGuest(role)
-      ? {
-          ...c,
-          phone: null,
-          email: null,
-          description: null,
-          notes: null,
-          restricted: true,
-        }
-      : c;
+    isGuest(role) ? redact('contact', c, role) : c;
   const viewOffer = (o: Json, role: string): Json =>
-    isGuest(role)
-      ? {
-          ...o,
-          price: null,
-          transportCost: null,
-          assemblyCost: null,
-          maintenanceCost: null,
-          conditions: null,
-          restricted: true,
-        }
-      : o;
+    isGuest(role) ? redact('offer', o, role) : o;
+  /** M6: a record of one of the device-id lists, as this role may see it. */
+  const viewOf = (list: DeviceIdList, r: Json, role: string): Json => {
+    switch (list) {
+      case 'events':
+        return viewEvent(r, role);
+      case 'tasks':
+        return viewTask(r, role);
+      case 'companies':
+        return viewCompany(r, role);
+      case 'contacts':
+        return viewContact(r, role);
+      case 'offers':
+        return viewOffer(r, role);
+      case 'warehouses':
+        return viewWarehouse(r, role);
+      case 'resources':
+        return viewResource(r, role);
+      case 'notes':
+        return viewNote(r, role);
+    }
+  };
+  /** M6: one fingerprint per list, for `GET …/changes`. */
+  const fingerprints = (): Record<string, string> =>
+    Object.fromEntries(
+      Object.keys(CHANGE_TYPES).map(l => [
+        l,
+        JSON.stringify(state[l as keyof typeof CHANGE_TYPES]),
+      ]),
+    );
   const bump = (record: Json, by: Json) =>
     Object.assign(record, {
       version: (record.version as number) + 1,
@@ -1143,7 +1298,7 @@ export async function mockApi(
           409,
         );
       }
-      const created = makeCompany(`c-new-${++seq}`, n, {
+      const created = makeCompany(newId(input, `c-new-${++seq}`), n, {
         kind: input.kind ?? 'supplier',
         categoryIds: input.categoryIds ?? [],
         phone: text(input.phone),
@@ -1246,7 +1401,7 @@ export async function mockApi(
     if (path === '/contacts' && method === 'POST') {
       const n = text(input.name);
       if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
-      const created = makeContact(`p-new-${++seq}`, n, {
+      const created = makeContact(newId(input, `p-new-${++seq}`), n, {
         role: text(input.role),
         company: refOf(companyFrom(input)),
         phone: text(input.phone),
@@ -1345,24 +1500,29 @@ export async function mockApi(
       const company = companyFrom(input);
       if (!company) fields.companyName = 'Indica la empresa que lo ofrece.';
       if (Object.keys(fields).length) return validation(route, fields);
-      const created = makeOffer(`o-new-${++seq}`, n!, refOf(company)!, {
-        categoryId: input.categoryId ?? null,
-        description: text(input.description),
-        price: input.price ?? null,
-        unit: input.unit ?? 'unit',
-        customUnit: input.unit === 'custom' ? text(input.customUnit) : null,
-        transportCost: input.transportCost ?? null,
-        assemblyCost: input.assemblyCost ?? null,
-        maintenanceCost: input.maintenanceCost ?? null,
-        conditions: text(input.conditions),
-        vatIncluded: input.vatIncluded ?? null,
-        source: input.source ?? null,
-        verification: input.verification ?? 'draft',
-        createdBy: ref,
-        updatedBy: ref,
-        createdAt: now(),
-        updatedAt: now(),
-      });
+      const created = makeOffer(
+        newId(input, `o-new-${++seq}`),
+        n!,
+        refOf(company)!,
+        {
+          categoryId: input.categoryId ?? null,
+          description: text(input.description),
+          price: input.price ?? null,
+          unit: input.unit ?? 'unit',
+          customUnit: input.unit === 'custom' ? text(input.customUnit) : null,
+          transportCost: input.transportCost ?? null,
+          assemblyCost: input.assemblyCost ?? null,
+          maintenanceCost: input.maintenanceCost ?? null,
+          conditions: text(input.conditions),
+          vatIncluded: input.vatIncluded ?? null,
+          source: input.source ?? null,
+          verification: input.verification ?? 'draft',
+          createdBy: ref,
+          updatedBy: ref,
+          createdAt: now(),
+          updatedAt: now(),
+        },
+      );
       state.offers.push(created);
       return json(route, created, 201);
     }
@@ -1660,7 +1820,7 @@ export async function mockApi(
         w => nameKey(w.name as string) === nameKey(n),
       );
       if (dup) return duplicateWarehouse(route, dup, role);
-      const created = makeWarehouse(`w-new-${++seq}`, n, {
+      const created = makeWarehouse(newId(input, `w-new-${++seq}`), n, {
         address: text(input.address),
         notes: text(input.notes),
         source: input.source ?? null,
@@ -1749,12 +1909,16 @@ export async function mockApi(
       if (!text(input.name)) {
         return validation(route, {name: 'El nombre es obligatorio.'});
       }
-      const created = makeResource(`r-new-${++seq}`, text(input.name)!, {
-        createdBy: ref,
-        updatedBy: ref,
-        createdAt: now(),
-        updatedAt: now(),
-      });
+      const created = makeResource(
+        newId(input, `r-new-${++seq}`),
+        text(input.name)!,
+        {
+          createdBy: ref,
+          updatedBy: ref,
+          createdAt: now(),
+          updatedAt: now(),
+        },
+      );
       const fields = applyResource(
         created,
         {ownership: 'owned', ...input},
@@ -1865,15 +2029,20 @@ export async function mockApi(
       const t = typeof input.text === 'string' ? input.text.trim() : '';
       if (!t || t.length > NOTE_TEXT_MAX) fields.text = 'Escribe el texto.';
       if (Object.keys(fields).length) return validation(route, fields);
-      const created = makeNote(`n-new-${++seq}`, input.kind as NoteKind, t, {
-        resolved: input.resolved === true,
-        source: input.source ?? null,
-        verification: input.verification ?? 'draft',
-        createdBy: ref,
-        updatedBy: ref,
-        createdAt: now(),
-        updatedAt: now(),
-      });
+      const created = makeNote(
+        newId(input, `n-new-${++seq}`),
+        input.kind as NoteKind,
+        t,
+        {
+          resolved: input.resolved === true,
+          source: input.source ?? null,
+          verification: input.verification ?? 'draft',
+          createdBy: ref,
+          updatedBy: ref,
+          createdAt: now(),
+          updatedAt: now(),
+        },
+      );
       applyNoteLinks(created, input);
       state.notes.push(created);
       log(ref, noteEntity(created), 'create');
@@ -2178,8 +2347,22 @@ export async function mockApi(
 
   await page.route(
     u => u.pathname.startsWith('/api/'),
-    async route => {
-      const request = route.request();
+    async incoming => {
+      const request = incoming.request();
+      // M6: a lost response. The request is handled in full (the server
+      // keeps its effect) but the browser only sees a dropped connection.
+      const lose = takeFault(
+        lost,
+        request.method(),
+        new URL(request.url()).pathname.replace(/^\/api/, ''),
+      );
+      const route: Route = lose
+        ? ({
+            request: () => incoming.request(),
+            fulfill: () => incoming.abort('connectionreset'),
+            abort: (code?: string) => incoming.abort(code),
+          } as unknown as Route)
+        : incoming;
       const url = new URL(request.url());
       const path = url.pathname.replace(/^\/api/, '');
       const method = request.method();
@@ -2197,6 +2380,9 @@ export async function mockApi(
         body,
         authorization,
       });
+
+      // M6: the server is not there at all (the network may be).
+      if (state.unreachable) return route.abort('connectionrefused');
 
       // ---- public routes
       if (path === '/health') {
@@ -2263,6 +2449,95 @@ export async function mockApi(
         return route.fulfill({status: 204, body: ''});
       }
       if (path === '/me') return json(route, {user, organizations: orgs});
+
+      // ---- milestone 6: forced faults, device ids, `…/changes`
+      if (isWrite) {
+        const reject = takeFault(rejected, method, path);
+        if (reject) return validation(route, reject.fields);
+      }
+      const patchId = /^\/[a-z-]+\/([^/]+)$/.exec(path)?.[1];
+      if (method === 'PATCH' && patchId && (conflicts.get(patchId) ?? 0) > 0) {
+        conflicts.set(patchId, conflicts.get(patchId)! - 1);
+        const list = (
+          [
+            'events',
+            'tasks',
+            'companies',
+            'contacts',
+            'offers',
+            'warehouses',
+            'resources',
+            'notes',
+          ] as const
+        ).find(l => path.startsWith(`/${l}/`));
+        const record = list
+          ? (state[list] as Json[]).find(r => r.id === patchId)
+          : undefined;
+        if (record && list) {
+          return json(
+            route,
+            {
+              code: 'VERSION_CONFLICT',
+              message:
+                'Otra persona ha cambiado este registro mientras lo editabas. Revisa la versión actual antes de guardar tus cambios.',
+              current: viewOf(list, record, user.role),
+            },
+            409,
+          );
+        }
+      }
+      // Same rules as server/src/records/device-id.ts: a free UUID creates
+      // the record with it; the same user's id again is a replay (200 with
+      // the record as it is, nothing written, no activity); anyone else's
+      // use of it is 400 `fields.id` without revealing whose.
+      const createList =
+        method === 'POST'
+          ? DEVICE_ID_CREATES[path as keyof typeof DEVICE_ID_CREATES]
+          : undefined;
+      const deviceId = (body as Json | null)?.id;
+      if (createList && deviceId !== undefined) {
+        if (typeof deviceId !== 'string' || !UUID_RE.test(deviceId)) {
+          return validation(route, {id: 'Identificador no válido.'});
+        }
+        const existing = (state[createList] as Json[]).find(
+          r => String(r.id).toLowerCase() === deviceId.toLowerCase(),
+        );
+        if (existing) {
+          if (
+            (existing.createdBy as Json | null)?.id !== user.id ||
+            (existing.organizationId ?? ORG) !== ORG
+          ) {
+            return validation(route, {
+              id: 'Este identificador ya está en uso.',
+            });
+          }
+          return json(route, viewOf(createList, existing, user.role), 200);
+        }
+      }
+      if (path === `/organizations/${ORG}/changes` && method === 'GET') {
+        if (!state.changesSupported) {
+          return error(route, 404, 'NOT_FOUND', 'No encontrado');
+        }
+        // Same answer shape as server/src/activity/service.ts. The mock
+        // compares list fingerprints instead of reading an activity log, so
+        // a spec that edits `state` directly (another person's save) is
+        // reported too. No overlap window: nothing commits out of order here.
+        const now = fingerprints();
+        const since = url.searchParams.get('since');
+        const known =
+          since !== null && /^(0|[1-9]\d*)$/.test(since)
+            ? snapshots[Number(since)]
+            : undefined;
+        snapshots.push(now);
+        const cursor = String(snapshots.length - 1);
+        if (!known) return json(route, {cursor, types: [], full: true});
+        const types = (
+          Object.keys(CHANGE_TYPES) as (keyof typeof CHANGE_TYPES)[]
+        )
+          .filter(l => known[l] !== now[l])
+          .map(l => CHANGE_TYPES[l]);
+        return json(route, {cursor, types, full: false});
+      }
       if (path === `/organizations/${ORG}/events` && method === 'GET') {
         return json(route, {
           items: state.events.map(e => viewEvent(e, user.role)),
@@ -2282,6 +2557,68 @@ export async function mockApi(
             [entityType ? 'entityId' : 'entityType']:
               'Para ver el historial de un registro indica su tipo y su identificador.',
           });
+        }
+        // M6: a time range (the day close), as server/src/activity/routes.ts.
+        const fromRaw = url.searchParams.get('from') || null;
+        const toRaw = url.searchParams.get('to') || null;
+        if (fromRaw || toRaw) {
+          const INSTANT =
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+          const bad =
+            'Instante no válido: usa ISO 8601 con zona horaria (2026-12-02T00:00:00.000Z).';
+          const both =
+            'Para ver un periodo indica su inicio y su final (instantes ISO 8601).';
+          if (fromRaw && !INSTANT.test(fromRaw)) {
+            return validation(route, {from: bad});
+          }
+          if (toRaw && !INSTANT.test(toRaw)) {
+            return validation(route, {to: bad});
+          }
+          if (!fromRaw) return validation(route, {from: both});
+          if (!toRaw) return validation(route, {to: both});
+          if (entityType) {
+            return validation(route, {
+              from: 'Un periodo no se puede combinar con el historial de un registro: pide uno u otro.',
+            });
+          }
+          const from = Date.parse(fromRaw);
+          const to = Date.parse(toRaw);
+          if (from >= to) {
+            return validation(route, {
+              to: 'El final del periodo debe ser posterior a su inicio.',
+            });
+          }
+          if (to - from > ACTIVITY_RANGE_MAX_DAYS * 24 * 3600_000) {
+            return validation(route, {
+              to: `El periodo puede abarcar como máximo ${ACTIVITY_RANGE_MAX_DAYS} días.`,
+            });
+          }
+          if (state.failActivityRange > 0) {
+            state.failActivityRange--;
+            return error(
+              route,
+              500,
+              'INTERNAL',
+              'Error interno del servidor. Inténtalo de nuevo.',
+            );
+          }
+          const max = Number(
+            url.searchParams.get('limit') || ACTIVITY_RANGE_MAX,
+          );
+          const items = state.activity
+            .map((a, i) => ({a, i}))
+            .filter(({a}) => {
+              const t = Date.parse(a.at as string);
+              return t >= from && t < to;
+            })
+            .sort(
+              (x, y) =>
+                Date.parse(y.a.at as string) - Date.parse(x.a.at as string) ||
+                y.i - x.i,
+            )
+            .map(({a}) => a)
+            .slice(0, Math.min(max, ACTIVITY_RANGE_MAX));
+          return json(route, {items});
         }
         const limit = Number(url.searchParams.get('limit') || 20);
         if (entityType) {
@@ -2447,7 +2784,7 @@ export async function mockApi(
         }
         const ref = {id: user.id, displayName: user.displayName};
         const created = makeEvent(
-          `new-${++seq}`,
+          newId(input, `new-${++seq}`),
           input.name.trim(),
           {
             date: (input.date as string | null) ?? null,
@@ -2611,7 +2948,7 @@ export async function mockApi(
         if (Object.keys(fields).length) return validation(route, fields);
         const now = new Date().toISOString();
         const created = makeTask(
-          `t-new-${++seq}`,
+          newId(input, `t-new-${++seq}`),
           text(input.title)!,
           {
             date: slot.date,

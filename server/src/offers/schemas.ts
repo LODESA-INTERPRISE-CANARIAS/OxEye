@@ -13,6 +13,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {CUSTOM_UNIT_MAX, PRICE_UNITS} from '../../../shared/logistics/rules.ts';
 
 const unit = oneOf(
@@ -44,6 +45,7 @@ const common = {
 };
 
 export const createOfferSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   ...common,

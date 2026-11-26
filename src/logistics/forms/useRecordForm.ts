@@ -25,6 +25,7 @@ import {
 import type {RecordMeta} from '../../../shared/logistics/contracts.ts';
 import {errorMessage, isApiError} from '../api/client';
 import {clearRescue, saveRescue, type RescuedForm} from '../lib/rescue';
+import {replacing, type FormReview} from '../offline/review';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {useAlertFocus} from './FormParts';
 import {mergeForm, type MergeClash} from './merge';
@@ -66,6 +67,11 @@ export interface RecordFormOptions<V extends object, R extends RecordMeta> {
   onDuplicate?: (current: unknown) => void;
   /** Readable values for coded fields in the merge notice. */
   describe?: MergeDescribe<V>;
+  /**
+   * M6: a change from the outbox to review. The form starts from what the
+   * user queued and the server's answer is applied once it is open.
+   */
+  review?: FormReview;
 }
 
 const same = (a: unknown, b: unknown) =>
@@ -85,7 +91,11 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
     [base, blank, toValues],
   );
   const [values, setValues] = useState<V>(() =>
-    opts.rescued ? opts.fromRescue(opts.rescued, initial) : initial,
+    opts.review
+      ? toValues(opts.review.mine as R)
+      : opts.rescued
+        ? opts.fromRescue(opts.rescued, initial)
+        : initial,
   );
   const [rescuedNotice, setRescuedNotice] = useState(!!opts.rescued);
   const [errors, setErrors] = useState<FormErrors<V>>({});
@@ -280,6 +290,31 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
     } as FormErrors<V>);
   };
 
+  // M6: the server's answer to a queued change, shown as if it had just come.
+  const reviewError = useRef(opts.review?.error ?? null);
+  const applyRef = useRef(applyServerError);
+  useLayoutEffect(() => {
+    applyRef.current = applyServerError;
+  });
+  useLayoutEffect(() => {
+    const err = reviewError.current;
+    reviewError.current = null;
+    if (err) applyRef.current(err, 'save');
+  }, []);
+
+  /** Write options of a save: a review resolves its outbox entry. */
+  const writeOptions = replacing(opts.review);
+
+  /**
+   * A review saved with nothing left to send (everything taken from the
+   * server's copy): the queued change is settled by dropping it.
+   */
+  const settleReview = () => {
+    if (opts.review) {
+      void useLogisticsStore.getState().discardEntry(opts.review.entryId);
+    }
+  };
+
   const loadCurrent = () => {
     if (!conflict) return;
     setBase(conflict);
@@ -374,5 +409,7 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
     leavingFor: leaveTo?.label ?? null,
     alertRef,
     applyServerError,
+    writeOptions,
+    settleReview,
   };
 }

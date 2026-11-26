@@ -14,6 +14,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {
   DEFAULT_RESOURCE_UNIT,
   DIMENSIONS_MAX,
@@ -79,6 +80,7 @@ const common = {
 };
 
 export const createResourceSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   ...common,

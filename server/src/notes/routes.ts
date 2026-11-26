@@ -23,8 +23,8 @@ export function registerNoteRoutes(
 
   api.post('/notes', auth, async c => {
     const input = await jsonBody(c, createNoteSchema);
-    const note = await createNote(deps.db, c.get('user'), input, deps.now());
-    return c.json(note, 201);
+    const created = await createNote(deps.db, c.get('user'), input, deps.now());
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/notes/:id', auth, async c => {

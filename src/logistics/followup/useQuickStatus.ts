@@ -14,7 +14,11 @@ import {useCallback, useState} from 'react';
 import type {Task, TaskStatus} from '../../../shared/logistics/contracts.ts';
 import {TASK_STATUS_LABEL} from '../../../shared/logistics/rules.ts';
 import {errorMessage, isApiError} from '../api/client';
-import {useLogisticsStore} from '../store/useLogisticsStore';
+import {
+  QUEUED_NOTE,
+  useLogisticsStore,
+  wasQueued,
+} from '../store/useLogisticsStore';
 
 /** The server copy carried by a 409, if any. */
 function conflictTask(err: unknown): Task | null {
@@ -124,9 +128,15 @@ export function useQuickStatus() {
           });
         }
         const previous = task.status;
-        toast(quickDoneText(saved, next), 'success', {
-          action: {label: 'Deshacer', run: () => void undo(saved, previous)},
-        });
+        // Saved on this device only (M6): say so, the undo still works.
+        const queued = wasQueued(saved);
+        toast(
+          queued
+            ? `${quickDoneText(saved, next)} ${QUEUED_NOTE}`
+            : quickDoneText(saved, next),
+          queued ? 'info' : 'success',
+          {action: {label: 'Deshacer', run: () => void undo(saved, previous)}},
+        );
       } catch (err) {
         const current = conflictTask(err);
         // A second 409 where nobody moved the status: someone is editing it

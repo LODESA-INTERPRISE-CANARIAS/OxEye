@@ -11,6 +11,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {ADDRESS_MAX} from '../../../shared/logistics/rules.ts';
 
 const common = {
@@ -21,6 +22,7 @@ const common = {
 };
 
 export const createWarehouseSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   ...common,

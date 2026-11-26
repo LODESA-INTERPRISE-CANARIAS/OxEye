@@ -109,6 +109,31 @@
  *   Work orders are built in the browser (`work-order.ts`) from the records the
  *   viewer already received; there is no work-order route.
  *
+ * Milestone 6 (offline outbox, cheap refresh, day close):
+ *
+ *   GET    /organizations/:orgId/changes[?since=<cursor>] → ChangesResponse.
+ *          Reads the activity log: which record types were written after
+ *          `cursor` (plus any written in the last CHANGES_OVERLAP_SECONDS, so
+ *          transactions that commit out of order are never missed). Without
+ *          `since`, or with a cursor the server does not recognise (malformed,
+ *          ahead of the log), `full: true`: reload everything. Guests read it
+ *          too (types only, no labels).
+ *   GET    /organizations/:orgId/activity?from=<instant>&to=<instant>[&limit=]
+ *          → ListResponse<ActivityEntry> of `from` ≤ at < `to` (newest first,
+ *          default and max ACTIVITY_RANGE_MAX, span at most 8 days; both or
+ *          neither; not combinable with entityType/entityId → 400).
+ *   Create with a device id: POST /events, /tasks, /companies, /contacts,
+ *          /offers, /warehouses, /resources and /notes accept an optional
+ *          `id` (a UUID generated on the device, so a queued create can be
+ *          replayed safely and other queued writes can point at it). If a
+ *          record of that type with that id already exists in the same
+ *          organization and was created by the same user, the answer is 200
+ *          with the record as it is now (a replay: nothing changes, no
+ *          activity). Any other existing use of the id → 400 `fields.id`.
+ *   The day close is built in the browser (`day-report.ts`) from the records
+ *   the viewer already received plus that day's activity; there is no
+ *   report route.
+ *
  * Guests (role `guest`, a shared login) never receive contact details,
  * prices or free-text observations: the server sends those fields as null and
  * sets `restricted: true`, and the UI shows «Visible para el equipo» instead
@@ -116,8 +141,9 @@
  * description and notes; companies' phone, e-mail and notes; offers' prices,
  * costs and conditions; events' and tasks' notes (M4); warehouses' address
  * and notes; resources' location and notes; the text of every note; the note
- * of a delay hypothesis (M5). The server's `WITHHELD_FROM_GUESTS` is the
- * single list.
+ * of a delay hypothesis (M5). `WITHHELD_FROM_GUESTS` in
+ * `shared/logistics/redaction.ts` is the single list (M6: the server and the
+ * device cache both apply it).
  */
 
 export type Uuid = string;
@@ -230,7 +256,7 @@ export interface LogisticsEvent extends RecordMeta {
  * organization's time zone; the server converts them to UTC instants.
  * `venueName` finds or creates a venue of the same organization by name.
  */
-export interface CreateEventInput extends ProvenanceInput {
+export interface CreateEventInput extends ProvenanceInput, DeviceIdInput {
   organizationId: Uuid;
   name: string;
   venueName?: string | null;
@@ -257,6 +283,28 @@ export interface UpdateEventInput extends ProvenanceInput {
 
 export interface ListResponse<T> {
   items: T[];
+}
+
+/**
+ * M6: an optional UUID generated on the device for a create, so an offline
+ * create can be replayed without duplicating the record (see the route table).
+ */
+export interface DeviceIdInput {
+  id?: Uuid;
+}
+
+/** M6 `GET /organizations/:orgId/changes`. */
+export interface ChangesResponse {
+  /** Opaque; send it back as `since` on the next poll. */
+  cursor: string;
+  /**
+   * Activity `entityType` values written since the cursor (event, task,
+   * venue, company, contact, offer, category, warehouse, resource, note,
+   * hypothesis, demo). Empty = nothing changed.
+   */
+  types: string[];
+  /** True when the client must reload every list (no or unknown cursor). */
+  full: boolean;
 }
 
 // ---------------------------------------------------------------- activity
@@ -355,7 +403,7 @@ export interface SubsoilReview {
  * is a 400: send `endDate` too (or null) when moving a multi-day record.
  * Clearing `date` clears `endDate`. Same rules for events.
  */
-export interface TaskInput extends ProvenanceInput {
+export interface TaskInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   eventId?: Uuid | null;
   venueName?: string | null;
@@ -511,7 +559,7 @@ export interface Company extends RecordMeta {
  * company is this one (400 otherwise). Same name as another company of the
  * organization (any case) → 409 DUPLICATE with `current` = that company.
  */
-export interface CompanyInput extends ProvenanceInput {
+export interface CompanyInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   name?: string;
   kind?: CompanyKind;
@@ -550,7 +598,7 @@ export interface Contact extends RecordMeta {
  * clears it as main contact of the old one (whose version increases).
  * `eventIds` replaces the whole list (same organization).
  */
-export interface ContactInput extends ProvenanceInput {
+export interface ContactInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   name?: string;
   role?: string | null;
@@ -605,7 +653,7 @@ export interface Offer extends RecordMeta {
  * `companyName` to find or create it) required; `unit` defaults to `unit`.
  * Update: `version` required; only the fields sent change.
  */
-export interface OfferInput extends ProvenanceInput {
+export interface OfferInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   companyId?: Uuid;
   companyName?: string;
@@ -647,7 +695,7 @@ export interface Warehouse extends RecordMeta {
  * Same name as another warehouse of the organization (any case) → 409
  * DUPLICATE with `current`.
  */
-export interface WarehouseInput extends ProvenanceInput {
+export interface WarehouseInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   name?: string;
   address?: string | null;
@@ -710,7 +758,7 @@ export interface Resource extends RecordMeta {
  * sets the company to the offer's. `quantity` is 0 – MAX_RESOURCE_QUANTITY
  * with at most two decimals, or null.
  */
-export interface ResourceInput extends ProvenanceInput {
+export interface ResourceInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   name?: string;
   ownership?: ResourceOwnership;
@@ -766,7 +814,7 @@ export interface Note extends RecordMeta {
  * Update: `version` required. `ref` = {type, id} of a record of the same
  * organization (unknown → 400 `fields.ref`); `eventId` likewise.
  */
-export interface NoteInput extends ProvenanceInput {
+export interface NoteInput extends ProvenanceInput, DeviceIdInput {
   organizationId?: Uuid;
   kind?: NoteKind;
   text?: string;
@@ -810,37 +858,8 @@ export interface RecentSearchInput {
   query: string;
 }
 
-export interface DayReport {
-  organizationId: Uuid;
-  /** Local day covered, in the organization's time zone. */
-  date: LocalDate;
-  generatedAt: IsoInstant;
-  generatedBy: UserRef;
-  counts: {
-    events: {created: number; modified: number};
-    contacts: {created: number; modified: number};
-    companies: {created: number; modified: number};
-    offers: {created: number; modified: number};
-    resources: {created: number; modified: number};
-    tasks: {created: number; modified: number};
-  };
-  /** Share of the organization's records with verification = validated (0–100). */
-  verifiedPercent: number;
-  /** Records still missing information, with what is missing. */
-  pending: {
-    type: SearchEntityType;
-    id: Uuid;
-    label: string;
-    missing: string[];
-  }[];
-  incidents: Note[];
-  decisions: Note[];
-  openQuestions: Note[];
-  featureIdeas: Note[];
-  /** Tasks agreed for the coming days. */
-  nextTasks: Task[];
-  contributors: {user: UserRef; changes: number}[];
-}
+// The day close (M6) is built in the browser: its types live with the
+// builder in `day-report.ts` (like work orders in `work-order.ts`).
 
 // ---------------------------------------------------------------- health and errors
 

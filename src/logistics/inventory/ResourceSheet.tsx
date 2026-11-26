@@ -69,6 +69,8 @@ import {
   ReadOnlyNotice,
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
+import {UnsentMark} from '../offline/PendingMark';
+import type {FormReview} from '../offline/review';
 import {categoryNames, companyByName, offersOfCompany} from '../lib/directory';
 import {SOURCE_LABEL, VERIFICATION_LABEL} from '../lib/events';
 import {plural} from '../lib/format';
@@ -98,8 +100,18 @@ type RescuedValues = Record<string, unknown>;
 
 export type ResourceSheetMode =
   | {kind: 'view'; resource: Resource}
-  | {kind: 'create'; prefill?: ResourcePrefill; rescued?: RescuedValues}
-  | {kind: 'edit'; resource: Resource; rescued?: RescuedValues};
+  | {
+      kind: 'create';
+      prefill?: ResourcePrefill;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    }
+  | {
+      kind: 'edit';
+      resource: Resource;
+      rescued?: RescuedValues;
+      review?: FormReview;
+    };
 
 interface FormValues {
   name: string;
@@ -349,6 +361,7 @@ const ResourceView: React.FC<{
       title={r.name}
       meta={
         <>
+          <UnsentMark id={r.id} />
           {r.isDemo && <DemoChip />}
           <VerificationChip verification={r.verification} />
           {category && <span className="lx-sheet__sub">{category}</span>}
@@ -588,6 +601,7 @@ const ResourceForm: React.FC<{
   const updateResource = useLogisticsStore(s => s.updateResource);
   const deleteResource = useLogisticsStore(s => s.deleteResource);
   const toast = useLogisticsStore(s => s.toast);
+  const toastSaved = useLogisticsStore(s => s.toastSaved);
   const warehouses = useLogisticsStore(s => s.warehouses);
   const companies = useLogisticsStore(s => s.companies);
   const offers = useLogisticsStore(s => s.offers);
@@ -617,6 +631,7 @@ const ResourceForm: React.FC<{
     blank,
     toValues: toValuesCb,
     rescued: mode.rescued,
+    review: mode.review,
     fromRescue,
     serverField: SERVER_FIELD,
     onClose: () => (f.base ? onSaved(f.base) : onClose()),
@@ -727,9 +742,9 @@ const ResourceForm: React.FC<{
           ...(contracted && companyName ? {companyName} : {}),
           ...(contracted && offerId ? {offerId} : {}),
         };
-        const created = await createResource(input);
+        const created = await createResource(input, f.writeOptions);
         f.markSaved();
-        toast(`Recurso guardado: ${created.name}`, 'success');
+        toastSaved(created, `Recurso guardado: ${created.name}`);
         if (next) {
           // Next item of the same warehouse (or company) and category: what
           // carries over is the new baseline, not a change of its own.
@@ -785,12 +800,13 @@ const ResourceForm: React.FC<{
       if (f.changed('verification')) patch.verification = full.verification;
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
+        f.settleReview();
         onSaved(base);
         return;
       }
-      const updated = await updateResource(base.id, patch);
+      const updated = await updateResource(base.id, patch, f.writeOptions);
       f.markSaved();
-      toast(`Cambios guardados: ${updated.name}`, 'success');
+      toastSaved(updated, `Cambios guardados: ${updated.name}`);
       onSaved(updated);
     } catch (err) {
       f.applyServerError(err, 'save');
@@ -914,6 +930,7 @@ const ResourceForm: React.FC<{
       meta={
         base ? (
           <>
+            <UnsentMark id={base.id} />
             {base.isDemo && <DemoChip />}
             <VerificationChip verification={base.verification} />
           </>

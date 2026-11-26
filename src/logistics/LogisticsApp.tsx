@@ -13,11 +13,14 @@ import type {
   Task,
   Warehouse,
 } from '../../shared/logistics/contracts.ts';
+import type {OutboxEntry} from '../../shared/logistics/outbox.ts';
+import {POLL_MS} from '../../shared/logistics/sync.ts';
 import {DEFAULT_TIMEZONE} from '../../shared/logistics/time.ts';
 import '../styles/logistics/index.css';
 import {CalendarScreen} from './calendar/CalendarScreen';
 import {CatalogScreen} from './catalog/CatalogScreen';
 import {OfferSheet, type OfferSheetMode} from './catalog/OfferSheet';
+import {DayCloseScreen} from './closing/DayCloseScreen';
 import {
   ActionsContext,
   type CompanyPrefill,
@@ -43,8 +46,12 @@ import {
 import {longDate, todayIn, zoneNote} from './lib/format';
 import {clearRescue, readRescue} from './lib/rescue';
 import {NoteSheet, type NoteSheetMode} from './notes/NoteSheet';
+import {LIST_OF} from './offline/local';
+import {LeaveConfirm} from './offline/LeaveConfirm';
+import {OutboxSheet} from './offline/OutboxSheet';
+import {reviewOf} from './offline/review';
+import {registerServiceWorker} from './offline/serviceWorker';
 import {LoginScreen} from './screens/LoginScreen';
-import {PlaceholderScreen} from './screens/PlaceholderScreen';
 import {ServerGate} from './screens/ServerGate';
 import {SearchSheet} from './search/SearchSheet';
 import {VenueSheet} from './search/VenueSheet';
@@ -61,8 +68,6 @@ import {
 import {useLogisticsStore} from './store/useLogisticsStore';
 import {TaskSheet, type TaskSheetMode} from './tasks/TaskSheet';
 import {ToastHostContext, Toaster, type ToastHost} from './ui';
-
-const BACKGROUND_REFRESH_MS = 60_000;
 
 export interface LogisticsAppProps {
   /** Leaves the module and returns to the OxEye hub. */
@@ -129,8 +134,10 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const dismissToast = useLogisticsStore(s => s.dismissToast);
   const holdToast = useLogisticsStore(s => s.holdToast);
   const boot = useLogisticsStore(s => s.boot);
-  const refresh = useLogisticsStore(s => s.refresh);
+  const syncNow = useLogisticsStore(s => s.syncNow);
   const setBrowserOnline = useLogisticsStore(s => s.setBrowserOnline);
+  const discardEntry = useLogisticsStore(s => s.discardEntry);
+  const toast = useLogisticsStore(s => s.toast);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const [space, setSpace] = useState<Space>(() =>
@@ -165,6 +172,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const [noteSheet, setNoteSheet] = useState<Slot<NoteSheetMode> | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [venueId, setVenueId] = useState<string | null>(null);
+  const [outboxOpen, setOutboxOpen] = useState(false);
   const openSeq = useRef(0);
   const opened = useCallback(
     <M,>(mode: M): Opened<M> => ({mode, seq: ++openSeq.current}),
@@ -225,6 +233,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       setNoteSheet(null);
       setSearchOpen(false);
       setVenueId(null);
+      setOutboxOpen(false);
       return;
     }
     if (!userId) return;
@@ -309,29 +318,34 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     return () => window.clearInterval(timer);
   }, [timeZone]);
 
-  // Connectivity and background refresh, so the office sees field updates.
+  // Connectivity and background sync, so the office sees field updates and
+  // what was saved without coverage goes out by itself (M6): `…/changes`
+  // every POLL_MS, a full reload on reconnect.
   useEffect(() => {
     const onOnline = () => {
       setBrowserOnline(true);
-      void refresh({silent: true});
+      void syncNow({full: true});
     };
     const onOffline = () => setBrowserOnline(false);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void refresh({silent: true});
+      if (document.visibilityState === 'visible') void syncNow();
     };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVisible);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh({silent: true});
-    }, BACKGROUND_REFRESH_MS);
+      if (document.visibilityState === 'visible') void syncNow();
+    }, POLL_MS);
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(timer);
     };
-  }, [refresh, setBrowserOnline]);
+  }, [syncNow, setBrowserOnline]);
+
+  // Lets OxEye reopen from the device without coverage (production only).
+  useEffect(() => registerServiceWorker(), []);
 
   const goTo = useCallback(
     (next: Space, day: string | null = null) => {
@@ -490,6 +504,152 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     [opened],
   );
 
+  // M6: «Cambios pendientes» and «Revisar» a change the server did not take.
+  const openOutbox = useCallback(() => setOutboxOpen(true), []);
+  const reviewChange = useCallback(
+    (entry: OutboxEntry) => {
+      const review = reviewOf(entry);
+      const create = entry.op === 'create';
+      // The server no longer has the record: there is nothing to edit, and
+      // a form opened over the queued copy would only queue a lost update.
+      if (!create && entry.error?.code === 'NOT_FOUND') {
+        toast(
+          'Este registro ya no existe en el servidor: solo puedes descartar el cambio.',
+          'info',
+        );
+        return;
+      }
+      const state = useLogisticsStore.getState();
+      // A 409 merges over the copy the user edited; other answers are fixed
+      // over what the server has now.
+      const listed = (state[LIST_OF[entry.entity]] as {id: string}[]).find(
+        r => r.id === entry.recordId,
+      );
+      const editing =
+        entry.error?.code === 'VERSION_CONFLICT'
+          ? (entry.base ?? listed)
+          : (listed ?? entry.base);
+      if (!create && !editing) {
+        toast(
+          'Este registro ya no existe en el servidor: solo puedes descartar el cambio.',
+          'info',
+        );
+        return;
+      }
+      setOutboxOpen(false);
+      switch (entry.entity) {
+        case 'event':
+          setEventSheets(
+            stack(
+              opened<EventSheetMode>(
+                create
+                  ? {kind: 'create', review}
+                  : {kind: 'edit', event: editing as LogisticsEvent, review},
+              ),
+            ),
+          );
+          return;
+        case 'task':
+          setTaskSheets(
+            stack(
+              opened<TaskSheetMode>(
+                create
+                  ? {kind: 'create', review}
+                  : {kind: 'edit', task: editing as Task, review},
+              ),
+            ),
+          );
+          return;
+        case 'contact':
+          setContactSheet(
+            opened<ContactSheetMode>(
+              create
+                ? {kind: 'create', review}
+                : {kind: 'edit', contact: editing as Contact, review},
+            ),
+          );
+          return;
+        case 'company':
+          setCompanySheet(
+            opened<CompanySheetMode>(
+              create
+                ? {kind: 'create', review}
+                : {kind: 'edit', company: editing as Company, review},
+            ),
+          );
+          return;
+        case 'offer':
+          setOfferSheet(
+            opened<OfferSheetMode>(
+              create
+                ? {kind: 'create', review}
+                : {kind: 'edit', offer: editing as Offer, review},
+            ),
+          );
+          return;
+        case 'warehouse':
+          setWarehouseSheet(
+            opened<WarehouseSheetMode>(
+              create
+                ? {kind: 'create', review}
+                : {kind: 'edit', warehouse: editing as Warehouse, review},
+            ),
+          );
+          return;
+        case 'resource':
+          setResourceSheet(
+            over(
+              opened<ResourceSheetMode>(
+                create
+                  ? {kind: 'create', review}
+                  : {kind: 'edit', resource: editing as Resource, review},
+              ),
+            ),
+          );
+          return;
+        case 'note':
+          setNoteSheet(
+            over(
+              opened<NoteSheetMode>(
+                create
+                  ? {kind: 'create', review}
+                  : {kind: 'edit', note: editing as Note, review},
+              ),
+            ),
+          );
+          return;
+      }
+    },
+    [opened, stack, toast],
+  );
+  /** DUPLICATE: the queued new record gives way to the one that exists. */
+  const takeExisting = useCallback(
+    (entry: OutboxEntry) => {
+      const existing = entry.current;
+      const existingId = (existing as {id?: unknown} | null)?.id;
+      void discardEntry(entry.id, {
+        useInstead: typeof existingId === 'string' ? existingId : undefined,
+      });
+      setOutboxOpen(false);
+      if (entry.entity === 'company') {
+        setCompanySheet(
+          opened<CompanySheetMode>({
+            kind: 'view',
+            company: existing as Company,
+          }),
+        );
+      } else if (entry.entity === 'warehouse') {
+        setWarehouseSheet(
+          opened<WarehouseSheetMode>({
+            kind: 'view',
+            warehouse: existing as Warehouse,
+          }),
+        );
+      }
+    },
+    [discardEntry, opened],
+  );
+
   // «+ Añadir»: what is captured on site first (large targets), then the
   // planning records as smaller tiles. Ids of the M2/M3 options are kept.
   const addOptions = useMemo<AddOption[]>(
@@ -616,6 +776,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       addResource,
       openNote,
       addNote,
+      openOutbox,
     }),
     [
       canWrite,
@@ -640,6 +801,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       addResource,
       openNote,
       addNote,
+      openOutbox,
     ],
   );
 
@@ -691,7 +853,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
         ) : space === 'inventarios' ? (
           <InventoryScreen />
         ) : (
-          <PlaceholderScreen space={space} onGoToday={() => goTo('hoy')} />
+          <DayCloseScreen />
         )}
       </Shell>
     );
@@ -771,6 +933,14 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
               {searchOpen && (
                 <SearchSheet onClose={() => setSearchOpen(false)} />
               )}
+              {outboxOpen && (
+                <OutboxSheet
+                  onClose={() => setOutboxOpen(false)}
+                  onReview={reviewChange}
+                  onUseExisting={takeExisting}
+                />
+              )}
+              <LeaveConfirm />
             </>
           )}
         </ActionsContext.Provider>

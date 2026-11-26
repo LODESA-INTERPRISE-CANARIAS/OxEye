@@ -4,6 +4,21 @@
  *
  * Kept separate from the simulator store on purpose: the module is lazy-loaded
  * and must not touch the simulation state.
+ *
+ * Milestone 6 («Sin cobertura»):
+ * - Writes of members that can wait (creates and updates of eight record
+ *   types, `canQueue`) go to an outbox on the device when there is no
+ *   network, the server does not answer, or earlier changes are still
+ *   waiting (to keep their order). The list shows the change at once
+ *   (`optimisticRecord`), marked «Pendiente de enviar», and the outbox is
+ *   replayed in order when the server answers again. A 409 is never
+ *   overwritten: the entry waits for a person to merge it.
+ * - Creates always carry a device id, so a lost response can be replayed.
+ * - The lists are kept on the device (`offline/db.ts`, withheld fields
+ *   removed for guests), so the window reopens without coverage.
+ * - `…/changes` tells which lists to reload; a full reload runs on
+ *   reconnect, on demand and every `FULL_REFRESH_MS` (or every poll when the
+ *   server is older and has no such route).
  */
 import {create} from 'zustand';
 import type {
@@ -19,6 +34,7 @@ import type {
   CategoryScope,
   DelayHypothesis,
   HypothesisInput,
+  IsoInstant,
   LogisticsEvent,
   Note,
   NoteInput,
@@ -36,8 +52,42 @@ import type {
   Warehouse,
   WarehouseInput,
 } from '../../../shared/logistics/contracts.ts';
-import {RECENT_SEARCHES_KEPT} from '../../../shared/logistics/rules.ts';
+import {
+  localIdsIn,
+  type OptimisticContext,
+  type OptimisticRecord,
+} from '../../../shared/logistics/optimistic.ts';
+import {
+  canQueue,
+  enqueue,
+  guardSubsoil,
+  nextToSend,
+  outboxLabel,
+  settleAccepted,
+  referencedIds,
+  unsentRecordIds,
+  type OutboxEntity,
+  type OutboxEntry,
+  type OutboxOp,
+} from '../../../shared/logistics/outbox.ts';
+import {
+  withholdFor,
+  type WithheldKind,
+} from '../../../shared/logistics/redaction.ts';
+import {
+  ACTIVITY_RANGE_MAX,
+  RECENT_SEARCHES_KEPT,
+} from '../../../shared/logistics/rules.ts';
 import {normalize} from '../../../shared/logistics/search.ts';
+import {
+  FULL_REFRESH_MS,
+  listsToReload,
+  replayOutcome,
+  retryDelayMs,
+  SYNC_LISTS,
+  type SyncList,
+} from '../../../shared/logistics/sync.ts';
+import {DEFAULT_TIMEZONE} from '../../../shared/logistics/time.ts';
 import {
   ApiError,
   errorMessage,
@@ -50,6 +100,18 @@ import {sortCompanies, sortContacts, sortOffers} from '../lib/directory';
 import {sortEvents} from '../lib/events';
 import {sortNotes, sortResources, sortWarehouses} from '../lib/inventory';
 import {sortTasks} from '../lib/tasks';
+import * as device from '../offline/db';
+import {
+  alreadyApplied,
+  buildContext,
+  entryRecord,
+  isUnresolved,
+  LIST_OF,
+  overlayList,
+  recordName,
+  uuid,
+  type RecordListKey,
+} from '../offline/local';
 
 export type Phase =
   | 'checking'
@@ -87,6 +149,31 @@ export interface ToastOptions {
   /** How long it stays; a toast with an action stays 6 s by default. */
   durationMs?: number;
 }
+
+/** M6: how a form's save relates to the outbox. */
+export interface WriteOptions {
+  /**
+   * The outbox entry this save resolves («Revisar» a conflict or a rejected
+   * change): it is removed once the new save is accepted or queued.
+   */
+  replaces?: string;
+}
+
+/** M6: leaving with changes that were never sent asks first. */
+export type LeaveRequest = {kind: 'logout'} | {kind: 'org'; orgId: string};
+
+/** What the toast says when a save stayed on this device. */
+export const QUEUED_NOTE =
+  'Guardado en este dispositivo. Se enviará al volver la conexión.';
+
+/** Deletes, applying a hypothesis, categories… never wait in the outbox. */
+export const NEEDS_CONNECTION =
+  'Esto necesita conexión con el servidor. Inténtalo cuando vuelva la cobertura.';
+
+const LOCAL_REF_MESSAGE =
+  'Este cambio apunta a algo que aún no se ha enviado. Escríbelo por su nombre y vuelve a guardar.';
+const DEVICE_STORAGE_FAILED =
+  'No se ha podido guardar en este dispositivo (almacenamiento lleno o desactivado). Lo que has escrito sigue aquí.';
 
 /** Newest first, as the server sends them. */
 function sortHypotheses(list: DelayHypothesis[]): DelayHypothesis[] {
@@ -207,7 +294,8 @@ function conflictCopy<T>(err: unknown): T | null {
   return isApiError(err) &&
     err.code === 'VERSION_CONFLICT' &&
     err.current &&
-    typeof err.current === 'object'
+    typeof err.current === 'object' &&
+    !Array.isArray(err.current)
     ? (err.current as T)
     : null;
 }
@@ -277,24 +365,89 @@ export interface LogisticsState {
   activityError: string | null;
   lastSyncAt: number | null;
 
+  // Milestone 6: offline.
+  /** Changes saved on this device for this user and organization, in order. */
+  outbox: OutboxEntry[];
+  /** Records with something not accepted by the server yet. */
+  unsent: ReadonlySet<string>;
+  /** The outbox is being sent right now. */
+  syncing: boolean;
+  /**
+   * Opened from the device's copy without coverage: the session has not been
+   * confirmed by the server yet and nothing is sent until it is.
+   */
+  fromCache: boolean;
+  /** Logout or organization change waiting for the user's answer. */
+  leave: LeaveRequest | null;
+
   toasts: Toast[];
 
   boot: () => Promise<void>;
   login: (displayName: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  selectOrg: (id: string) => void;
-  refresh: (options?: {silent?: boolean}) => Promise<void>;
+  /**
+   * Signs out. With unsent changes it asks first (`leave`) unless
+   * `discardUnsent`; then the device's copy is wiped.
+   */
+  logout: (options?: {discardUnsent?: boolean}) => Promise<void>;
+  /** Same rule as `logout` for changing organization. */
+  selectOrg: (id: string, options?: {discardUnsent?: boolean}) => void;
+  /** Full reload of every list (or of `lists`). */
+  refresh: (options?: {
+    silent?: boolean;
+    lists?: ReadonlySet<SyncList>;
+  }) => Promise<void>;
+  /** Asks `…/changes` and reloads only what changed (full reload fallback). */
+  pull: () => Promise<void>;
+  /**
+   * Brings the device up to date: reconnects when needed, reloads (in full
+   * when asked, after a reconnect or every `FULL_REFRESH_MS`) and sends the
+   * outbox.
+   */
+  /** `now`: entries waiting for their retry are sent at once. */
+  syncNow: (options?: {full?: boolean; now?: boolean}) => Promise<void>;
+  /** Sends waiting changes one at a time, in order. */
+  replay: () => Promise<void>;
+  /** «Reintentar ahora»: the entry is sent again as soon as possible. */
+  retryEntry: (id: string) => Promise<void>;
+  /**
+   * «Descartar»: drops a change that was never accepted (a new record also
+   * drops the later changes of that record). The list shows the server copy.
+   */
+  discardEntry: (
+    id: string,
+    options?: {
+      /**
+       * «Usar la existente» of a duplicate create: waiting changes that
+       * referenced the discarded record point at this id instead.
+       */
+      useInstead?: string;
+    },
+  ) => Promise<void>;
+  cancelLeave: () => void;
+  /** The success toast of a save, or `QUEUED_NOTE` when it stayed here. */
+  toastSaved: (record: object, message: string, options?: ToastOptions) => void;
+
   createEvent: (
     input: Omit<CreateEventInput, 'organizationId'>,
+    options?: WriteOptions,
   ) => Promise<LogisticsEvent>;
-  updateEvent: (id: string, input: UpdateEventInput) => Promise<LogisticsEvent>;
+  updateEvent: (
+    id: string,
+    input: UpdateEventInput,
+    options?: WriteOptions,
+  ) => Promise<LogisticsEvent>;
   /** Puts a server copy of an event in the list (e.g. after a conflict). */
   upsertEvent: (event: LogisticsEvent) => void;
   createTask: (
     input: Omit<TaskInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Task>;
   /** `input.version` is required. */
-  updateTask: (id: string, input: TaskInput) => Promise<Task>;
+  updateTask: (
+    id: string,
+    input: TaskInput,
+    options?: WriteOptions,
+  ) => Promise<Task>;
   /** Deletes with the version the user saw (409 if it changed since). */
   deleteTask: (task: Task) => Promise<void>;
   /** Puts a server copy of a task in the list (e.g. after a conflict). */
@@ -309,46 +462,76 @@ export interface LogisticsState {
   deleteCategory: (category: Category) => Promise<void>;
   createCompany: (
     input: Omit<CompanyInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Company>;
   /** `input.version` is required. 409 VERSION_CONFLICT or DUPLICATE. */
-  updateCompany: (id: string, input: CompanyInput) => Promise<Company>;
+  updateCompany: (
+    id: string,
+    input: CompanyInput,
+    options?: WriteOptions,
+  ) => Promise<Company>;
   /** Deletes its offers; its people and tasks lose the company. */
   deleteCompany: (company: Company) => Promise<void>;
   upsertCompany: (company: Company) => void;
   createContact: (
     input: Omit<ContactInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Contact>;
-  updateContact: (id: string, input: ContactInput) => Promise<Contact>;
+  updateContact: (
+    id: string,
+    input: ContactInput,
+    options?: WriteOptions,
+  ) => Promise<Contact>;
   /** Tasks and a company that had them as main contact lose the link. */
   deleteContact: (contact: Contact) => Promise<void>;
   upsertContact: (contact: Contact) => void;
   createOffer: (
     input: Omit<OfferInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Offer>;
-  updateOffer: (id: string, input: OfferInput) => Promise<Offer>;
+  updateOffer: (
+    id: string,
+    input: OfferInput,
+    options?: WriteOptions,
+  ) => Promise<Offer>;
   deleteOffer: (offer: Offer) => Promise<void>;
   upsertOffer: (offer: Offer) => void;
 
   // Milestone 4.
   createWarehouse: (
     input: Omit<WarehouseInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Warehouse>;
   /** `input.version` is required. 409 VERSION_CONFLICT or DUPLICATE. */
-  updateWarehouse: (id: string, input: WarehouseInput) => Promise<Warehouse>;
+  updateWarehouse: (
+    id: string,
+    input: WarehouseInput,
+    options?: WriteOptions,
+  ) => Promise<Warehouse>;
   /** Its resources lose the warehouse; notes lose the link. */
   deleteWarehouse: (warehouse: Warehouse) => Promise<void>;
   upsertWarehouse: (warehouse: Warehouse) => void;
   createResource: (
     input: Omit<ResourceInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Resource>;
-  updateResource: (id: string, input: ResourceInput) => Promise<Resource>;
+  updateResource: (
+    id: string,
+    input: ResourceInput,
+    options?: WriteOptions,
+  ) => Promise<Resource>;
   /** Tasks and notes lose it. */
   deleteResource: (resource: Resource) => Promise<void>;
   upsertResource: (resource: Resource) => void;
   createNote: (
     input: Omit<NoteInput, 'organizationId' | 'version'>,
+    options?: WriteOptions,
   ) => Promise<Note>;
-  updateNote: (id: string, input: NoteInput) => Promise<Note>;
+  updateNote: (
+    id: string,
+    input: NoteInput,
+    options?: WriteOptions,
+  ) => Promise<Note>;
   deleteNote: (note: Note) => Promise<void>;
   upsertNote: (note: Note) => void;
   // Milestone 5: delay hypotheses.
@@ -373,6 +556,17 @@ export interface LogisticsState {
     entityType: string,
     entityId: string,
     limit?: number,
+  ) => Promise<ActivityEntry[]>;
+  /**
+   * The organization's activity of `from` ≤ at < `to` (day close), newest
+   * first, up to ACTIVITY_RANGE_MAX (not kept in the store). An expired
+   * session ends the usual way; an abort rejects with an `AbortError`
+   * that does not count as a lost connection.
+   */
+  loadDayActivity: (
+    from: IsoInstant,
+    to: IsoInstant,
+    signal?: AbortSignal,
   ) => Promise<ActivityEntry[]>;
 
   /** Loads the recent searches (server for members, device for guests). */
@@ -428,6 +622,191 @@ let resourceEpoch = 0;
 let noteEpoch = 0;
 /** Same as `writeEpoch`, for delay hypotheses (milestone 5). */
 let hypothesisEpoch = 0;
+
+// ---------------------------------------------------------------- M6 memory
+
+/** Opaque `…/changes` cursor of the current user and organization. */
+let cursor: string | null = null;
+/** null = not asked yet; false = the server has no `…/changes` route. */
+let changesSupported: boolean | null = null;
+/** When the last full reload finished. */
+let lastFullAt = 0;
+/** Latest server copy of records that have outbox entries. */
+const serverCopy = new Map<string, unknown>();
+/** Records with a waiting update that the server no longer has. */
+const goneOnServer = new Set<string>();
+/**
+ * Device ids of creates whose request failed at network level, by content:
+ * saving the same thing again reuses the id, so a create that did reach the
+ * server is answered with the existing record instead of a duplicate.
+ */
+const deviceIds = new Map<string, string>();
+/** Records returned by a save that stayed on this device. */
+const queuedRecords = new WeakSet<object>();
+
+/** Whether a save returned this record from the outbox (not the server). */
+export const wasQueued = (record: object): boolean => queuedRecords.has(record);
+let replaying = false;
+let replayTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryStep = 0;
+/** Bumped when the device copy is wiped: pending cache writes are dropped. */
+let persistGen = 0;
+/**
+ * Whose outbox the device holds right now. Cleared before a wipe (logout,
+ * organization change), kept on session expiry (same person comes back).
+ */
+let deviceOwner: {userId: string; orgId: string} | null = null;
+
+const ownsDevice = (entry: OutboxEntry) =>
+  deviceOwner?.userId === entry.userId && deviceOwner.orgId === entry.orgId;
+
+const EMPTY_UNSENT: ReadonlySet<string> = new Set();
+
+function resetOfflineMemory(): void {
+  cursor = null;
+  changesSupported = null;
+  lastFullAt = 0;
+  serverCopy.clear();
+  goneOnServer.clear();
+  deviceIds.clear();
+  retryStep = 0;
+  if (replayTimer) clearTimeout(replayTimer);
+  if (retryTimer) clearTimeout(retryTimer);
+  replayTimer = null;
+  retryTimer = null;
+  persistGen++;
+  deviceOwner = null;
+}
+
+/** Waiting writes reloaded from the device: nothing is in flight anymore. */
+function settleLoaded(entries: OutboxEntry[]): OutboxEntry[] {
+  return entries.map(e =>
+    e.status === 'sending' ? {...e, status: 'pending' as const} : e,
+  );
+}
+
+const fingerprint = (entity: OutboxEntity, raw: unknown) =>
+  `${entity}|${JSON.stringify(raw)}`;
+
+/** `value` with every occurrence of id `from` (lowercase) replaced by `to`. */
+function swapId(value: unknown, from: string, to: string): unknown {
+  if (typeof value === 'string') {
+    return value.toLowerCase() === from ? to : value;
+  }
+  if (Array.isArray(value)) return value.map(v => swapId(v, from, to));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, swapId(v, from, to)]),
+    );
+  }
+  return value;
+}
+
+const RECORD_LISTS = Object.values(LIST_OF) as RecordListKey[];
+
+const ENTITY_OF: Record<RecordListKey, OutboxEntity> = {
+  events: 'event',
+  tasks: 'task',
+  companies: 'company',
+  contacts: 'contact',
+  offers: 'offer',
+  warehouses: 'warehouse',
+  resources: 'resource',
+  notes: 'note',
+};
+
+type AnyList = {id: string}[];
+
+const SORT_OF: Record<RecordListKey, (list: AnyList) => AnyList> = {
+  events: l => sortEvents(l as LogisticsEvent[]),
+  tasks: l => sortTasks(l as Task[]),
+  companies: l => sortCompanies(l as Company[]),
+  contacts: l => sortContacts(l as Contact[]),
+  offers: l => sortOffers(l as Offer[]),
+  warehouses: l => sortWarehouses(l as Warehouse[]),
+  resources: l => sortResources(l as Resource[]),
+  notes: l => sortNotes(l as Note[]),
+};
+
+/** API call of each outbox type. */
+const SEND: Record<
+  OutboxEntity,
+  {
+    create: (token: string, body: Record<string, unknown>) => Promise<unknown>;
+    update: (
+      token: string,
+      id: string,
+      body: Record<string, unknown>,
+    ) => Promise<unknown>;
+  }
+> = {
+  event: {
+    create: (t, b) => api.createEvent(t, b as unknown as CreateEventInput),
+    update: (t, id, b) =>
+      api.updateEvent(t, id, b as unknown as UpdateEventInput),
+  },
+  task: {
+    create: (t, b) => api.createTask(t, b as unknown as TaskInput),
+    update: (t, id, b) => api.updateTask(t, id, b as unknown as TaskInput),
+  },
+  company: {
+    create: (t, b) => api.createCompany(t, b as unknown as CompanyInput),
+    update: (t, id, b) =>
+      api.updateCompany(t, id, b as unknown as CompanyInput),
+  },
+  contact: {
+    create: (t, b) => api.createContact(t, b as unknown as ContactInput),
+    update: (t, id, b) =>
+      api.updateContact(t, id, b as unknown as ContactInput),
+  },
+  offer: {
+    create: (t, b) => api.createOffer(t, b as unknown as OfferInput),
+    update: (t, id, b) => api.updateOffer(t, id, b as unknown as OfferInput),
+  },
+  warehouse: {
+    create: (t, b) => api.createWarehouse(t, b as unknown as WarehouseInput),
+    update: (t, id, b) =>
+      api.updateWarehouse(t, id, b as unknown as WarehouseInput),
+  },
+  resource: {
+    create: (t, b) => api.createResource(t, b as unknown as ResourceInput),
+    update: (t, id, b) =>
+      api.updateResource(t, id, b as unknown as ResourceInput),
+  },
+  note: {
+    create: (t, b) => api.createNote(t, b as unknown as NoteInput),
+    update: (t, id, b) => api.updateNote(t, id, b as unknown as NoteInput),
+  },
+};
+
+/**
+ * Whether a write must wait behind the outbox: no network, no server, or
+ * something earlier is still to be sent (order), or this record (or a new
+ * record it points at) has a change that has not gone through.
+ */
+function mustQueue(
+  entries: readonly OutboxEntry[],
+  connection: Connection,
+  recordId: string,
+  input: Record<string, unknown>,
+): boolean {
+  if (!browserOnline() || connection !== 'online') return true;
+  if (entries.some(e => e.status === 'pending' || e.status === 'sending')) {
+    return true;
+  }
+  const refs = referencedIds(input);
+  return entries.some(
+    e =>
+      isUnresolved(e) &&
+      (e.recordId === recordId ||
+        (e.op === 'create' && refs.has(e.recordId.toLowerCase()))),
+  );
+}
+
+function subsoilDroppedText(label: string): string {
+  return `«Subsuelo revisado» se ha retirado de ${label}: la tarea cambió de lugar, de carga o de recursos mientras no había conexión. Revísalo de nuevo en el simulador si hace falta.`;
+}
 
 /**
  * Same content. Versions alone are not enough: a renamed venue or company
@@ -571,25 +950,127 @@ const IDLE_STATES = {
   activityState: 'idle',
 } satisfies Partial<LogisticsState>;
 
+const NO_OUTBOX = {
+  outbox: [],
+  unsent: EMPTY_UNSENT,
+  syncing: false,
+  leave: null,
+} satisfies Partial<LogisticsState>;
+
+const ALL_LISTS: ReadonlySet<SyncList> = new Set(SYNC_LISTS);
+
+/** A rejected `Promise.allSettled` slot for a list that was not asked for. */
+const SKIP = Symbol('skip');
+
+/** How long the boot waits for the server when the device has a copy. */
+const BOOT_PROBE_MS = 4000;
+/** Waits before trying to reach the server again while working locally. */
+const RECONNECT_STEPS_MS = [5_000, 15_000, 30_000, 60_000];
+
+/** What the device has for a user, to open without the server. */
+interface LocalCopy {
+  orgId: string;
+  organizations: Organization[];
+  lists: Partial<Record<SyncList, unknown[]>>;
+  savedAt: number | null;
+  outbox: OutboxEntry[];
+  cursor: string | null;
+}
+
+async function loadLocalCopy(stored: StoredSession): Promise<LocalCopy | null> {
+  // Only the same person with the same role opens the copy: a member turned
+  // guest must not see what was kept for members.
+  const owner = await device.cacheOwner();
+  if (!owner || !device.ownedBy(owner, stored.user)) return null;
+  const cached = await device.loadSession(stored.user.id);
+  if (!cached || cached.user.role !== stored.user.role) return null;
+  const orgId = pickOrg(cached.organizations, readStoredOrg() ?? cached.orgId);
+  if (!orgId) return null;
+  const {lists, savedAt} = await device.loadLists(stored.user.id, orgId);
+  if (!Object.keys(lists).length) return null;
+  const [outbox, savedCursor] = await Promise.all([
+    device.loadOutbox(stored.user.id, orgId),
+    device.loadCursor(stored.user.id, orgId),
+  ]);
+  return {
+    orgId,
+    organizations: cached.organizations,
+    lists,
+    savedAt,
+    outbox: settleLoaded(outbox),
+    cursor: savedCursor,
+  };
+}
+
+const arr = <T>(value: unknown): T[] =>
+  Array.isArray(value) ? (value as T[]) : [];
+
+/** The context an entry's optimistic record is built in. */
+function contextOf(s: LogisticsState, entry: OutboxEntry): OptimisticContext {
+  const zone =
+    s.organizations.find(o => o.id === entry.orgId)?.timezone ||
+    DEFAULT_TIMEZONE;
+  const name =
+    s.session?.user.id === entry.userId ? s.session.user.displayName : '';
+  return buildContext(
+    s,
+    {id: entry.userId, displayName: name},
+    entry.orgId,
+    zone,
+    entry.queuedAt,
+  );
+}
+
+/**
+ * The record as the user queued it: the entry's change over the copy they
+ * edited (`base`), or the new record of a create. «Revisar» opens it.
+ */
+export function queuedRecord(entry: OutboxEntry): OptimisticRecord {
+  return entryRecord(
+    entry,
+    entry.op === 'update' ? (entry.base as OptimisticRecord | null) : null,
+    contextOf(useLogisticsStore.getState(), entry),
+  );
+}
+
 export const useLogisticsStore = create<LogisticsState>()((set, get) => {
   /** Records the outcome of a server call in the sync chip. */
-  const markReachable = () =>
+  const markReachable = () => {
+    const was = get().connection;
     set({connection: browserOnline() ? 'online' : 'offline'});
+    // The server answers again: what waited goes out now.
+    if (was !== 'online' && get().connection === 'online') {
+      retryStep = 0;
+      if (get().outbox.length) scheduleReplay(0);
+    }
+  };
 
   const markFailure = (err: unknown) => {
     if (isApiError(err) && err.isUnavailable) {
       set({connection: browserOnline() ? 'unavailable' : 'offline'});
+      // Keep knocking, so the chip and the outbox recover by themselves.
+      if (get().phase === 'ready' && browserOnline() && !retryTimer) {
+        scheduleReconnect();
+      }
     }
   };
 
   const expireSession = () => {
     writeStoredSession(null);
+    // The device keeps its copy and the outbox for this person: signing in
+    // again as the same user picks them up (`prepareDevice`).
+    if (replayTimer) clearTimeout(replayTimer);
+    if (retryTimer) clearTimeout(retryTimer);
+    replayTimer = null;
+    retryTimer = null;
     set({
       phase: 'login',
       session: null,
       organizations: [],
       ...EMPTY_RECORDS,
       ...IDLE_STATES,
+      ...NO_OUTBOX,
+      fromCache: false,
       sessionNotice: 'Tu sesión ha caducado. Vuelve a entrar para seguir.',
     });
   };
@@ -613,6 +1094,22 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
   }
 
   /**
+   * Fails at once, without waiting for a timeout, when there is surely no
+   * server (no network, or opened from the device's copy). After a failed
+   * call (`unavailable`) it still tries: the server may be back.
+   */
+  const requireConnection = () => {
+    const s = get();
+    if (!browserOnline() || s.connection === 'offline' || s.fromCache) {
+      throw new ApiError({
+        code: 'UNAVAILABLE',
+        status: 0,
+        message: NEEDS_CONNECTION,
+      });
+    }
+  };
+
+  /**
    * 409 DUPLICATE: the existing company may not be in our list yet (created
    * by someone else since the last refresh). Keep it, so «Abrir la existente»
    * opens a live record, and bring the rest up to date quietly.
@@ -627,10 +1124,938 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (kind === 'company') get().upsertCompany(err.current as Company);
       else get().upsertWarehouse(err.current as Warehouse);
       void get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     }
   };
+
+  // -------------------------------------------------------------- outbox
+
+  const ctxFor = (entry: OutboxEntry) => contextOf(get(), entry);
+
+  const overlayed = (
+    key: RecordListKey,
+    list: AnyList,
+    entries: readonly OutboxEntry[] = get().outbox,
+  ): AnyList =>
+    overlayList(
+      list,
+      entries,
+      ENTITY_OF[key],
+      ctxFor,
+      serverCopy,
+      goneOnServer,
+      SORT_OF[key],
+    );
+
+  /** Sets the outbox and shows its changes in every record list. */
+  const setOutbox = (next: OutboxEntry[]) => {
+    const unsent = unsentRecordIds(next);
+    for (const id of [...serverCopy.keys()]) {
+      if (!unsent.has(id)) serverCopy.delete(id);
+    }
+    for (const id of [...goneOnServer]) {
+      if (!unsent.has(id)) goneOnServer.delete(id);
+    }
+    const patch: Record<string, unknown> = {outbox: next, unsent};
+    for (const key of RECORD_LISTS) {
+      const list = get()[key] as AnyList;
+      const shown = overlayed(key, list, next);
+      if (shown !== list) patch[key] = shown;
+    }
+    set(patch as Partial<LogisticsState>);
+  };
+
+  /** Records the server copies of records with entries, before overlaying. */
+  const captureServer = (
+    key: RecordListKey,
+    list: AnyList,
+    complete: boolean,
+  ) => {
+    const entity = ENTITY_OF[key];
+    for (const e of get().outbox) {
+      if (e.entity !== entity || !isUnresolved(e)) continue;
+      const hit = list.find(r => r.id === e.recordId);
+      if (hit) {
+        serverCopy.set(e.recordId, hit);
+        goneOnServer.delete(e.recordId);
+      } else if (complete && e.op === 'update') {
+        serverCopy.delete(e.recordId);
+        goneOnServer.add(e.recordId);
+      }
+    }
+  };
+
+  /** Puts a server copy of a record in its list (version-aware). */
+  const upsertRecord = (entity: OutboxEntity, record: unknown) => {
+    const s = get();
+    switch (entity) {
+      case 'event':
+        return s.upsertEvent(record as LogisticsEvent);
+      case 'task':
+        return s.upsertTask(record as Task);
+      case 'company':
+        return s.upsertCompany(record as Company);
+      case 'contact':
+        return s.upsertContact(record as Contact);
+      case 'offer':
+        return s.upsertOffer(record as Offer);
+      case 'warehouse':
+        return s.upsertWarehouse(record as Warehouse);
+      case 'resource':
+        return s.upsertResource(record as Resource);
+      case 'note':
+        return s.upsertNote(record as Note);
+    }
+  };
+
+  /** Drops a record from its list (a create that only existed here). */
+  const dropRecord = (entity: OutboxEntity, id: string) => {
+    const key = LIST_OF[entity];
+    const list = get()[key] as AnyList;
+    if (list.some(r => r.id === id)) {
+      set({[key]: list.filter(r => r.id !== id)} as Partial<LogisticsState>);
+    }
+  };
+
+  const replaceEntry = async (entry: OutboxEntry) => {
+    // A reply that lands after logout or an organization change must not
+    // put the entry back into a wiped device.
+    if (!ownsDevice(entry)) return;
+    await device.putEntry(entry);
+    setOutbox(get().outbox.map(e => (e.id === entry.id ? entry : e)));
+  };
+
+  /** Removes entries and shows what the server has for their records. */
+  const removeEntries = async (ids: readonly string[]) => {
+    const all = get().outbox;
+    const gone = all.filter(e => ids.includes(e.id));
+    if (!gone.length) return;
+    const rest = all.filter(e => !ids.includes(e.id));
+    await Promise.all(gone.map(e => device.deleteEntry(e.id)));
+    for (const e of gone) {
+      if (rest.some(r => r.recordId === e.recordId)) continue;
+      const key = LIST_OF[e.entity];
+      const list = get()[key] as AnyList;
+      // The server no longer has it: the edited copy must not come back.
+      const gone =
+        goneOnServer.has(e.recordId) || e.error?.code === 'NOT_FOUND';
+      const server = gone
+        ? null
+        : (serverCopy.get(e.recordId) ??
+          (e.op === 'update' ? (e.current ?? e.base) : null));
+      if (!server) {
+        if (e.op === 'create' || gone) dropRecord(e.entity, e.recordId);
+        continue;
+      }
+      const next = SORT_OF[key]([
+        ...list.filter(r => r.id !== e.recordId),
+        server as {id: string},
+      ]);
+      set({[key]: next} as Partial<LogisticsState>);
+    }
+    setOutbox(rest);
+  };
+
+  /** Device id of a create (reused after a network failure, see `deviceIds`). */
+  const deviceIdFor = (entity: OutboxEntity, raw: unknown) =>
+    deviceIds.get(fingerprint(entity, raw)) ?? uuid();
+
+  const scheduleReplay = (ms: number) => {
+    if (replayTimer) clearTimeout(replayTimer);
+    replayTimer = setTimeout(
+      () => {
+        replayTimer = null;
+        void get().replay();
+      },
+      Math.max(0, ms),
+    );
+  };
+
+  /** Next automatic attempt of entries waiting for a retry. */
+  const scheduleNextAttempt = () => {
+    const waits = get()
+      .outbox.filter(e => e.status === 'pending' && e.nextAttemptAt !== null)
+      .map(e => e.nextAttemptAt as number);
+    if (waits.length) scheduleReplay(Math.min(...waits) - Date.now());
+  };
+
+  /** Keeps trying to reach the server while working on the device's copy. */
+  const scheduleReconnect = () => {
+    if (retryTimer) clearTimeout(retryTimer);
+    const ms =
+      RECONNECT_STEPS_MS[Math.min(retryStep, RECONNECT_STEPS_MS.length - 1)];
+    retryStep++;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void get().syncNow();
+    }, ms);
+  };
+
+  /** Stores a write in the outbox and shows it at once. */
+  const queueWrite = async (
+    entity: OutboxEntity,
+    op: OutboxOp,
+    recordId: string,
+    input: Record<string, unknown>,
+    options: WriteOptions,
+  ): Promise<OptimisticRecord> => {
+    const s = get();
+    const session = s.session!;
+    const orgId = s.orgId!;
+    if (
+      deviceOwner?.userId !== session.user.id ||
+      deviceOwner.orgId !== orgId
+    ) {
+      // The device copy is being switched over (organization change).
+      throw new ApiError({
+        code: 'UNAVAILABLE',
+        status: 0,
+        message: DEVICE_STORAGE_FAILED,
+      });
+    }
+    const key = LIST_OF[entity];
+    const list = s[key] as unknown as OptimisticRecord[];
+    const shown =
+      op === 'update' ? (list.find(r => r.id === recordId) ?? null) : null;
+    if (op === 'update' && !shown) {
+      throw new ApiError({code: 'NOT_FOUND', status: 0});
+    }
+    const draft: OutboxEntry = {
+      id: uuid(),
+      seq: 0,
+      userId: session.user.id,
+      orgId,
+      entity,
+      op,
+      recordId,
+      input,
+      base: shown,
+      values: null,
+      label: '',
+      queuedAt: new Date().toISOString(),
+      status: 'pending',
+      attempts: 0,
+      nextAttemptAt: null,
+      error: null,
+      current: null,
+      dropped: [],
+    };
+    const replaced = options.replaces
+      ? s.outbox.find(e => e.id === options.replaces)
+      : undefined;
+    if (
+      replaced &&
+      replaced.op === 'create' &&
+      op === 'create' &&
+      replaced.entity === entity &&
+      replaced.recordId === recordId
+    ) {
+      // A reviewed create is rewritten where it stands (same id and seq):
+      // later changes of the new record still replay after it.
+      const rewritten: OutboxEntry = {
+        ...replaced,
+        input,
+        values: null,
+        status: 'pending',
+        attempts: 0,
+        nextAttemptAt: null,
+        error: null,
+        current: null,
+        dropped: [],
+      };
+      rewritten.label = outboxLabel(
+        entity,
+        'create',
+        recordName(entity, entryRecord(rewritten, null, ctxFor(rewritten))),
+      );
+      if (!(await device.putEntry(rewritten))) {
+        throw new ApiError({
+          code: 'INTERNAL',
+          status: 0,
+          message: DEVICE_STORAGE_FAILED,
+        });
+      }
+      setOutbox(get().outbox.map(e => (e.id === rewritten.id ? rewritten : e)));
+      const record =
+        (get()[key] as unknown as OptimisticRecord[]).find(
+          r => r.id === recordId,
+        ) ?? entryRecord(rewritten, null, ctxFor(rewritten));
+      queuedRecords.add(record);
+      scheduleReplay(0);
+      return record;
+    }
+    const removed = replaced ? [replaced] : [];
+    const before = s.outbox.filter(e => e.id !== options.replaces);
+    const folded = enqueue(before, draft);
+    // The label follows the entry's own operation (an edit of a record
+    // created offline is still «Nueva …») and the record's current name.
+    const name = recordName(entity, entryRecord(draft, shown, ctxFor(draft)));
+    const next = folded.map(e =>
+      before.includes(e) ? e : {...e, label: outboxLabel(e.entity, e.op, name)},
+    );
+    for (const e of next) {
+      if (before.includes(e)) continue;
+      if (!(await device.putEntry(e))) {
+        throw new ApiError({
+          code: 'INTERNAL',
+          status: 0,
+          message: DEVICE_STORAGE_FAILED,
+        });
+      }
+    }
+    await Promise.all(removed.map(e => device.deleteEntry(e.id)));
+    setOutbox(next);
+    const record =
+      (get()[key] as unknown as OptimisticRecord[]).find(
+        r => r.id === recordId,
+      ) ?? entryRecord(draft, shown, ctxFor(draft));
+    queuedRecords.add(record);
+    scheduleReplay(0);
+    return record;
+  };
+
+  /**
+   * One write of a record: straight to the server when it can, otherwise to
+   * the outbox. Online failures behave as before (the form keeps the text and
+   * shows the error); after a network failure the next save waits here.
+   */
+  async function write<R>(
+    entity: OutboxEntity,
+    op: OutboxOp,
+    id: string | null,
+    raw: Record<string, unknown>,
+    options: WriteOptions = {},
+  ): Promise<R> {
+    const s = get();
+    const orgId = s.orgId;
+    const session = s.session;
+    if (!orgId || !session) throw new ApiError({code: 'VALIDATION', status: 0});
+    const input: Record<string, unknown> = {...raw};
+    const replaced = options.replaces
+      ? s.outbox.find(e => e.id === options.replaces)
+      : undefined;
+    if (op === 'create') {
+      input.organizationId = orgId;
+      // A reviewed new record keeps its device id (later changes point at it).
+      if (typeof input.id !== 'string') {
+        input.id =
+          replaced?.op === 'create' && replaced.entity === entity
+            ? replaced.recordId
+            : deviceIdFor(entity, raw);
+      }
+    }
+    const recordId = op === 'create' ? String(input.id) : String(id);
+    if (localIdsIn(input).length) {
+      throw new ApiError({
+        code: 'VALIDATION',
+        status: 0,
+        message: LOCAL_REF_MESSAGE,
+      });
+    }
+    const others = s.outbox.filter(e => e.id !== options.replaces);
+    if (
+      canQueue(session.user.role, entity, op) &&
+      mustQueue(others, s.connection, recordId, input)
+    ) {
+      const queued = await queueWrite(entity, op, recordId, input, options);
+      // The entry carries the id now: a second save is a second record.
+      if (op === 'create') deviceIds.delete(fingerprint(entity, raw));
+      return queued as R;
+    }
+    // A reply that lands after logout or an organization change must not
+    // touch the next person's lists.
+    const stillHere = () =>
+      get().session?.user.id === session.user.id && get().orgId === orgId;
+    try {
+      const saved = await authed(token =>
+        op === 'create'
+          ? SEND[entity].create(token, input)
+          : SEND[entity].update(token, recordId, input),
+      );
+      if (!stillHere()) return saved as R;
+      deviceIds.delete(fingerprint(entity, raw));
+      if (options.replaces) await removeEntries([options.replaces]);
+      upsertRecord(entity, saved);
+      void get()
+        .pull()
+        .catch(() => undefined);
+      return saved as R;
+    } catch (err) {
+      if (!stillHere()) throw err;
+      if (op === 'create' && isApiError(err) && err.isUnavailable) {
+        deviceIds.set(fingerprint(entity, raw), recordId);
+      }
+      if (op === 'update') {
+        const current = conflictCopy<unknown>(err);
+        // Keep the list honest: show what the server has now.
+        if (current) upsertRecord(entity, current);
+      }
+      if (entity === 'company' || entity === 'warehouse') {
+        keepDuplicate(err, entity);
+      }
+      throw err;
+    }
+  }
+
+  /** The server accepted a replayed write (or already had it). */
+  const accept = async (entry: OutboxEntry, saved: OptimisticRecord) => {
+    if (!ownsDevice(entry)) return;
+    const rest = get().outbox.filter(e => e.id !== entry.id);
+    // Rebase later entries only past this user's own write (M6 review):
+    // otherwise they meet a 409 and the merge.
+    const rebased = settleAccepted(get().outbox, entry, saved.version);
+    await Promise.all(
+      rebased.filter(e => !rest.includes(e)).map(e => device.putEntry(e)),
+    );
+    await device.deleteEntry(entry.id);
+    if (saved.id !== entry.recordId) {
+      // An older server ignored the device id: the local placeholder goes.
+      dropRecord(entry.entity, entry.recordId);
+    }
+    serverCopy.set(saved.id, saved);
+    goneOnServer.delete(saved.id);
+    upsertRecord(entry.entity, saved);
+    setOutbox(rebased);
+  };
+
+  /** A replayed write failed; true when the replay should stop for now. */
+  const fail = async (entry: OutboxEntry, err: unknown): Promise<boolean> => {
+    // The device changed hands while the request ran: nothing to record.
+    if (!ownsDevice(entry)) return true;
+    const e = isApiError(err)
+      ? err
+      : new ApiError({code: 'INTERNAL', status: 0});
+    if (
+      e.code === 'VERSION_CONFLICT' &&
+      alreadyApplied(entry, e.current, ctxFor(entry))
+    ) {
+      // Our own change came back (a lost response): nothing to ask.
+      await accept(entry, e.current as OptimisticRecord);
+      return false;
+    }
+    const outcome = replayOutcome(e.code, entry.attempts);
+    const error = {
+      code: e.code,
+      message: e.message,
+      ...(e.fields ? {fields: e.fields} : {}),
+    };
+    if (outcome === 'retry') {
+      await replaceEntry({
+        ...entry,
+        status: 'pending',
+        nextAttemptAt:
+          Date.now() + retryDelayMs(entry.attempts, e.retryAfterSeconds),
+        error,
+      });
+      return true;
+    }
+    if (outcome === 'paused') {
+      // The session ended: wait for the same person, as it was.
+      await replaceEntry({
+        ...entry,
+        status: 'pending',
+        attempts: Math.max(0, entry.attempts - 1),
+        nextAttemptAt: null,
+      });
+      return true;
+    }
+    const current =
+      e.current && typeof e.current === 'object' && !Array.isArray(e.current)
+        ? e.current
+        : null;
+    if (outcome === 'conflict') {
+      if (current) {
+        if (entry.op === 'update') serverCopy.set(entry.recordId, current);
+        // The list shows what the server has; nothing is overwritten.
+        upsertRecord(entry.entity, current);
+      }
+      await replaceEntry({
+        ...entry,
+        status: 'conflict',
+        error,
+        current,
+        nextAttemptAt: null,
+      });
+      get().toast(
+        e.code === 'DUPLICATE'
+          ? `No se ha enviado ${entry.label}: ya existe un registro con ese nombre. Revísalo en «Cambios pendientes».`
+          : `${entry.label}: otra persona lo cambió mientras no había conexión. Nada se ha sobrescrito; revísalo en «Cambios pendientes».`,
+        'info',
+        {durationMs: 8000},
+      );
+      return false;
+    }
+    // Rejected: the server refused the content.
+    if (e.code === 'NOT_FOUND' && entry.op === 'update') {
+      goneOnServer.add(entry.recordId);
+      serverCopy.delete(entry.recordId);
+      dropRecord(entry.entity, entry.recordId);
+    }
+    await replaceEntry({
+      ...entry,
+      status: 'rejected',
+      error,
+      nextAttemptAt: null,
+    });
+    get().toast(
+      `No se ha enviado ${entry.label}: ${e.message} Revísalo en «Cambios pendientes».`,
+      'error',
+      {durationMs: 8000},
+    );
+    return false;
+  };
+
+  /**
+   * Deleting a record that only exists on this device: its waiting changes
+   * are dropped instead of asking the server. True when that was the case.
+   */
+  const discardLocalCreate = async (
+    entity: OutboxEntity,
+    id: string,
+  ): Promise<boolean> => {
+    const entries = get().outbox.filter(
+      e => e.entity === entity && e.recordId === id,
+    );
+    if (!entries.some(e => e.op === 'create')) return false;
+    await removeEntries(entries.map(e => e.id));
+    dropRecord(entity, id);
+    return true;
+  };
+
+  /** After a delete accepted by the server, its waiting changes go too. */
+  const forgetRecord = async (id: string) => {
+    const ids = get()
+      .outbox.filter(e => e.recordId === id)
+      .map(e => e.id);
+    if (!ids.length) return;
+    await Promise.all(ids.map(x => device.deleteEntry(x)));
+    setOutbox(get().outbox.filter(e => !ids.includes(e.id)));
+  };
+
+  /**
+   * Before a user's data lands on this device: another person's copy is
+   * wiped, the session is remembered, and the user's outbox comes back.
+   */
+  const prepareDevice = async (
+    user: SessionUser,
+    orgId: string | null,
+    organizations: Organization[],
+  ): Promise<OutboxEntry[]> => {
+    const owner = await device.cacheOwner();
+    if (device.wipePending() || !device.ownedBy(owner, user)) {
+      // Another person, the same person with another role, or a wipe that
+      // did not complete earlier.
+      resetOfflineMemory();
+      if (!(await device.wipeDevice())) {
+        // Nothing is kept or queued here until a wipe succeeds (next boot).
+        return [];
+      }
+    }
+    await device.saveSession({
+      user,
+      organizations,
+      orgId,
+      savedAt: Date.now(),
+    });
+    deviceOwner = orgId ? {userId: user.id, orgId} : null;
+    return orgId ? settleLoaded(await device.loadOutbox(user.id, orgId)) : [];
+  };
+
+  /** Opens the window from the device's copy, without the server. */
+  const openLocal = (
+    stored: StoredSession,
+    local: LocalCopy,
+    connection: Connection,
+  ) => {
+    cursor = local.cursor;
+    changesSupported = null;
+    deviceOwner = {userId: stored.user.id, orgId: local.orgId};
+    const l = local.lists;
+    set({
+      phase: 'ready',
+      session: stored,
+      organizations: local.organizations,
+      orgId: local.orgId,
+      sessionNotice: null,
+      connection,
+      fromCache: true,
+      events: arr(l.events),
+      venues: arr(l.venues),
+      tasks: arr(l.tasks),
+      companies: arr(l.companies),
+      categories: arr(l.categories),
+      contacts: arr(l.contacts),
+      offers: arr(l.offers),
+      warehouses: arr(l.warehouses),
+      resources: arr(l.resources),
+      notes: arr(l.notes),
+      hypotheses: arr(l.hypotheses),
+      activity: arr(l.activity),
+      eventsState: 'ready',
+      tasksState: 'ready',
+      companiesState: 'ready',
+      contactsState: 'ready',
+      offersState: 'ready',
+      warehousesState: 'ready',
+      resourcesState: 'ready',
+      notesState: 'ready',
+      hypothesesState: 'ready',
+      activityState: 'ready',
+      lastSyncAt: local.savedAt,
+    });
+    // Changes queued just before the tab closed may be newer than the cached
+    // lists: overlay them, so the lists and the day close show them.
+    setOutbox(local.outbox);
+    retryStep = 0;
+    scheduleReconnect();
+  };
+
+  /**
+   * The server answers again: confirms the session (opened from the device)
+   * or simply the connection. False when it is still out of reach.
+   */
+  const reconnect = async (): Promise<boolean> => {
+    const session = get().session;
+    if (!session) return false;
+    try {
+      const health = await api.health();
+      if (health.database !== 'ok') {
+        set({connection: 'unavailable'});
+        return false;
+      }
+    } catch {
+      set({connection: browserOnline() ? 'unavailable' : 'offline'});
+      return false;
+    }
+    if (!get().fromCache) {
+      set({connection: 'online'});
+      return true;
+    }
+    try {
+      const me = await api.me(session.token);
+      if (get().session?.token !== session.token) return false;
+      const next = {...session, user: me.user};
+      writeStoredSession(next);
+      const orgId = pickOrg(me.organizations, get().orgId);
+      const sameOrg = orgId === get().orgId;
+      set({
+        session: next,
+        organizations: me.organizations,
+        orgId,
+        fromCache: false,
+        connection: 'online',
+        sessionNotice: null,
+        ...(sameOrg ? {} : {...EMPTY_RECORDS, ...NO_OUTBOX}),
+      });
+      if (!sameOrg) {
+        writeStoredOrg(orgId);
+        const entries = await prepareDevice(me.user, orgId, me.organizations);
+        if (get().orgId === orgId) setOutbox(entries);
+      } else {
+        void device.saveSession({
+          user: me.user,
+          organizations: me.organizations,
+          orgId,
+          savedAt: Date.now(),
+        });
+      }
+      return true;
+    } catch (err) {
+      if (isApiError(err) && err.code === 'UNAUTHENTICATED') {
+        // The usual expiry: the outbox stays on the device, paused.
+        expireSession();
+        return false;
+      }
+      set({connection: browserOnline() ? 'unavailable' : 'offline'});
+      return false;
+    }
+  };
+
+  /**
+   * Reloads `lists` from the server. A full reload also asks `…/changes`
+   * for a fresh cursor. True when every list asked for arrived.
+   */
+  async function load(
+    lists: ReadonlySet<SyncList>,
+    silent: boolean,
+  ): Promise<boolean> {
+    const orgId = get().orgId;
+    if (!orgId || get().phase !== 'ready' || !get().session) return false;
+    if (get().fromCache) return false;
+    const want = (l: SyncList) => lists.has(l);
+    const full = SYNC_LISTS.every(want);
+    if (!silent) {
+      const loading: Partial<LogisticsState> = {};
+      if (want('events')) {
+        Object.assign(loading, {eventsState: 'loading', eventsError: null});
+      }
+      if (want('tasks')) {
+        Object.assign(loading, {tasksState: 'loading', tasksError: null});
+      }
+      if (want('activity')) {
+        Object.assign(loading, {activityState: 'loading', activityError: null});
+      }
+      if (want('companies')) {
+        Object.assign(loading, {
+          companiesState: 'loading',
+          companiesError: null,
+        });
+      }
+      if (want('contacts')) {
+        Object.assign(loading, {contactsState: 'loading', contactsError: null});
+      }
+      if (want('offers')) {
+        Object.assign(loading, {offersState: 'loading', offersError: null});
+      }
+      if (want('warehouses')) {
+        Object.assign(loading, {
+          warehousesState: 'loading',
+          warehousesError: null,
+        });
+      }
+      if (want('resources')) {
+        Object.assign(loading, {
+          resourcesState: 'loading',
+          resourcesError: null,
+        });
+      }
+      if (want('notes')) {
+        Object.assign(loading, {notesState: 'loading', notesError: null});
+      }
+      set(loading);
+    }
+    const epoch = writeEpoch;
+    const tEpoch = taskEpoch;
+    const coEpoch = companyEpoch;
+    const ctEpoch = contactEpoch;
+    const ofEpoch = offerEpoch;
+    const caEpoch = categoryEpoch;
+    const whEpoch = warehouseEpoch;
+    const reEpoch = resourceEpoch;
+    const noEpoch = noteEpoch;
+    const hyEpoch = hypothesisEpoch;
+    const ask = <T>(
+      list: SyncList,
+      call: (token: string) => Promise<T>,
+    ): Promise<T> => (want(list) ? authed(call) : Promise.reject(SKIP));
+    const [
+      changes,
+      events,
+      activity,
+      venues,
+      tasks,
+      companies,
+      categories,
+      contacts,
+      offers,
+      warehouses,
+      resources,
+      notes,
+      hypotheses,
+    ] = await Promise.allSettled([
+      full ? authed(token => api.changes(token, orgId)) : Promise.reject(SKIP),
+      ask('events', token => api.events(token, orgId)),
+      ask('activity', token => api.activity(token, orgId, 20)),
+      ask('venues', token => api.venues(token, orgId)),
+      ask('tasks', token => api.tasks(token, orgId)),
+      ask('companies', token => api.companies(token, orgId)),
+      ask('categories', token => api.categories(token, orgId)),
+      ask('contacts', token => api.contacts(token, orgId)),
+      ask('offers', token => api.offers(token, orgId)),
+      ask('warehouses', token => api.warehouses(token, orgId)),
+      ask('resources', token => api.resources(token, orgId)),
+      ask('notes', token => api.notes(token, orgId)),
+      ask('hypotheses', token => api.hypotheses(token, orgId)),
+    ]);
+    // The organization may have changed while loading.
+    if (get().orgId !== orgId || get().phase !== 'ready') return false;
+    const failed = (r: PromiseSettledResult<unknown>) =>
+      r.status === 'rejected' && r.reason !== SKIP;
+    const allOk = ![
+      events,
+      activity,
+      venues,
+      tasks,
+      companies,
+      categories,
+      contacts,
+      offers,
+      warehouses,
+      resources,
+      notes,
+      hypotheses,
+    ].some(failed);
+
+    if (full) {
+      if (changes.status === 'fulfilled') {
+        changesSupported = true;
+        cursor = changes.value.cursor;
+        const user = get().session?.user.id;
+        if (user && allOk) void device.saveCursor(user, orgId, cursor);
+      } else if (
+        failed(changes) &&
+        isApiError(changes.reason) &&
+        changes.reason.code === 'NOT_FOUND'
+      ) {
+        // An older server: every poll is a full reload, as before M6.
+        changesSupported = false;
+        cursor = null;
+      }
+    }
+
+    const patch: Partial<LogisticsState> = {};
+    if (events.status === 'fulfilled' && epoch !== writeEpoch) {
+      // A write finished while this request was in flight: its list may not
+      // include it. The refresh that write triggered brings the fresh list.
+    } else if (events.status === 'fulfilled') {
+      patch.events = mergeServerEvents(get().events, events.value.items);
+      patch.eventsState = 'ready';
+      patch.eventsError = null;
+      patch.lastSyncAt = Date.now();
+    } else if (failed(events) && (!silent || get().eventsState !== 'ready')) {
+      patch.eventsState = 'error';
+      patch.eventsError = errorMessage(events.reason);
+    }
+    if (activity.status === 'fulfilled') {
+      patch.activity = keepIfSame(get().activity, activity.value.items);
+      patch.activityState = 'ready';
+      patch.activityError = null;
+    } else if (
+      failed(activity) &&
+      (!silent || get().activityState !== 'ready')
+    ) {
+      patch.activityState = 'error';
+      patch.activityError = errorMessage(activity.reason);
+    }
+    if (tasks.status === 'fulfilled' && tEpoch !== taskEpoch) {
+      // Same as events: a task write's own refresh brings the fresh list.
+    } else if (tasks.status === 'fulfilled') {
+      patch.tasks = mergeServerTasks(get().tasks, tasks.value.items);
+      patch.tasksState = 'ready';
+      patch.tasksError = null;
+    } else if (failed(tasks) && (!silent || get().tasksState !== 'ready')) {
+      patch.tasksState = 'error';
+      patch.tasksError = errorMessage(tasks.reason);
+    }
+    if (venues.status === 'fulfilled') {
+      patch.venues = keepIfSame(get().venues, venues.value.items);
+    }
+    // Directory lists (milestone 3): same rules as tasks.
+    if (companies.status === 'fulfilled' && coEpoch !== companyEpoch) {
+      // A company write's own refresh brings the fresh list.
+    } else if (companies.status === 'fulfilled') {
+      patch.companies = mergeServerCompanies(
+        get().companies,
+        companies.value.items,
+      );
+      patch.companiesState = 'ready';
+      patch.companiesError = null;
+    } else if (
+      failed(companies) &&
+      (!silent || get().companiesState !== 'ready')
+    ) {
+      patch.companiesState = 'error';
+      patch.companiesError = errorMessage(companies.reason);
+    }
+    if (contacts.status === 'fulfilled' && ctEpoch !== contactEpoch) {
+      // Same as above.
+    } else if (contacts.status === 'fulfilled') {
+      patch.contacts = mergeServerContacts(
+        get().contacts,
+        contacts.value.items,
+      );
+      patch.contactsState = 'ready';
+      patch.contactsError = null;
+    } else if (
+      failed(contacts) &&
+      (!silent || get().contactsState !== 'ready')
+    ) {
+      patch.contactsState = 'error';
+      patch.contactsError = errorMessage(contacts.reason);
+    }
+    if (offers.status === 'fulfilled' && ofEpoch !== offerEpoch) {
+      // Same as above.
+    } else if (offers.status === 'fulfilled') {
+      patch.offers = mergeServerOffers(get().offers, offers.value.items);
+      patch.offersState = 'ready';
+      patch.offersError = null;
+    } else if (failed(offers) && (!silent || get().offersState !== 'ready')) {
+      patch.offersState = 'error';
+      patch.offersError = errorMessage(offers.reason);
+    }
+    if (categories.status === 'fulfilled' && caEpoch === categoryEpoch) {
+      patch.categories = keepIfSame(get().categories, categories.value.items);
+    }
+    // Inventories and notes (milestone 4): same rules again.
+    if (warehouses.status === 'fulfilled' && whEpoch !== warehouseEpoch) {
+      // A warehouse write's own refresh brings the fresh list.
+    } else if (warehouses.status === 'fulfilled') {
+      patch.warehouses = mergeServerWarehouses(
+        get().warehouses,
+        warehouses.value.items,
+      );
+      patch.warehousesState = 'ready';
+      patch.warehousesError = null;
+    } else if (
+      failed(warehouses) &&
+      (!silent || get().warehousesState !== 'ready')
+    ) {
+      patch.warehousesState = 'error';
+      patch.warehousesError = errorMessage(warehouses.reason);
+    }
+    if (resources.status === 'fulfilled' && reEpoch !== resourceEpoch) {
+      // Same as above.
+    } else if (resources.status === 'fulfilled') {
+      patch.resources = mergeServerResources(
+        get().resources,
+        resources.value.items,
+      );
+      patch.resourcesState = 'ready';
+      patch.resourcesError = null;
+    } else if (
+      failed(resources) &&
+      (!silent || get().resourcesState !== 'ready')
+    ) {
+      patch.resourcesState = 'error';
+      patch.resourcesError = errorMessage(resources.reason);
+    }
+    if (notes.status === 'fulfilled' && noEpoch !== noteEpoch) {
+      // Same as above.
+    } else if (notes.status === 'fulfilled') {
+      patch.notes = mergeServerNotes(get().notes, notes.value.items);
+      patch.notesState = 'ready';
+      patch.notesError = null;
+    } else if (failed(notes) && (!silent || get().notesState !== 'ready')) {
+      patch.notesState = 'error';
+      patch.notesError = errorMessage(notes.reason);
+    }
+    // Hypotheses (milestone 5): not essential to the day, so a failure is
+    // quiet (the «¿Y si…?» sheet still computes from the plan).
+    if (hypotheses.status === 'fulfilled' && hyEpoch === hypothesisEpoch) {
+      patch.hypotheses = keepIfSame(
+        get().hypotheses,
+        sortHypotheses(hypotheses.value.items),
+      );
+      patch.hypothesesState = 'ready';
+    } else if (failed(hypotheses)) {
+      if (!silent || get().hypothesesState !== 'ready') {
+        patch.hypothesesState = 'error';
+      }
+    }
+    // M6: the device's waiting changes stay visible over the server lists.
+    if (get().outbox.length) {
+      for (const key of RECORD_LISTS) {
+        const list = patch[key] as AnyList | undefined;
+        if (!list) continue;
+        captureServer(key, list, true);
+        (patch as Record<string, unknown>)[key] = overlayed(key, list);
+      }
+    }
+    set(patch);
+    if (full && allOk) lastFullAt = Date.now();
+    return allOk;
+  }
 
   return {
     phase: 'checking',
@@ -674,6 +2099,11 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     activityState: 'idle',
     activityError: null,
     lastSyncAt: null,
+    outbox: [],
+    unsent: EMPTY_UNSENT,
+    syncing: false,
+    fromCache: false,
+    leave: null,
     toasts: [],
 
     boot: async () => {
@@ -682,9 +2112,27 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         return;
       }
       set({phase: 'checking'});
+      const stored = readStoredSession();
+      // A wipe that did not complete (logout, organization change) is done
+      // first; while it is owed, nothing is opened from the device.
+      const wipeOwed = device.wipePending() && !(await device.wipeDevice());
+      // M6: what this device can open without the server, if it must.
+      const local = stored && !wipeOwed ? await loadLocalCopy(stored) : null;
+      if (stored && local && !browserOnline()) {
+        openLocal(stored, local, 'offline');
+        return;
+      }
+      const probe = new AbortController();
+      const probeTimer = local
+        ? setTimeout(() => probe.abort(), BOOT_PROBE_MS)
+        : null;
       try {
-        const health = await api.health();
+        const health = await api.health(probe.signal);
         if (health.database !== 'ok') {
+          if (stored && local) {
+            openLocal(stored, local, 'unavailable');
+            return;
+          }
           set({phase: 'unreachable', unreachableReason: 'database'});
           return;
         }
@@ -694,15 +2142,20 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
           set({phase: 'not_configured'});
           return;
         }
+        if (stored && local) {
+          openLocal(stored, local, browserOnline() ? 'unavailable' : 'offline');
+          return;
+        }
         set({
           phase: 'unreachable',
           unreachableReason: 'network',
           connection: browserOnline() ? 'unavailable' : 'offline',
         });
         return;
+      } finally {
+        if (probeTimer) clearTimeout(probeTimer);
       }
 
-      const stored = readStoredSession();
       if (!stored) {
         set({phase: 'login'});
         return;
@@ -713,17 +2166,25 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         const session = {...stored, user: me.user};
         writeStoredSession(session);
         const orgId = pickOrg(me.organizations, readStoredOrg());
+        const entries = await prepareDevice(me.user, orgId, me.organizations);
         set({
           phase: 'ready',
           session,
           organizations: me.organizations,
           orgId,
           sessionNotice: null,
+          fromCache: false,
+          outbox: entries,
+          unsent: unsentRecordIds(entries),
         });
-        void get().refresh();
+        void get()
+          .refresh()
+          .then(() => get().replay());
       } catch (err) {
         if (isApiError(err) && err.code === 'UNAUTHENTICATED') {
           expireSession();
+        } else if (local) {
+          openLocal(stored, local, browserOnline() ? 'unavailable' : 'offline');
         } else {
           set({
             phase: 'unreachable',
@@ -744,6 +2205,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       writeStoredSession(session);
       const orgId = pickOrg(res.organizations, readStoredOrg());
       writeStoredOrg(orgId);
+      // Someone else's copy is wiped before anything of this user lands.
+      resetOfflineMemory();
+      const entries = await prepareDevice(res.user, orgId, res.organizations);
       set({
         phase: 'ready',
         session,
@@ -752,12 +2216,22 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         sessionNotice: null,
         ...EMPTY_RECORDS,
         recentState: 'idle',
+        fromCache: false,
+        outbox: entries,
+        unsent: unsentRecordIds(entries),
+        leave: null,
       });
       markReachable();
-      void get().refresh();
+      void get()
+        .refresh()
+        .then(() => get().replay());
     },
 
-    logout: async () => {
+    logout: async ({discardUnsent = false} = {}) => {
+      if (!discardUnsent && get().outbox.some(isUnresolved)) {
+        set({leave: {kind: 'logout'}});
+        return;
+      }
       const token = get().session?.token;
       // A guest login is shared and so is the device: its recent searches
       // must not stay behind for the next person.
@@ -769,253 +2243,308 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       // next person. (Session expiry keeps it: that is what it is for.)
       clearRescue();
       writeStoredSession(null);
+      resetOfflineMemory();
       set({
         phase: 'login',
         session: null,
         organizations: [],
         ...EMPTY_RECORDS,
         ...IDLE_STATES,
+        ...NO_OUTBOX,
+        fromCache: false,
         sessionNotice: null,
         // A «Deshacer» left on screen must never run under the next person.
         ...dropToasts(),
       });
+      // M6: the device's copy (contacts, notes, the outbox) goes too.
+      await device.wipeDevice();
       if (token) {
         // Best effort: the local session is already gone either way.
         await api.logout(token).catch(() => undefined);
       }
     },
 
-    selectOrg: id => {
+    selectOrg: (id, {discardUnsent = false} = {}) => {
       if (id === get().orgId) return;
+      // The device keeps one organization: without the server the other one
+      // could not be loaded, and this one would already be wiped.
+      if (
+        !browserOnline() ||
+        get().connection === 'offline' ||
+        get().fromCache
+      ) {
+        get().toast(
+          'Cambiar de organización necesita conexión: se cargan sus datos del servidor.',
+          'info',
+        );
+        set({leave: null});
+        return;
+      }
+      if (!discardUnsent && get().outbox.some(isUnresolved)) {
+        set({leave: {kind: 'org', orgId: id}});
+        return;
+      }
       writeStoredOrg(id);
+      resetOfflineMemory();
       // Toasts (and their «Deshacer») belong to the organization left behind.
-      set({orgId: id, ...EMPTY_RECORDS, recentState: 'idle', ...dropToasts()});
-      void get().refresh();
-    },
-
-    refresh: async ({silent = false} = {}) => {
-      const orgId = get().orgId;
-      if (!orgId || get().phase !== 'ready') return;
-      if (!silent) {
-        set({
-          eventsState: 'loading',
-          eventsError: null,
-          tasksState: 'loading',
-          tasksError: null,
-          activityState: 'loading',
-          activityError: null,
-          companiesState: 'loading',
-          companiesError: null,
-          contactsState: 'loading',
-          contactsError: null,
-          offersState: 'loading',
-          offersError: null,
-          warehousesState: 'loading',
-          warehousesError: null,
-          resourcesState: 'loading',
-          resourcesError: null,
-          notesState: 'loading',
-          notesError: null,
+      set({
+        orgId: id,
+        ...EMPTY_RECORDS,
+        // Idle until reloaded: the device copy never keeps an empty list.
+        ...IDLE_STATES,
+        ...dropToasts(),
+        ...NO_OUTBOX,
+      });
+      const s = get();
+      // The device keeps one organization at a time (shared devices).
+      let wiped = false;
+      void device
+        .wipeDevice()
+        .then(ok => {
+          wiped = ok;
+          return ok && s.session
+            ? device.saveSession({
+                user: s.session.user,
+                organizations: s.organizations,
+                orgId: id,
+                savedAt: Date.now(),
+              })
+            : undefined;
+        })
+        .finally(() => {
+          if (get().orgId !== id) return;
+          // A failed wipe leaves the device out of use (online only) until
+          // the next boot completes it.
+          if (s.session && wiped) {
+            deviceOwner = {userId: s.session.user.id, orgId: id};
+          }
+          void get().refresh();
         });
-      }
-      const epoch = writeEpoch;
-      const tEpoch = taskEpoch;
-      const coEpoch = companyEpoch;
-      const ctEpoch = contactEpoch;
-      const ofEpoch = offerEpoch;
-      const caEpoch = categoryEpoch;
-      const whEpoch = warehouseEpoch;
-      const reEpoch = resourceEpoch;
-      const noEpoch = noteEpoch;
-      const hyEpoch = hypothesisEpoch;
-      const [
-        events,
-        activity,
-        venues,
-        tasks,
-        companies,
-        categories,
-        contacts,
-        offers,
-        warehouses,
-        resources,
-        notes,
-        hypotheses,
-      ] = await Promise.allSettled([
-        authed(token => api.events(token, orgId)),
-        authed(token => api.activity(token, orgId, 20)),
-        authed(token => api.venues(token, orgId)),
-        authed(token => api.tasks(token, orgId)),
-        authed(token => api.companies(token, orgId)),
-        authed(token => api.categories(token, orgId)),
-        authed(token => api.contacts(token, orgId)),
-        authed(token => api.offers(token, orgId)),
-        authed(token => api.warehouses(token, orgId)),
-        authed(token => api.resources(token, orgId)),
-        authed(token => api.notes(token, orgId)),
-        authed(token => api.hypotheses(token, orgId)),
-      ]);
-      // The organization may have changed while loading.
-      if (get().orgId !== orgId || get().phase !== 'ready') return;
-      const patch: Partial<LogisticsState> = {};
-      if (events.status === 'fulfilled' && epoch !== writeEpoch) {
-        // A write finished while this request was in flight: its list may not
-        // include it. The refresh that write triggered brings the fresh list.
-      } else if (events.status === 'fulfilled') {
-        patch.events = mergeServerEvents(get().events, events.value.items);
-        patch.eventsState = 'ready';
-        patch.eventsError = null;
-        patch.lastSyncAt = Date.now();
-      } else if (!silent || get().eventsState !== 'ready') {
-        patch.eventsState = 'error';
-        patch.eventsError = errorMessage(events.reason);
-      }
-      if (activity.status === 'fulfilled') {
-        patch.activity = keepIfSame(get().activity, activity.value.items);
-        patch.activityState = 'ready';
-        patch.activityError = null;
-      } else if (!silent || get().activityState !== 'ready') {
-        patch.activityState = 'error';
-        patch.activityError = errorMessage(activity.reason);
-      }
-      if (tasks.status === 'fulfilled' && tEpoch !== taskEpoch) {
-        // Same as events: a task write's own refresh brings the fresh list.
-      } else if (tasks.status === 'fulfilled') {
-        patch.tasks = mergeServerTasks(get().tasks, tasks.value.items);
-        patch.tasksState = 'ready';
-        patch.tasksError = null;
-      } else if (!silent || get().tasksState !== 'ready') {
-        patch.tasksState = 'error';
-        patch.tasksError = errorMessage(tasks.reason);
-      }
-      if (venues.status === 'fulfilled') {
-        patch.venues = keepIfSame(get().venues, venues.value.items);
-      }
-      // Directory lists (milestone 3): same rules as tasks.
-      if (companies.status === 'fulfilled' && coEpoch !== companyEpoch) {
-        // A company write's own refresh brings the fresh list.
-      } else if (companies.status === 'fulfilled') {
-        patch.companies = mergeServerCompanies(
-          get().companies,
-          companies.value.items,
-        );
-        patch.companiesState = 'ready';
-        patch.companiesError = null;
-      } else if (!silent || get().companiesState !== 'ready') {
-        patch.companiesState = 'error';
-        patch.companiesError = errorMessage(companies.reason);
-      }
-      if (contacts.status === 'fulfilled' && ctEpoch !== contactEpoch) {
-        // Same as above.
-      } else if (contacts.status === 'fulfilled') {
-        patch.contacts = mergeServerContacts(
-          get().contacts,
-          contacts.value.items,
-        );
-        patch.contactsState = 'ready';
-        patch.contactsError = null;
-      } else if (!silent || get().contactsState !== 'ready') {
-        patch.contactsState = 'error';
-        patch.contactsError = errorMessage(contacts.reason);
-      }
-      if (offers.status === 'fulfilled' && ofEpoch !== offerEpoch) {
-        // Same as above.
-      } else if (offers.status === 'fulfilled') {
-        patch.offers = mergeServerOffers(get().offers, offers.value.items);
-        patch.offersState = 'ready';
-        patch.offersError = null;
-      } else if (!silent || get().offersState !== 'ready') {
-        patch.offersState = 'error';
-        patch.offersError = errorMessage(offers.reason);
-      }
-      if (categories.status === 'fulfilled' && caEpoch === categoryEpoch) {
-        patch.categories = keepIfSame(get().categories, categories.value.items);
-      }
-      // Inventories and notes (milestone 4): same rules again.
-      if (warehouses.status === 'fulfilled' && whEpoch !== warehouseEpoch) {
-        // A warehouse write's own refresh brings the fresh list.
-      } else if (warehouses.status === 'fulfilled') {
-        patch.warehouses = mergeServerWarehouses(
-          get().warehouses,
-          warehouses.value.items,
-        );
-        patch.warehousesState = 'ready';
-        patch.warehousesError = null;
-      } else if (!silent || get().warehousesState !== 'ready') {
-        patch.warehousesState = 'error';
-        patch.warehousesError = errorMessage(warehouses.reason);
-      }
-      if (resources.status === 'fulfilled' && reEpoch !== resourceEpoch) {
-        // Same as above.
-      } else if (resources.status === 'fulfilled') {
-        patch.resources = mergeServerResources(
-          get().resources,
-          resources.value.items,
-        );
-        patch.resourcesState = 'ready';
-        patch.resourcesError = null;
-      } else if (!silent || get().resourcesState !== 'ready') {
-        patch.resourcesState = 'error';
-        patch.resourcesError = errorMessage(resources.reason);
-      }
-      if (notes.status === 'fulfilled' && noEpoch !== noteEpoch) {
-        // Same as above.
-      } else if (notes.status === 'fulfilled') {
-        patch.notes = mergeServerNotes(get().notes, notes.value.items);
-        patch.notesState = 'ready';
-        patch.notesError = null;
-      } else if (!silent || get().notesState !== 'ready') {
-        patch.notesState = 'error';
-        patch.notesError = errorMessage(notes.reason);
-      }
-      // Hypotheses (milestone 5): not essential to the day, so a failure is
-      // quiet (the «¿Y si…?» sheet still computes from the plan).
-      if (hypotheses.status === 'fulfilled' && hyEpoch === hypothesisEpoch) {
-        patch.hypotheses = keepIfSame(
-          get().hypotheses,
-          sortHypotheses(hypotheses.value.items),
-        );
-        patch.hypothesesState = 'ready';
-      } else if (hypotheses.status === 'rejected') {
-        if (!silent || get().hypothesesState !== 'ready') {
-          patch.hypothesesState = 'error';
-        }
-      }
-      set(patch);
     },
 
-    createEvent: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      const created = await authed(token =>
-        api.createEvent(token, {...input, organizationId: orgId}),
-      );
-      get().upsertEvent(created);
-      void get().refresh({silent: true});
-      return created;
+    refresh: async ({silent = false, lists = ALL_LISTS} = {}) => {
+      await load(lists, silent);
     },
 
-    updateEvent: async (id, input) => {
+    pull: async () => {
+      const s = get();
+      if (s.phase !== 'ready' || !s.orgId || !s.session || s.fromCache) return;
+      const orgId = s.orgId;
+      if (changesSupported !== true || !cursor) {
+        await load(ALL_LISTS, true);
+        return;
+      }
+      const since = cursor;
+      let res;
       try {
-        const updated = await authed(token =>
-          api.updateEvent(token, id, input),
-        );
-        get().upsertEvent(updated);
-        void get().refresh({silent: true});
-        return updated;
+        res = await authed(token => api.changes(token, orgId, since));
       } catch (err) {
-        if (
-          isApiError(err) &&
-          err.code === 'VERSION_CONFLICT' &&
-          err.current &&
-          typeof err.current === 'object'
-        ) {
-          // Keep the list honest: show what the server has now.
-          get().upsertEvent(err.current as LogisticsEvent);
+        if (isApiError(err) && err.code === 'NOT_FOUND') {
+          changesSupported = false;
+          cursor = null;
+          await load(ALL_LISTS, true);
         }
-        throw err;
+        return;
+      }
+      if (get().orgId !== orgId || get().phase !== 'ready') return;
+      const lists = listsToReload(res);
+      if (SYNC_LISTS.every(l => lists.has(l))) {
+        await load(ALL_LISTS, true);
+        return;
+      }
+      const ok = lists.size ? await load(lists, true) : true;
+      if (!ok || get().orgId !== orgId) return;
+      cursor = res.cursor;
+      const user = get().session?.user.id;
+      if (user) void device.saveCursor(user, orgId, cursor);
+      if (!lists.has('events')) set({lastSyncAt: Date.now()});
+    },
+
+    syncNow: async ({full = false, now = false} = {}) => {
+      const s = get();
+      if (s.phase !== 'ready' || !s.session) return;
+      if (now) {
+        // «Enviar ahora»: a person asked, so entries waiting for their
+        // back-off are due at once (QA M6).
+        const waiting = s.outbox.filter(
+          e => e.status === 'pending' && e.nextAttemptAt !== null,
+        );
+        if (waiting.length) {
+          const due = waiting.map(e => ({...e, nextAttemptAt: null}));
+          await Promise.all(due.map(e => device.putEntry(e)));
+          setOutbox(get().outbox.map(e => due.find(d => d.id === e.id) ?? e));
+        }
+      }
+      if (!browserOnline()) {
+        if (s.connection !== 'offline') set({connection: 'offline'});
+        return;
+      }
+      if (s.fromCache || s.connection !== 'online') {
+        const back = await reconnect();
+        if (!back) {
+          if (get().phase === 'ready') scheduleReconnect();
+          return;
+        }
+        retryStep = 0;
+        full = true;
+      }
+      if (
+        full ||
+        changesSupported !== true ||
+        !cursor ||
+        Date.now() - lastFullAt >= FULL_REFRESH_MS
+      ) {
+        await load(ALL_LISTS, true);
+      } else {
+        await get().pull();
+      }
+      await get().replay();
+    },
+
+    replay: async () => {
+      if (replaying) return;
+      const start = get();
+      if (
+        start.phase !== 'ready' ||
+        !start.session ||
+        !start.orgId ||
+        start.fromCache ||
+        !browserOnline()
+      ) {
+        return;
+      }
+      if (!nextToSend(start.outbox, Date.now())) {
+        scheduleNextAttempt();
+        return;
+      }
+      replaying = true;
+      set({syncing: true});
+      const orgId = start.orgId;
+      const userId = start.session.user.id;
+      let accepted = 0;
+      try {
+        for (;;) {
+          const s = get();
+          if (
+            s.phase !== 'ready' ||
+            s.orgId !== orgId ||
+            s.session?.user.id !== userId
+          ) {
+            break;
+          }
+          const entry = nextToSend(s.outbox, Date.now());
+          if (!entry) break;
+          // The review was for the placement the user saw (M5 audit).
+          const guarded = guardSubsoil(
+            entry,
+            serverCopy.get(entry.recordId) ?? null,
+          );
+          if (
+            guarded.dropped.includes('subsoilReviewed') &&
+            !entry.dropped.includes('subsoilReviewed')
+          ) {
+            get().toast(subsoilDroppedText(entry.label), 'info', {
+              durationMs: 10_000,
+            });
+          }
+          const sending: OutboxEntry = {
+            ...guarded,
+            status: 'sending',
+            attempts: guarded.attempts + 1,
+            nextAttemptAt: null,
+          };
+          await replaceEntry(sending);
+          let saved: unknown = null;
+          let error: unknown = null;
+          try {
+            saved = await authed(token =>
+              sending.op === 'create'
+                ? SEND[sending.entity].create(token, sending.input)
+                : SEND[sending.entity].update(
+                    token,
+                    sending.recordId,
+                    sending.input,
+                  ),
+            );
+          } catch (err) {
+            error = err ?? new Error('replay');
+          }
+          if (error === null) {
+            await accept(sending, saved as OptimisticRecord);
+            accepted++;
+            continue;
+          }
+          if (await fail(sending, error)) break;
+        }
+      } finally {
+        replaying = false;
+        set({syncing: false});
+        scheduleNextAttempt();
+      }
+      if (accepted && get().phase === 'ready') {
+        void get()
+          .pull()
+          .catch(() => undefined);
       }
     },
+
+    retryEntry: async id => {
+      const entry = get().outbox.find(e => e.id === id);
+      if (!entry) return;
+      await replaceEntry({
+        ...entry,
+        status: 'pending',
+        attempts: entry.status === 'pending' ? entry.attempts : 0,
+        nextAttemptAt: null,
+        error: null,
+      });
+      await get().syncNow();
+    },
+
+    discardEntry: async (id, {useInstead} = {}) => {
+      const entry = get().outbox.find(e => e.id === id);
+      if (!entry) return;
+      // A new record goes with every later change of it.
+      const ids =
+        entry.op === 'create'
+          ? get()
+              .outbox.filter(e => e.recordId === entry.recordId)
+              .map(e => e.id)
+          : [id];
+      await removeEntries(ids);
+      if (entry.op === 'create') dropRecord(entry.entity, entry.recordId);
+      if (entry.op !== 'create' || !useInstead || !ownsDevice(entry)) return;
+      // «Usar la existente»: waiting changes that pointed at the discarded
+      // new record (a contact of that company) point at the existing one.
+      const from = entry.recordId.toLowerCase();
+      const moved: OutboxEntry[] = [];
+      const next = get().outbox.map(e => {
+        if (!referencedIds(e.input).has(from)) return e;
+        const swapped = {
+          ...e,
+          input: swapId(e.input, from, useInstead) as Record<string, unknown>,
+        };
+        moved.push(swapped);
+        return swapped;
+      });
+      if (!moved.length) return;
+      await Promise.all(moved.map(e => device.putEntry(e)));
+      setOutbox(next);
+      scheduleReplay(0);
+    },
+
+    cancelLeave: () => set({leave: null}),
+
+    toastSaved: (record, message, options) => {
+      if (queuedRecords.has(record)) get().toast(QUEUED_NOTE, 'info', options);
+      else get().toast(message, 'success', options);
+    },
+
+    createEvent: (input, options) =>
+      write<LogisticsEvent>('event', 'create', null, {...input}, options),
+
+    updateEvent: (id, input, options) =>
+      write<LogisticsEvent>('event', 'update', id, {...input}, options),
 
     upsertEvent: event => {
       writeEpoch++;
@@ -1026,37 +2555,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       set({events: sortEvents([...rest, event]), eventsState: 'ready'});
     },
 
-    createTask: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      const created = await authed(token =>
-        api.createTask(token, {...input, organizationId: orgId}),
-      );
-      get().upsertTask(created);
-      void get().refresh({silent: true});
-      return created;
-    },
+    createTask: (input, options) =>
+      write<Task>('task', 'create', null, {...input}, options),
 
-    updateTask: async (id, input) => {
-      try {
-        const updated = await authed(token => api.updateTask(token, id, input));
-        get().upsertTask(updated);
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        if (
-          isApiError(err) &&
-          err.code === 'VERSION_CONFLICT' &&
-          err.current &&
-          typeof err.current === 'object'
-        ) {
-          get().upsertTask(err.current as Task);
-        }
-        throw err;
-      }
-    },
+    updateTask: (id, input, options) =>
+      write<Task>('task', 'update', id, {...input}, options),
 
     deleteTask: async task => {
+      if (await discardLocalCreate('task', task.id)) return;
+      requireConnection();
       try {
         await authed(token => api.deleteTask(token, task.id, task.version));
       } catch (err) {
@@ -1072,6 +2579,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         // Already gone (someone else deleted it): the outcome is the same.
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(task.id);
       taskEpoch++;
       resourceEpoch++;
       noteEpoch++;
@@ -1108,7 +2616,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
           : get().hypotheses,
       });
       hypothesisEpoch++;
-      const refreshed = get().refresh({silent: true});
+      const refreshed = get().pull();
       // With dependents, wait for their new versions before the caller moves
       // on: editing one with the old version would be rejected as a conflict
       // with our own change.
@@ -1129,6 +2637,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     createCategory: async (name, scope = 'service') => {
       const orgId = get().orgId;
       if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      requireConnection();
       const category = await authed(token =>
         api.createCategory(token, {
           organizationId: orgId,
@@ -1141,11 +2650,14 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (!get().categories.some(c => c.id === category.id)) {
         set({categories: [...get().categories, category]});
       }
-      void get().refresh({silent: true});
+      void get()
+        .pull()
+        .catch(() => undefined);
       return category;
     },
 
     deleteCategory: async category => {
+      requireConnection();
       try {
         await authed(token => api.deleteCategory(token, category.id));
       } catch (err) {
@@ -1175,44 +2687,19 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       // Editing one of them right after with the old version would be
       // rejected as a conflict with our own change.
       await get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
-    createCompany: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      try {
-        const created = await authed(token =>
-          api.createCompany(token, {...input, organizationId: orgId}),
-        );
-        get().upsertCompany(created);
-        void get().refresh({silent: true});
-        return created;
-      } catch (err) {
-        keepDuplicate(err, 'company');
-        throw err;
-      }
-    },
+    createCompany: (input, options) =>
+      write<Company>('company', 'create', null, {...input}, options),
 
-    updateCompany: async (id, input) => {
-      try {
-        const updated = await authed(token =>
-          api.updateCompany(token, id, input),
-        );
-        get().upsertCompany(updated);
-        // Tasks, people and offers embed the company name.
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        const current = conflictCopy<Company>(err);
-        if (current) get().upsertCompany(current);
-        keepDuplicate(err, 'company');
-        throw err;
-      }
-    },
+    updateCompany: (id, input, options) =>
+      write<Company>('company', 'update', id, {...input}, options),
 
     deleteCompany: async company => {
+      if (await discardLocalCreate('company', company.id)) return;
+      requireConnection();
       try {
         await authed(token =>
           api.deleteCompany(token, company.id, company.version),
@@ -1225,6 +2712,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(company.id);
       companyEpoch++;
       offerEpoch++;
       contactEpoch++;
@@ -1273,7 +2761,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       // Wait for the new versions: editing a person right after with the
       // old one would be rejected as a conflict with our own change.
       await get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
@@ -1283,34 +2771,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (next) set({companies: next, companiesState: 'ready'});
     },
 
-    createContact: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      const created = await authed(token =>
-        api.createContact(token, {...input, organizationId: orgId}),
-      );
-      get().upsertContact(created);
-      // A company may have been created by name, or its count changed.
-      void get().refresh({silent: true});
-      return created;
-    },
+    createContact: (input, options) =>
+      write<Contact>('contact', 'create', null, {...input}, options),
 
-    updateContact: async (id, input) => {
-      try {
-        const updated = await authed(token =>
-          api.updateContact(token, id, input),
-        );
-        get().upsertContact(updated);
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        const current = conflictCopy<Contact>(err);
-        if (current) get().upsertContact(current);
-        throw err;
-      }
-    },
+    updateContact: (id, input, options) =>
+      write<Contact>('contact', 'update', id, {...input}, options),
 
     deleteContact: async contact => {
+      if (await discardLocalCreate('contact', contact.id)) return;
+      requireConnection();
       try {
         await authed(token =>
           api.deleteContact(token, contact.id, contact.version),
@@ -1323,6 +2792,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(contact.id);
       contactEpoch++;
       companyEpoch++;
       taskEpoch++;
@@ -1348,7 +2818,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         ),
       });
       await get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
@@ -1358,33 +2828,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (next) set({contacts: next, contactsState: 'ready'});
     },
 
-    createOffer: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      const created = await authed(token =>
-        api.createOffer(token, {...input, organizationId: orgId}),
-      );
-      get().upsertOffer(created);
-      void get().refresh({silent: true});
-      return created;
-    },
+    createOffer: (input, options) =>
+      write<Offer>('offer', 'create', null, {...input}, options),
 
-    updateOffer: async (id, input) => {
-      try {
-        const updated = await authed(token =>
-          api.updateOffer(token, id, input),
-        );
-        get().upsertOffer(updated);
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        const current = conflictCopy<Offer>(err);
-        if (current) get().upsertOffer(current);
-        throw err;
-      }
-    },
+    updateOffer: (id, input, options) =>
+      write<Offer>('offer', 'update', id, {...input}, options),
 
     deleteOffer: async offer => {
+      if (await discardLocalCreate('offer', offer.id)) return;
+      requireConnection();
       try {
         await authed(token => api.deleteOffer(token, offer.id, offer.version));
       } catch (err) {
@@ -1395,6 +2847,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(offer.id);
       offerEpoch++;
       companyEpoch++;
       resourceEpoch++;
@@ -1413,7 +2866,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       });
       // Same as the other deletes: the company's new version must be in.
       await get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
@@ -1425,40 +2878,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
 
     // ---------------------------------------------------- inventories (M4)
 
-    createWarehouse: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      try {
-        const created = await authed(token =>
-          api.createWarehouse(token, {...input, organizationId: orgId}),
-        );
-        get().upsertWarehouse(created);
-        void get().refresh({silent: true});
-        return created;
-      } catch (err) {
-        keepDuplicate(err, 'warehouse');
-        throw err;
-      }
-    },
+    createWarehouse: (input, options) =>
+      write<Warehouse>('warehouse', 'create', null, {...input}, options),
 
-    updateWarehouse: async (id, input) => {
-      try {
-        const updated = await authed(token =>
-          api.updateWarehouse(token, id, input),
-        );
-        get().upsertWarehouse(updated);
-        // Resources embed the warehouse name.
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        const current = conflictCopy<Warehouse>(err);
-        if (current) get().upsertWarehouse(current);
-        keepDuplicate(err, 'warehouse');
-        throw err;
-      }
-    },
+    updateWarehouse: (id, input, options) =>
+      write<Warehouse>('warehouse', 'update', id, {...input}, options),
 
     deleteWarehouse: async warehouse => {
+      if (await discardLocalCreate('warehouse', warehouse.id)) return;
+      requireConnection();
       try {
         await authed(token =>
           api.deleteWarehouse(token, warehouse.id, warehouse.version),
@@ -1471,6 +2899,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(warehouse.id);
       warehouseEpoch++;
       resourceEpoch++;
       noteEpoch++;
@@ -1484,7 +2913,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         notes: unlinkNotes(get().notes, 'warehouse', id),
       });
       await get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
@@ -1494,34 +2923,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (next) set({warehouses: next, warehousesState: 'ready'});
     },
 
-    createResource: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      const created = await authed(token =>
-        api.createResource(token, {...input, organizationId: orgId}),
-      );
-      get().upsertResource(created);
-      // A warehouse or company may have been created by name.
-      void get().refresh({silent: true});
-      return created;
-    },
+    createResource: (input, options) =>
+      write<Resource>('resource', 'create', null, {...input}, options),
 
-    updateResource: async (id, input) => {
-      try {
-        const updated = await authed(token =>
-          api.updateResource(token, id, input),
-        );
-        get().upsertResource(updated);
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        const current = conflictCopy<Resource>(err);
-        if (current) get().upsertResource(current);
-        throw err;
-      }
-    },
+    updateResource: (id, input, options) =>
+      write<Resource>('resource', 'update', id, {...input}, options),
 
     deleteResource: async resource => {
+      if (await discardLocalCreate('resource', resource.id)) return;
+      requireConnection();
       try {
         await authed(token =>
           api.deleteResource(token, resource.id, resource.version),
@@ -1534,6 +2944,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(resource.id);
       resourceEpoch++;
       warehouseEpoch++;
       taskEpoch++;
@@ -1555,7 +2966,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       });
       // The tasks' new versions must be in before anyone edits them.
       await get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
@@ -1565,31 +2976,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (next) set({resources: next, resourcesState: 'ready'});
     },
 
-    createNote: async input => {
-      const orgId = get().orgId;
-      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
-      const created = await authed(token =>
-        api.createNote(token, {...input, organizationId: orgId}),
-      );
-      get().upsertNote(created);
-      void get().refresh({silent: true});
-      return created;
-    },
+    createNote: (input, options) =>
+      write<Note>('note', 'create', null, {...input}, options),
 
-    updateNote: async (id, input) => {
-      try {
-        const updated = await authed(token => api.updateNote(token, id, input));
-        get().upsertNote(updated);
-        void get().refresh({silent: true});
-        return updated;
-      } catch (err) {
-        const current = conflictCopy<Note>(err);
-        if (current) get().upsertNote(current);
-        throw err;
-      }
-    },
+    updateNote: (id, input, options) =>
+      write<Note>('note', 'update', id, {...input}, options),
 
     deleteNote: async note => {
+      if (await discardLocalCreate('note', note.id)) return;
+      requireConnection();
       try {
         await authed(token => api.deleteNote(token, note.id, note.version));
       } catch (err) {
@@ -1600,10 +2995,11 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
+      await forgetRecord(note.id);
       noteEpoch++;
       set({notes: get().notes.filter(n => n.id !== note.id)});
       void get()
-        .refresh({silent: true})
+        .pull()
         .catch(() => undefined);
     },
 
@@ -1618,6 +3014,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     createHypothesis: async input => {
       const orgId = get().orgId;
       if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      requireConnection();
       const created = await authed(token =>
         api.createHypothesis(token, {...input, organizationId: orgId}),
       );
@@ -1626,6 +3023,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     },
 
     deleteHypothesis: async hypothesis => {
+      requireConnection();
       try {
         await authed(token => api.deleteHypothesis(token, hypothesis.id));
       } catch (err) {
@@ -1633,7 +3031,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         // bring the list up to date so the sheet shows it as applied.
         if (isApiError(err) && err.code === 'VALIDATION') {
           void get()
-            .refresh({silent: true})
+            .pull()
             .catch(() => undefined);
         }
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
@@ -1645,13 +3043,18 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     },
 
     applyHypothesis: async (id, input) => {
+      // Never queued: applying always needs a live confirmation on the
+      // plan as the server has it.
+      requireConnection();
       try {
         const res = await authed(token =>
           api.applyHypothesis(token, id, input),
         );
         for (const task of res.tasks) get().upsertTask(task);
         get().upsertHypothesis(res.hypothesis);
-        void get().refresh({silent: true});
+        void get()
+          .pull()
+          .catch(() => undefined);
         return res;
       } catch (err) {
         if (
@@ -1681,6 +3084,23 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         api.history(token, orgId, entityType, entityId, limit),
       );
       return res.items;
+    },
+
+    loadDayActivity: async (from, to, signal) => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const res = await authed(token =>
+        api
+          .activityBetween(token, orgId, from, to, ACTIVITY_RANGE_MAX, signal)
+          .catch((err: unknown) => {
+            // The caller moved on (another day): not a lost connection.
+            if (signal?.aborted) {
+              throw new DOMException('Aborted', 'AbortError');
+            }
+            throw err;
+          }),
+      );
+      return Array.isArray(res?.items) ? res.items : [];
     },
 
     // ---------------------------------------------------- recent searches
@@ -1717,6 +3137,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         writeDeviceRecent(orgId, next);
         return;
       }
+      // Never queued (M6): without the server it stays for this session.
+      if (get().connection !== 'online' || get().fromCache) return;
       void authed(token => api.pushRecentSearch(token, orgId, {query: q}))
         .then(res => {
           if (get().orgId === orgId) {
@@ -1737,6 +3159,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         return;
       }
       try {
+        requireConnection();
         await authed(token => api.clearRecentSearches(token, orgId));
       } catch (err) {
         set({recentSearches: before});
@@ -1747,6 +3170,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     removeDemo: async () => {
       const orgId = get().orgId;
       if (!orgId) return 0;
+      requireConnection();
       const res = await authed(token => api.removeDemo(token, orgId));
       writeEpoch++;
       taskEpoch++;
@@ -1764,7 +3188,10 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     setBrowserOnline: online => {
       const current = get().connection;
       if (!online) set({connection: 'offline'});
-      else if (current === 'offline') set({connection: 'online'});
+      else if (current === 'offline') {
+        // The network is back; whether the server answers is checked next.
+        set({connection: get().fromCache ? 'unavailable' : 'online'});
+      }
     },
 
     toast: (message, tone = 'info', options = {}) => {
@@ -1803,4 +3230,93 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       }
     },
   };
+});
+
+// ---------------------------------------------------------------- device copy
+
+/** Guests' copies go through the same withholding as the server's. */
+const WITHHELD_KIND: Partial<Record<SyncList, WithheldKind>> = {
+  events: 'event',
+  tasks: 'task',
+  contacts: 'contact',
+  companies: 'company',
+  offers: 'offer',
+  warehouses: 'warehouse',
+  resources: 'resource',
+  notes: 'note',
+  hypotheses: 'hypothesis',
+};
+
+/** A list is kept once it has really loaded (never an empty placeholder). */
+const LOADED_BY: Record<SyncList, keyof LogisticsState> = {
+  events: 'eventsState',
+  venues: 'eventsState',
+  tasks: 'tasksState',
+  companies: 'companiesState',
+  categories: 'companiesState',
+  contacts: 'contactsState',
+  offers: 'offersState',
+  warehouses: 'warehousesState',
+  resources: 'resourcesState',
+  notes: 'notesState',
+  hypotheses: 'hypothesesState',
+  activity: 'activityState',
+};
+
+const dirtyLists = new Set<SyncList>();
+let sessionDirty = false;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushDeviceCopy(gen: number): Promise<void> {
+  const s = useLogisticsStore.getState();
+  const lists = [...dirtyLists];
+  dirtyLists.clear();
+  const writeSession = sessionDirty;
+  sessionDirty = false;
+  if (gen !== persistGen || s.phase !== 'ready' || !s.session || !s.orgId) {
+    return;
+  }
+  // A wipe still owed: nothing new lands on the device until it is done.
+  if (device.wipePending()) return;
+  const {id: userId, role} = s.session.user;
+  const orgId = s.orgId;
+  for (const list of lists) {
+    if (gen !== persistGen) return;
+    if (s[LOADED_BY[list]] !== 'ready') continue;
+    const kind = WITHHELD_KIND[list];
+    const items = s[list] as object[];
+    await device.saveList(
+      userId,
+      orgId,
+      list,
+      kind ? items.map(r => withholdFor(kind, r, role)) : items,
+    );
+  }
+  if (writeSession && gen === persistGen) {
+    await device.saveSession({
+      user: s.session.user,
+      organizations: s.organizations,
+      orgId,
+      savedAt: Date.now(),
+    });
+  }
+}
+
+useLogisticsStore.subscribe((state, prev) => {
+  if (state.phase !== 'ready' || !state.session || !state.orgId) return;
+  for (const list of SYNC_LISTS) {
+    if (state[list] !== prev[list]) dirtyLists.add(list);
+  }
+  if (
+    state.organizations !== prev.organizations ||
+    state.orgId !== prev.orgId
+  ) {
+    sessionDirty = true;
+  }
+  if ((!dirtyLists.size && !sessionDirty) || persistTimer) return;
+  const gen = persistGen;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    void flushDeviceCopy(gen);
+  }, 400);
 });

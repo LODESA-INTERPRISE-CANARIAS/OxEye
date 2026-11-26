@@ -11,7 +11,11 @@ import {AppError} from '../src/errors.ts';
 import {updateEvent} from '../src/events/service.ts';
 import {applyHypothesis, createHypothesis} from '../src/hypotheses/service.ts';
 import {createNote, updateNote} from '../src/notes/service.ts';
-import {WITHHELD_FROM_GUESTS} from '../src/records/redact.ts';
+import {forViewer, WITHHELD_FROM_GUESTS} from '../src/records/redact.ts';
+import {
+  WITHHELD_FROM_GUESTS as SHARED_WITHHELD,
+  withholdFor,
+} from '../../shared/logistics/redaction.ts';
 import {createResource, updateResource} from '../src/resources/service.ts';
 import {createTask, updateTask} from '../src/tasks/service.ts';
 import {createWarehouse, updateWarehouse} from '../src/warehouses/service.ts';
@@ -138,6 +142,17 @@ async function thrown(promise: Promise<unknown>): Promise<AppError> {
 }
 
 describe('guests never receive notes, addresses, locations or note text', () => {
+  it('the server applies the shared list (one list for server and device cache)', () => {
+    expect(WITHHELD_FROM_GUESTS).toBe(SHARED_WITHHELD);
+    const record = ids.note as Omit<Note, 'restricted'>;
+    expect(forViewer('note', record, {role: 'guest'})).toEqual(
+      withholdFor('note', record, 'guest'),
+    );
+    expect(forViewer('note', record, {role: 'member'})).toEqual(
+      withholdFor('note', record, 'member'),
+    );
+  });
+
   it('withholds exactly the agreed fields', () => {
     expect(WITHHELD_FROM_GUESTS).toMatchObject({
       event: ['notes'],
@@ -433,24 +448,30 @@ describe('guests never receive notes, addresses, locations or note text', () => 
         {version: ids.event.version},
         now,
       ),
-      await createTask(
-        h.db,
-        guestUser,
-        {organizationId: h.org.id, title: 'x', notes: SECRET.taskNotes},
-        now,
-      ),
-      await createResource(
-        h.db,
-        guestUser,
-        {organizationId: h.org.id, name: 'x', location: SECRET.location},
-        now,
-      ),
-      await createNote(
-        h.db,
-        guestUser,
-        {organizationId: h.org.id, kind: 'note', text: SECRET.noteText},
-        now,
-      ),
+      (
+        await createTask(
+          h.db,
+          guestUser,
+          {organizationId: h.org.id, title: 'x', notes: SECRET.taskNotes},
+          now,
+        )
+      ).record,
+      (
+        await createResource(
+          h.db,
+          guestUser,
+          {organizationId: h.org.id, name: 'x', location: SECRET.location},
+          now,
+        )
+      ).record,
+      (
+        await createNote(
+          h.db,
+          guestUser,
+          {organizationId: h.org.id, kind: 'note', text: SECRET.noteText},
+          now,
+        )
+      ).record,
     ];
     for (const record of single) {
       expect(record).toMatchObject({restricted: true});

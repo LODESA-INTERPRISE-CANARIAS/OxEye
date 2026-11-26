@@ -31,13 +31,13 @@ export function registerWarehouseRoutes(
 
   api.post('/warehouses', auth, async c => {
     const input = await jsonBody(c, createWarehouseSchema);
-    const warehouse = await createWarehouse(
+    const created = await createWarehouse(
       deps.db,
       c.get('user'),
       input,
       deps.now(),
     );
-    return c.json(warehouse, 201);
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/warehouses/:id', auth, async c => {

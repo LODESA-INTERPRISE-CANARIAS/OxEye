@@ -21,6 +21,7 @@ import {
   quantityCertainty,
 } from '../lib/inventory';
 import {plural} from '../lib/format';
+import {UnsentMark} from '../offline/PendingMark';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Chip, CERTAINTY_HELP, HelpTip, Icon} from '../ui';
 
@@ -145,6 +146,7 @@ export const ResourceRow: React.FC<{
           </span>
           {sub && <span className="lx-resrow__sub">{sub}</span>}
           <span className="lx-resrow__chips">
+            <UnsentMark id={r.id} />
             <ConditionChip condition={r.condition} />
             <AvailabilityChip availability={r.availability} />
             {r.taskIds.length > 0 && (

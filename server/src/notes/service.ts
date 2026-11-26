@@ -15,6 +15,8 @@ import type {Db, Queryable} from '../db/db.ts';
 import {AppError, notFound, validationError} from '../errors.ts';
 import {appendActivity} from '../activity/service.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {lockCatalogue} from '../records/locks.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
@@ -238,19 +240,32 @@ export async function createNote(
   actor: SessionUser,
   input: CreateNoteBody,
   now: Date,
-): Promise<Note> {
-  return db.transaction(async tx => {
+): Promise<Created<Note>> {
+  const device: DeviceCreate<Note> = {
+    table: 'notes',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadNote(q, id);
+      return row && toNote(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     await lockCatalogue(tx, org.id);
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
     const state = await applyInput(tx, org.id, EMPTY, input);
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO notes
          (organization_id, kind, text, event_id, resolved, source,
           verification, created_by, created_at, updated_by, updated_at,
           task_id, venue_id, company_id, contact_id, offer_id, warehouse_id,
-          resource_id)
+          resource_id, id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $8,
-               $9::timestamptz, $10, $11, $12, $13, $14, $15, $16)
+               $9::timestamptz, $10, $11, $12, $13, $14, $15, $16,
+               COALESCE($17::uuid, gen_random_uuid()))
        RETURNING id`,
       [
         org.id,
@@ -263,6 +278,7 @@ export async function createNote(
         actor.id,
         now.toISOString(),
         ...refColumns(state.ref),
+        input.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -276,7 +292,7 @@ export async function createNote(
       action: 'create',
       at: now,
     });
-    return toNote(row, actor);
+    return fresh(toNote(row, actor));
   });
 }
 

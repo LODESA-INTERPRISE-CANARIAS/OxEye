@@ -20,6 +20,7 @@ import {
   type NoteTarget,
 } from '../lib/inventory';
 import {relativeTime} from '../lib/format';
+import {UnsentMark, unsentSuffix, useUnsent} from '../offline/PendingMark';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon, Withheld} from '../ui';
 import {useActions, type NotePrefill} from './actions';
@@ -145,6 +146,7 @@ export const NoteItem: React.FC<{
   ]
     .filter(Boolean)
     .join(' · ');
+  const unsent = useUnsent(note.id);
 
   return (
     <li
@@ -156,7 +158,7 @@ export const NoteItem: React.FC<{
       <button
         type="button"
         className="lx-noteitem__open"
-        aria-label={`Abrir: ${label}`}
+        aria-label={`Abrir: ${label}${unsentSuffix(unsent)}`}
         onClick={() => openNote(note)}
       >
         <span className="lx-noteitem__icon" aria-hidden="true">
@@ -176,6 +178,7 @@ export const NoteItem: React.FC<{
               {status}
             </span>
           )}
+          <UnsentMark id={note.id} />
         </span>
         <span className="lx-noteitem__meta lx-num" aria-hidden="true">
           {note.createdBy.displayName} · {when}

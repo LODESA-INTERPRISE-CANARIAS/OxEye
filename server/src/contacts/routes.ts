@@ -31,13 +31,13 @@ export function registerContactRoutes(
 
   api.post('/contacts', auth, async c => {
     const input = await jsonBody(c, createContactSchema);
-    const contact = await createContact(
+    const created = await createContact(
       deps.db,
       c.get('user'),
       input,
       deps.now(),
     );
-    return c.json(contact, 201);
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/contacts/:id', auth, async c => {

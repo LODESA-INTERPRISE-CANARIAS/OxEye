@@ -14,6 +14,7 @@ import {universalSearch} from '../../../shared/logistics/search.ts';
 import {useActions} from '../common/actions';
 import {categoryNames, groupByLetter} from '../lib/directory';
 import {initials, plural} from '../lib/format';
+import {UnsentMark} from '../offline/PendingMark';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -346,6 +347,7 @@ const ContactRow: React.FC<{
             </span>
           )}
         </span>
+        <UnsentMark id={contact.id} compact />
         {contact.isDemo && <span className="lx-dirrow__demo">Demo</span>}
         <Icon name="chevronRight" size={18} className="lx-dirrow__chev" />
       </button>
@@ -396,6 +398,7 @@ const CompanyRow: React.FC<{
             </span>
           )}
         </span>
+        <UnsentMark id={company.id} compact />
         {company.isDemo && <span className="lx-dirrow__demo">Demo</span>}
         <Icon name="chevronRight" size={18} className="lx-dirrow__chev" />
       </button>

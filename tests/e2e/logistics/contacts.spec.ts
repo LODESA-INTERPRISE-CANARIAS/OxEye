@@ -95,7 +95,10 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
     await page.locator('#lx-contact-close').click();
     await expect(sheet).toHaveCount(0);
 
-    const row = personRow(page, 'p-new-1');
+    // M6: the device names the new record (replay-safe outbox).
+    const id = (lastBody(api, 'POST', '/contacts') as {id: string}).id;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    const row = personRow(page, id);
     await expect(row).toContainText(
       'Falta teléfono o correo, cargo, empresa o entidad',
     );

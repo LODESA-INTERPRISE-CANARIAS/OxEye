@@ -8,6 +8,7 @@ import type {PlanWarning} from '../../../shared/logistics/conflicts.ts';
 import type {Task} from '../../../shared/logistics/contracts.ts';
 import {missingForTask} from '../../../shared/logistics/quality.ts';
 import {dayMonthShort} from '../lib/format';
+import {UnsentMark, unsentSuffix, useUnsent} from '../offline/PendingMark';
 import {
   recordSlot,
   TASK_KIND_ICON,
@@ -75,6 +76,7 @@ export const TaskRow: React.FC<{
   const pending = missingForTask(task).length > 0;
   const flagText =
     emphasis && emphasis !== 'past' ? (flag ?? EMPHASIS_LABEL[emphasis]) : null;
+  const unsent = useUnsent(task.id);
   return (
     <button
       type="button"
@@ -83,11 +85,12 @@ export const TaskRow: React.FC<{
         `lx-taskrow--${task.status}`,
         emphasis ? `lx-taskrow--${emphasis}` : '',
         conflict ? 'lx-taskrow--conflict' : '',
+        unsent ? 'lx-taskrow--unsent' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       data-task-id={task.id}
-      aria-label={`${emphasisPrefix(emphasis, flag)}${taskLabel(task, warnings, {date: showDate})}`}
+      aria-label={`${emphasisPrefix(emphasis, flag)}${taskLabel(task, warnings, {date: showDate})}${unsentSuffix(unsent)}`}
       onClick={() => onOpen(task)}
     >
       <span className="lx-taskrow__time">
@@ -126,6 +129,7 @@ export const TaskRow: React.FC<{
               Falta información
             </span>
           )}
+          <UnsentMark id={task.id} />
         </span>
       </span>
       <span className="lx-taskrow__end">

@@ -12,6 +12,8 @@ import {AppError, notFound} from '../errors.ts';
 import {appendActivity} from '../activity/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {
   findOrCreateByName,
   normalizeName,
@@ -202,16 +204,30 @@ export async function createWarehouse(
   actor: SessionUser,
   input: CreateWarehouseBody,
   now: Date,
-): Promise<Warehouse> {
-  return db.transaction(async tx => {
+): Promise<Created<Warehouse>> {
+  const device: DeviceCreate<Warehouse> = {
+    table: 'warehouses',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadWarehouse(q, id);
+      return row && toWarehouse(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     await lockCatalogue(tx, org.id);
+    // A replay wins before the name check: it is this very warehouse.
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
     const name = normalizeName(input.name) as string;
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO warehouses
          (organization_id, name, address, notes, source, verification,
-          created_by, created_at, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $7, $8::timestamptz)
+          created_by, created_at, updated_by, updated_at, id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $7, $8::timestamptz,
+               COALESCE($9::uuid, gen_random_uuid()))
        ON CONFLICT (organization_id, (lower(name))) DO NOTHING
        RETURNING id`,
       [
@@ -223,6 +239,7 @@ export async function createWarehouse(
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
+        input.id ?? null,
       ],
     );
     const created = inserted[0];
@@ -240,9 +257,8 @@ export async function createWarehouse(
       action: 'create',
       at: now,
     });
-    return toWarehouse(
-      (await loadWarehouse(tx, created.id)) as WarehouseRow,
-      actor,
+    return fresh(
+      toWarehouse((await loadWarehouse(tx, created.id)) as WarehouseRow, actor),
     );
   });
 }

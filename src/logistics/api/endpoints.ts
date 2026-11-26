@@ -6,6 +6,7 @@ import type {
   ApplyHypothesisInput,
   ApplyHypothesisResponse,
   Category,
+  ChangesResponse,
   CategoryInput,
   Company,
   CompanyInput,
@@ -276,6 +277,32 @@ export const api = {
       'POST',
       `/hypotheses/${enc(id)}/apply`,
       {token, body},
+    ),
+
+  // ---- milestone 6: cheap refresh and the day's activity
+  /** Which record types changed since `since` (none: a fresh cursor). */
+  changes: (token: string, orgId: string, since?: string | null) =>
+    apiRequest<ChangesResponse>(
+      'GET',
+      `/organizations/${enc(orgId)}/changes${since ? `?since=${enc(since)}` : ''}`,
+      {token},
+    ),
+
+  /** Activity with `from` ≤ at < `to`, newest first (day close). */
+  activityBetween: (
+    token: string,
+    orgId: string,
+    from: string,
+    to: string,
+    limit?: number,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<ListResponse<ActivityEntry>>(
+      'GET',
+      `/organizations/${enc(orgId)}/activity?from=${enc(from)}&to=${enc(to)}${
+        limit ? `&limit=${limit}` : ''
+      }`,
+      {token, signal},
     ),
 
   removeDemo: (token: string, orgId: string) =>

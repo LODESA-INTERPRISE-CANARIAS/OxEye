@@ -2,9 +2,10 @@ import {expect, test, type Page, type Route} from '@playwright/test';
 import {mockApi as qaMock, signIn as qaSignIn} from './mock-api';
 import {fixClock, planData} from './plan-fixtures';
 import {followData, openHypothesis} from './followup-fixtures';
+import {dayCloseData} from './day-close-fixtures';
 
 /**
- * Visual review harness for the Logistics Manager (milestones 1–5), written by
+ * Visual review harness for the Logistics Manager (milestones 1–6), written by
  * the UI engineer to look at the screens while building them. It mocks the
  * API with page.route, so no server is needed, and only takes screenshots:
  * behavioural assertions belong to the QA suite. The milestone 5 shots reuse
@@ -1148,14 +1149,15 @@ test.describe('Gestor logístico · revisión visual', () => {
     await capture(page, 'task-new-phone');
   });
 
-  test('placeholder phone', async ({page}) => {
+  test('day close phone with this harness’s data', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page);
     await signIn(page);
-    // Inventarios is real since milestone 4; «Cierre de jornada» remains.
+    // «Cierre de jornada» is real since milestone 6 (it was the last
+    // placeholder); the M6 block below shoots it with the QA day.
     await goToHash(page, '#logistica/cierre');
-    await expect(page.locator('#lx-space-cierre')).toBeVisible();
-    await capture(page, 'placeholder-phone');
+    await expect(page.locator('#lx-day-title')).toBeVisible();
+    await capture(page, 'dayclose-harness-phone');
   });
 });
 
@@ -1622,5 +1624,220 @@ test.describe('Gestor logístico · llamar desde el móvil', () => {
     await page.locator('#lx-contact-reach-call').click();
     await expect(page.locator('#lx-reach-sheet')).toBeVisible();
     await capture(page, 'reach-call-phone');
+  });
+});
+
+test.describe('Gestor logístico · sin cobertura y cierre de jornada', () => {
+  // Milestone 6: the QA mock, its fixed clock (10:30 on 2 Dec 2026) and the
+  // day of day-close-fixtures.ts / followup-fixtures.ts.
+  test.beforeEach(async ({page}) => fixClock(page));
+  const DESKTOP = {width: 1280, height: 900};
+  const chip = (page: Page) => page.locator('#lx-sync-chip');
+
+  async function openDayClose(page: Page, name = 'Elvis') {
+    await qaSignIn(page, name, '#logistica/cierre');
+    await expect(
+      page.locator('#lx-day-summary .lx-daysum__tile'),
+    ).not.toHaveCount(0);
+  }
+
+  async function closeSheets(page: Page) {
+    for (let i = 0; i < 4; i++) {
+      if ((await page.locator('.lx-sheet[open], dialog[open]').count()) === 0) {
+        return;
+      }
+      await page.keyboard.press('Escape');
+    }
+  }
+
+  async function addOfflineResource(page: Page, name: string) {
+    await page.locator('#lx-add').click();
+    await page.locator('#lx-add-resource').click();
+    await page.locator('#lx-resource-name').fill(name);
+    await page.locator('#lx-resource-save').click();
+    await expect(page.locator('#lx-resource-sheet')).toContainText(name);
+  }
+
+  test('day close desktop and phone', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, dayCloseData());
+    await openDayClose(page);
+    await capture(page, 'dayclose-desktop');
+    await page.locator('#lx-day-include-decision').check();
+    await page.locator('#lx-day-notes').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-notes-desktop');
+    await page.locator('#lx-day-safety').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-safety-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-day-title').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-phone');
+    await page.locator('#lx-day-notes').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-notes-phone');
+    await page.locator('#lx-day-subsoil').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-safety-phone');
+  });
+
+  test('day close: incident confirmation and failed history', async ({
+    page,
+  }) => {
+    await page.setViewportSize(DESKTOP);
+    const api = await qaMock(page, dayCloseData());
+    await openDayClose(page);
+    await page.locator('#lx-day-include-incident').click();
+    await expect(page.locator('#lx-day-incident-confirm')).toBeVisible();
+    await page.locator('#lx-day-incident-confirm').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-incident-confirm');
+    // The day's history does not answer: the notice and «Reintentar».
+    api.failActivityRange = 5;
+    await page.locator('#lx-day-prev').click();
+    await expect(page.locator('#lx-day-retry')).toBeVisible();
+    await page.locator('#lx-day-title').scrollIntoViewIfNeeded();
+    await capture(page, 'dayclose-failed-desktop');
+  });
+
+  test('day close as the guest', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, dayCloseData());
+    await openDayClose(page, 'Invitado');
+    await expect(page.locator('#lx-day-guest')).toBeVisible();
+    await capture(page, 'dayclose-guest-desktop');
+  });
+
+  test('day close print preview and paper', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, dayCloseData());
+    await openDayClose(page);
+    await page.locator('#lx-day-print').click();
+    await expect(page.locator('#lx-day-preview')).toBeVisible();
+    await capture(page, 'dayclose-preview-desktop');
+    await page.locator('#lx-day-print-close').click();
+    await page.locator('#lx-day-include-decision').check();
+    await page.locator('#lx-day-print').click();
+    await expect(page.locator('#lx-day-print-banner')).toHaveClass(
+      /lx-notice--error/,
+    );
+    await capture(page, 'dayclose-preview-text-desktop');
+    await page.setViewportSize(PHONE);
+    await capture(page, 'dayclose-preview-phone');
+    await page.locator('#lx-day-print-close').click();
+    // What goes on paper (print forces the light page: one shot).
+    await page.setViewportSize(DESKTOP);
+    await page.emulateMedia({media: 'print'});
+    await page.screenshot({
+      path: `${OUT}/logistics-dayclose-print-oxeye.png`,
+      fullPage: true,
+    });
+    await page.emulateMedia({media: 'screen'});
+  });
+
+  test('sync chip: offline with changes, a record pending, day close unsent', async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, dayCloseData());
+    await qaSignIn(page);
+    await context.setOffline(true);
+    await expect(chip(page)).toHaveAttribute('data-state', 'offline');
+    await addOfflineResource(page, 'Vallas Prueba');
+    await expect(
+      page.locator('#lx-resource-sheet [data-unsent="pending"]'),
+    ).toBeVisible();
+    await capture(page, 'pending-record-desktop');
+    await closeSheets(page);
+    await page.locator('#lx-quick-done-h6').click();
+    await expect(chip(page).locator('.lx-sync__label')).toHaveText(
+      'Sin conexión · 2 cambios pendientes',
+    );
+    // The chip lives in the header: back to the top of the space.
+    const toTop = () =>
+      page.evaluate(() => {
+        // Whichever element scrolls at this size (window, shell or content).
+        window.scrollTo(0, 0);
+        for (const el of document.querySelectorAll<HTMLElement>(
+          '.lx, .lx-main, #lx-main',
+        )) {
+          el.scrollTop = 0;
+        }
+      });
+    await toTop();
+    await capture(page, 'sync-offline-desktop');
+    await page.setViewportSize(PHONE);
+    await toTop();
+    await capture(page, 'sync-offline-phone');
+    await page.setViewportSize(DESKTOP);
+    await page.locator('#lx-nav-inventarios').click();
+    await expect(page.locator('#lx-space-inventarios')).toBeVisible();
+    await capture(page, 'pending-list-desktop');
+    await page.locator('#lx-nav-cierre').click();
+    await expect(page.locator('#lx-day-unsent')).toBeVisible();
+    await capture(page, 'dayclose-unsent-desktop');
+    await chip(page).click();
+    await expect(page.locator('#lx-outbox-sheet')).toBeVisible();
+    await capture(page, 'outbox-offline-desktop');
+  });
+
+  test('sync chip: server not answering', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    const api = await qaMock(page, followData());
+    await qaSignIn(page);
+    api.unreachable = true;
+    await chip(page).click();
+    await expect(chip(page)).toHaveAttribute('data-state', 'local_only');
+    await closeSheets(page);
+    await capture(page, 'sync-local-only-desktop');
+    await page.setViewportSize(PHONE);
+    await capture(page, 'sync-local-only-phone');
+  });
+
+  test('sync chip: a change to review, and «Cambios pendientes»', async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize(DESKTOP);
+    const api = await qaMock(page, planData());
+    await qaSignIn(page);
+    await context.setOffline(true);
+    await expect(chip(page)).toHaveAttribute('data-state', 'offline');
+    await page.locator('#lx-today-tasks [data-task-id="t3"]').click();
+    await page.locator('#lx-task-notes').fill('Prueba: sin cobertura');
+    await page.locator('#lx-task-save').click();
+    await expect(page.locator('#lx-task-sheet')).toHaveCount(0);
+    api.editTaskOnServer('t3', {title: 'Entrega de vallas (puerta norte)'});
+    await context.setOffline(false);
+    await expect(chip(page)).toHaveAttribute('data-state', 'attention');
+    await capture(page, 'sync-attention-desktop');
+    await chip(page).click();
+    await expect(page.locator('#lx-outbox-sheet')).toBeVisible();
+    await capture(page, 'outbox-conflict-desktop');
+    await page.setViewportSize(PHONE);
+    await capture(page, 'outbox-conflict-phone');
+  });
+
+  test('leaving with unsent changes', async ({page, context}) => {
+    await page.setViewportSize(DESKTOP);
+    const api = await qaMock(page, followData());
+    await qaSignIn(page);
+    await context.setOffline(true);
+    await expect(chip(page)).toHaveAttribute('data-state', 'offline');
+    await page.locator('#lx-quick-done-h6').click();
+    await page.locator('#lx-logout').click();
+    await expect(page.locator('#lx-leave-confirm')).toBeVisible();
+    await capture(page, 'leave-offline-desktop');
+    await page.locator('#lx-leave-cancel').click();
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-account-button').click();
+    await page.locator('#lx-logout-phone').click();
+    await expect(page.locator('#lx-leave-confirm')).toBeVisible();
+    await capture(page, 'leave-offline-phone');
+    await page.locator('#lx-leave-cancel').click();
+    // Network back but the server silent: «Enviar ahora» is offered.
+    await page.setViewportSize(DESKTOP);
+    api.unreachable = true;
+    await context.setOffline(false);
+    await expect(chip(page)).toHaveAttribute('data-state', 'local_only');
+    await page.locator('#lx-logout').click();
+    await expect(page.locator('#lx-leave-confirm')).toBeVisible();
+    await capture(page, 'leave-online-desktop');
   });
 });

@@ -94,6 +94,9 @@ export interface LogisticsActions {
   addResource: (prefill?: ResourcePrefill) => void;
   openNote: (note: Note) => void;
   addNote: (prefill?: NotePrefill) => void;
+  // Milestone 6: changes saved only on this device.
+  /** «Cambios pendientes». */
+  openOutbox: () => void;
 }
 
 export const ActionsContext = createContext<LogisticsActions | null>(null);

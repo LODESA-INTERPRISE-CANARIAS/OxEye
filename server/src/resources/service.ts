@@ -20,6 +20,8 @@ import {
 import {unlinkNotes} from '../notes/refs.ts';
 import {toAmount} from '../offers/domain.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
+import {createOnce, findReplay, fresh} from '../records/device-id.ts';
+import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {normalizeName, promoteDemo} from '../records/find-or-create.ts';
 import {parseIds} from '../records/ids.ts';
 import {lockCatalogue, lockGraph} from '../records/locks.ts';
@@ -388,10 +390,23 @@ export async function createResource(
   actor: SessionUser,
   input: CreateResourceBody,
   now: Date,
-): Promise<Resource> {
-  return db.transaction(async tx => {
+): Promise<Created<Resource>> {
+  const device: DeviceCreate<Resource> = {
+    table: 'resources',
+    id: input.id,
+    organizationId: input.organizationId,
+    actorId: actor.id,
+    load: async (q, id) => {
+      const row = await loadResource(q, id);
+      return row && toResource(row, actor);
+    },
+  };
+  return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
     await lockCatalogue(tx, org.id);
+    // Before applyInput: a replay must not find or create a warehouse again.
+    const replay = await findReplay(tx, device, org.id);
+    if (replay) return replay;
     const state = await applyInput(
       tx,
       {
@@ -409,10 +424,10 @@ export async function createResource(
          (organization_id, name, ownership, category_id, warehouse_id,
           company_id, offer_id, quantity, unit, dimensions, condition,
           availability, location, to_assess, notes, source, verification,
-          created_by, created_at, updated_by, updated_at)
+          created_by, created_at, updated_by, updated_at, id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10, $11, $12,
                $13, $14, $15, $16, $17, $18, $19::timestamptz, $18,
-               $19::timestamptz)
+               $19::timestamptz, COALESCE($20::uuid, gen_random_uuid()))
        RETURNING id`,
       [
         org.id,
@@ -434,6 +449,7 @@ export async function createResource(
         state.verification,
         actor.id,
         now.toISOString(),
+        input.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -446,7 +462,9 @@ export async function createResource(
       action: 'create',
       at: now,
     });
-    return toResource((await loadResource(tx, id)) as ResourceRow, actor);
+    return fresh(
+      toResource((await loadResource(tx, id)) as ResourceRow, actor),
+    );
   });
 }
 

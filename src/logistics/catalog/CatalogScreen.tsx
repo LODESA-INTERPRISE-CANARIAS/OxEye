@@ -15,6 +15,7 @@ import {universalSearch} from '../../../shared/logistics/search.ts';
 import {useActions} from '../common/actions';
 import {serviceCategories} from '../lib/directory';
 import {plural} from '../lib/format';
+import {UnsentMark} from '../offline/PendingMark';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -264,6 +265,7 @@ export const OfferRow: React.FC<{
           <Icon name="building" size={14} />
           {offer.company.name}
         </span>
+        <UnsentMark id={offer.id} />
       </span>
       <span className="lx-offerrow__price">
         <span className="lx-offerrow__amount lx-num">

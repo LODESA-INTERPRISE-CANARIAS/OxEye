@@ -61,22 +61,24 @@ test.describe('Gestor logístico · móvil', () => {
     ).toBeVisible();
   });
 
-  test('«Ir a Hoy» on a placeholder space goes back to Hoy', async ({page}) => {
+  test('«Cierre de jornada» opens from the account sheet; the Hoy tab goes back', async ({
+    page,
+  }) => {
     await mockApi(page);
     await signIn(page);
-    // Catálogo and Contactos are real spaces since milestone 3, Inventarios
-    // since milestone 4: «Cierre de jornada» (from the account sheet) is
-    // the remaining placeholder.
+    // Milestone 6: «Cierre de jornada» is a real space (no placeholder is
+    // left), reached on a phone from the account sheet.
     await page.locator('#lx-account-button').click();
     await page
       .locator('#lx-account-sheet')
       .getByRole('button', {name: 'Cierre de jornada'})
       .click();
     await expect(page).toHaveURL(/#logistica\/cierre$/);
-    await page
-      .locator('#lx-space-cierre')
-      .getByRole('button', {name: 'Ir a Hoy'})
-      .click();
+    await expect(page.locator('#lx-space-cierre #lx-day-title')).toBeVisible();
+    await expect(
+      page.locator('#lx-space-cierre').getByRole('button', {name: 'Ir a Hoy'}),
+    ).toHaveCount(0);
+    await page.locator('#lx-tab-hoy').click();
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
     await expect(page).toHaveURL(/#logistica$/);
   });

@@ -315,3 +315,16 @@ export function isValidDelay(value: number): boolean {
 export const SUBSOIL_REVIEW_LABEL = 'Subsuelo revisado en el simulador';
 export const SUBSOIL_REVIEW_NOTE =
   'Marca declarada por quien hizo la revisión en el simulador (análisis de rayos X). OxEye no la comprueba y no certifica el suelo. Se borra si cambian el lugar, la carga pesada o los recursos de la tarea.';
+
+// ---------------------------------------------------------------- M6: offline and day close
+
+/**
+ * `GET …/changes` also reports types written in the last two minutes, so a
+ * transaction that took a lower `seq` but committed after a later one is
+ * never skipped by a client that already moved its cursor.
+ */
+export const CHANGES_OVERLAP_SECONDS = 120;
+/** Most activity entries returned for a `from`/`to` range (one day close). */
+export const ACTIVITY_RANGE_MAX = 2000;
+/** Longest `from`/`to` span the activity route accepts. */
+export const ACTIVITY_RANGE_MAX_DAYS = 8;

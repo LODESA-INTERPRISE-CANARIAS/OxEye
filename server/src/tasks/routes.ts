@@ -28,8 +28,8 @@ export function registerTaskRoutes(
 
   api.post('/tasks', auth, async c => {
     const input = await jsonBody(c, createTaskSchema);
-    const task = await createTask(deps.db, c.get('user'), input, deps.now());
-    return c.json(task, 201);
+    const created = await createTask(deps.db, c.get('user'), input, deps.now());
+    return c.json(created.record, created.replayed ? 200 : 201);
   });
 
   api.patch('/tasks/:id', auth, async c => {

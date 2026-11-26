@@ -12,6 +12,7 @@ import {
   requiredText,
   uuid,
 } from '../http/validate.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {
   NAME_MAX,
   NOTES_MAX,
@@ -27,6 +28,7 @@ const status = oneOf(
 );
 
 export const createEventSchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   venueName: optionalText(NAME_MAX),

@@ -198,6 +198,8 @@ test.describe('Gestor logístico · crear tarea', () => {
 
     expect(postBodies(api)).toEqual([
       {
+        // M6: every create carries a device id (replay-safe outbox).
+        id: expect.any(String),
         organizationId: ORG,
         title: 'Comprar bridas',
         kind: 'assembly',

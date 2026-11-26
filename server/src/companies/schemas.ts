@@ -16,6 +16,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {deviceIdField} from '../records/device-id.ts';
 import {
   COMPANY_KINDS,
   MAX_CATEGORIES_PER_COMPANY,
@@ -43,6 +44,7 @@ const common = {
 };
 
 export const createCompanySchema = z.object({
+  id: deviceIdField,
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   ...common,

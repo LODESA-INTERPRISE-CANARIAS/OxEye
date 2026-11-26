@@ -25,6 +25,7 @@ import {universalSearch} from '../../../shared/logistics/search.ts';
 import {useActions} from '../common/actions';
 import {categoryNames} from '../lib/directory';
 import {plural} from '../lib/format';
+import {UnsentMark} from '../offline/PendingMark';
 import {
   countByCategory,
   groupByCompany,
@@ -609,6 +610,7 @@ const WarehouseGroupView: React.FC<{
               </span>
               {w.isDemo && <span className="lx-dirrow__demo">Demo</span>}
             </span>
+            <UnsentMark id={w.id} />
             <span className="lx-whgroup__sub">
               <Icon name="pin" size={14} />
               {w.address ? (
