@@ -1,0 +1,49 @@
+# OxEye Logistics Manager: local database, and optionally the API.
+#   Database only:  docker compose -f server/docker-compose.yml up -d
+#   Database + API: docker compose -f server/docker-compose.yml --profile full up -d --build
+# Values come from server/.env (copy server/.env.example).
+name: oxeye-logistics
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oxeye}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oxeye_local_only}
+      POSTGRES_DB: ${POSTGRES_DB:-oxeye_logistics}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # Only this machine can reach the database.
+      - '127.0.0.1:5433:5432'
+    volumes:
+      # Data survives restarts; delete server/pgdata to start from scratch.
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  api:
+    profiles: ['full']
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-oxeye}:${POSTGRES_PASSWORD:-oxeye_local_only}@db:5432/${POSTGRES_DB:-oxeye_logistics}
+      HOST: 0.0.0.0
+      PORT: '8787'
+      MIGRATE_ON_START: 'true'
+    ports:
+      # Loopback only: the reverse proxy on the same host reaches it; nobody
+      # can bypass the proxy (and spoof X-Forwarded-For) from outside.
+      - '${API_BIND:-127.0.0.1}:8787:8787'
+    depends_on:
+      db:
+        condition: service_healthy

@@ -1,0 +1,253 @@
+/**
+ * Inline SVG icon set for the logistics UI. Stroke icons on a 24 px grid that
+ * inherit `currentColor`, so they follow every palette.
+ */
+import React from 'react';
+
+export type IconName =
+  | 'today'
+  | 'calendar'
+  | 'inventory'
+  | 'contacts'
+  | 'catalog'
+  | 'dayClose'
+  | 'plus'
+  | 'edit'
+  | 'eye'
+  | 'close'
+  | 'chevronLeft'
+  | 'chevronRight'
+  | 'chevronDown'
+  | 'logout'
+  | 'back'
+  | 'refresh'
+  | 'alert'
+  | 'check'
+  | 'pin'
+  | 'clock'
+  | 'lock'
+  | 'server'
+  | 'cloudOff'
+  | 'trash'
+  | 'user'
+  | 'activity'
+  | 'menu'
+  | 'flask';
+
+const PATHS: Record<IconName, React.ReactNode> = {
+  today: (
+    <>
+      <path d="M12 3v2M5.6 6.6l1.4 1.4M3 13h2M19 13h2M17 8l1.4-1.4" />
+      <path d="M7.5 17a4.5 4.5 0 1 1 9 0" />
+      <path d="M3 20h18" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+      <path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
+    </>
+  ),
+  inventory: (
+    <>
+      <path d="M3.5 8 12 4l8.5 4v8.5L12 20.5 3.5 16.5Z" />
+      <path d="M3.5 8 12 12l8.5-4M12 12v8.5" />
+    </>
+  ),
+  contacts: (
+    <>
+      <circle cx="9" cy="8.5" r="3.5" />
+      <path d="M2.5 19.5c.8-3.4 3.4-5.5 6.5-5.5s5.7 2.1 6.5 5.5" />
+      <path d="M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14.4c1.8.8 3 2.6 3.5 5.1" />
+    </>
+  ),
+  catalog: (
+    <>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
+      <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" />
+      <path d="M9 8h7M9 11.5h5" />
+    </>
+  ),
+  dayClose: (
+    <>
+      <rect x="5" y="3.5" width="14" height="17.5" rx="2.5" />
+      <path d="M9 3.5V2.5h6v1M8.5 12.5l2.3 2.3 4.7-4.8" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  edit: (
+    <>
+      <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z" />
+      <path d="m13.5 6.5 4 4" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  close: <path d="M6 6l12 12M18 6 6 18" />,
+  chevronLeft: <path d="m15 5-7 7 7 7" />,
+  chevronRight: <path d="m9 5 7 7-7 7" />,
+  chevronDown: <path d="m5 9 7 7 7-7" />,
+  logout: (
+    <>
+      <path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14" />
+      <path d="M10 8l-4 4 4 4M6 12h10" />
+    </>
+  ),
+  back: <path d="M19 12H5M11 6l-6 6 6 6" />,
+  refresh: (
+    <>
+      <path d="M20 11a8 8 0 0 0-14.6-4.5L4 8" />
+      <path d="M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16" />
+      <path d="M20 20v-4h-4" />
+    </>
+  ),
+  alert: (
+    <>
+      <path d="M12 3.5 2.5 20h19Z" />
+      <path d="M12 10v4.5M12 17.2h.01" />
+    </>
+  ),
+  check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  pin: (
+    <>
+      <path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11Z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="3.5" y="4" width="17" height="7" rx="2" />
+      <rect x="3.5" y="13" width="17" height="7" rx="2" />
+      <path d="M7.5 7.5h.01M7.5 16.5h.01M11 7.5h5M11 16.5h5" />
+    </>
+  ),
+  cloudOff: (
+    <>
+      <path d="M7 18.5h10.5a3.5 3.5 0 0 0 1-6.9 6 6 0 0 0-9.8-3.4" />
+      <path d="M6.2 9.2A4.7 4.7 0 0 0 7 18.5" />
+      <path d="m3 3 18 18" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16M10 11v6M14 11v6" />
+      <path d="M6 7l1 13h10l1-13M9 7V4h6v3" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8.5" r="4" />
+      <path d="M4.5 20.5c1-3.8 3.9-6 7.5-6s6.5 2.2 7.5 6" />
+    </>
+  ),
+  activity: <path d="M3 12h4l3-7 4 14 3-7h4" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  flask: (
+    <>
+      <path d="M9.5 3.5h5M10.5 3.5v5.5L5 19a1.5 1.5 0 0 0 1.3 2.2h11.4A1.5 1.5 0 0 0 19 19l-5.5-10V3.5" />
+      <path d="M7.5 15h9" />
+    </>
+  ),
+};
+
+export interface IconProps {
+  name: IconName;
+  size?: number;
+  className?: string;
+  /** Accessible label; without it the icon is decorative. */
+  label?: string;
+}
+
+export const Icon: React.FC<IconProps> = ({
+  name,
+  size = 20,
+  className,
+  label,
+}) => (
+  <svg
+    className={['lx-icon', className].filter(Boolean).join(' ')}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    role={label ? 'img' : undefined}
+    aria-label={label}
+    aria-hidden={label ? undefined : true}
+    focusable="false"
+  >
+    {PATHS[name]}
+  </svg>
+);
+
+/** OxEye eye mark, drawn with palette variables. */
+export const EyeMark: React.FC<{size?: number; className?: string}> = ({
+  size = 36,
+  className,
+}) => (
+  <svg
+    className={['lx-eyemark', className].filter(Boolean).join(' ')}
+    width={size}
+    height={size}
+    viewBox="0 0 64 64"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <rect width="64" height="64" rx="19" className="lx-eyemark__bg" />
+    <path
+      d="M9 32Q32 6 55 32Q32 58 9 32Z"
+      fill="none"
+      className="lx-eyemark__lid"
+      strokeWidth="3"
+    />
+    <circle cx="32" cy="32" r="11" className="lx-eyemark__iris" />
+    <circle cx="32" cy="32" r="4" className="lx-eyemark__pupil" />
+  </svg>
+);
+
+/**
+ * Faint contour-line texture (cartographic isolines) for the sidebar and
+ * header. Purely decorative.
+ */
+export const ContourTexture: React.FC<{className?: string}> = ({className}) => (
+  <svg
+    className={['lx-contours', className].filter(Boolean).join(' ')}
+    viewBox="0 0 400 300"
+    preserveAspectRatio="xMidYMid slice"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <g fill="none" stroke="currentColor" strokeWidth="1">
+      <path d="M318 58c34 6 58 34 52 66s-44 52-82 46-60-38-52-70 48-48 82-42Z" />
+      <path d="M314 34c50 6 88 46 80 96s-66 78-120 70-92-56-80-104 70-68 120-62Z" />
+      <path d="M306 8c66 8 120 62 108 128s-90 104-160 92-124-76-106-138S240 0 306 8Z" />
+      <path d="M296-18c80 10 150 78 134 160s-112 132-200 116S74 166 96 88 216-28 296-18Z" />
+      <path d="M326 84c14 3 24 16 21 30s-19 22-34 19-24-16-21-30 20-22 34-19Z" />
+      <path d="M60 236c26-10 58-2 70 20s-2 46-30 54-58-4-66-28 0-36 26-46Z" />
+      <path d="M44 210c40-16 88-4 106 30s-4 72-48 84-90-6-102-42 4-56 44-72Z" />
+      <path d="M26 182c54-22 120-6 144 40s-6 98-64 114S-14 330-30 282s2-78 56-100Z" />
+      <path d="M-20 120c60-30 160-20 220 10s120 10 220-30" />
+      <path d="M-20 96c70-34 170-24 230 6s120 6 210-34" />
+    </g>
+  </svg>
+);

@@ -1,0 +1,6 @@
+{
+  "name": "@oxeye/logistics-shared",
+  "private": true,
+  "type": "module",
+  "description": "Types and pure functions shared by the Logistics Manager frontend (src/logistics) and backend (server). No runtime dependencies."
+}

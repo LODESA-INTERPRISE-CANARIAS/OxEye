@@ -13,7 +13,6 @@ export * from './data/palettes';
 export * from './data/site-reference';
 export * from './data/venue-maps';
 export * from './data/plain-language-fields';
-export * from './db/schema';
 export * from './db/repository';
 export * from './engine/cartography/custom-map';
 export * from './engine/cartography/geometry';

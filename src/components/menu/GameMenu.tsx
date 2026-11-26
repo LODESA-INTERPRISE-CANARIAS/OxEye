@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {Suspense, useCallback, useEffect, useRef, useState} from 'react';
 import {
   applyPalette,
   COLOR_PALETTES,
@@ -31,6 +31,17 @@ import type {
 } from '../../types';
 import {ObjectivesConfigurator} from '../planning/ObjectivesConfigurator';
 import {LocationPicker} from './LocationPicker';
+import {
+  LogisticsBoundary,
+  LogisticsLoading,
+} from '../../logistics/LogisticsLoading';
+
+// Logistics Manager: separate chunk, loaded only when opened.
+const LogisticsApp = React.lazy(() => import('../../logistics/LogisticsApp'));
+
+const isLogisticsHash = (): boolean =>
+  typeof window !== 'undefined' &&
+  window.location.hash.startsWith('#logistica');
 
 const shiftDateByDays = (isoDate: string, delta: number): string => {
   const d = new Date(isoDate + 'T12:00:00Z');
@@ -71,6 +82,50 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const save = useProjectStore((s) => s.save);
 
   const [screen, setScreen] = useState<MenuScreen>('main');
+  const [logisticsOpen, setLogisticsOpen] = useState(isLogisticsHash);
+
+  // `#logistica` opens the Logistics Manager directly (also on Back/Forward),
+  // but only from the hub: never on top of a running simulation.
+  const menuOpenRef = useRef(menuOpen);
+  menuOpenRef.current = menuOpen;
+  useEffect(() => {
+    const onHashChange = () => {
+      const wanted = isLogisticsHash();
+      if (wanted && !menuOpenRef.current) return;
+      setLogisticsOpen(wanted);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // True when opening from the hub added a history entry, so closing can pop
+  // it instead of leaving a duplicate hub entry behind.
+  const pushedLogisticsEntry = useRef(false);
+
+  const openLogistics = () => {
+    setLogisticsOpen(true);
+    if (!isLogisticsHash()) {
+      pushedLogisticsEntry.current = true;
+      window.location.hash = 'logistica';
+    }
+  };
+
+  const closeLogistics = useCallback(() => {
+    setLogisticsOpen(false);
+    if (pushedLogisticsEntry.current && isLogisticsHash()) {
+      pushedLogisticsEntry.current = false;
+      window.history.back();
+    } else if (isLogisticsHash()) {
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + window.location.search
+      );
+    }
+    requestAnimationFrame(() =>
+      document.getElementById('game-logistics')?.focus()
+    );
+  }, []);
   const [step, setStep] = useState(0);
   const [wizardError, setWizardError] = useState('');
   const [creatingModel, setCreatingModel] = useState(false);
@@ -283,7 +338,20 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   ];
 
   return (
-    <div id="game-menu" className="game-menu" hidden={!menuOpen}>
+    <>
+    {logisticsOpen && (
+      <LogisticsBoundary onClose={closeLogistics}>
+        <Suspense fallback={<LogisticsLoading />}>
+          <LogisticsApp onClose={closeLogistics} />
+        </Suspense>
+      </LogisticsBoundary>
+    )}
+    <div
+      id="game-menu"
+      className="game-menu"
+      hidden={!menuOpen}
+      inert={logisticsOpen || undefined}
+    >
       {screen === 'main' && (
         <>
           <main className="game-card">
@@ -330,6 +398,14 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
                 }}
               >
                 Crear nuevo modelo
+              </button>
+              <button
+                type="button"
+                id="game-logistics"
+                title="Eventos, inventarios, contactos y proveedores del equipo"
+                onClick={openLogistics}
+              >
+                Gestor logístico
               </button>
               <button
                 type="button"
@@ -1041,5 +1117,6 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
         </main>
       )}
     </div>
+    </>
   );
 };

@@ -1,0 +1,8 @@
+# Build context is the repository root: send only what the image copies.
+# (Also keeps server/pgdata, node_modules and .env files out of the build.)
+**
+!server/package.json
+!server/package-lock.json
+!server/src
+!server/migrations
+!shared/logistics

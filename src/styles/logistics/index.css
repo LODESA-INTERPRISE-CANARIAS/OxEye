@@ -1,0 +1,8 @@
+/**
+ * Logistics Manager styles, loaded with the lazy module. Scoped under `.lx`.
+ */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './shell.css';
+@import './screens.css';

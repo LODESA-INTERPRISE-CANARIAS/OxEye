@@ -8,8 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\"",
-    "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\"",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"server/src/**/*.ts\" \"server/tests/**/*.ts\"",
+    "lint:fix": "eslint --fix \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"server/src/**/*.ts\" \"server/tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "docs": "typedoc",
     "test": "vitest run",
@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "dexie": "^4.0.10",
-    "drizzle-orm": "^0.38.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.2"
@@ -31,7 +30,6 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
-    "drizzle-kit": "^0.30.1",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-react-hooks": "^5.1.0",

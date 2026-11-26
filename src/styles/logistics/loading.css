@@ -1,0 +1,98 @@
+/**
+ * Loading and load-error layer for the Logistics Manager. Loaded eagerly with
+ * the hub (tiny), because it shows before the module's own styles arrive.
+ */
+.lx-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 2050;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+  text-align: center;
+}
+
+.lx-boot > svg {
+  animation: lx-boot-pulse 1.6s ease-in-out infinite;
+}
+
+.lx-boot__mark-bg {
+  fill: var(--purple);
+}
+
+.lx-boot__mark-lid {
+  stroke: var(--on-accent);
+}
+
+.lx-boot__mark-iris {
+  fill: var(--on-accent);
+}
+
+.lx-boot__title {
+  margin: 6px 0 0;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 24px;
+  color: var(--heading);
+}
+
+.lx-boot__text {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.lx-boot__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.lx-boot .lx-boot__btn {
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--heading);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lx-boot .lx-boot__btn--primary {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: var(--on-accent);
+}
+
+.lx-boot .lx-boot__btn:hover:not(:disabled) {
+  background: var(--purple-soft);
+  border-color: var(--purple);
+}
+
+.lx-boot .lx-boot__btn--primary:hover:not(:disabled) {
+  background: var(--purple-mid);
+  border-color: var(--purple-mid);
+}
+
+@keyframes lx-boot-pulse {
+  50% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-boot > svg {
+    animation: none;
+  }
+}

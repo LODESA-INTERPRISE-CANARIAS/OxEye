@@ -1,0 +1,57 @@
+/**
+ * Logistics UI tokens, derived from the active palette (`data-palette` in
+ * src/styles/variables.css). Everything is scoped under `.lx` so nothing
+ * leaks into the simulator; other parts of OxEye can adopt the primitives by
+ * adding the `.lx` class to a container.
+ */
+.lx {
+  /* Surfaces */
+  --lx-bg: var(--bg);
+  --lx-canvas: var(--paper);
+  --lx-surface: var(--surface);
+  --lx-surface-2: var(--surface-subtle);
+  --lx-surface-3: var(--surface-muted);
+
+  /* Text */
+  --lx-ink: var(--ink);
+  --lx-heading: var(--heading);
+  --lx-muted: var(--muted);
+
+  /* Lines; controls need a boundary of about 3:1 against the surface. */
+  --lx-line: var(--line);
+  --lx-line-strong: var(--line-strong);
+  --lx-control-border: color-mix(in srgb, var(--muted) 62%, var(--surface));
+
+  /* Accent and states */
+  --lx-accent: var(--purple);
+  --lx-accent-strong: var(--purple-mid);
+  --lx-accent-soft: var(--purple-soft);
+  --lx-on-accent: var(--on-accent);
+  --lx-danger: var(--danger);
+  --lx-danger-soft: color-mix(in srgb, var(--danger) 11%, var(--surface));
+  --lx-on-danger: var(--surface);
+  --lx-ring: var(--ring);
+  --lx-shadow: var(--shadow-color);
+
+  /* Certainty grammar: hypothesis hatch (cartographic) */
+  --lx-hatch-color: color-mix(in srgb, var(--purple) 32%, transparent);
+
+  /* Shape and rhythm */
+  --lx-radius-xl: 28px;
+  --lx-radius-lg: 22px;
+  --lx-radius: 16px;
+  --lx-radius-sm: 12px;
+  --lx-pill: 999px;
+  --lx-target: 44px;
+  --lx-sidebar-w: 264px;
+  --lx-tabbar-h: 68px;
+  --lx-shadow-card:
+    0 1px 2px color-mix(in srgb, var(--shadow-color) 35%, transparent),
+    0 8px 24px -18px var(--shadow-color);
+  --lx-shadow-float: 0 14px 34px -12px var(--shadow-color);
+
+  /* Type */
+  --lx-font:
+    Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --lx-serif: var(--font-serif, Georgia, 'Times New Roman', serif);
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@oxeye/logistics-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OxEye Logistics Manager backend (API + PostgreSQL). Runs TypeScript directly on Node 26.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/main.ts",
+    "start": "node --env-file-if-exists=.env src/main.ts",
+    "db:migrate": "node --env-file-if-exists=.env src/cli/migrate.ts",
+    "db:seed": "node --env-file-if-exists=.env src/cli/seed.ts",
+    "db:clear-demo": "node --env-file-if-exists=.env src/cli/clear-demo.ts",
+    "db:up": "docker compose -f docker-compose.yml up -d --wait db",
+    "db:down": "docker compose -f docker-compose.yml down",
+    "db:logs": "docker compose -f docker-compose.yml logs -f db",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.11",
+    "hono": "4.13.22",
+    "postgres": "4.1.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.6.0"
+  }
+}

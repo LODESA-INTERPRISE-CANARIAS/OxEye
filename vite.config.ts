@@ -13,6 +13,14 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    // Logistics Manager API (server/). In dev the window calls the relative
+    // /api, so a phone on the same Wi-Fi only needs the Vite URL.
+    proxy: {
+      '/api': {
+        target: process.env.LOGISTICS_API_TARGET ?? 'http://localhost:8787',
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     globals: true,

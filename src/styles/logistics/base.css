@@ -1,0 +1,175 @@
+/**
+ * Logistics base: root layer, local reset of the simulator's global control
+ * styles, typography helpers and accessibility utilities.
+ *
+ * Buttons read their colours from custom properties (--lx-btn-*), so the
+ * reset below can neutralise the global `button:hover` rule without fighting
+ * every component's specificity.
+ */
+.lx {
+  position: fixed;
+  inset: 0;
+  z-index: 2050;
+  display: grid;
+  grid-template-columns: var(--lx-sidebar-w) minmax(0, 1fr);
+  background: var(--lx-bg);
+  color: var(--lx-ink);
+  font-family: var(--lx-font);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+  color-scheme: inherit;
+}
+
+.lx:focus {
+  outline: none;
+}
+
+.lx *,
+.lx *::before,
+.lx *::after {
+  box-sizing: border-box;
+}
+
+.lx h1,
+.lx h2,
+.lx h3,
+.lx p,
+.lx ul,
+.lx ol,
+.lx dl,
+.lx dd,
+.lx figure {
+  margin: 0;
+}
+
+.lx ul,
+.lx ol {
+  padding: 0;
+  list-style: none;
+}
+
+.lx code {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--lx-surface-2);
+  border: 1px solid var(--lx-line);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+
+/* ---------------------------------------------------------- button reset */
+.lx button {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  text-align: inherit;
+  padding: 0;
+  border-radius: 0;
+  border: var(--lx-btn-border-w, 0) solid var(--lx-btn-border, transparent);
+  background: var(--lx-btn-bg, transparent);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.08s ease;
+}
+
+.lx button:hover:not(:disabled) {
+  background: var(--lx-btn-bg-hover, var(--lx-btn-bg, transparent));
+  border-color: var(--lx-btn-border-hover, var(--lx-btn-border, transparent));
+}
+
+.lx button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.lx button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Visible focus everywhere in the module. */
+.lx :focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------- typography */
+.lx-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.lx .lx-eyebrow {
+  font-family: var(--lx-font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-muted {
+  color: var(--lx-muted);
+}
+
+.lx .lx-subtitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lx-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.lx-icon {
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------- utilities */
+.lx .lx-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.lx .lx-skip {
+  position: absolute;
+  left: 12px;
+  top: -80px;
+  z-index: 30;
+  padding: 12px 18px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  border: 1.5px solid var(--lx-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.lx .lx-skip:focus {
+  top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx *,
+  .lx *::before,
+  .lx *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
