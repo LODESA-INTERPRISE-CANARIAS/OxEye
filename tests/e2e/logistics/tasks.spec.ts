@@ -591,7 +591,7 @@ test.describe('Gestor logístico · «Empieza cuando termine…»', () => {
 });
 
 test.describe('Gestor logístico · editar y borrar tareas', () => {
-  test('409 keeps my text, shows who changed it and re-enables saving', async ({
+  test('409 keeps my text, shows who changed it and lets me discard mine', async ({
     page,
   }) => {
     const api = await mockApi(page, planData());
@@ -611,13 +611,24 @@ test.describe('Gestor logístico · editar y borrar tareas', () => {
       'Otra persona ha cambiado esta tarea',
     );
     await expect(conflict).toContainText('Dailos lo guardó');
-    await expect(conflict).toContainText('Tus cambios no se han guardado');
-    await expect(save).toBeDisabled();
+    // M5: the two copies are merged instead of blocking the form. Both
+    // changed «Observaciones», so it is a clash, mine kept until I choose.
+    await expect(conflict).toContainText('Aún no se ha guardado nada');
+    await expect(page.locator('#lx-task-merge-clashes')).toContainText(
+      'Observaciones',
+    );
+    await expect(page.locator('#lx-task-clash-notes-mine')).toBeChecked();
+    await expect(save).toBeEnabled();
     await expect(notes).toHaveValue('Confirmar acceso');
     expect(
       (api.calls('PATCH', '/tasks/t3')[0].body as {version: number}).version,
     ).toBe(1);
+    expect(api.calls('PATCH', '/tasks/t3')).toHaveLength(1);
 
+    // «Descartar mis cambios» (the old «Ver versión actual» id).
+    await expect(page.locator('#lx-task-load-current')).toHaveText(
+      'Descartar mis cambios',
+    );
     await page.locator('#lx-task-load-current').click();
     await expect(conflict).toHaveCount(0);
     await expect(page.locator('#lx-task-current-loaded')).toBeVisible();

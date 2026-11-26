@@ -19,14 +19,16 @@ interface Bumped {
 /**
  * Deletes every demo record of the organization (or of all organizations when
  * `organizationId` is null) and returns how many records were removed: demo
- * notes, tasks, resources, offers, contacts, events, warehouses, venues and
- * companies, and their activity. Demo venues, companies and warehouses still
+ * notes, delay hypotheses about demo tasks, tasks, resources, offers,
+ * contacts, events, warehouses, venues and companies, and their activity.
+ * Demo venues, companies and warehouses still
  * used by real records (including real notes that point at them) are kept.
  *
  * Real records that lose a link to a demo record get a new version,
  * `updated_by`/`updated_at` and an activity entry, so a stale edit cannot
  * restore the link silently and the team sees why the record changed: tasks
- * (their event, a predecessor, their contact or a resource), contacts (a demo
+ * (their event, a predecessor, their contact or a resource; losing a resource
+ * also clears a declared subsoil review), contacts (a demo
  * event), companies (a demo main contact), resources (a demo offer) and notes
  * (a demo event, or the demo task, person, offer or resource they point at).
  * The author is the user who removed the demo, or «Sistema» from the command
@@ -60,25 +62,35 @@ export async function clearDemo(
     const touch = `version = version + 1,
               updated_at = $${params.length + 1}::timestamptz,
               updated_by = COALESCE($${params.length + 2}::uuid, r.updated_by)`;
+    // A real task that loses a demo resource also loses its declared subsoil
+    // review: the review was for that material (same rule as a task edit).
+    const lostResource = `EXISTS (SELECT 1 FROM task_resources tr
+                            JOIN resources s ON s.id = tr.resource_id
+                           WHERE tr.task_id = r.id AND s.is_demo)`;
     const bumped = await tx.query<
       Bumped & {
         lost_event: boolean;
         lost_contact: boolean;
         lost_dependency: boolean;
         lost_resource: boolean;
+        lost_review: boolean;
       }
     >(
       `UPDATE tasks r
-          SET ${touch}
-        WHERE NOT r.is_demo ${inOrg('r')}
+          SET subsoil_reviewed_by = CASE WHEN ${lostResource} THEN NULL
+                                         ELSE r.subsoil_reviewed_by END,
+              subsoil_reviewed_at = CASE WHEN ${lostResource} THEN NULL
+                                         ELSE r.subsoil_reviewed_at END,
+              ${touch}
+         FROM (SELECT t.id, t.subsoil_reviewed_at IS NOT NULL AS had_review
+                 FROM tasks t) old
+        WHERE old.id = r.id AND NOT r.is_demo ${inOrg('r')}
           AND (EXISTS (SELECT 1 FROM events e WHERE e.id = r.event_id AND e.is_demo)
                OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = r.contact_id AND k.is_demo)
                OR EXISTS (SELECT 1 FROM task_dependencies d
                             JOIN tasks p ON p.id = d.depends_on_id
                            WHERE d.task_id = r.id AND p.is_demo)
-               OR EXISTS (SELECT 1 FROM task_resources tr
-                            JOIN resources s ON s.id = tr.resource_id
-                           WHERE tr.task_id = r.id AND s.is_demo))
+               OR ${lostResource})
         RETURNING r.id, r.organization_id, r.title AS name,
                   EXISTS (SELECT 1 FROM events e
                            WHERE e.id = r.event_id AND e.is_demo) AS lost_event,
@@ -87,9 +99,8 @@ export async function clearDemo(
                   EXISTS (SELECT 1 FROM task_dependencies d
                             JOIN tasks p ON p.id = d.depends_on_id
                            WHERE d.task_id = r.id AND p.is_demo) AS lost_dependency,
-                  EXISTS (SELECT 1 FROM task_resources tr
-                            JOIN resources s ON s.id = tr.resource_id
-                           WHERE tr.task_id = r.id AND s.is_demo) AS lost_resource`,
+                  ${lostResource} AS lost_resource,
+                  (old.had_review AND ${lostResource}) AS lost_review`,
       [...params, now, actorId],
     );
     const bumpedContacts = await tx.query<Bumped>(
@@ -162,6 +173,25 @@ export async function clearDemo(
     const notes = await remove(
       `DELETE FROM notes n WHERE n.is_demo ${inOrg('n')} RETURNING n.organization_id`,
     );
+    // Hypotheses about demo tasks are demo data (open or applied). A real
+    // hypothesis can only point at a demo task if that task were promoted,
+    // which never happens; the rule of a task delete covers it anyway: open
+    // ones go, applied ones lose the link and keep their label.
+    const hypotheses = await remove(
+      `DELETE FROM hypotheses h
+        WHERE (h.is_demo
+               OR (h.applied_at IS NULL
+                   AND EXISTS (SELECT 1 FROM tasks t
+                                WHERE t.id = h.task_id AND t.is_demo)))
+              ${inOrg('h')}
+        RETURNING h.organization_id`,
+    );
+    await tx.query(
+      `UPDATE hypotheses h SET task_id = NULL
+        WHERE EXISTS (SELECT 1 FROM tasks t WHERE t.id = h.task_id AND t.is_demo)
+              ${inOrg('h')}`,
+      params,
+    );
     const tasks = await remove(
       `DELETE FROM tasks t WHERE t.is_demo ${inOrg('t')} RETURNING t.organization_id`,
     );
@@ -217,6 +247,7 @@ export async function clearDemo(
 
     const removedRows = [
       ...notes,
+      ...hypotheses,
       ...tasks,
       ...resources,
       ...offers,
@@ -261,6 +292,7 @@ export async function clearDemo(
           ...(t.lost_contact ? ['contact'] : []),
           ...(t.lost_dependency ? ['dependsOn'] : []),
           ...(t.lost_resource ? ['resourceIds'] : []),
+          ...(t.lost_review ? ['subsoilReview'] : []),
         ]);
       }
       const touched = new Set(removedRows.map(r => r.organization_id));

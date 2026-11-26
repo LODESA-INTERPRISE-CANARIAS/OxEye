@@ -74,6 +74,10 @@ const common = {
     list: 'recursos',
     invalid: 'Alguno de los recursos no es válido.',
   }),
+  // «Subsuelo revisado en el simulador»: declared or withdrawn (M5).
+  subsoilReviewed: z
+    .boolean({error: 'Indica sí o no: ¿se revisó el subsuelo en el simulador?'})
+    .optional(),
   notes: optionalText(NOTES_MAX),
   source,
   verification,

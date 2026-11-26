@@ -1,10 +1,14 @@
 import {expect, test, type Page, type Route} from '@playwright/test';
+import {mockApi as qaMock, signIn as qaSignIn} from './mock-api';
+import {fixClock, planData} from './plan-fixtures';
+import {followData, openHypothesis} from './followup-fixtures';
 
 /**
- * Visual review harness for the Logistics Manager (milestones 1–4), written by
+ * Visual review harness for the Logistics Manager (milestones 1–5), written by
  * the UI engineer to look at the screens while building them. It mocks the
  * API with page.route, so no server is needed, and only takes screenshots:
- * behavioural assertions belong to the QA suite.
+ * behavioural assertions belong to the QA suite. The milestone 5 shots reuse
+ * the QA mock and its fixed clock (follow-up needs a known «now»).
  *
  * Output: test-results/visual/logistics-<screen>-<palette>.png
  * Run: npx playwright test tests/e2e/logistics/ui-review.spec.ts
@@ -1479,6 +1483,129 @@ test.describe('Gestor logístico · inventarios y captura rápida', () => {
     await page.setViewportSize(PHONE);
     await page.locator('#lx-task-resources').scrollIntoViewIfNeeded();
     await capture(page, 'task-resources-phone');
+  });
+});
+
+test.describe('Gestor logístico · seguimiento y órdenes de trabajo', () => {
+  // Fixed clock at 10:30 with the follow-up plan (followup-fixtures.ts).
+  test.beforeEach(async ({page}) => fixClock(page));
+  const DESKTOP = {width: 1280, height: 900};
+
+  test('la jornada with late rows, desktop and phone', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, followData());
+    await qaSignIn(page);
+    await expect(page.locator('#lx-day-late')).toBeVisible();
+    await capture(page, 'jornada-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-today-tasks').scrollIntoViewIfNeeded();
+    await capture(page, 'jornada-phone');
+  });
+
+  test('hypothesis sheet with results, apply confirmation', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, followData());
+    await qaSignIn(page);
+    await page.locator('#lx-quick-delay-h1').click();
+    await page.locator('#lx-hypo-minutes').fill('120');
+    await expect(page.locator('#lx-hypo-results')).toBeVisible();
+    await expect(page.locator('#lx-hypo-summary')).toContainText('2 h');
+    await capture(page, 'hypothesis-desktop');
+    await page.locator('#lx-hypo-apply').click();
+    await expect(page.locator('#lx-hypo-confirm')).toBeVisible();
+    await capture(page, 'hypothesis-confirm-desktop');
+    await page.locator('#lx-hypo-back').click();
+    await page.setViewportSize(PHONE);
+    await expect(page.locator('#lx-hypo-results')).toBeVisible();
+    await capture(page, 'hypothesis-phone');
+  });
+
+  test('saved hypothesis chip in Hoy (phone)', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await qaMock(page, followData({hypotheses: [openHypothesis()]}));
+    await qaSignIn(page);
+    await expect(page.locator('[id^="lx-hypo-chip-"]').first()).toBeVisible();
+    await page.locator('#lx-today-tasks').scrollIntoViewIfNeeded();
+    await capture(page, 'hypothesis-chip-phone');
+  });
+
+  test('work order with preview (desktop), print copy and send (phone)', async ({
+    page,
+  }) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, followData());
+    await qaSignIn(page, 'Elvis', '#logistica/contactos');
+    await page.locator('#lx-contacts-tab-companies').click();
+    await page.locator('[data-company-id="c1"] .lx-dirrow__main').click();
+    await page.locator('#lx-company-work-order').click();
+    await expect(page.locator('#lx-order-preview')).toBeVisible();
+    await capture(page, 'order-desktop');
+    await page.locator('#lx-order-field-observations').check();
+    await page.locator('#lx-order-field-contactPhone').check();
+    await page.locator('#lx-order-preview').scrollIntoViewIfNeeded();
+    await capture(page, 'order-desktop-extra');
+    // What goes on paper.
+    await page.evaluate(() => {
+      window.print = () => {};
+    });
+    await page.locator('#lx-order-print').click();
+    await page.emulateMedia({media: 'print'});
+    await page.screenshot({
+      path: `${OUT}/logistics-order-print-oxeye.png`,
+      fullPage: true,
+    });
+    await page.emulateMedia({media: 'screen'});
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-order-send').click();
+    await expect(page.locator('#lx-order-send-sheet')).toBeVisible();
+    await capture(page, 'order-send-phone');
+  });
+
+  test('send sheet for a person without phone (phone)', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await qaMock(page, followData());
+    await qaSignIn(page, 'Elvis', '#logistica/contactos');
+    await page.locator('[data-contact-id="p2"] .lx-dirrow__main').click();
+    await page.locator('#lx-contact-work-order').click();
+    await page.locator('#lx-order-send').click();
+    await expect(page.locator('#lx-order-send-whatsapp')).toBeDisabled();
+    await capture(page, 'order-send-nophone-phone');
+  });
+
+  test('merge notice with a clash and the subsoil note', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    const api = await qaMock(page, planData());
+    await qaSignIn(page);
+    await page.locator('#lx-today-tasks [data-task-id="t1"]').click();
+    await page.locator('#lx-task-subsoil-reviewed').check();
+    await page
+      .locator('#lx-task-notes')
+      .fill('Prueba: revisado en el simulador');
+    api.editTaskOnServer('t1', {
+      venue: {id: 'v2', name: 'Plaza del Adelantado'},
+      notes: 'Prueba: grúa a las 9',
+    });
+    await page.locator('#lx-task-save').click();
+    await expect(page.locator('#lx-task-conflict')).toBeFocused();
+    await expect(page.locator('#lx-task-clash-notes')).toBeVisible();
+    await capture(page, 'merge-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-task-conflict').scrollIntoViewIfNeeded();
+    await capture(page, 'merge-phone');
+  });
+
+  test('subsoil field: empty, declared and stale', async ({page}) => {
+    await page.setViewportSize(DESKTOP);
+    await qaMock(page, followData());
+    await qaSignIn(page);
+    // h1 was declared by Dailos at 08:45.
+    await page.locator('#lx-today-tasks [data-task-id="h1"]').click();
+    await page.locator('#lx-task-subsoil').scrollIntoViewIfNeeded();
+    await capture(page, 'subsoil-declared');
+    await page.locator('#lx-task-venue').fill('Plaza del Adelantado');
+    await expect(page.locator('#lx-task-subsoil')).toHaveClass(/is-stale/);
+    await page.locator('#lx-task-subsoil').scrollIntoViewIfNeeded();
+    await capture(page, 'subsoil-stale');
   });
 });
 

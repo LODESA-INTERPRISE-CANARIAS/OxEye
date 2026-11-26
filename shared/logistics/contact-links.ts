@@ -24,10 +24,7 @@ export interface PhoneInfo {
 }
 
 export type PhoneWarningReason =
-  | 'two_numbers'
-  | 'missing_34'
-  | 'incomplete'
-  | 'unknown_country';
+  'two_numbers' | 'missing_34' | 'incomplete' | 'unknown_country';
 
 const SPANISH_NATIONAL = /^[6789]\d{8}$/;
 /** Short public numbers: 112, 010, 016, 091, 092… */
@@ -108,8 +105,17 @@ export function whatsappHref(info: PhoneInfo, text?: string): string | null {
   return `https://wa.me/${info.international}${q}`;
 }
 
-export function mailtoHref(email: string, subject?: string): string {
-  const q = subject ? `?subject=${encodeURIComponent(subject)}` : '';
+/** `mailto:` link; an empty `email` leaves the recipient for the user to choose. */
+export function mailtoHref(
+  email: string,
+  subject?: string,
+  body?: string,
+): string {
+  const params = [
+    subject ? `subject=${encodeURIComponent(subject)}` : '',
+    body ? `body=${encodeURIComponent(body)}` : '',
+  ].filter(Boolean);
+  const q = params.length ? `?${params.join('&')}` : '';
   return `mailto:${encodeURIComponent(email.trim()).replace(/%40/g, '@')}${q}`;
 }
 

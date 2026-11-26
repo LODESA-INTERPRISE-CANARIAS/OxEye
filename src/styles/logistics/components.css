@@ -657,6 +657,9 @@
   color: var(--lx-ink);
   box-shadow: var(--lx-shadow-float);
   overflow: hidden;
+  /* `clip` is not a scroll container, so nothing (focus, a scroll into view)
+     can scroll the frame and push its header out of view. */
+  overflow: clip;
 }
 
 .lx .lx-sheet--sm {
@@ -723,6 +726,9 @@
 }
 
 .lx .lx-sheet__body {
+  /* Positioned descendants (visually hidden inputs) belong to the body's
+     scroll area, not the frame's. */
+  position: relative;
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;

@@ -328,6 +328,7 @@ describe('seed', () => {
     expect((await migrate(db)).applied).toEqual([
       '0004_contacts_catalogue.sql',
       '0005_inventories.sql',
+      '0006_followup.sql',
     ]);
     const first = await seed(db, {passwordFor});
     expect(first.demoTasksCreated).toBe(0);
@@ -418,7 +419,10 @@ describe('seed', () => {
       [org!.id, company!.id, system!.id],
     );
 
-    expect((await migrate(db)).applied).toEqual(['0005_inventories.sql']);
+    expect((await migrate(db)).applied).toEqual([
+      '0005_inventories.sql',
+      '0006_followup.sql',
+    ]);
     const first = await seed(db, {passwordFor});
     expect(first.demoTasksCreated).toBe(0);
     expect(first.demoContactsCreated + first.demoOffersCreated).toBe(0);

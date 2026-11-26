@@ -556,6 +556,7 @@ const WarehouseForm: React.FC<{
           currentLoaded={f.conflictResolved}
           error={errors.form}
           alertRef={f.alertRef}
+          merge={f.merge}
         />
         {duplicate && (
           <div

@@ -184,7 +184,13 @@ test.describe('Gestor logístico · rescate tras caducar la sesión', () => {
     const conflict = page.locator('#lx-event-conflict');
     await expect(conflict).toBeVisible();
     await expect(conflict).toContainText('Dailos lo guardó');
-    await expect(page.locator('#lx-event-save')).toBeDisabled();
+    // M5: the rescued text is merged with Dailos's copy (a clash on the
+    // notes, mine kept); nothing is saved until «Guardar» again.
+    await expect(page.locator('#lx-event-clash-notes-mine')).toBeChecked();
+    await expect(page.locator('#lx-event-notes')).toHaveValue(
+      'Confirmar sonido',
+    );
+    await expect(page.locator('#lx-event-save')).toBeEnabled();
     expect(
       (api.calls('PATCH', '/events/e2').at(-1)?.body as {version: number})
         .version,
@@ -319,7 +325,11 @@ test.describe('Gestor logístico · conflicto con otra sesión propia', () => {
     );
     await expect(conflict).toContainText('Lo guardaste tú');
     await expect(conflict).not.toContainText('Otra persona');
-    await expect(page.locator('#lx-event-save')).toBeDisabled();
+    // M5: the clash names the other session, not another person.
+    await expect(page.locator('#lx-event-merge-clashes')).toContainText(
+      'Usar el de la otra sesión',
+    );
+    await expect(page.locator('#lx-event-save')).toBeEnabled();
     await page.locator('#lx-event-load-current').click();
     await expect(page.locator('#lx-event-notes')).toHaveValue('Desde el móvil');
   });

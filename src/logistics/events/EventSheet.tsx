@@ -3,8 +3,9 @@
  *
  * - Only the name is required; anything else can stay «Pendiente de verificar».
  * - «Guardar y seguir» keeps the sheet open for the next event (same date).
- * - A version conflict (409) never overwrites: the user sees who changed it
- *   and can load the current version before saving again.
+ * - A version conflict (409) never overwrites: the form is merged with the
+ *   current version (their changes taken, the user's kept, clashes chosen in
+ *   the notice) and nothing is sent until «Guardar» again.
  * - Guests get a read-only detail view.
  * - If the session expires mid-edit, the values are rescued for this tab and
  *   the form reopens with them after signing in again (`lib/rescue.ts`).
@@ -42,6 +43,13 @@ import {
   ReadOnlyNotice,
   useAlertFocus,
 } from '../forms/FormParts';
+import {mergeForm, type MergeClash} from '../forms/merge';
+import {
+  chooseSide,
+  MergeNotice,
+  type MergeDescribe,
+  type MergeState,
+} from '../forms/MergeNotice';
 import {
   SlotFields,
   slotChanged,
@@ -103,6 +111,10 @@ const EMPTY: FormValues = {
   source: null,
   verification: 'draft',
 };
+
+/** Merge notice: the event status in words. */
+const describeEvent: MergeDescribe<FormValues> = (key, v) =>
+  key === 'status' && v.status ? STATUS_LABEL[v.status] : undefined;
 
 function valuesFromEvent(event: LogisticsEvent): FormValues {
   const slot = recordSlot(event);
@@ -349,11 +361,12 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
   const [saving, setSaving] = useState<'save' | 'next' | null>(null);
   const [conflict, setConflict] = useState<LogisticsEvent | null>(null);
   const [conflictResolved, setConflictResolved] = useState(false);
+  const [merge, setMerge] = useState<MergeState<FormValues> | null>(null);
   const [savedName, setSavedName] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   // Conflict and form error are exclusive; whichever is shown owns the ref.
-  const alertRef = useAlertFocus(conflict ?? errors.form);
+  const alertRef = useAlertFocus(conflict ?? merge ?? errors.form);
 
   const dirty = (Object.keys(values) as (keyof FormValues)[]).some(
     k => values[k] !== initial[k],
@@ -421,6 +434,27 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
         err.current && typeof err.current === 'object'
           ? (err.current as LogisticsEvent)
           : null;
+      if (current && base) {
+        // Merge instead of blocking: their changes in, the user's kept,
+        // clashes chosen in the notice. Nothing is sent until «Guardar».
+        const result = mergeForm(
+          valuesFromEvent(base),
+          latest.current.values,
+          valuesFromEvent(current),
+        );
+        setBase(current);
+        setValues(result.merged);
+        setMerge({
+          current,
+          own: !!userId && current.updatedBy?.id === userId,
+          clashes: result.clashes,
+          fromTheirs: result.fromTheirs,
+        });
+        setConflict(null);
+        setConflictResolved(false);
+        setConfirmDiscard(false);
+        return;
+      }
       setConflict(current ?? base);
       setConflictResolved(false);
       return;
@@ -521,8 +555,24 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
     setErrors({});
     setConflictResolved(true);
     setConflict(null);
+    setMerge(null);
     setRescuedNotice(false);
   };
+
+  /** «Descartar mis cambios» after a merge: the current version as is. */
+  const discardMine = () => {
+    if (!base) return;
+    setValues(valuesFromEvent(base));
+    setErrors({});
+    setMerge(null);
+    setConflictResolved(true);
+    setRescuedNotice(false);
+  };
+
+  const chooseClash = (
+    clash: MergeClash<FormValues>,
+    side: 'mine' | 'theirs',
+  ) => setValues(v => chooseSide(v, clash, side));
 
   const isCreate = !base;
   const venueListId = 'lx-event-venues';
@@ -595,6 +645,18 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
           void submit(false);
         }}
       >
+        {merge && (
+          <MergeNotice<FormValues>
+            idPrefix="lx-event"
+            subject="este evento"
+            merge={merge}
+            values={values}
+            onChoose={chooseClash}
+            onDiscardMine={discardMine}
+            describe={describeEvent}
+            alertRef={alertRef}
+          />
+        )}
         {conflict && (
           <ConflictNotice
             id="lx-event-conflict"

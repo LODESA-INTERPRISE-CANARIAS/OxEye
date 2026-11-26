@@ -16,6 +16,12 @@ export interface ScheduleItem {
   /** Finish-to-start predecessors: this item cannot start before they end. */
   dependsOn: Uuid[];
   cancelled?: boolean;
+  /**
+   * Already under way or finished: it still occupies its lane, but a delay
+   * upstream never moves it (the plan conflict that results is reported by
+   * the plan warnings instead).
+   */
+  fixed?: boolean;
 }
 
 export interface Overlap {
@@ -138,8 +144,10 @@ export function slackMinutes(items: ScheduleItem[], id: Uuid): number | null {
 export interface ShiftedItem {
   id: Uuid;
   label: string;
-  /** Minutes the item moves later (> 0). */
+  /** Minutes the start moves later (0 for the root of an `extend`). */
   deltaMinutes: number;
+  /** Minutes the end moves later (> 0). */
+  endDeltaMinutes: number;
   startsAt: IsoInstant;
   endsAt: IsoInstant;
   /** Slack the item had before the hypothesis (null if unknown). */
@@ -160,14 +168,42 @@ export interface DelayImpact {
 }
 
 /**
+ * How many minutes the end of `rootId` can slip before any successor has to
+ * move: the smallest gap to a live, timed successor that is not already
+ * under way. Null when nothing timed depends on it; 0 when a successor
+ * already starts before it ends.
+ */
+export function delayBudget(
+  items: ScheduleItem[],
+  rootId: Uuid,
+): number | null {
+  const root = items.find(i => i.id === rootId);
+  if (!root || Number.isNaN(toMs(root.endsAt))) return null;
+  let best: number | null = null;
+  for (const it of items) {
+    if (!it.dependsOn.includes(rootId) || it.cancelled || it.fixed) continue;
+    if (!scheduled(it)) continue;
+    const gap = Math.max(
+      0,
+      Math.floor((toMs(it.startsAt) - toMs(root.endsAt)) / MIN),
+    );
+    best = best === null ? gap : Math.min(best, gap);
+  }
+  return best;
+}
+
+/**
  * Computes the effect of delaying `rootId` by `delayMinutes` (finish-to-start
- * propagation through `dependsOn`). Durations are preserved. The input is not
- * modified; apply the result only after the user confirms.
+ * propagation through `dependsOn`). `shift` moves the whole item; `extend`
+ * keeps its start and moves its end («se alarga»). Successors keep their
+ * duration; `fixed` items never move. The input is not modified; apply the
+ * result only after the user confirms.
  */
 export function simulateDelay(
   items: ScheduleItem[],
   rootId: Uuid,
   delayMinutes: number,
+  mode: 'shift' | 'extend' = 'shift',
 ): DelayImpact {
   const byId = new Map(items.map(i => [i.id, i]));
   const root = byId.get(rootId);
@@ -186,10 +222,13 @@ export function simulateDelay(
 
   const newStart = new Map<Uuid, number>();
   const newEnd = new Map<Uuid, number>();
-  newStart.set(rootId, toMs(root.startsAt) + delayMinutes * MIN);
+  newStart.set(
+    rootId,
+    toMs(root.startsAt) + (mode === 'extend' ? 0 : delayMinutes * MIN),
+  );
   newEnd.set(rootId, toMs(root.endsAt) + delayMinutes * MIN);
 
-  const order = successorsOf(items, rootId);
+  const order = successorsOf(items, rootId).filter(id => id !== rootId);
   const reached = new Set([rootId, ...order]);
   const unknown: Uuid[] = [];
   const absorbed: DelayImpact['absorbed'] = [];
@@ -198,17 +237,20 @@ export function simulateDelay(
     let changed = false;
     for (const id of order) {
       const it = byId.get(id)!;
-      if (it.cancelled) continue;
+      if (it.cancelled || it.fixed) continue;
       if (!scheduled(it)) {
         if (!unknown.includes(id)) unknown.push(id);
         continue;
       }
+      // Only predecessors the delay moved can push: a task that already
+      // starts before an unmoved predecessor ends is an existing conflict
+      // (reported by the plan warnings), not something this delay moves.
       let earliest = -Infinity;
       for (const p of it.dependsOn) {
         const pred = byId.get(p);
-        if (!pred || pred.cancelled) continue;
-        const end = newEnd.get(p) ?? toMs(pred.endsAt);
-        if (!Number.isNaN(end)) earliest = Math.max(earliest, end);
+        const end = newEnd.get(p);
+        if (!pred || pred.cancelled || end === undefined) continue;
+        earliest = Math.max(earliest, end);
       }
       const start0 = toMs(it.startsAt);
       const start = Math.max(start0, earliest);
@@ -226,19 +268,21 @@ export function simulateDelay(
   for (const id of [rootId, ...order]) {
     const it = byId.get(id)!;
     const s = newStart.get(id);
-    if (s === undefined) continue;
+    const e = newEnd.get(id);
+    if (s === undefined || e === undefined) continue;
     shifted.push({
       id,
       label: it.label,
       deltaMinutes: Math.round((s - toMs(it.startsAt)) / MIN),
+      endDeltaMinutes: Math.round((e - toMs(it.endsAt)) / MIN),
       startsAt: iso(s),
-      endsAt: iso(newEnd.get(id)!),
+      endsAt: iso(e),
       slackBefore: slackMinutes(items, id),
     });
   }
   for (const id of order) {
     const it = byId.get(id)!;
-    if (newStart.has(id) || !scheduled(it) || it.cancelled) continue;
+    if (newEnd.has(id) || !scheduled(it) || it.cancelled || it.fixed) continue;
     // Reached but did not move: report the slack that remains under the hypothesis.
     const preds = it.dependsOn.filter(p => reached.has(p));
     if (!preds.length) continue;
@@ -256,7 +300,7 @@ export function simulateDelay(
   }
 
   const hypothetical = items.map(it =>
-    newStart.has(it.id)
+    newEnd.has(it.id)
       ? {
           ...it,
           startsAt: iso(newStart.get(it.id)!),

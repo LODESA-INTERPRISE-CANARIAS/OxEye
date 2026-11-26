@@ -20,14 +20,11 @@ import {
 } from '../../../shared/logistics/time.ts';
 import type {IconName} from '../ui/icons';
 
-export const TASK_KIND_LABEL: Record<TaskKind, string> = {
-  assembly: 'Montaje',
-  activity: 'Actividad',
-  dismantling: 'Desmontaje',
-  transport: 'Transporte',
-  delivery: 'Entrega',
-  other: 'Otra',
-};
+// Labels live in shared/ so work orders (built there) use the same words.
+export {
+  TASK_KIND_LABEL,
+  TASK_STATUS_LABEL,
+} from '../../../shared/logistics/rules.ts';
 
 export const TASK_KIND_ICON: Record<TaskKind, IconName> = {
   assembly: 'assembly',
@@ -45,15 +42,6 @@ export const TASK_KIND_HELP: Record<TaskKind, string> = {
   transport: 'Mover material o personas de un sitio a otro.',
   delivery: 'Llega material de un proveedor.',
   other: 'Cualquier otra cosa que haya que hacer.',
-};
-
-export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-  planned: 'Prevista',
-  confirmed: 'Confirmada',
-  in_progress: 'En curso',
-  done: 'Hecha',
-  delayed: 'Con retraso',
-  cancelled: 'Cancelada',
 };
 
 export const TASK_STATUS_HELP: Record<TaskStatus, string> = {

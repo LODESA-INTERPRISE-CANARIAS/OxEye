@@ -8,6 +8,8 @@
 import {create} from 'zustand';
 import type {
   ActivityEntry,
+  ApplyHypothesisInput,
+  ApplyHypothesisResponse,
   Category,
   Company,
   CompanyInput,
@@ -15,6 +17,8 @@ import type {
   ContactInput,
   CreateEventInput,
   CategoryScope,
+  DelayHypothesis,
+  HypothesisInput,
   LogisticsEvent,
   Note,
   NoteInput,
@@ -65,10 +69,39 @@ export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
 export type ToastTone = 'info' | 'success' | 'error';
 
+/** A button inside a toast, e.g. «Deshacer». */
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
 export interface Toast {
   id: number;
   message: string;
   tone: ToastTone;
+  action?: ToastAction;
+}
+
+export interface ToastOptions {
+  action?: ToastAction;
+  /** How long it stays; a toast with an action stays 6 s by default. */
+  durationMs?: number;
+}
+
+/** Newest first, as the server sends them. */
+function sortHypotheses(list: DelayHypothesis[]): DelayHypothesis[] {
+  return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Same as `upsertInto`, for hypotheses (no version: applied wins over open). */
+function upsertHypothesisInto(
+  list: DelayHypothesis[],
+  item: DelayHypothesis,
+): DelayHypothesis[] | null {
+  const current = list.find(h => h.id === item.id);
+  if (current?.appliedAt && !item.appliedAt) return null;
+  if (current && JSON.stringify(current) === JSON.stringify(item)) return null;
+  return sortHypotheses([...list.filter(h => h.id !== item.id), item]);
 }
 
 interface StoredSession {
@@ -230,6 +263,12 @@ export interface LogisticsState {
   notes: Note[];
   notesState: LoadState;
   notesError: string | null;
+  /**
+   * Milestone 5: stored «¿Y si…?» delay hypotheses, newest first. For guests
+   * every `note` is null (`restricted`).
+   */
+  hypotheses: DelayHypothesis[];
+  hypothesesState: LoadState;
   /** The current user's five recent searches, newest first. */
   recentSearches: RecentSearch[];
   recentState: LoadState;
@@ -312,6 +351,23 @@ export interface LogisticsState {
   updateNote: (id: string, input: NoteInput) => Promise<Note>;
   deleteNote: (note: Note) => Promise<void>;
   upsertNote: (note: Note) => void;
+  // Milestone 5: delay hypotheses.
+  /** Stores a hypothesis for the team; it never changes the plan. */
+  createHypothesis: (
+    input: Omit<HypothesisInput, 'organizationId'>,
+  ) => Promise<DelayHypothesis>;
+  /** Discards an open hypothesis (applied ones stay as a record). */
+  deleteHypothesis: (hypothesis: DelayHypothesis) => Promise<void>;
+  /**
+   * Applies a stored hypothesis after the member confirmed `expected`. On a
+   * 409 the tasks as they are now are put in the list and the error is
+   * rethrown: nothing was applied.
+   */
+  applyHypothesis: (
+    id: string,
+    input: ApplyHypothesisInput,
+  ) => Promise<ApplyHypothesisResponse>;
+  upsertHypothesis: (hypothesis: DelayHypothesis) => void;
   /** The history of one record, newest first (not kept in the store). */
   loadHistory: (
     entityType: string,
@@ -327,11 +383,30 @@ export interface LogisticsState {
 
   removeDemo: () => Promise<number>;
   setBrowserOnline: (online: boolean) => void;
-  toast: (message: string, tone?: ToastTone) => void;
+  toast: (message: string, tone?: ToastTone, options?: ToastOptions) => void;
   dismissToast: (id: number) => void;
+  /**
+   * Pauses a toast's timer while it has hover or focus (so «Deshacer» stays
+   * reachable); it resumes only when neither holds it.
+   */
+  holdToast: (id: number, reason: ToastHold, held: boolean) => void;
 }
 
+export type ToastHold = 'hover' | 'focus';
+
 let toastSeq = 0;
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
+const toastHolds = new Map<number, Set<ToastHold>>();
+/** Time a toast stays after hover or focus leaves it. */
+const TOAST_RESUME_MS = 4000;
+
+/** Stops every toast timer; spread into `set` to empty the list too. */
+function dropToasts(): {toasts: Toast[]} {
+  for (const timer of toastTimers.values()) clearTimeout(timer);
+  toastTimers.clear();
+  toastHolds.clear();
+  return {toasts: []};
+}
 
 /**
  * Bumped whenever this tab changes the event list from a write it made
@@ -351,6 +426,8 @@ let categoryEpoch = 0;
 let warehouseEpoch = 0;
 let resourceEpoch = 0;
 let noteEpoch = 0;
+/** Same as `writeEpoch`, for delay hypotheses (milestone 5). */
+let hypothesisEpoch = 0;
 
 /**
  * Same content. Versions alone are not enough: a renamed venue or company
@@ -475,6 +552,7 @@ const EMPTY_RECORDS = {
   warehouses: [],
   resources: [],
   notes: [],
+  hypotheses: [],
   recentSearches: [],
   activity: [],
 } satisfies Partial<LogisticsState>;
@@ -488,6 +566,7 @@ const IDLE_STATES = {
   warehousesState: 'idle',
   resourcesState: 'idle',
   notesState: 'idle',
+  hypothesesState: 'idle',
   recentState: 'idle',
   activityState: 'idle',
 } satisfies Partial<LogisticsState>;
@@ -587,6 +666,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     notes: [],
     notesState: 'idle',
     notesError: null,
+    hypotheses: [],
+    hypothesesState: 'idle',
     recentSearches: [],
     recentState: 'idle',
     activity: [],
@@ -695,6 +776,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         ...EMPTY_RECORDS,
         ...IDLE_STATES,
         sessionNotice: null,
+        // A «Deshacer» left on screen must never run under the next person.
+        ...dropToasts(),
       });
       if (token) {
         // Best effort: the local session is already gone either way.
@@ -705,7 +788,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     selectOrg: id => {
       if (id === get().orgId) return;
       writeStoredOrg(id);
-      set({orgId: id, ...EMPTY_RECORDS, recentState: 'idle'});
+      // Toasts (and their «Deshacer») belong to the organization left behind.
+      set({orgId: id, ...EMPTY_RECORDS, recentState: 'idle', ...dropToasts()});
       void get().refresh();
     },
 
@@ -743,6 +827,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       const whEpoch = warehouseEpoch;
       const reEpoch = resourceEpoch;
       const noEpoch = noteEpoch;
+      const hyEpoch = hypothesisEpoch;
       const [
         events,
         activity,
@@ -755,6 +840,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         warehouses,
         resources,
         notes,
+        hypotheses,
       ] = await Promise.allSettled([
         authed(token => api.events(token, orgId)),
         authed(token => api.activity(token, orgId, 20)),
@@ -767,6 +853,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         authed(token => api.warehouses(token, orgId)),
         authed(token => api.resources(token, orgId)),
         authed(token => api.notes(token, orgId)),
+        authed(token => api.hypotheses(token, orgId)),
       ]);
       // The organization may have changed while loading.
       if (get().orgId !== orgId || get().phase !== 'ready') return;
@@ -880,6 +967,19 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       } else if (!silent || get().notesState !== 'ready') {
         patch.notesState = 'error';
         patch.notesError = errorMessage(notes.reason);
+      }
+      // Hypotheses (milestone 5): not essential to the day, so a failure is
+      // quiet (the «¿Y si…?» sheet still computes from the plan).
+      if (hypotheses.status === 'fulfilled' && hyEpoch === hypothesisEpoch) {
+        patch.hypotheses = keepIfSame(
+          get().hypotheses,
+          sortHypotheses(hypotheses.value.items),
+        );
+        patch.hypothesesState = 'ready';
+      } else if (hypotheses.status === 'rejected') {
+        if (!silent || get().hypothesesState !== 'ready') {
+          patch.hypothesesState = 'error';
+        }
       }
       set(patch);
     },
@@ -1000,7 +1100,14 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         notes: linkedNote
           ? unlinkNotes(get().notes, 'task', task.id)
           : get().notes,
+        // Its open hypotheses go with it; applied ones keep their label.
+        hypotheses: get().hypotheses.some(h => h.taskId === task.id)
+          ? get()
+              .hypotheses.filter(h => h.taskId !== task.id || h.appliedAt)
+              .map(h => (h.taskId === task.id ? {...h, taskId: null} : h))
+          : get().hypotheses,
       });
+      hypothesisEpoch++;
       const refreshed = get().refresh({silent: true});
       // With dependents, wait for their new versions before the caller moves
       // on: editing one with the old version would be rejected as a conflict
@@ -1506,6 +1613,67 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (next) set({notes: next, notesState: 'ready'});
     },
 
+    // ---------------------------------------------------- hypotheses (M5)
+
+    createHypothesis: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const created = await authed(token =>
+        api.createHypothesis(token, {...input, organizationId: orgId}),
+      );
+      get().upsertHypothesis(created);
+      return created;
+    },
+
+    deleteHypothesis: async hypothesis => {
+      try {
+        await authed(token => api.deleteHypothesis(token, hypothesis.id));
+      } catch (err) {
+        // Already gone: the outcome is the same. Applied meanwhile (400):
+        // bring the list up to date so the sheet shows it as applied.
+        if (isApiError(err) && err.code === 'VALIDATION') {
+          void get()
+            .refresh({silent: true})
+            .catch(() => undefined);
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      hypothesisEpoch++;
+      set({
+        hypotheses: get().hypotheses.filter(h => h.id !== hypothesis.id),
+      });
+    },
+
+    applyHypothesis: async (id, input) => {
+      try {
+        const res = await authed(token =>
+          api.applyHypothesis(token, id, input),
+        );
+        for (const task of res.tasks) get().upsertTask(task);
+        get().upsertHypothesis(res.hypothesis);
+        void get().refresh({silent: true});
+        return res;
+      } catch (err) {
+        if (
+          isApiError(err) &&
+          err.code === 'VERSION_CONFLICT' &&
+          Array.isArray(err.current)
+        ) {
+          // The plan changed: show the tasks as they are now; nothing moved.
+          for (const task of err.current as Task[]) {
+            if (task && typeof task === 'object') get().upsertTask(task);
+          }
+        }
+        throw err;
+      }
+    },
+
+    upsertHypothesis: hypothesis => {
+      hypothesisEpoch++;
+      const next = upsertHypothesisInto(get().hypotheses, hypothesis);
+      if (next) set({hypotheses: next, hypothesesState: 'ready'});
+    },
+
     loadHistory: async (entityType, entityId, limit = 50) => {
       const orgId = get().orgId;
       if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
@@ -1588,6 +1756,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       warehouseEpoch++;
       resourceEpoch++;
       noteEpoch++;
+      hypothesisEpoch++;
       await get().refresh({silent: true});
       return res?.removed ?? 0;
     },
@@ -1598,12 +1767,40 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       else if (current === 'offline') set({connection: 'online'});
     },
 
-    toast: (message, tone = 'info') => {
+    toast: (message, tone = 'info', options = {}) => {
       const id = ++toastSeq;
-      set({toasts: [...get().toasts, {id, message, tone}].slice(-3)});
-      setTimeout(() => get().dismissToast(id), tone === 'error' ? 7000 : 4000);
+      const {action, durationMs} = options;
+      set({
+        toasts: [...get().toasts, {id, message, tone, action}].slice(-3),
+      });
+      const ms = durationMs ?? (action ? 6000 : tone === 'error' ? 7000 : 4000);
+      toastTimers.set(
+        id,
+        setTimeout(() => get().dismissToast(id), ms),
+      );
     },
 
-    dismissToast: id => set({toasts: get().toasts.filter(t => t.id !== id)}),
+    dismissToast: id => {
+      clearTimeout(toastTimers.get(id));
+      toastTimers.delete(id);
+      toastHolds.delete(id);
+      set({toasts: get().toasts.filter(t => t.id !== id)});
+    },
+
+    holdToast: (id, reason, held) => {
+      if (!get().toasts.some(t => t.id === id)) return;
+      const holds = toastHolds.get(id) ?? new Set<ToastHold>();
+      if (held) holds.add(reason);
+      else holds.delete(reason);
+      toastHolds.set(id, holds);
+      clearTimeout(toastTimers.get(id));
+      toastTimers.delete(id);
+      if (holds.size === 0) {
+        toastTimers.set(
+          id,
+          setTimeout(() => get().dismissToast(id), TOAST_RESUME_MS),
+        );
+      }
+    },
   };
 });

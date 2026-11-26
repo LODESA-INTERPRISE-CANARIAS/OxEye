@@ -23,6 +23,7 @@ import {registerDemoRoutes} from './demo/routes.ts';
 import {registerEventRoutes} from './events/routes.ts';
 import type {AppEnv, Deps} from './http/env.ts';
 import {errorResponse, handleError, notFoundResponse} from './http/errors.ts';
+import {registerHypothesisRoutes} from './hypotheses/routes.ts';
 import {registerNoteRoutes} from './notes/routes.ts';
 import {registerOfferRoutes} from './offers/routes.ts';
 import {registerResourceRoutes} from './resources/routes.ts';
@@ -137,6 +138,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   registerWarehouseRoutes(api, deps, auth);
   registerResourceRoutes(api, deps, auth);
   registerNoteRoutes(api, deps, auth);
+  registerHypothesisRoutes(api, deps, auth);
   registerSearchRoutes(api, deps, auth);
   registerActivityRoutes(api, deps, auth);
   registerDemoRoutes(api, deps, auth);

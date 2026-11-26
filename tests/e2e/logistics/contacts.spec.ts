@@ -638,7 +638,7 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     await expect(page.locator('#lx-company-main')).toContainText('Ana Prueba');
   });
 
-  test('a stale version: 409 keeps both copies until «Ver versión actual»', async ({
+  test('a stale version: 409 merges, keeps mine on the clash, discard loads theirs', async ({
     page,
   }) => {
     const api = await mockApi(page, directoryData());
@@ -655,8 +655,9 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
 
     const conflict = page.locator('#lx-company-conflict');
     await expect(conflict).toBeVisible();
+    // M5: «Ver versión actual» became «Descartar mis cambios» (same id).
     await expect(page.locator('#lx-company-load-current')).toHaveText(
-      'Ver versión actual',
+      'Descartar mis cambios',
     );
     // Nothing overwritten: the server keeps Dailos's copy, the form keeps ours.
     const server = api.companies.find(c => c.id === 'c2')!;
@@ -666,7 +667,14 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     await expect(page.locator('#lx-company-phone')).toHaveValue(
       '+34 000 000 021',
     );
-    await expect(page.locator('#lx-company-save')).toBeDisabled();
+    // M5: the website only Dailos changed is taken; the phone both changed
+    // is a clash with mine kept, and «Guardar» stays available.
+    await expect(page.locator('#lx-company-merge-theirs')).toContainText('Web');
+    await expect(page.locator('#lx-company-website')).toHaveValue(
+      'sonido.example.com',
+    );
+    await expect(page.locator('#lx-company-clash-phone-mine')).toBeChecked();
+    await expect(page.locator('#lx-company-save')).toBeEnabled();
 
     await page.locator('#lx-company-load-current').click();
     await expect(page.locator('#lx-company-current-loaded')).toBeVisible();

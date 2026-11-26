@@ -49,7 +49,7 @@ export function formatDial(info: PhoneInfo): string {
  * gets its own short wording; any other doubt (incomplete, «¿Falta el 34?»,
  * two numbers) is the phone's own warning; a short service number has none.
  */
-function whatsappBlock(info: PhoneInfo): {short: string; long: string} {
+export function whatsappBlock(info: PhoneInfo): {short: string; long: string} {
   if (info.reason === 'unknown_country') {
     return {
       short: 'Falta el prefijo',
@@ -64,7 +64,7 @@ function whatsappBlock(info: PhoneInfo): {short: string; long: string} {
 }
 
 /** «El número…» → «el número…», «¿Falta…» → «¿falta…», to follow a colon. */
-function lowerFirst(text: string): string {
+export function lowerFirst(text: string): string {
   return text.replace(
     /^([¿¡]?)(\p{Lu})/u,
     (_, mark: string, letter: string) =>

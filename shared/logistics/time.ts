@@ -209,6 +209,26 @@ export function occupiedDates(
   return eachDate(record.date, last);
 }
 
+/**
+ * The stored local day(s) of a record whose instants moved (a delay applied
+ * to the plan): `date` is the local day of the start; `endDate` is the local
+ * day of the end only when `slotToInstants` would not infer it (an end time
+ * after the start time on a later day). Inverse of slotToInstants with
+ * `endDate`.
+ */
+export function daysForInstants(
+  startsAt: IsoInstant,
+  endsAt: IsoInstant,
+  timeZone: string = DEFAULT_TIMEZONE,
+): {date: LocalDate; endDate: LocalDate | null} {
+  const start = utcToLocal(startsAt, timeZone);
+  const end = utcToLocal(endsAt, timeZone);
+  if (end.date <= start.date) return {date: start.date, endDate: null};
+  const overnight =
+    end.date === addDays(start.date, 1) && end.time <= start.time;
+  return {date: start.date, endDate: overnight ? null : end.date};
+}
+
 /** Inverse of slotToInstants for editing forms. */
 export function instantsToSlot(
   startsAt: IsoInstant | null,

@@ -1,4 +1,4 @@
-# Handoff: gestor-logistico (2026-11-26, after milestone 4)
+# Handoff: gestor-logistico (2026-11-26, after milestone 5)
 
 For a new session. Read it with:
 - the plan `doc/specs/2026-11-25-gestor-logistico.md` (frozen; approved for autonomous work through milestones 1–6);
@@ -14,16 +14,16 @@ This file is the map; the log is the detail.
 | 2 Tareas + Calendario | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · tareas y Calendario` |
 | 3 Contactos + Catálogo | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · contactos y catálogo` |
 | 4 Inventarios + Captura rápida | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · inventarios, notas y captura rápida` |
-| 5 Seguimiento + Órdenes de trabajo | To do | |
+| 5 Seguimiento + Órdenes de trabajo | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · seguimiento, hipótesis y órdenes de trabajo` |
 | 6 Sin cobertura + Cierre de jornada | To do | |
 
 Branch: `feat/gestor-logistico`, published by the user.
 - Never push, merge or touch `main`.
 - Don't merge until the external server exists. Otherwise the public site would show a module with no server.
 
-To update their local database after milestone 4, the user stops the API and runs:
-- `npm --prefix server run db:migrate`, which applies 0005 (and any earlier one still missing);
-- `npm --prefix server run db:seed`, which, unless the demo was removed, adds «Almacén Demo», 4 demo resources and 3 demo notes. Running it again creates nothing new.
+To update their local database after milestone 5, the user stops the API and runs:
+- `npm --prefix server run db:migrate`, which applies 0006 (and any earlier one still missing). Existing tasks get no subsoil mark; there are no hypotheses yet.
+- `npm --prefix server run db:seed` is not needed for M5: it adds nothing new (no demo hypotheses, no subsoil marks).
 
 ## Architecture
 
@@ -43,10 +43,22 @@ The contract and pure logic, used by both the server and the UI. Imports use `.t
 - `inventory.ts` (M4): `parseQuantity` («1.000» thousands, «0.500» = 0,5), `formatQuantity`, `quantityLabel` («≈ 40 unidades · por evaluar», «1 unidad»), `unitFor`.
 - `history.ts` (M4): `FIELD_LABEL` (field names → Spanish), `describeChange` (names, never values), `noteLabel` (kind + what it is about; never the text, never a person's name).
 - `conflicts.ts` M4 additions: `resource_overlap` (conflict when one *unit* or none in stock, otherwise a reminder stating the stock), `resource_unavailable` (damaged / under repair), `RESOURCE_LOAD_NOTE` (inventory figures never compute a load on the ground).
+- M5:
+  - `followup.ts`: `lateness` (5-minute grace), `suggestedDelay`, `delayModeFor` (`shift` / `extend` = «se alarga»), `delayBlocker`, `delayItems` (tasks under way or done are `fixed`: they occupy their lane but never move), `analyzeDelay` (shifted / absorbed / unknown, `planWarnings` re-run on the hypothetical plan → new, worsened and cleared warnings, `routeReminders`, `eventMargins`), `shiftExpectations`, `sameShift` (rejects duplicates).
+  - `schedule.ts`: `ScheduleItem.fixed`, `simulateDelay(…, mode)`, `endDeltaMinutes`, `delayBudget`.
+  - `merge.ts`: `mergeThreeWay` for forms after a 409.
+  - `work-order.ts`: `WORK_ORDER_FIELDS` allowlist (members-only fields off by default, dropped for guests), `buildWorkOrder`, `workOrderText`, `tasksForRecipient`.
+  - `conflicts.ts`: a declared subsoil review removes the heavy-load reminder; a finished heavy task without it keeps one.
+  - `rules.ts`: M5 constants, `SUBSOIL_REVIEW_LABEL` / `SUBSOIL_REVIEW_NOTE` (no figure), `TASK_KIND_LABEL` / `TASK_STATUS_LABEL` (moved from the UI).
+  - `time.ts` `daysForInstants`, `history.ts` `hypothesisLabel`, `contact-links.ts` `mailtoHref(…, body?)`.
 
 ### `server/`
 Node 26 runs TypeScript directly. Stack: Hono, zod, postgres.js. PGlite runs the tests and the local mode without Docker (`DATABASE_URL=pglite:./pgdata/pglite`).
-- Migrations 0001–0005. They are append-only and checksummed.
+- Migrations 0001–0006. They are append-only and checksummed.
+- M5 `hypotheses/`:
+  - Apply takes the graph lock, then `FOR UPDATE` on the organization's task rows; it recomputes with the shared functions and writes only if `sameShift` holds, otherwise 409 with the organization's involved tasks. Only times, local days and (optionally) the root's status are written.
+  - Task delete removes open hypotheses and unlinks applied ones; demo removal deletes all hypotheses of demo tasks.
+- Subsoil mark (`tasks/domain.ts` `nextSubsoilReview`): strict `subsoilReviewed`; cleared when venue, heavy load or resources change, and when a used resource is deleted or its quantity, unit or dimensions change.
 - Guests never receive phones, e-mails, observations, prices, costs or conditions: one path, `records/redact.ts` (`forViewer`, `WITHHELD_FROM_GUESTS`); records carry `restricted`. Since M4 also event and task notes, warehouse address and notes, resource location and notes, and note text. New free-text fields must be added there, with a marker in `server/tests/redaction.test.ts` and in the E2E mock's mirror.
 - Advisory locks in `records/locks.ts`: graph lock (task dependencies, multi-task writes, resource and task deletes), then catalogue lock (categories, companies, contacts, offers, and since M4 warehouses, resources and notes), then rows. Keep that order.
 - M4 links from resources and notes have no ON DELETE action: every delete path unlinks first (version, author, activity). A new delete path must call `unlinkResources` / `unlinkNotes` or it fails loudly.
@@ -68,12 +80,23 @@ A lazy module opened from `GameMenu.tsx`.
 - Screens: `hoy/` (+ `NotesCard.tsx`), `calendar/`, `events/`, `tasks/TaskSheet.tsx` (+ `TaskContactField.tsx`, `TaskResourcesField.tsx`), `contacts/` (Personas / Empresas y entidades, reach-out confirmation, share), `catalog/` (offers, comparison, category picker with «Gestionar»), `inventory/` (Inventarios: Propios / Contratados, resource and warehouse sheets), `notes/` (note sheet, `RefPicker`), `common/RecordNotes.tsx` and `common/RecordHistory.tsx` (in every record sheet), `search/` (universal search, venue sheet), `shell/AddMenu.tsx` (grouped «Captura rápida» / «Planificación», with a fallback where the Popover API is missing). Cierre de jornada is still a placeholder.
 - Resource and note slots in `LogisticsApp.tsx` remember the card they replaced (`add*` stacks on top; `open*` replaces).
 - Sheets stack by sequence key; a sheet with unsaved changes is never replaced silently. New record forms use `forms/useRecordForm.ts` (dirty guard, 409, rescue, `leaveFor`, `startNext`).
+- M5:
+  - `hoy/TodayTasks.tsx` is «La jornada»: Va tarde / Ahora / Lo siguiente…, with quick actions and «Deshacer»; toasts pause on hover or focus and clear on logout.
+  - `followup/`: `HypothesisSheet.tsx` (explore, save, apply with confirmation, discard), `useQuickStatus.ts`, `TaskWhatIf.tsx`.
+  - `orders/`: work-order sheet, A4 preview, print root portalled to `<body>` with print rules guarded by `body:has(> .lx-print-root)`, send sheet.
+  - `tasks/SubsoilReview.tsx` and `tasks/subsoil.ts` (`subsoilAfterMerge`).
+  - `forms/merge.ts` + `forms/MergeNotice.tsx`: merge after a save 409 in every form (date and times fold into one field).
 - Styles live in `src/styles/logistics/`, scoped to `.lx`, and work in six palettes. Bendy uses a deeper cyan accent for contrast.
 
 ### Tests
 - `tests/unit/logistics/` for the shared logic and the calendar layout.
 - `server/tests/` on PGlite.
 - `tests/e2e/logistics/`: a stateful `mock-api.ts` (its guest-withheld `WITHHELD` map mirrors `WITHHELD_FROM_GUESTS` by hand; `failHistory` / `holdHistory()` for history states), `plan-fixtures.ts` with a fixed clock, `directory-fixtures.ts` (fictitious people and `trapOutgoing()` for links), `inventory-fixtures.ts` (M4), behavioural specs (M4: `inventory`, `resources-in-tasks`, `notes`, `inventory-privacy`), and the `ui-review.spec.ts` screenshot harness (writes to `test-results/visual/logistics-*`).
+- M5 tests:
+  - E2E: `followup-fixtures.ts`; specs `followup`, `hypothesis`, `subsoil`, `merge`, `work-orders`. The mock recomputes an apply with the shared functions and offers `forceApplyConflict`. A long mailto opened from code is caught through CDP `Page.frameRequestedNavigation`, because `trapOutgoing()` cannot redefine `location`.
+  - Unit: `followup`, `work-order`, `followup-ui`, `delay-propagation`.
+  - Server: `server/tests/followup.test.ts`.
+  - Known flaky under full-suite load: `phone` tab bar and `ui-review` login (both pass on rerun).
 - Fictitious data only: names with «Demo» / «Prueba», phones `+34 000 000 0XX`, e-mails `@example.com`. Real La Laguna venue names are fine without contact details.
 
 ## Product decisions (user-approved)
@@ -123,16 +146,44 @@ Safety conditions carried to M5–M6 (from the M4 audit):
 - The M6 Dexie cache and outbox apply the same withholding and clear on logout (notes, observations, addresses, locations, the rescue slot).
 - Any storage or assembly area on the venue map needs its own plan with the A/B/C, Carpa Amarilla, accessibility and subsoil checks.
 
-### 5. Seguimiento + Órdenes de trabajo
-- **Now / next / late view** with quick status actions.
-- **Delay hypothesis** with `simulateDelay`:
-  - shown hatched;
-  - re-runs `planWarnings`;
-  - changes nothing until «Aplicar al plan» is confirmed.
-- **Work orders** per company or person: printable, saved as PDF, shared after confirmation. The user chooses the fields; contact notes and descriptions and offer conditions are never included by default and never for guests. Comparisons reuse `compareOffer` and never sum costs.
-- **Also in this milestone:**
-  - after a 409, merge instead of replacing;
-  - a declared mark «Subsuelo revisado en el simulador».
+### 5. Seguimiento + Órdenes de trabajo (done)
+The user was away («sigue con tus recomendaciones»); the AI Lead's answers stand and are logged:
+- Hypotheses are stored on the server for the team (note withheld from Invitado). Applied ones stay as a record.
+- «Aplicar al plan» moves everything the propagation moves, in one transaction, and marks the delayed task «Con retraso» (an option in the confirmation).
+- «La jornada» lives in Hoy (no new space).
+- Work orders:
+  - built in the browser from `forViewer` records;
+  - default fields: schedule, venue, materials, contact name, dependencies;
+  - members-only and unticked: contact phone, warehouse address, resource location, observations;
+  - never: note text, people's notes and descriptions, offer conditions, prices and costs;
+  - Invitado has none;
+  - the PDF is saved by the user and attached by hand.
+
+Carried from M5 (review, audit, QA):
+- Not run against PostgreSQL in Docker: migration 0006, the apply row locks and the new resource-edit lock path were tested on PGlite only.
+- Not checked on a real phone: `wa.me`, `mailto`, `navigator.share`, and the browser's print to PDF of a work order.
+- Ideas for later:
+  - hypothesis overlay in the calendar;
+  - chained or range hypotheses («entre 15 y 30»);
+  - a record of work orders sent, with «ha cambiado desde que se envió»;
+  - automatic PDF attachment (needs a library);
+  - an amber token for «va tarde» (today it uses the danger colour).
+
+Safety conditions carried to M6 (from the M5 audit):
+- Outbox:
+  - never queue `POST /hypotheses/:id/apply`, which always needs a live confirmation;
+  - drop a queued `subsoilReviewed: true` if the server's venue, heavy load or resources changed before replay;
+  - every queued write carries `version`, and a 409 goes through the merge;
+  - queued free text (hypothesis note, observations) is tied to the user id, never queued for guests, and cleared on logout.
+- `DayReport`:
+  - hypotheses only by `hypothesisLabel`, open and applied kept distinct and labelled «hipótesis»;
+  - finished heavy tasks without a declaration listed as pending review;
+  - a declared mark shown as «declarada por X», never as verified;
+  - routes reminder for live deliveries and transport in the event window;
+  - no note or incident text without the safety review;
+  - any threshold figure only through `SUBSOIL_THRESHOLD_NOTE`;
+  - its print uses the same `body:has(> .lx-…-root)` scoping and its own named `@page`.
+- Logout and org switch also clear any new Dexie or localStorage cache, the outbox, the `usePlan` cache and toasts (the last two are done).
 
 ### 6. Sin cobertura + Cierre de jornada
 - **Offline:**
@@ -155,3 +206,11 @@ Safety conditions carried to M5–M6 (from the M4 audit):
 - Note: the shared member login «Equipo» shows its server-side recent searches to everyone who uses it.
 - Try calling, WhatsApp, e-mail and «Compartir» on a real phone (only checked with mocks).
 - Try the M4 quick capture on a real phone: «+ Añadir» → Incidencia / Nota / Recurso in under 30 seconds, and the Inventarios lists while walking a warehouse.
+- Try M5 on a real phone and PC:
+  - la jornada with one hand;
+  - «¿Y si…?» → «Aplicar al plan»;
+  - a work order saved as PDF from the browser and sent by WhatsApp and e-mail.
+- Review M5 decisions taken while the user was away (log):
+  - hypotheses stored for the team;
+  - «Aplicar» moves the whole chain and marks «Con retraso»;
+  - the work-order fields: by default, members-only, and never.

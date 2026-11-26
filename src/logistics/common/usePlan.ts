@@ -71,6 +71,13 @@ function selectPlan(s: {
   return cache.plan;
 }
 
+// Never keep another session's or organization's plan around.
+useLogisticsStore.subscribe((state, prev) => {
+  if (state.orgId !== prev.orgId || state.session !== prev.session) {
+    cache = null;
+  }
+});
+
 export function usePlan(): Plan {
   return useLogisticsStore(selectPlan);
 }

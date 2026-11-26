@@ -1,18 +1,36 @@
 import {expect, type Page, type Route} from '@playwright/test';
-import {noteLabel} from '../../../shared/logistics/history.ts';
+import {
+  delayBlocker,
+  delayItems,
+  sameShift,
+  shiftExpectations,
+} from '../../../shared/logistics/followup.ts';
+import {hypothesisLabel, noteLabel} from '../../../shared/logistics/history.ts';
 import {
   BUILT_IN_RESOURCE_CATEGORIES,
+  HYPOTHESIS_NOTE_MAX,
   MAX_RESOURCES_PER_TASK,
   NOTE_KINDS,
   NOTE_TEXT_MAX,
+  isValidDelay,
   isValidQuantity,
 } from '../../../shared/logistics/rules.ts';
-import type {NoteKind} from '../../../shared/logistics/contracts.ts';
-import {slotToInstants, utcToLocal} from '../../../shared/logistics/time.ts';
+import {simulateDelay} from '../../../shared/logistics/schedule.ts';
+import type {
+  DelayMode,
+  NoteKind,
+  ShiftExpectation,
+  Task,
+} from '../../../shared/logistics/contracts.ts';
+import {
+  daysForInstants,
+  slotToInstants,
+  utcToLocal,
+} from '../../../shared/logistics/time.ts';
 
 /**
  * Stateful in-memory mock of the Logistics Manager API for behavioural E2E
- * tests (milestones 1 to 4). It follows the route table and error bodies of
+ * tests (milestones 1 to 5). It follows the route table and error bodies of
  * `shared/logistics/contracts.ts` and `server/src`, keeps events, tasks,
  * venues and companies so refetches after a write see the change, and
  * records every request so tests can assert what the UI actually sent.
@@ -35,6 +53,22 @@ import {slotToInstants, utcToLocal} from '../../../shared/logistics/time.ts';
  * what pointed at it, bumping versions. Writes to warehouses, resources and
  * notes append to the activity log (a note's label is `noteLabel`, never its
  * text), and `/activity?entityType=&entityId=` returns one record's history.
+ *
+ * Milestone 5 rules mirrored from `server/src/{tasks,hypotheses}`:
+ * `subsoilReviewed` is strict (400 `fields.subsoilReviewed` unless the
+ * resulting `heavyLoad` is true); the declared `subsoilReview` is cleared when
+ * the venue, `heavyLoad` or `resourceIds` change unless `true` is sent in the
+ * same request, and declaring again with nothing relevant changed keeps the
+ * original who and when. Delay hypotheses are listed newest first, created
+ * (never applied), deleted while open (400 once applied) and applied only
+ * when the shift recomputed with the shared `delayItems` / `simulateDelay` /
+ * `shiftExpectations` equals the confirmed `expected` (`sameShift`);
+ * otherwise 409 with `current` = the involved tasks and nothing changes.
+ * `forceApplyConflict` answers the next applies with that 409 regardless.
+ * Duplicate ids in `expected` are a 400. Deleting a task deletes its open
+ * hypotheses and unlinks applied ones; deleting a resource clears the subsoil
+ * mark of the tasks that used it, and changing its quantity, unit or
+ * dimensions clears it on the live tasks that use it.
  *
  * Only `/api/*` is intercepted: Vite module URLs such as
  * `/src/logistics/api/client.ts` must reach the dev server.
@@ -189,6 +223,7 @@ export function makeTask(
     dependsOn: [],
     heavyLoad: null,
     resourceIds: [],
+    subsoilReview: null,
     notes: null,
     restricted: false,
     source: null,
@@ -198,6 +233,31 @@ export function makeTask(
     createdAt: created,
     updatedBy: elvis,
     updatedAt: created,
+    ...extra,
+  };
+}
+
+/** A contract-shaped delay hypothesis (milestone 5). Fictitious note only. */
+export function makeHypothesis(
+  id: string,
+  task: {id: string; title: string},
+  delayMinutes: number,
+  extra: Json = {},
+): Json {
+  return {
+    id,
+    organizationId: ORG,
+    taskId: task.id,
+    taskTitle: task.title,
+    delayMinutes,
+    mode: 'shift',
+    estimated: false,
+    note: null,
+    createdBy: elvis,
+    createdAt: new Date(Date.now() - 3600_000).toISOString(),
+    appliedAt: null,
+    appliedBy: null,
+    restricted: false,
     ...extra,
   };
 }
@@ -469,6 +529,8 @@ export interface MockOptions {
   notes?: Json[];
   /** Activity log entries (any order; served newest first). */
   activity?: Json[];
+  /** Milestone 5: stored delay hypotheses (any order; served newest first). */
+  hypotheses?: Json[];
   /**
    * Fixed time for milestone 4 writes (`createdAt`, activity `at`), to match
    * a page whose clock is fixed (plan-fixtures.ts `NOW`).
@@ -496,6 +558,14 @@ export interface MockApi {
   resources: Json[];
   notes: Json[];
   activity: Json[];
+  /** Milestone 5: stored delay hypotheses. */
+  hypotheses: Json[];
+  /**
+   * Apply requests (`POST /hypotheses/:id/apply`) that answer 409 next with
+   * the involved tasks as they are, changing nothing: a plan that changed
+   * between the confirmation and the write.
+   */
+  forceApplyConflict: number;
   /** History requests (`entityType` + `entityId`) that fail with a 500 next. */
   failHistory: number;
   /**
@@ -612,6 +682,8 @@ export async function mockApi(
     resources: opts.resources ?? [],
     notes: opts.notes ?? [],
     activity: opts.activity ?? [],
+    hypotheses: opts.hypotheses ?? [],
+    forceApplyConflict: 0,
     failHistory: 0,
     holdHistory: () => {
       let release = () => {};
@@ -714,13 +786,15 @@ export async function mockApi(
   // are a hand-written copy of `WITHHELD_FROM_GUESTS` in that file (the mock
   // cannot import server code): keep them in step when it changes.
   // Milestone 4: event and task notes, warehouse address and notes, resource
-  // location and notes, and the text of every note.
+  // location and notes, and the text of every note. Milestone 5: the note of
+  // a delay hypothesis.
   const WITHHELD = {
     event: ['notes'],
     task: ['notes'],
     warehouse: ['address', 'notes'],
     resource: ['location', 'notes'],
     note: ['text'],
+    hypothesis: ['note'],
   } as const;
   const redact = (
     kind: keyof typeof WITHHELD,
@@ -734,7 +808,17 @@ export async function mockApi(
   };
   const viewEvent = (e: Json, role: string) => redact('event', e, role);
   const viewTask = (t: Json, role: string) =>
-    redact('task', {...t, resourceIds: t.resourceIds ?? []}, role);
+    redact(
+      'task',
+      {
+        ...t,
+        resourceIds: t.resourceIds ?? [],
+        subsoilReview: t.subsoilReview ?? null,
+      },
+      role,
+    );
+  const viewHypothesis = (h: Json, role: string) =>
+    redact('hypothesis', h, role);
   const viewWarehouse = (w: Json, role: string) =>
     redact(
       'warehouse',
@@ -1706,6 +1790,23 @@ export async function mockApi(
         const draft = structuredClone(r);
         const fields = applyResource(draft, input, ref);
         if (Object.keys(fields).length) return validation(route, fields);
+        // M5: a different quantity, unit or size is different material: the
+        // live tasks that use it lose their declared subsoil review.
+        const material = (x: Json) =>
+          JSON.stringify([x.quantity, x.unit, x.dimensions]);
+        if (material(draft) !== material(r)) {
+          for (const t of state.tasks) {
+            if (
+              t.subsoilReview &&
+              t.status !== 'done' &&
+              t.status !== 'cancelled' &&
+              ((t.resourceIds as string[]) ?? []).includes(r.id as string)
+            ) {
+              t.subsoilReview = null;
+              bump(t, ref);
+            }
+          }
+        }
         Object.assign(r, draft);
         bump(r, ref);
         log(
@@ -1730,6 +1831,8 @@ export async function mockApi(
           const ids = (t.resourceIds as string[]) ?? [];
           if (!ids.includes(r.id as string)) continue;
           t.resourceIds = ids.filter(x => x !== r.id);
+          // M5: its material changed, so the declared subsoil review goes.
+          t.subsoilReview = null;
           bump(t, ref);
         }
         unlinkNotes('resource', r.id as string, ref);
@@ -1820,6 +1923,202 @@ export async function mockApi(
         log(ref, noteEntity(n), 'delete');
         return route.fulfill({status: 204, body: ''});
       }
+    }
+    return null;
+  };
+
+  // ---- milestone 5: delay hypotheses (server/src/hypotheses/service.ts)
+  const HYPOTHESIS_NOT_FOUND =
+    'No encontramos esa hipótesis: puede que se haya descartado o que su tarea se haya eliminado.';
+  const ALREADY_APPLIED =
+    'Esta hipótesis ya se aplicó al plan: se conserva como registro de la decisión.';
+  const PLAN_CHANGED =
+    'El plan ha cambiado desde que revisaste esta hipótesis. Mira de nuevo qué tareas se mueven antes de aplicarla.';
+  const DELAY_BLOCKED: Record<string, string> = {
+    finished: 'Esa tarea ya está hecha: no se puede retrasar.',
+    cancelled: 'Esa tarea está cancelada: no se puede retrasar.',
+    untimed:
+      'Esa tarea no tiene hora de inicio y de fin: ponle horario para poder calcular un retraso.',
+  };
+  const hypothesisEntity = (h: Json) => ({
+    type: 'hypothesis',
+    id: h.id as string,
+    label: hypothesisLabel(h as never),
+  });
+
+  const hypothesisRoute = async (
+    route: Route,
+    ctx: {
+      path: string;
+      method: string;
+      body: unknown;
+      user: {id: string; displayName: string; role: string};
+      ref: Json;
+    },
+  ): Promise<void | null> => {
+    const {path, method, user, ref} = ctx;
+    const input = (ctx.body ?? {}) as Json;
+    const role = user.role;
+
+    if (path === `/organizations/${ORG}/hypotheses` && method === 'GET') {
+      const items = [...state.hypotheses]
+        .sort(
+          (a, b) =>
+            Date.parse(b.createdAt as string) -
+              Date.parse(a.createdAt as string) ||
+            String(b.id).localeCompare(String(a.id)),
+        )
+        .map(h => viewHypothesis(h, role));
+      return json(route, {items});
+    }
+    if (path === '/hypotheses' && method === 'POST') {
+      const fields: Record<string, string> = {};
+      const task = state.tasks.find(t => t.id === input.taskId);
+      if (!task) {
+        fields.taskId =
+          'No encontramos esa tarea en esta organización: puede que se haya eliminado.';
+      } else {
+        const blocker = delayBlocker(task as unknown as Task);
+        if (blocker) fields.taskId = DELAY_BLOCKED[blocker];
+      }
+      if (
+        typeof input.delayMinutes !== 'number' ||
+        !isValidDelay(input.delayMinutes)
+      ) {
+        fields.delayMinutes =
+          'Indica el retraso en minutos enteros, entre 1 y 1440 (un día).';
+      }
+      const mode = (input.mode ?? 'shift') as DelayMode;
+      if (mode !== 'shift' && mode !== 'extend') {
+        fields.mode = 'Tipo de retraso no válido.';
+      }
+      const note = text(input.note);
+      if (note && note.length > HYPOTHESIS_NOTE_MAX) {
+        fields.note = `Como mucho ${HYPOTHESIS_NOTE_MAX} caracteres.`;
+      }
+      if (Object.keys(fields).length) return validation(route, fields);
+      const created = makeHypothesis(
+        `h-new-${++seq}`,
+        {id: task!.id as string, title: task!.title as string},
+        input.delayMinutes as number,
+        {
+          mode,
+          estimated: input.estimated === true,
+          note,
+          createdBy: ref,
+          createdAt: clock(),
+        },
+      );
+      state.hypotheses.push(created);
+      log(ref, hypothesisEntity(created), 'create');
+      return json(route, viewHypothesis(created, role), 201);
+    }
+    const applyMatch = /^\/hypotheses\/([^/]+)\/apply$/.exec(path);
+    const oneMatch = /^\/hypotheses\/([^/]+)$/.exec(path);
+    const id = applyMatch?.[1] ?? oneMatch?.[1];
+    if (!id) return null;
+    const h = state.hypotheses.find(x => x.id === id);
+    if (!h) return error(route, 404, 'NOT_FOUND', HYPOTHESIS_NOT_FOUND);
+
+    if (oneMatch && method === 'DELETE') {
+      if (h.appliedAt) return error(route, 400, 'VALIDATION', ALREADY_APPLIED);
+      state.hypotheses = state.hypotheses.filter(x => x !== h);
+      log(ref, hypothesisEntity(h), 'delete');
+      return route.fulfill({status: 204, body: ''});
+    }
+    if (applyMatch && method === 'POST') {
+      const expected = input.expected as ShiftExpectation[] | undefined;
+      if (!Array.isArray(expected) || expected.length === 0) {
+        return validation(route, {
+          expected:
+            'Falta la lista de tareas que se mueven: vuelve a abrir la hipótesis y confirma de nuevo.',
+        });
+      }
+      if (new Set(expected.map(e => e.id)).size !== expected.length) {
+        return validation(route, {
+          expected:
+            'La misma tarea aparece dos veces en la confirmación: vuelve a abrir la hipótesis y confirma de nuevo.',
+        });
+      }
+      if (h.appliedAt) return error(route, 400, 'VALIDATION', ALREADY_APPLIED);
+      const tasks = state.tasks as unknown as Task[];
+      const root = h.taskId ? tasks.find(t => t.id === h.taskId) : undefined;
+      const impact =
+        root && !delayBlocker(root)
+          ? simulateDelay(
+              delayItems(tasks, root.id),
+              root.id,
+              h.delayMinutes as number,
+              h.mode as DelayMode,
+            )
+          : null;
+      const computed = impact ? shiftExpectations(impact, tasks) : [];
+      const forced = state.forceApplyConflict > 0;
+      if (forced) state.forceApplyConflict--;
+      if (forced || !root || !impact || !sameShift(expected, computed)) {
+        const involved = new Set([
+          ...expected.map(e => e.id),
+          ...computed.map(c => c.id),
+          ...(h.taskId ? [h.taskId as string] : []),
+        ]);
+        return json(
+          route,
+          {
+            code: 'VERSION_CONFLICT',
+            message: PLAN_CHANGED,
+            current: state.tasks
+              .filter(t => involved.has(t.id as string))
+              .map(t => viewTask(t, role)),
+          },
+          409,
+        );
+      }
+      const at = clock();
+      const moved: Json[] = [];
+      for (const s of computed) {
+        const t = state.tasks.find(x => x.id === s.id)!;
+        const days = daysForInstants(
+          s.startsAt,
+          s.endsAt,
+          (t.timezone as string) || TZ,
+        );
+        const status =
+          s.id === root!.id &&
+          input.markDelayed === true &&
+          (t.status === 'planned' || t.status === 'confirmed')
+            ? 'delayed'
+            : t.status;
+        const changed = [
+          ...(status !== t.status ? ['status'] : []),
+          ...(days.date !== t.date ? ['date'] : []),
+          ...(days.endDate !== t.endDate ? ['endDate'] : []),
+          'startsAt',
+          'endsAt',
+        ];
+        Object.assign(t, {
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          date: days.date,
+          endDate: days.endDate,
+          status,
+          version: (t.version as number) + 1,
+          updatedBy: ref,
+          updatedAt: at,
+        });
+        log(
+          ref,
+          {type: 'task', id: t.id as string, label: t.title as string},
+          'update',
+          changed,
+        );
+        moved.push(t);
+      }
+      Object.assign(h, {appliedAt: at, appliedBy: ref});
+      log(ref, hypothesisEntity(h), 'update', ['appliedAt']);
+      return json(route, {
+        hypothesis: viewHypothesis(h, role),
+        tasks: moved.map(t => viewTask(t, role)),
+      });
     }
     return null;
   };
@@ -2085,6 +2384,10 @@ export async function mockApi(
           state.notes.length +
           state.resources.length +
           state.warehouses.length;
+        // M5: every hypothesis about a demo task goes, applied ones included.
+        state.hypotheses = state.hypotheses.filter(
+          h => !demoTasks.has(h.taskId as string),
+        );
         state.notes = state.notes.filter(n => !n.isDemo);
         state.resources = state.resources.filter(r => !r.isDemo);
         state.warehouses = state.warehouses.filter(
@@ -2252,6 +2555,8 @@ export async function mockApi(
         ref,
       });
       if (m4 !== null) return m4;
+      const m5 = await hypothesisRoute(route, {path, method, body, user, ref});
+      if (m5 !== null) return m5;
       /** Same check as server/src/resources/links.ts (`areOwnResources`). */
       const resourceIdsProblem = (ids: unknown): string | null => {
         if (ids === undefined) return null;
@@ -2263,6 +2568,26 @@ export async function mockApi(
           ? null
           : 'Alguno de los recursos ya no existe o no es de esta organización.';
       };
+      /** `subsoilReviewed` only with a resulting heavy load (strict both ways). */
+      const subsoilProblem = (
+        input: Json,
+        heavyAfter: boolean | null,
+      ): string | null => {
+        if (input.subsoilReviewed === undefined) return null;
+        if (typeof input.subsoilReviewed !== 'boolean') {
+          return 'Indica sí o no: ¿se revisó el subsuelo en el simulador?';
+        }
+        return heavyAfter === true
+          ? null
+          : 'Solo se puede declarar en una tarea con carga pesada.';
+      };
+      /** Venue, heavy load and material: what a subsoil review was for. */
+      const placementOf = (t: Json) =>
+        JSON.stringify([
+          (t.venue as Json | null)?.id ?? null,
+          t.heavyLoad ?? null,
+          [...((t.resourceIds as string[]) ?? [])].sort(),
+        ]);
       if (path === '/tasks' && method === 'POST') {
         const input = (body ?? {}) as Json;
         const slot = {
@@ -2278,6 +2603,11 @@ export async function mockApi(
         if (depProblem) fields.dependsOn = depProblem;
         const resProblem = resourceIdsProblem(input.resourceIds);
         if (resProblem) fields.resourceIds = resProblem;
+        const subsoil = subsoilProblem(
+          input,
+          (input.heavyLoad ?? null) as never,
+        );
+        if (subsoil) fields.subsoilReviewed = subsoil;
         if (Object.keys(fields).length) return validation(route, fields);
         const now = new Date().toISOString();
         const created = makeTask(
@@ -2299,6 +2629,8 @@ export async function mockApi(
             dependsOn,
             heavyLoad: input.heavyLoad ?? null,
             resourceIds: [...new Set((input.resourceIds as string[]) ?? [])],
+            subsoilReview:
+              input.subsoilReviewed === true ? {by: ref, at: clock()} : null,
             notes: text(input.notes),
             source: input.source ?? null,
             verification: input.verification ?? 'draft',
@@ -2347,7 +2679,13 @@ export async function mockApi(
         }
         const resProblem = resourceIdsProblem(input.resourceIds);
         if (resProblem) fields.resourceIds = resProblem;
+        const heavyAfter = (
+          'heavyLoad' in input ? input.heavyLoad : task.heavyLoad
+        ) as boolean | null;
+        const subsoil = subsoilProblem(input, heavyAfter);
+        if (subsoil) fields.subsoilReviewed = subsoil;
         if (Object.keys(fields).length) return validation(route, fields);
+        const placementBefore = placementOf(task);
 
         if (Array.isArray(input.resourceIds)) {
           task.resourceIds = [...new Set(input.resourceIds as string[])];
@@ -2370,6 +2708,17 @@ export async function mockApi(
           task.company = companyRef(input, task.company);
         }
         if ('contactId' in input) task.contact = contactRef(input.contactId);
+        // Same rule as nextSubsoilReview (server/src/tasks/domain.ts).
+        const placementChanged = placementOf(task) !== placementBefore;
+        if (input.subsoilReviewed === false) {
+          task.subsoilReview = null;
+        } else if (input.subsoilReviewed === true) {
+          if (!task.subsoilReview || placementChanged) {
+            task.subsoilReview = {by: ref, at: clock()};
+          }
+        } else if (placementChanged) {
+          task.subsoilReview = null;
+        }
         if (touchesSlot) {
           Object.assign(
             task,
@@ -2398,6 +2747,13 @@ export async function mockApi(
         if (Number(raw) !== task.version) return taskConflict(route, task);
         state.tasks = state.tasks.filter(t => t !== task);
         unlinkNotes('task', task.id as string, ref);
+        // M5: open hypotheses go with it; applied ones keep their label.
+        state.hypotheses = state.hypotheses.filter(
+          h => h.taskId !== task.id || h.appliedAt,
+        );
+        for (const h of state.hypotheses) {
+          if (h.taskId === task.id) h.taskId = null;
+        }
         for (const t of state.tasks) {
           const deps = t.dependsOn as string[];
           if (!deps.includes(task.id as string)) continue;

@@ -247,7 +247,7 @@ test.describe('Gestor logístico · editar con conflicto de versión', () => {
     ['desktop', {width: 1280, height: 900}],
     ['phone', PHONE],
   ] as const) {
-    test(`409 shows who changed it and «Ver versión actual» re-enables saving (${label})`, async ({
+    test(`409 shows who changed it, merges and «Descartar mis cambios» loads theirs (${label})`, async ({
       page,
     }) => {
       await page.setViewportSize(viewport);
@@ -276,7 +276,11 @@ test.describe('Gestor logístico · editar con conflicto de versión', () => {
       );
       await expect(conflict).toContainText('Dailos lo guardó');
       await expect(conflict).not.toContainText('Lo guardaste tú');
-      await expect(save).toBeDisabled();
+      // M5: merged, not blocked. Both changed the notes: a clash, mine kept
+      // by default, and «Guardar» stays available.
+      await expect(page.locator('#lx-event-merge-clashes')).toBeVisible();
+      await expect(page.locator('#lx-event-clash-notes-mine')).toBeChecked();
+      await expect(save).toBeEnabled();
       // Our text is not thrown away until we choose to load the server copy.
       await expect(notes).toHaveValue('Confirmar sonido');
       const firstPatch = api.calls('PATCH', '/events/e2')[0];

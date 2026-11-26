@@ -61,7 +61,12 @@ export type PlanTask = Pick<
   | 'dependsOn'
   | 'heavyLoad'
 > &
-  Partial<Pick<Task, 'date' | 'endDate' | 'timezone' | 'resourceIds'>>;
+  Partial<
+    Pick<
+      Task,
+      'date' | 'endDate' | 'timezone' | 'resourceIds' | 'subsoilReview'
+    >
+  >;
 /**
  * What the warnings need from a resource. Quantity only decides whether two
  * tasks can share it; weight, unit and dimensions never feed a load check.
@@ -119,7 +124,8 @@ function quote(t: PlanTask): string {
   return `«${t.title}»`;
 }
 
-function minutesLabel(minutes: number): string {
+/** «45 min», «1 h», «2 h 15 min». */
+export function minutesLabel(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -276,9 +282,26 @@ export function planWarnings(
     }
   }
 
-  // Heavy loads: known (any kind) → subsoil review; unknown on load-bearing
-  // kinds → ask.
+  // Heavy loads: known (any kind) → subsoil review until someone declares
+  // it was done in the simulator; a finished task keeps the reminder if
+  // nobody declared it (finishing is not reviewing). Unknown on
+  // load-bearing kinds → ask.
+  for (const t of tasks) {
+    if (t.status !== 'done' || t.heavyLoad !== true || t.subsoilReview) {
+      continue;
+    }
+    out.push({
+      key: `heavy:${t.id}`,
+      kind: 'heavy_load',
+      severity: 'reminder',
+      taskIds: [t.id],
+      minutes: null,
+      title: `${quote(t)} terminó sin revisión del subsuelo declarada`,
+      detail: SUBSOIL_REMINDER,
+    });
+  }
   for (const t of live) {
+    if (t.heavyLoad === true && t.subsoilReview) continue;
     if (t.heavyLoad === true) {
       out.push({
         key: `heavy:${t.id}`,

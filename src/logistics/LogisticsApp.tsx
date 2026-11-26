@@ -127,6 +127,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const orgId = useLogisticsStore(s => s.orgId);
   const toasts = useLogisticsStore(s => s.toasts);
   const dismissToast = useLogisticsStore(s => s.dismissToast);
+  const holdToast = useLogisticsStore(s => s.holdToast);
   const boot = useLogisticsStore(s => s.boot);
   const refresh = useLogisticsStore(s => s.refresh);
   const setBrowserOnline = useLogisticsStore(s => s.setBrowserOnline);
@@ -777,6 +778,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       <Toaster
         toasts={toasts}
         onDismiss={dismissToast}
+        onHold={holdToast}
         host={toastSlots[toastSlots.length - 1] ?? null}
       />
     </div>

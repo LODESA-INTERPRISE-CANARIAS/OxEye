@@ -3,10 +3,12 @@ import {mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData, planEvents, planTasks} from './plan-fixtures';
 
 /**
- * Gestor logístico, milestone 2: «Hoy» with today's tasks («Ahora»,
- * «Siguiente», «Sin hora», folded past), «Avisos de hoy» (conflicts before
- * reminders, each opening its task), each task's own warnings and the
- * «Información verificada» count. The clock is fixed at 10:30 on 2 Dec 2026.
+ * Gestor logístico, milestone 2: «Hoy» with today's tasks (since M5 «La
+ * jornada»: «Va tarde», «Lo siguiente», «Más tarde», «Sin hora», folded
+ * «Terminadas»), «Avisos de hoy» (conflicts before reminders, each opening
+ * its task), each task's own warnings and the «Información verificada»
+ * count. The clock is fixed at 10:30 on 2 Dec 2026. Quick actions and the
+ * «¿Y si…?» sheet are in followup.spec.ts and hypothesis.spec.ts.
  */
 
 test.use({locale: 'es-ES', timezoneId: 'Atlantic/Canary'});
@@ -28,47 +30,59 @@ async function closeCleanSheet(page: Page) {
 }
 
 test.describe('Gestor logístico · «Hoy» con tareas', () => {
-  test('today’s tasks: now, next, the rest by hour, untimed and folded past', async ({
+  test('la jornada: late, next, later, untimed and folded finished', async ({
     page,
   }) => {
     await mockApi(page, planData());
     await signIn(page);
     const card = page.locator('#lx-today-tasks');
     await expect(card).toBeVisible();
-    await expect(card.locator('.lx-count')).toHaveText('5');
+    // M5: the card «Tareas de hoy» is now «La jornada».
+    await expect(card.locator('.lx-card__title')).toContainText('La jornada');
+    await expect(card.locator('.lx-count').first()).toHaveText('5');
+    await expect(card.locator('.lx-count--danger')).toHaveText('1 tarde');
 
-    // Running first, then by start time; other days never leak in.
-    expect(
-      await ids(
-        page,
-        '#lx-today-tasks .lx-tasklist >> nth=0 >> [data-task-id]',
-      ),
-    ).toEqual(['t1', 't2', 't3']);
-    const t1 = card.locator('[data-task-id="t1"]');
-    const t2 = card.locator('[data-task-id="t2"]');
-    await expect(t1.locator('.lx-taskrow__flag')).toHaveText('Ahora');
+    // M5: at 10:30, t1 (confirmed 08:00–13:00) has not been marked started:
+    // nobody confirmed it is happening, so it is late, not «Ahora».
+    const late = card.locator('#lx-day-late');
+    expect(await ids(page, '#lx-day-late li.lx-dayrow [data-task-id]')).toEqual(
+      ['t1'],
+    );
+    const t1 = late.locator('[data-task-id="t1"]');
+    await expect(t1.locator('.lx-taskrow__flag')).toHaveText('+2 h 30 min');
     await expect(t1).toHaveAttribute(
       'aria-label',
-      /^Ahora: Montaje del escenario, montaje, 08:00 – 13:00, Plaza del Cristo/,
+      /^Va tarde, \+2 h 30 min: Montaje del escenario, montaje, 08:00 – 13:00, Plaza del Cristo/,
     );
+    await expect(card.locator('#lx-day-now')).toHaveCount(0);
+
+    // The earliest start still to come is next; the rest by hour.
+    expect(await ids(page, '#lx-day-next li.lx-dayrow [data-task-id]')).toEqual(
+      ['t2'],
+    );
+    const t2 = card.locator('#lx-day-next [data-task-id="t2"]');
     await expect(t2.locator('.lx-taskrow__flag')).toHaveText('Siguiente');
     await expect(t2).toHaveAttribute('aria-label', /^Siguiente: Instalación/);
+    await expect(card.locator('#lx-day-next-title')).toContainText(
+      'en 1 h 30 min',
+    );
+    expect(
+      await ids(page, '#lx-day-later li.lx-dayrow [data-task-id]'),
+    ).toEqual(['t3']);
     await expect(
       card.locator('[data-task-id="t3"] .lx-taskrow__flag'),
     ).toHaveCount(0);
 
-    await expect(card.locator('.lx-tasklist__label')).toHaveText('Sin hora');
+    await expect(card.locator('#lx-day-untimed-title')).toContainText(
+      'Sin hora',
+    );
     expect(
-      await ids(
-        page,
-        '#lx-today-tasks .lx-tasklist__label + .lx-tasklist [data-task-id]',
-      ),
+      await ids(page, '#lx-day-untimed li.lx-dayrow [data-task-id]'),
     ).toEqual(['t4']);
 
-    const past = card.locator('details.lx-todaytasks__past');
-    await expect(past.locator('summary')).toContainText(
-      'Ya terminadas o pasadas (1)',
-    );
+    // Only done and cancelled tasks are folded away.
+    const past = card.locator('details#lx-day-done');
+    await expect(past.locator('summary')).toHaveText('Terminadas (1)');
     await expect(past.locator('[data-task-id="t5"]')).toBeHidden();
     await past.locator('summary').click();
     await expect(past.locator('[data-task-id="t5"]')).toBeVisible();

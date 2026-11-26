@@ -34,6 +34,24 @@ export const TASK_STATUSES = [
   'cancelled',
 ] as const satisfies readonly TaskStatus[];
 
+export const TASK_KIND_LABEL: Record<TaskKind, string> = {
+  assembly: 'Montaje',
+  activity: 'Actividad',
+  dismantling: 'Desmontaje',
+  transport: 'Transporte',
+  delivery: 'Entrega',
+  other: 'Otra',
+};
+
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  planned: 'Prevista',
+  confirmed: 'Confirmada',
+  in_progress: 'En curso',
+  done: 'Hecha',
+  delayed: 'Con retraso',
+  cancelled: 'Cancelada',
+};
+
 export const EVENT_STATUSES = [
   'planned',
   'confirmed',
@@ -171,15 +189,13 @@ export const RESOURCE_AVAILABILITIES = [
   'unknown',
 ] as const satisfies readonly ResourceAvailability[];
 
-export const RESOURCE_AVAILABILITY_LABEL: Record<
-  ResourceAvailability,
-  string
-> = {
-  available: 'Disponible',
-  in_use: 'En uso',
-  maintenance: 'En reparación',
-  unknown: 'Disponibilidad sin confirmar',
-};
+export const RESOURCE_AVAILABILITY_LABEL: Record<ResourceAvailability, string> =
+  {
+    available: 'Disponible',
+    in_use: 'En uso',
+    maintenance: 'En reparación',
+    unknown: 'Disponibilidad sin confirmar',
+  };
 
 /**
  * Resource categories every organization starts with, in display order
@@ -273,3 +289,29 @@ export const INCIDENT_SCOPE_NOTE =
 /** Shown on every note form: what not to write in free text. */
 export const NOTE_PRIVACY_HINT =
   'No anotes datos de salud, datos de personas atendidas ni casos de Punto Violeta. El equipo ve el texto; Invitado, no.';
+
+// ---------------------------------------------------------------- follow-up and hypotheses (M5)
+
+/** Largest delay a hypothesis accepts (one day). */
+export const MAX_DELAY_MINUTES = 24 * 60;
+/** One-tap delays in the «¿Y si…?» sheet. */
+export const QUICK_DELAYS = [5, 15, 30, 60] as const;
+export const HYPOTHESIS_NOTE_MAX = 1000;
+/**
+ * Minutes after its planned time before a task counts as «Va tarde». Before
+ * that it is shown as «Debería empezar» / «Debería terminar».
+ */
+export const LATE_GRACE_MINUTES = 5;
+
+export function isValidDelay(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= MAX_DELAY_MINUTES;
+}
+
+/**
+ * «Subsuelo revisado en el simulador» is declared by a person. It is never
+ * deduced from quantities, units or dimensions, it never quotes or computes
+ * a threshold and it never states that anything complies.
+ */
+export const SUBSOIL_REVIEW_LABEL = 'Subsuelo revisado en el simulador';
+export const SUBSOIL_REVIEW_NOTE =
+  'Marca declarada por quien hizo la revisión en el simulador (análisis de rayos X). OxEye no la comprueba y no certifica el suelo. Se borra si cambian el lugar, la carga pesada o los recursos de la tarea.';

@@ -663,8 +663,9 @@ const ResourceForm: React.FC<{
   };
 
   const dropMismatchedOffer = () => {
-    if (withMatchingOffer(values).offerId !== values.offerId)
-      {set('offerId', '');}
+    if (withMatchingOffer(values).offerId !== values.offerId) {
+      set('offerId', '');
+    }
   };
 
   const change = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
@@ -955,6 +956,7 @@ const ResourceForm: React.FC<{
           }
           error={errors.form}
           alertRef={f.alertRef}
+          merge={f.merge}
         />
 
         <Field id="lx-resource-name" label="Qué es" error={errors.name}>

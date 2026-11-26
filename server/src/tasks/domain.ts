@@ -45,6 +45,9 @@ export interface TaskState {
   heavyLoad: boolean | null;
   /** Sorted ids. */
   resourceIds: Uuid[];
+  /** «Subsuelo revisado en el simulador»: who declared it and when, or null. */
+  subsoilReviewedBy: Uuid | null;
+  subsoilReviewedAt: IsoInstant | null;
   notes: string | null;
   source: DataSource | null;
   verification: Verification;
@@ -67,6 +70,9 @@ const FIELD_NAMES: readonly (readonly [keyof TaskState, string])[] = [
   ['dependsOn', 'dependsOn'],
   ['heavyLoad', 'heavyLoad'],
   ['resourceIds', 'resourceIds'],
+  // Both columns are one contract field.
+  ['subsoilReviewedBy', 'subsoilReview'],
+  ['subsoilReviewedAt', 'subsoilReview'],
   ['notes', 'notes'],
   ['source', 'source'],
   ['verification', 'verification'],
@@ -76,7 +82,59 @@ export function changedTaskFields(
   before: TaskState,
   after: TaskState,
 ): string[] {
-  return changedFields(before, after, FIELD_NAMES);
+  return [...new Set(changedFields(before, after, FIELD_NAMES))];
+}
+
+export const SUBSOIL_NEEDS_HEAVY_LOAD =
+  'Solo se puede declarar en una tarea con carga pesada.';
+
+/**
+ * The declared subsoil review after an edit, or a Spanish message for
+ * `fields.subsoilReviewed`. Pure: no database.
+ *
+ * - The mark is declared by a person, never inferred: only
+ *   `subsoilReviewed: true` sets it (to `actor` at `now`), only on a task whose
+ *   resulting `heavyLoad` is `true`. `false` withdraws it (same condition).
+ * - The review was for one placement and one set of material, so changing the
+ *   venue, `heavyLoad` or the resources clears it, unless the same request
+ *   declares it again (then it is renewed to `actor` at `now`).
+ * - Declaring it again with nothing else relevant changed keeps the original
+ *   declaration (who and when), so a repeated save is not a change.
+ */
+export function nextSubsoilReview(args: {
+  before: Pick<TaskState, 'venueId' | 'heavyLoad' | 'resourceIds'> & {
+    review: {by: Uuid; at: IsoInstant} | null;
+  };
+  after: Pick<TaskState, 'venueId' | 'heavyLoad' | 'resourceIds'>;
+  requested: boolean | undefined;
+  actorId: Uuid;
+  now: IsoInstant;
+}):
+  | {ok: true; review: {by: Uuid; at: IsoInstant} | null}
+  | {
+      ok: false;
+      message: string;
+    } {
+  const {before, after, requested} = args;
+  if (requested !== undefined && after.heavyLoad !== true) {
+    return {ok: false, message: SUBSOIL_NEEDS_HEAVY_LOAD};
+  }
+  const placementChanged =
+    before.venueId !== after.venueId ||
+    before.heavyLoad !== after.heavyLoad ||
+    before.resourceIds.length !== after.resourceIds.length ||
+    before.resourceIds.some((id, i) => id !== after.resourceIds[i]);
+  if (requested === false) return {ok: true, review: null};
+  if (requested === true) {
+    return {
+      ok: true,
+      review:
+        before.review && !placementChanged
+          ? before.review
+          : {by: args.actorId, at: args.now},
+    };
+  }
+  return {ok: true, review: placementChanged ? null : before.review};
 }
 
 export {normalizeIds} from '../records/ids.ts';

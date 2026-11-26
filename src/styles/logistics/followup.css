@@ -1,0 +1,699 @@
+/**
+ * Milestone 5 follow-up: «La jornada» in Hoy (groups, quick actions,
+ * hypothesis chips), the «¿Y si…?» sheet, the subsoil review mark, the merge
+ * notice after a 409 and the toast action. Scoped under `.lx`; colours only
+ * from palette tokens. There is no amber token: lateness and conflicts use
+ * the danger colour, as the rest of the module does.
+ */
+
+/* ============================================================ toast action */
+.lx .lx-toast__action {
+  --lx-btn-bg-hover: color-mix(in srgb, currentColor 16%, transparent);
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid currentColor;
+  font-weight: 700;
+  color: inherit;
+}
+
+.lx .lx-toast__action:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .lx .lx-toast__action {
+    min-height: var(--lx-target);
+    min-width: var(--lx-target);
+  }
+}
+
+/* ============================================================ la jornada */
+.lx .lx-daygroup + .lx-daygroup {
+  margin-top: 16px;
+}
+
+.lx .lx-daygroup__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+/* Keep the old «Sin hora» spacing rule from adding a second margin. */
+.lx .lx-daygroup__title.lx-tasklist__label {
+  margin: 0 0 8px;
+}
+
+.lx .lx-daygroup--late .lx-daygroup__title {
+  color: var(--lx-danger);
+}
+
+.lx .lx-daygroup--now .lx-daygroup__title {
+  color: var(--lx-heading);
+}
+
+.lx .lx-daygroup__when {
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--lx-muted);
+}
+
+.lx .lx-daygroup__count {
+  margin-left: auto;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* A row and, under it on phones / beside it on wide cards, its quick actions. */
+.lx .lx-dayrow.has-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-dayrow__actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* The card decides: actions beside the row when there is room, under it
+   (indented past the certainty edge) on phones and narrow columns. */
+.lx .lx-todaytasks {
+  container: lx-day / inline-size;
+}
+
+@container lx-day (max-width: 640px) {
+  .lx .lx-dayrow.has-actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .lx .lx-dayrow__actions {
+    padding-left: 14px;
+  }
+}
+
+/* Late: the warning colour on the edge, the border and the flag. */
+.lx .lx-taskrow--late {
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-border-hover: var(--lx-danger);
+  --lx-btn-bg: var(--lx-danger-soft);
+  --lx-btn-bg-hover: var(--lx-danger-soft);
+  border-width: 1.5px;
+}
+
+.lx .lx-taskrow--late::before {
+  background: var(--lx-danger);
+  box-shadow: none;
+}
+
+.lx .lx-taskrow--late .lx-taskrow__flag {
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 12px;
+}
+
+.lx .lx-count--danger {
+  white-space: nowrap;
+}
+
+/* Open hypotheses for today: hatched, never solid (they change nothing). */
+.lx .lx-hypochips {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.lx .lx-hypochips__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lx-muted);
+}
+
+.lx .lx-hypochips__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lx .lx-hypochip {
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-border: color-mix(in srgb, var(--lx-accent) 60%, transparent);
+  --lx-btn-border-hover: var(--lx-accent);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--lx-target);
+  padding: 0 14px;
+  border-radius: var(--lx-pill);
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      var(--lx-hatch-color) 0 2px,
+      transparent 2px 6px
+    ),
+    var(--lx-surface);
+  color: var(--lx-heading);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.lx .lx-hypochip:hover {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      var(--lx-hatch-color) 0 2px,
+      transparent 2px 6px
+    ),
+    var(--lx-accent-soft);
+}
+
+.lx .lx-hypochip:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+/* ============================================================ «¿Y si…?» in a task sheet */
+.lx .lx-whatif__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.lx .lx-whatif__note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.lx .lx-whatif .lx-hypochips__list {
+  margin-top: 10px;
+}
+
+/* ============================================================ hypothesis sheet */
+.lx .lx-hypo-sheet {
+  display: grid;
+  gap: 16px;
+}
+
+.lx .lx-hypo-inputs {
+  display: grid;
+  gap: 14px;
+}
+
+.lx .lx-hypo-amount {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.lx .lx-hypo-amount__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-hypo-quick {
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-control-border);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  min-width: 76px;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: var(--lx-radius-sm);
+  color: var(--lx-heading);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.lx .lx-hypo-quick[aria-pressed='true'] {
+  --lx-btn-bg: var(--lx-accent);
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-strong);
+  --lx-btn-border-hover: var(--lx-accent-strong);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-hypo-quick:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-hypo-amount__other {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-hypo-amount__other .lx-input {
+  width: 92px;
+  min-height: 52px;
+  font-size: 16px;
+  text-align: right;
+}
+
+.lx .lx-hypo-amount__unit {
+  color: var(--lx-muted);
+  font-weight: 600;
+}
+
+.lx .lx-hypo-estimate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The analysis: hatched like every hypothesis, labelled so it never reads
+   as the plan. */
+.lx .lx-hypo {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  border-radius: var(--lx-radius);
+  border: 1.5px dashed color-mix(in srgb, var(--lx-accent) 60%, transparent);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--lx-hatch-color) 45%, transparent) 0 2px,
+      transparent 2px 9px
+    ),
+    var(--lx-surface);
+}
+
+.lx .lx-hypo__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  padding: 2px 10px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface);
+  border: 1px solid var(--lx-line);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo__summary {
+  font-family: var(--lx-serif);
+  font-size: 18px;
+  line-height: 1.4;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo__summary:focus {
+  outline: none;
+}
+
+.lx .lx-hypo__summary:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.lx .lx-hypo-block {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+  border: 1px solid var(--lx-line);
+}
+
+.lx .lx-hypo-block__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo-list {
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-hypo-moved,
+.lx .lx-hypo-absorbed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--lx-line);
+}
+
+.lx .lx-hypo-moved:last-child,
+.lx .lx-hypo-absorbed:last-child {
+  border-bottom: 0;
+}
+
+.lx .lx-hypo-moved.is-root .lx-hypo-moved__title {
+  font-weight: 700;
+}
+
+.lx .lx-hypo-moved__title {
+  min-width: 0;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo-moved__times {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.lx .lx-hypo-moved__times s {
+  color: var(--lx-muted);
+}
+
+.lx .lx-hypo-moved__times strong {
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo-unknown {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo-unknown .lx-chip__dot {
+  border-color: var(--lx-muted);
+}
+
+.lx .lx-hypo-margin {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-hypo-margin.is-over {
+  color: var(--lx-danger);
+  font-weight: 700;
+}
+
+/* Routes A/B/C and Carpa Amarilla: always a block of its own. */
+.lx .lx-hypo-routes {
+  border: 1.5px solid var(--lx-accent);
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-hypo-cleared {
+  opacity: 0.72;
+}
+
+.lx .lx-hypo-cleared .lx-warning__text strong {
+  text-decoration: line-through;
+  text-decoration-color: var(--lx-muted);
+}
+
+.lx .lx-hypo-saved {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.lx .lx-hypo-facts {
+  margin: 0;
+  width: 100%;
+}
+
+/* Confirmation step */
+.lx .lx-hypo-confirm {
+  display: grid;
+  gap: 12px;
+}
+
+.lx .lx-hypo-confirm__title {
+  font-family: var(--lx-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hypo-confirm__title:focus {
+  outline: none;
+}
+
+.lx .lx-hypo-confirm__title:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.lx .lx-hypo-confirm > .lx-hypo-list {
+  padding: 8px 12px;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-hypo-confirm__keep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--lx-muted);
+}
+
+/* ============================================================ checkbox row */
+/* A labelled checkbox with a full-size target (reusable). */
+.lx .lx-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lx-target);
+}
+
+.lx .lx-check input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--lx-accent);
+}
+
+.lx .lx-check label {
+  font-weight: 600;
+  color: var(--lx-heading);
+  cursor: pointer;
+}
+
+/* ============================================================ subsoil mark */
+.lx .lx-subsoil {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+}
+
+.lx .lx-subsoil.is-stale {
+  border-color: var(--lx-danger);
+}
+
+.lx .lx-subsoil__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-subsoil__state {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 4px 30px;
+}
+
+.lx .lx-subsoil__state.is-warning {
+  color: var(--lx-danger);
+  font-weight: 600;
+}
+
+.lx .lx-subsoil__state .lx-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.lx .lx-subsoil__value {
+  display: grid;
+  gap: 1px;
+}
+
+.lx .lx-subsoil__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+/* ============================================================ merge after 409 */
+.lx .lx-merge__body {
+  display: grid;
+  gap: 8px;
+  justify-items: stretch;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.lx .lx-merge__facts {
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-merge__facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.lx .lx-merge__facts .lx-icon {
+  margin-top: 3px;
+  flex-shrink: 0;
+  color: var(--lx-muted);
+}
+
+.lx .lx-merge__facts .lx-merge__note {
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-merge__facts .lx-merge__note .lx-icon {
+  color: var(--lx-danger);
+}
+
+.lx .lx-merge__clashes {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.lx .lx-merge__ask {
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-merge__clash {
+  margin: 0;
+  padding: 8px 10px 10px;
+  min-width: 0;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+}
+
+.lx .lx-merge__clash legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-merge__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lx .lx-merge__option {
+  position: relative;
+  display: flex;
+}
+
+.lx .lx-merge__option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.lx .lx-merge__option label {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-height: var(--lx-target);
+  padding: 6px 10px;
+  border-radius: var(--lx-radius-sm);
+  border: 1.5px solid var(--lx-control-border);
+  background: var(--lx-surface);
+  cursor: pointer;
+}
+
+.lx .lx-merge__option input:checked + label {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--lx-accent);
+}
+
+.lx .lx-merge__option input:focus-visible + label {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-merge__side {
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-merge__value {
+  font-size: 13px;
+  color: var(--lx-muted);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-merge__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.lx .lx-merge__next {
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+@media (max-width: 480px) {
+  .lx .lx-merge__options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ============================================================ sub-section actions */
+.lx .lx-subsection__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

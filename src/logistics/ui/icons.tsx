@@ -63,7 +63,11 @@ export type IconName =
   | 'decision'
   | 'question'
   | 'idea'
-  | 'history';
+  | 'history'
+  | 'play'
+  | 'print'
+  | 'send'
+  | 'order';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   today: (
@@ -375,6 +379,31 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" />
       <path d="M4 4v4.5h4.5M12 8v4.2l3 1.8" />
+    </>
+  ),
+  // «Empezar»: a task starts now.
+  play: (
+    <path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.7l-10-6.5A1 1 0 0 0 8 5.5Z" />
+  ),
+  print: (
+    <>
+      <path d="M7 8.5V4h10v4.5" />
+      <rect x="3.5" y="8.5" width="17" height="8" rx="2" />
+      <path d="M7 14h10v6H7Z" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="M20.5 3.5 10 14" />
+      <path d="m20.5 3.5-6.5 17-4-6.5-6.5-4Z" />
+    </>
+  ),
+  // A clipboard with lines: a work order.
+  order: (
+    <>
+      <path d="M9 4.5H6.5A1.5 1.5 0 0 0 5 6v13.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H15" />
+      <rect x="9" y="3" width="6" height="3" rx="1" />
+      <path d="M8.5 11h7M8.5 14.5h7M8.5 18h4" />
     </>
   ),
 };

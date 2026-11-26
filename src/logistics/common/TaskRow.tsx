@@ -40,25 +40,41 @@ export function taskLabel(
   return parts.filter(Boolean).join(', ');
 }
 
-export type RowEmphasis = 'now' | 'next' | 'past';
+export type RowEmphasis = 'late' | 'now' | 'next' | 'past';
 
 const EMPHASIS_LABEL: Record<RowEmphasis, string> = {
+  late: 'Va tarde',
   now: 'Ahora',
   next: 'Siguiente',
   past: 'Ya pasó',
 };
+
+/** «Va tarde, +20 min: », «Debería empezar: », «Ahora: ». */
+function emphasisPrefix(emphasis?: RowEmphasis, flag?: string | null): string {
+  if (!emphasis || emphasis === 'past') return '';
+  if (emphasis === 'late') {
+    return flag
+      ? `Va tarde, ${flag.toLocaleLowerCase('es-ES')}: `
+      : 'Va tarde: ';
+  }
+  return `${flag ?? EMPHASIS_LABEL[emphasis]}: `;
+}
 
 export const TaskRow: React.FC<{
   task: Task;
   warnings?: PlanWarning[];
   showDate?: boolean;
   emphasis?: RowEmphasis;
+  /** Text of the flag instead of the emphasis name («+20 min», «Debería empezar»). */
+  flag?: string | null;
   onOpen: (task: Task) => void;
-}> = ({task, warnings = [], showDate = false, emphasis, onOpen}) => {
+}> = ({task, warnings = [], showDate = false, emphasis, flag, onOpen}) => {
   const {date} = recordSlot(task);
   const conflict = warnings.some(w => w.severity === 'conflict');
   const reminder = !conflict && warnings.length > 0;
   const pending = missingForTask(task).length > 0;
+  const flagText =
+    emphasis && emphasis !== 'past' ? (flag ?? EMPHASIS_LABEL[emphasis]) : null;
   return (
     <button
       type="button"
@@ -71,12 +87,12 @@ export const TaskRow: React.FC<{
         .filter(Boolean)
         .join(' ')}
       data-task-id={task.id}
-      aria-label={`${emphasis && emphasis !== 'past' ? `${EMPHASIS_LABEL[emphasis]}: ` : ''}${taskLabel(task, warnings, {date: showDate})}`}
+      aria-label={`${emphasisPrefix(emphasis, flag)}${taskLabel(task, warnings, {date: showDate})}`}
       onClick={() => onOpen(task)}
     >
       <span className="lx-taskrow__time">
-        {emphasis && emphasis !== 'past' && (
-          <span className="lx-taskrow__flag">{EMPHASIS_LABEL[emphasis]}</span>
+        {flagText && (
+          <span className="lx-taskrow__flag lx-num">{flagText}</span>
         )}
         {showDate && date && (
           <span className="lx-taskrow__date lx-num">{dayMonthShort(date)}</span>

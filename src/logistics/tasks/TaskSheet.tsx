@@ -59,6 +59,18 @@ import {
 import {usePlan} from '../common/usePlan';
 import {VerificationChip, DemoChip} from '../events/EventChips';
 import {
+  HypothesisSheet,
+  type HypothesisStart,
+} from '../followup/HypothesisSheet';
+import {TaskWhatIf} from '../followup/TaskWhatIf';
+import {mergeForm, type MergeClash} from '../forms/merge';
+import {
+  chooseSide,
+  MergeNotice,
+  type MergeDescribe,
+  type MergeState,
+} from '../forms/MergeNotice';
+import {
   ConflictNotice,
   DiscardStrip,
   Provenance,
@@ -92,6 +104,8 @@ import {
   TASK_STATUS_LABEL,
 } from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
+import {subsoilAfterMerge} from './subsoil';
+import {SubsoilReviewField, SubsoilReviewValue} from './SubsoilReview';
 import {TaskContactField} from './TaskContactField';
 import {TaskResourcesField} from './TaskResourcesField';
 import {Value} from '../contacts/DirectoryParts';
@@ -132,6 +146,13 @@ interface FormValues extends SlotValues {
   contactId: string;
   status: TaskStatus;
   heavy: Heavy;
+  /** «Subsuelo revisado en el simulador» as saved (or as the user set it). */
+  subsoilReviewed: boolean;
+  /**
+   * Declared again after changing venue, heavy load or resources (the server
+   * withdraws the old mark unless the same save declares it).
+   */
+  subsoilRedeclare: boolean;
   dependsOn: string[];
   /** Inventory resources the task counts on. */
   resourceIds: string[];
@@ -154,6 +175,8 @@ const EMPTY: FormValues = {
   endTime: '',
   status: 'planned',
   heavy: 'unknown',
+  subsoilReviewed: false,
+  subsoilRedeclare: false,
   dependsOn: [],
   resourceIds: [],
   notes: '',
@@ -182,6 +205,8 @@ function valuesFromTask(task: Task): FormValues {
     endTime: slot.endTime ?? '',
     status: task.status,
     heavy: toHeavy(task.heavyLoad),
+    subsoilReviewed: !!task.subsoilReview,
+    subsoilRedeclare: false,
     dependsOn: [...task.dependsOn],
     resourceIds: [...(task.resourceIds ?? [])],
     notes: task.notes ?? '',
@@ -238,6 +263,12 @@ function valuesFromRescue(
     if (typeof raw[key] === 'string') out[key] = raw[key];
   }
   if (typeof raw.multiDay === 'boolean') out.multiDay = raw.multiDay;
+  if (typeof raw.subsoilReviewed === 'boolean') {
+    out.subsoilReviewed = raw.subsoilReviewed;
+  }
+  if (typeof raw.subsoilRedeclare === 'boolean') {
+    out.subsoilRedeclare = raw.subsoilRedeclare;
+  }
   if (
     Array.isArray(raw.dependsOn) &&
     raw.dependsOn.every(d => typeof d === 'string')
@@ -306,6 +337,7 @@ const SERVER_FIELD: Record<string, keyof FormValues> = {
   endsAt: 'endTime',
   status: 'status',
   heavyLoad: 'heavy',
+  subsoilReviewed: 'subsoilReviewed',
   dependsOn: 'dependsOn',
   resourceIds: 'resourceIds',
   notes: 'notes',
@@ -356,6 +388,31 @@ const HEAVY_OPTIONS: {value: Heavy; label: string}[] = [
 ];
 
 const DRAFT_ID = '__draft__';
+
+/** Merge notice: readable values for the task's coded fields. */
+const describeTask =
+  (
+    events: LogisticsEvent[],
+    contactName: (id: string) => string | null,
+  ): MergeDescribe<FormValues> =>
+  (key, v) => {
+    switch (key) {
+      case 'kind':
+        return v.kind ? TASK_KIND_LABEL[v.kind] : null;
+      case 'status':
+        return v.status ? TASK_STATUS_LABEL[v.status] : null;
+      case 'heavy':
+        return HEAVY_OPTIONS.find(o => o.value === v.heavy)?.label ?? null;
+      case 'eventId':
+        return v.eventId
+          ? (events.find(e => e.id === v.eventId)?.name ?? null)
+          : 'Sin evento';
+      case 'contactId':
+        return v.contactId ? contactName(v.contactId) : 'Sin persona';
+      default:
+        return undefined;
+    }
+  };
 
 function showsHeavyLoad(v: {kind: TaskKind; heavy: Heavy}): boolean {
   return isLoadBearing(v.kind) || v.heavy === 'yes';
@@ -484,6 +541,17 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
             </dd>
           </div>
         )}
+        {task.heavyLoad === true && (
+          <div>
+            <dt>Subsuelo</dt>
+            <dd>
+              <SubsoilReviewValue
+                review={task.subsoilReview ?? null}
+                timeZone={task.timezone || DEFAULT_TIMEZONE}
+              />
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Empieza cuando termine</dt>
           <dd>
@@ -513,6 +581,7 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
       {warnings.length > 0 && (
         <TaskWarnings warnings={warnings} selfId={task.id} />
       )}
+      <TaskWhatIf task={task} />
       <RecordNotes
         target={{type: 'task', id: task.id}}
         prefill={{
@@ -676,10 +745,13 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
   const [conflict, setConflict] = useState<Task | null>(null);
   const [conflictOn, setConflictOn] = useState<'save' | 'delete'>('save');
   const [conflictResolved, setConflictResolved] = useState(false);
+  const [merge, setMerge] = useState<MergeState<FormValues> | null>(null);
+  const [whatIf, setWhatIf] = useState<HypothesisStart | null>(null);
   const [savedTitle, setSavedTitle] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<'discard' | 'delete' | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const alertRef = useAlertFocus(conflict ?? errors.form);
+  const alertRef = useAlertFocus(conflict ?? merge ?? errors.form);
+  const contacts = useLogisticsStore(s => s.contacts);
 
   const dirty = (Object.keys(values) as (keyof FormValues)[]).some(k =>
     k === 'dependsOn' || k === 'resourceIds'
@@ -888,6 +960,17 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
 
   const dependents = base ? dependentsOf(tasks, base.id) : [];
 
+  // A declared subsoil review belongs to a venue, a load and resources: when
+  // any of them changes, saving withdraws it (server rule).
+  const subsoilStale =
+    !!base?.subsoilReview &&
+    (nameKey(values.venueName) !== nameKey(initial.venueName) ||
+      values.heavy !== initial.heavy ||
+      !sameList(values.resourceIds, initial.resourceIds));
+  const subsoilChecked = subsoilStale
+    ? values.subsoilRedeclare
+    : values.subsoilReviewed;
+
   // ---- server errors and submit
   const applyServerError = (err: unknown, action: 'save' | 'delete') => {
     if (isApiError(err) && err.code === 'UNAUTHENTICATED') {
@@ -899,6 +982,31 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
         err.current && typeof err.current === 'object'
           ? (err.current as Task)
           : null;
+      if (action === 'save' && current && base) {
+        // Merge instead of blocking: their changes in, the user's kept,
+        // clashes chosen in the notice. Nothing is sent until «Guardar».
+        const raw = mergeForm(
+          valuesFromTask(base),
+          latest.current.values,
+          valuesFromTask(current),
+        );
+        // A changed placement never carries an old subsoil tick over.
+        const result = subsoilAfterMerge(raw, !!current.subsoilReview);
+        setBase(current);
+        setValues(result.merged);
+        setMerge({
+          current,
+          own: !!userId && current.updatedBy?.id === userId,
+          clashes: result.clashes,
+          fromTheirs: raw.fromTheirs,
+          note: result.note,
+        });
+        setConflict(null);
+        setConflictResolved(false);
+        setConfirm(null);
+        return;
+      }
+      setMerge(null);
       setConflict(current ?? base);
       setConflictOn(action);
       setConflictResolved(false);
@@ -942,6 +1050,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       ? {resourceIds: liveResources(v.resourceIds)}
       : {}),
     heavyLoad: showsHeavyLoad(v) ? fromHeavy(v.heavy) : null,
+    // Only with «Carga pesada: Sí»; the server refuses it otherwise.
+    ...(v.heavy === 'yes' && v.subsoilReviewed ? {subsoilReviewed: true} : {}),
     notes: nullIfEmpty(v.notes),
     source: v.source,
     verification: v.verification,
@@ -1009,6 +1119,16 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       if (values.heavy !== initial.heavy) {
         patch.heavyLoad = fromHeavy(values.heavy);
       }
+      // The subsoil mark only travels with «Carga pesada: Sí» and when it
+      // changes; after a change of venue, load or resources the server
+      // withdraws it unless the user declares it again in this save.
+      if (values.heavy === 'yes') {
+        if (subsoilStale) {
+          if (values.subsoilRedeclare) patch.subsoilReviewed = true;
+        } else if (values.subsoilReviewed !== initial.subsoilReviewed) {
+          patch.subsoilReviewed = values.subsoilReviewed;
+        }
+      }
       if (values.notes !== initial.notes) patch.notes = full.notes;
       if (values.source !== initial.source) patch.source = values.source;
       if (values.verification !== initial.verification) {
@@ -1052,9 +1172,35 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     setErrors({});
     setConflictResolved(true);
     setConflict(null);
+    setMerge(null);
     setRescuedNotice(false);
     setConfirm(null);
   };
+
+  /** «Descartar mis cambios» after a merge: the current version as is. */
+  const discardMine = () => {
+    if (!base) return;
+    setValues(valuesFromTask(base));
+    setErrors({});
+    setMerge(null);
+    setConflictResolved(true);
+    setRescuedNotice(false);
+    setConfirm(null);
+  };
+
+  const chooseClash = (
+    clash: MergeClash<FormValues>,
+    side: 'mine' | 'theirs',
+  ) => {
+    setValues(v => chooseSide(v, clash, side));
+    setSavedTitle(null);
+  };
+
+  const describe = useMemo(
+    () =>
+      describeTask(events, id => contacts.find(c => c.id === id)?.name ?? null),
+    [events, contacts],
+  );
 
   const toggleDependency = (id: string, on: boolean) =>
     set(
@@ -1193,6 +1339,18 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
           void submit(false);
         }}
       >
+        {merge && (
+          <MergeNotice<FormValues>
+            idPrefix="lx-task"
+            subject="esta tarea"
+            merge={merge}
+            values={values}
+            onChoose={chooseClash}
+            onDiscardMine={discardMine}
+            describe={describe}
+            alertRef={alertRef}
+          />
+        )}
         {conflict && (
           <ConflictNotice
             id="lx-task-conflict"
@@ -1417,6 +1575,17 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
                 ligera.
               </p>
             )}
+            {values.heavy === 'yes' && (
+              <SubsoilReviewField
+                saved={base?.subsoilReview ?? null}
+                checked={subsoilChecked}
+                stale={subsoilStale}
+                timeZone={zone}
+                onChange={on =>
+                  set(subsoilStale ? 'subsoilRedeclare' : 'subsoilReviewed', on)
+                }
+              />
+            )}
           </div>
         )}
 
@@ -1571,6 +1740,7 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
 
         {base && (
           <>
+            <TaskWhatIf task={base} dirty={dirty} onOpen={setWhatIf} />
             <RecordNotes
               target={{type: 'task', id: base.id}}
               prefill={{
@@ -1590,6 +1760,9 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
         )}
         <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
       </form>
+      {whatIf && (
+        <HypothesisSheet start={whatIf} onClose={() => setWhatIf(null)} />
+      )}
     </Sheet>
   );
 };

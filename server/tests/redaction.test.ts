@@ -9,6 +9,7 @@
 import {beforeAll, describe, expect, it} from 'vitest';
 import {AppError} from '../src/errors.ts';
 import {updateEvent} from '../src/events/service.ts';
+import {applyHypothesis, createHypothesis} from '../src/hypotheses/service.ts';
 import {createNote, updateNote} from '../src/notes/service.ts';
 import {WITHHELD_FROM_GUESTS} from '../src/records/redact.ts';
 import {createResource, updateResource} from '../src/resources/service.ts';
@@ -18,6 +19,7 @@ import {createHarness, json} from './helpers.ts';
 import type {Harness} from './helpers.ts';
 import type {
   ApiErrorBody,
+  DelayHypothesis,
   ListResponse,
   LogisticsEvent,
   Note,
@@ -41,6 +43,7 @@ const SECRET = {
   location: 'SECRETO-UBICACION-45',
   resourceNotes: 'SECRETO-RECURSO-46',
   noteText: 'SECRETO-NOTA-47',
+  hypothesisNote: 'SECRETO-HIPOTESIS-48',
 };
 
 let ids: {
@@ -49,6 +52,8 @@ let ids: {
   warehouse: Warehouse;
   resource: Resource;
   note: Note;
+  timedTask: Task;
+  hypothesis: DelayHypothesis;
 };
 
 beforeAll(async () => {
@@ -94,7 +99,19 @@ beforeAll(async () => {
     eventId: event.id,
     ref: {type: 'resource', id: resource.id},
   });
-  ids = {event, task, warehouse, resource, note};
+  const timedTask = await post<Task>('/tasks', {
+    title: 'Montaje Prueba Reservado',
+    date: '2026-12-02',
+    startTime: '09:00',
+    endTime: '10:00',
+    notes: SECRET.taskNotes,
+  });
+  const hypothesis = await post<DelayHypothesis>('/hypotheses', {
+    taskId: timedTask.id,
+    delayMinutes: 30,
+    note: SECRET.hypothesisNote,
+  });
+  ids = {event, task, warehouse, resource, note, timedTask, hypothesis};
 });
 
 const orgPath = (what: string) => `/organizations/${h.org.id}/${what}`;
@@ -128,7 +145,94 @@ describe('guests never receive notes, addresses, locations or note text', () => 
       warehouse: ['address', 'notes'],
       resource: ['location', 'notes'],
       note: ['text'],
+      hypothesis: ['note'],
     });
+  });
+
+  it('hypotheses: the list withholds the note and keeps the label; members see it', async () => {
+    const asGuest = await listOf<DelayHypothesis>('hypotheses', guest);
+    expect(asGuest.length).toBeGreaterThan(0);
+    expect(asGuest.every(x => x.note === null && x.restricted)).toBe(true);
+    expect(asGuest.find(x => x.id === ids.hypothesis.id)).toMatchObject({
+      taskTitle: 'Montaje Prueba Reservado',
+      delayMinutes: 30,
+      note: null,
+      restricted: true,
+    });
+    const asMember = await listOf<DelayHypothesis>('hypotheses', token);
+    expect(asMember.find(x => x.id === ids.hypothesis.id)).toMatchObject({
+      note: SECRET.hypothesisNote,
+      restricted: false,
+    });
+  });
+
+  it('hypotheses: every mapping path redacts for a guest viewer (create, apply, 409 current)', async () => {
+    const now = h.clock.now();
+    const raw: string[] = [];
+    const created = await createHypothesis(
+      h.db,
+      guestUser,
+      {
+        organizationId: h.org.id,
+        taskId: ids.timedTask.id,
+        delayMinutes: 15,
+        mode: 'shift',
+        estimated: false,
+        note: SECRET.hypothesisNote,
+      },
+      now,
+    );
+    expect(created).toMatchObject({note: null, restricted: true});
+    raw.push(JSON.stringify(created));
+
+    const conflict = await thrown(
+      applyHypothesis(
+        h.db,
+        guestUser,
+        created.id,
+        {
+          expected: [
+            {
+              id: ids.timedTask.id,
+              version: 99,
+              startsAt: '2026-12-02T09:15:00.000Z',
+              endsAt: '2026-12-02T10:15:00.000Z',
+            },
+          ],
+          markDelayed: false,
+        },
+        now,
+      ),
+    );
+    expect(conflict.code).toBe('VERSION_CONFLICT');
+    const current = conflict.current as Task[];
+    expect(current.length).toBeGreaterThan(0);
+    expect(current.every(t => t.notes === null && t.restricted)).toBe(true);
+    raw.push(JSON.stringify(current));
+
+    const applied = await applyHypothesis(
+      h.db,
+      guestUser,
+      created.id,
+      {
+        expected: current.map(t => ({
+          id: t.id,
+          version: t.version,
+          startsAt: new Date(
+            Date.parse(t.startsAt!) + 15 * 60_000,
+          ).toISOString(),
+          endsAt: new Date(Date.parse(t.endsAt!) + 15 * 60_000).toISOString(),
+        })),
+        markDelayed: false,
+      },
+      now,
+    );
+    expect(applied.hypothesis).toMatchObject({note: null, restricted: true});
+    expect(applied.tasks.every(t => t.notes === null && t.restricted)).toBe(
+      true,
+    );
+    raw.push(JSON.stringify(applied));
+    expectNoSecret(raw.join('\n'));
   });
 
   it('events: the list has notes null and restricted true; members see them', async () => {
@@ -215,6 +319,8 @@ describe('guests never receive notes, addresses, locations or note text', () => 
       'notes',
       'activity?limit=100',
       `activity?entityType=note&entityId=${ids.note.id}`,
+      'hypotheses',
+      `activity?entityType=hypothesis&entityId=${ids.hypothesis.id}`,
       'venues',
       'companies',
       'contacts',

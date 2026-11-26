@@ -18,6 +18,7 @@ import {
 } from '../lib/events';
 import {instantShort, relativeTime} from '../lib/format';
 import {Button, Icon, Segmented} from '../ui';
+import type {MergeSlot} from './useRecordForm';
 
 type Versioned = Pick<
   RecordMeta,
@@ -36,10 +37,36 @@ export function useAlertFocus(active: unknown) {
     const reduce = window.matchMedia?.(
       '(prefers-reduced-motion: reduce)',
     ).matches;
-    el.scrollIntoView({block: 'start', behavior: reduce ? 'auto' : 'smooth'});
+    // Scroll only the nearest scrolling container: `scrollIntoView` would
+    // also scroll the sheet's clipped frame and push its header out of view.
+    const scroller = scrollParent(el);
+    if (scroller) {
+      const top =
+        el.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop -
+        8;
+      scroller.scrollTo({
+        top: Math.max(0, top),
+        behavior: reduce ? 'auto' : 'smooth',
+      });
+    }
     el.focus({preventScroll: true});
   }, [active]);
   return ref;
+}
+
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const {overflowY} = getComputedStyle(p);
+    if (
+      (overflowY === 'auto' || overflowY === 'scroll') &&
+      p.scrollHeight > p.clientHeight
+    ) {
+      return p;
+    }
+  }
+  return null;
 }
 
 export const ConflictNotice: React.FC<{
@@ -227,6 +254,8 @@ export const FormNotices: React.FC<{
   saved?: React.ReactNode;
   error?: string;
   alertRef: React.RefObject<HTMLElement | null>;
+  /** The merge notice after a 409 on save (`useRecordForm().merge`). */
+  merge?: MergeSlot | null;
 }> = ({
   idPrefix,
   subject,
@@ -239,8 +268,10 @@ export const FormNotices: React.FC<{
   saved,
   error,
   alertRef,
+  merge,
 }) => (
   <>
+    {merge?.({idPrefix, subject, alertRef})}
     {conflict && (
       <ConflictNotice
         id={`${idPrefix}-conflict`}

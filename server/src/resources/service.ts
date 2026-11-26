@@ -476,6 +476,13 @@ export async function updateResource(
   if (!isUuid(id)) throw resourceNotFound();
   return db.transaction(async tx => {
     const orgId = (await loadOwnResource(tx, actor, id)).organization_id;
+    // A change of quantity, unit or dimensions may update several tasks (their
+    // subsoil review is cleared): graph lock first, then the catalogue lock.
+    const touchesMaterial =
+      input.quantity !== undefined ||
+      input.unit !== undefined ||
+      input.dimensions !== undefined;
+    if (touchesMaterial) await lockGraph(tx, orgId);
     await lockCatalogue(tx, orgId);
     const row = await loadResource(tx, id, true);
     if (!row) throw resourceNotFound();
@@ -544,8 +551,72 @@ export async function updateResource(
       at: now,
       isDemo: row.is_demo,
     });
+    if (changed.some(f => MATERIAL_FIELDS.has(f))) {
+      await clearSubsoilReviews(tx, {
+        organizationId: orgId,
+        resourceId: id,
+        actorId: actor.id,
+        now,
+      });
+    }
     return toResource((await loadResource(tx, id)) as ResourceRow, actor);
   });
+}
+
+/** Resource fields that describe the material a subsoil review was made for. */
+const MATERIAL_FIELDS: ReadonlySet<string> = new Set([
+  'quantity',
+  'unit',
+  'dimensions',
+]);
+
+/**
+ * The material of a resource changed (quantity, unit or dimensions): the live
+ * tasks that use it (not done or cancelled) lose their declared subsoil
+ * review, with a new version, author and time and an activity entry, as when
+ * a task's own resources change. Finished tasks keep it: the review was for
+ * what was placed then. Never sets a review. The caller holds the graph and
+ * catalogue locks (in that order).
+ */
+async function clearSubsoilReviews(
+  tx: Queryable,
+  args: {
+    organizationId: string;
+    resourceId: string;
+    actorId: string;
+    now: Date;
+  },
+): Promise<void> {
+  const tasks = await tx.query<{id: string; title: string; is_demo: boolean}>(
+    `SELECT t.id, t.title, t.is_demo
+       FROM task_resources tr JOIN tasks t ON t.id = tr.task_id
+      WHERE tr.resource_id = $1
+        AND t.subsoil_reviewed_at IS NOT NULL
+        AND t.status NOT IN ('done', 'cancelled')
+      ORDER BY t.id
+        FOR UPDATE OF t`,
+    [args.resourceId],
+  );
+  for (const t of tasks) {
+    await tx.query(
+      `UPDATE tasks SET subsoil_reviewed_by = NULL, subsoil_reviewed_at = NULL,
+              version = version + 1, updated_by = $2,
+              updated_at = $3::timestamptz
+        WHERE id = $1`,
+      [t.id, args.actorId, args.now.toISOString()],
+    );
+    await appendActivity(tx, {
+      organizationId: args.organizationId,
+      userId: args.actorId,
+      entityType: 'task',
+      entityId: t.id,
+      entityLabel: t.title,
+      action: 'update',
+      changedFields: ['subsoilReview'],
+      at: args.now,
+      isDemo: t.is_demo,
+    });
+  }
 }
 
 /**
@@ -570,8 +641,14 @@ export async function deleteResource(
     if (row.version !== version) throw staleResource(row, actor);
 
     const at = now.toISOString();
-    const tasks = await tx.query<{id: string; title: string; is_demo: boolean}>(
-      `SELECT t.id, t.title, t.is_demo
+    const tasks = await tx.query<{
+      id: string;
+      title: string;
+      is_demo: boolean;
+      had_review: boolean;
+    }>(
+      `SELECT t.id, t.title, t.is_demo,
+              t.subsoil_reviewed_at IS NOT NULL AS had_review
          FROM task_resources tr JOIN tasks t ON t.id = tr.task_id
         WHERE tr.resource_id = $1
         ORDER BY t.id
@@ -579,9 +656,12 @@ export async function deleteResource(
       [id],
     );
     for (const t of tasks) {
+      // The task's material changes, so a declared subsoil review (made for
+      // that material) is cleared, as on a task edit.
       await tx.query(
         `UPDATE tasks SET version = version + 1, updated_by = $2,
-                updated_at = $3::timestamptz
+                updated_at = $3::timestamptz,
+                subsoil_reviewed_by = NULL, subsoil_reviewed_at = NULL
           WHERE id = $1`,
         [t.id, actor.id, at],
       );
@@ -602,7 +682,9 @@ export async function deleteResource(
         entityId: t.id,
         entityLabel: t.title,
         action: 'update',
-        changedFields: ['resourceIds'],
+        changedFields: t.had_review
+          ? ['resourceIds', 'subsoilReview']
+          : ['resourceIds'],
         at: now,
         isDemo: t.is_demo,
       });

@@ -45,6 +45,7 @@ import {
 } from '../forms/FormParts';
 import {useRecordForm, type FormErrors} from '../forms/useRecordForm';
 import {tasksOfContact} from '../lib/directory';
+import {WorkOrderSheet} from '../orders/WorkOrderSheet';
 import {SOURCE_LABEL, sortEvents, VERIFICATION_LABEL} from '../lib/events';
 import {dayMonthShort, plural} from '../lib/format';
 import {recordDate, sortTasks} from '../lib/tasks';
@@ -213,6 +214,7 @@ const ContactView: React.FC<{
   const {canWrite, openCompany, openEvent, openTask} = useActions();
   const plan = usePlan();
   const [sharing, setSharing] = useState(false);
+  const [ordering, setOrdering] = useState(false);
   const contact = live ?? opened;
   const gone = useGone(live, loaded);
   const company = contact.company
@@ -400,10 +402,23 @@ const ContactView: React.FC<{
             id="lx-contact-tasks"
             aria-labelledby="lx-contact-tasks-title"
           >
-            <h3 className="lx-subsection__title" id="lx-contact-tasks-title">
-              Tareas en las que es la persona de contacto
-              <span className="lx-count lx-num">{itsTasks.length}</span>
-            </h3>
+            <div className="lx-subsection__head">
+              <h3 className="lx-subsection__title" id="lx-contact-tasks-title">
+                Tareas en las que es la persona de contacto
+                <span className="lx-count lx-num">{itsTasks.length}</span>
+              </h3>
+              {canWrite && !gone && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon="order"
+                  id="lx-contact-work-order"
+                  onClick={() => setOrdering(true)}
+                >
+                  Orden de trabajo
+                </Button>
+              )}
+            </div>
             <ul className="lx-tasklist">
               {itsTasks.map(t => (
                 <li key={t.id}>
@@ -439,6 +454,14 @@ const ContactView: React.FC<{
         <ShareContactSheet
           contact={contact}
           onClose={() => setSharing(false)}
+        />
+      )}
+      {ordering && canWrite && (
+        <WorkOrderSheet
+          recipient={{kind: 'contact', id: contact.id, name: contact.name}}
+          phone={contact.phone}
+          email={contact.email}
+          onClose={() => setOrdering(false)}
         />
       )}
     </Sheet>
@@ -724,6 +747,7 @@ const ContactForm: React.FC<{
           }
           error={errors.form}
           alertRef={f.alertRef}
+          merge={f.merge}
         />
 
         <Field id="lx-contact-name" label="Nombre" error={errors.name}>

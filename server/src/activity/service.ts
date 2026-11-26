@@ -71,6 +71,7 @@ export const HISTORY_ENTITY_TYPES = [
   'warehouse',
   'resource',
   'note',
+  'hypothesis',
 ] as const;
 
 export type HistoryEntityType = (typeof HISTORY_ENTITY_TYPES)[number];

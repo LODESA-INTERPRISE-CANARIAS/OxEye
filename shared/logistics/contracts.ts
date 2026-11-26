@@ -87,14 +87,37 @@
  *   Deleting a task, company, contact or offer also unlinks notes that point
  *   at it (versions increase).
  *
+ * Milestone 5 (day follow-up, delay hypotheses, work orders):
+ *
+ *   GET    /organizations/:orgId/hypotheses       → ListResponse<DelayHypothesis> (newest first)
+ *   POST   /hypotheses         HypothesisInput    → 201 DelayHypothesis (stored, never applied)
+ *   DELETE /hypotheses/:id                        → 204; open hypotheses only (400 once applied)
+ *   POST   /hypotheses/:id/apply ApplyHypothesisInput → ApplyHypothesisResponse.
+ *          The server recomputes the shift with `simulateDelay` on the current
+ *          plan and applies it in one transaction only if it matches
+ *          `expected` exactly (same tasks, versions and new times); otherwise
+ *          409 VERSION_CONFLICT with `current` = the tasks as they are now, and
+ *          nothing changes. Never touches `heavyLoad`, `subsoilReview`,
+ *          resources or anything but times (and the root's status when
+ *          `markDelayed`). Applying twice → 400.
+ *   Deleting a task deletes its open hypotheses; applied ones keep their
+ *   label (`taskTitle`) with `taskId` null. Applying logs each moved task as
+ *   `update` and the hypothesis as `update` with `changedFields: ['appliedAt']`.
+ *   Deleting a resource clears the subsoil mark of the tasks that used it.
+ *   `TaskInput.subsoilReviewed` declares or withdraws «Subsuelo revisado en el
+ *   simulador» (members only; only on a task with `heavyLoad: true`).
+ *   Work orders are built in the browser (`work-order.ts`) from the records the
+ *   viewer already received; there is no work-order route.
+ *
  * Guests (role `guest`, a shared login) never receive contact details,
  * prices or free-text observations: the server sends those fields as null and
  * sets `restricted: true`, and the UI shows «Visible para el equipo» instead
  * of «Pendiente de verificar». Withheld today: people's phone, e-mail,
  * description and notes; companies' phone, e-mail and notes; offers' prices,
  * costs and conditions; events' and tasks' notes (M4); warehouses' address
- * and notes; resources' location and notes; the text of every note. The
- * server's `WITHHELD_FROM_GUESTS` is the single list.
+ * and notes; resources' location and notes; the text of every note; the note
+ * of a delay hypothesis (M5). The server's `WITHHELD_FROM_GUESTS` is the
+ * single list.
  */
 
 export type Uuid = string;
@@ -242,9 +265,10 @@ export type ActivityAction = 'create' | 'update' | 'delete';
 
 /**
  * `entityType` values: event, task, venue, company, contact, offer,
- * category, warehouse, resource, note (and `demo` for the removal itself).
- * `entityLabel` is a name, never free text: a note's label is its kind and
- * what it points at (`noteLabel` in history.ts).
+ * category, warehouse, resource, note, hypothesis (M5) (and `demo` for the
+ * removal itself). `entityLabel` is a name, never free text: a note's label
+ * is its kind and what it points at (`noteLabel` in history.ts); a
+ * hypothesis's is `hypothesisLabel` (never its note).
  */
 export interface ActivityEntry {
   id: string;
@@ -300,10 +324,23 @@ export interface Task extends RecordMeta {
    * tasks at the same time is a plan warning. Never answers `heavyLoad`.
    */
   resourceIds: Uuid[];
+  /**
+   * «Subsuelo revisado en el simulador» (M5): a mark a member declares after
+   * running the simulator's X-ray check. Declared, never inferred (not from
+   * quantities, units or dimensions) and never a certification. The server
+   * clears it when the venue, `heavyLoad` or `resourceIds` change, because
+   * the review was for that placement and that material.
+   */
+  subsoilReview: SubsoilReview | null;
   /** Null for guests (`restricted`). */
   notes: string | null;
   /** True when the notes were withheld for this viewer (M4). */
   restricted: boolean;
+}
+
+export interface SubsoilReview {
+  by: UserRef;
+  at: IsoInstant;
 }
 
 /**
@@ -343,23 +380,79 @@ export interface TaskInput extends ProvenanceInput {
    * MAX_RESOURCES_PER_TASK; unknown or foreign id → 400 `fields.resourceIds`.
    */
   resourceIds?: Uuid[];
+  /**
+   * M5: `true` declares «Subsuelo revisado en el simulador» as the current
+   * user now; `false` withdraws it. Only with `heavyLoad: true` (stored or
+   * sent in the same request), otherwise 400 `fields.subsoilReviewed`.
+   * Changing venue, `heavyLoad` or `resourceIds` clears the mark unless the
+   * same request sends `true`.
+   */
+  subsoilReviewed?: boolean;
   notes?: string | null;
   /** Required on update. */
   version?: number;
 }
 
-/** A stored «¿y si…?» scenario. Never changes the plan until applied. */
+/**
+ * `shift`: the task starts (and ends) later. `extend`: it has started and
+ * ends later («se alarga»); its start does not move.
+ */
+export type DelayMode = 'shift' | 'extend';
+
+/**
+ * A stored «¿y si…?» scenario (M5). Never changes the plan until a member
+ * applies it after confirming; applied ones stay as a record of the decision.
+ */
 export interface DelayHypothesis {
   id: Uuid;
   organizationId: Uuid;
-  taskId: Uuid;
+  /** Null once the task was deleted (applied hypotheses are kept). */
+  taskId: Uuid | null;
+  /** The task's title when the hypothesis was saved; a label, never free text. */
+  taskTitle: string;
   delayMinutes: number;
+  mode: DelayMode;
   /** true when the user entered an estimate rather than a known delay. */
   estimated: boolean;
+  /** Null for guests (`restricted`). */
   note: string | null;
   createdBy: UserRef;
   createdAt: IsoInstant;
   appliedAt: IsoInstant | null;
+  appliedBy: UserRef | null;
+  /** True when the note was withheld for this viewer. */
+  restricted: boolean;
+}
+
+/** `delayMinutes` 1–MAX_DELAY_MINUTES; `note` up to HYPOTHESIS_NOTE_MAX. */
+export interface HypothesisInput {
+  organizationId: Uuid;
+  taskId: Uuid;
+  delayMinutes: number;
+  mode?: DelayMode;
+  estimated?: boolean;
+  note?: string | null;
+}
+
+/** One task as the user saw it moved in the confirmation. */
+export interface ShiftExpectation {
+  id: Uuid;
+  version: number;
+  startsAt: IsoInstant;
+  endsAt: IsoInstant;
+}
+
+export interface ApplyHypothesisInput {
+  /** Every task the hypothesis moves (root included), as confirmed. */
+  expected: ShiftExpectation[];
+  /** Also set the delayed task's status to `delayed` (planned/confirmed only). */
+  markDelayed?: boolean;
+}
+
+export interface ApplyHypothesisResponse {
+  hypothesis: DelayHypothesis;
+  /** The tasks that changed, as stored now. */
+  tasks: Task[];
 }
 
 // ---------------------------------------------------------------- contacts, companies, catalogue (M3)
@@ -645,13 +738,7 @@ export type NoteKind =
 
 /** Records a note can point at (besides its event). */
 export type NoteRefType =
-  | 'task'
-  | 'venue'
-  | 'company'
-  | 'contact'
-  | 'offer'
-  | 'warehouse'
-  | 'resource';
+  'task' | 'venue' | 'company' | 'contact' | 'offer' | 'warehouse' | 'resource';
 
 /**
  * Operational notes. An «incident» here is a logistics incident (late truck,

@@ -16,6 +16,8 @@ export interface ToastItem {
   id: number;
   message: string;
   tone: 'info' | 'success' | 'error';
+  /** One action, e.g. «Deshacer»; running it closes the toast. */
+  action?: {label: string; run: () => void};
 }
 
 /**
@@ -29,15 +31,32 @@ export interface ToastHost {
 
 export const ToastHostContext = createContext<ToastHost | null>(null);
 
+/** Hover and keyboard focus hold a toast independently. */
+export type ToastHoldHandler = (
+  id: number,
+  reason: 'hover' | 'focus',
+  held: boolean,
+) => void;
+
 const ToastList: React.FC<{
   toasts: ToastItem[];
   onDismiss: (id: number) => void;
-}> = ({toasts, onDismiss}) =>
+  onHold?: ToastHoldHandler;
+}> = ({toasts, onDismiss, onHold}) =>
   toasts.map(t => (
     <div
       key={t.id}
       className={`lx-toast lx-toast--${t.tone}`}
       role={t.tone === 'error' ? 'alert' : 'status'}
+      // Hover or keyboard focus keeps the toast (and its action) on screen.
+      onMouseEnter={() => onHold?.(t.id, 'hover', true)}
+      onMouseLeave={() => onHold?.(t.id, 'hover', false)}
+      onFocus={() => onHold?.(t.id, 'focus', true)}
+      onBlur={e => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          onHold?.(t.id, 'focus', false);
+        }
+      }}
     >
       <Icon
         name={
@@ -46,6 +65,18 @@ const ToastList: React.FC<{
         size={18}
       />
       <span className="lx-toast__text">{t.message}</span>
+      {t.action && (
+        <button
+          type="button"
+          className="lx-toast__action"
+          onClick={() => {
+            onDismiss(t.id);
+            t.action!.run();
+          }}
+        >
+          {t.action.label}
+        </button>
+      )}
       <button
         type="button"
         className="lx-toast__close"
@@ -60,12 +91,15 @@ const ToastList: React.FC<{
 export const Toaster: React.FC<{
   toasts: ToastItem[];
   onDismiss: (id: number) => void;
+  onHold?: ToastHoldHandler;
   /** Element inside an open modal sheet that should show the toasts. */
   host?: HTMLElement | null;
-}> = ({toasts, onDismiss, host}) => (
+}> = ({toasts, onDismiss, onHold, host}) => (
   <>
     <div className="lx-toaster" aria-live="polite" aria-atomic="false">
-      {!host && <ToastList toasts={toasts} onDismiss={onDismiss} />}
+      {!host && (
+        <ToastList toasts={toasts} onDismiss={onDismiss} onHold={onHold} />
+      )}
     </div>
     {host &&
       createPortal(
@@ -74,7 +108,7 @@ export const Toaster: React.FC<{
           aria-live="polite"
           aria-atomic="false"
         >
-          <ToastList toasts={toasts} onDismiss={onDismiss} />
+          <ToastList toasts={toasts} onDismiss={onDismiss} onHold={onHold} />
         </div>,
         host,
       )}

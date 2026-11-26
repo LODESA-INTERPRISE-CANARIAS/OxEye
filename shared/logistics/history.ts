@@ -4,7 +4,13 @@
  * label of a note that may appear anywhere outside the note itself: its kind
  * and what it points at, never its text.
  */
-import type {ActivityEntry, Note, NoteRefType} from './contracts.ts';
+import type {
+  ActivityEntry,
+  DelayHypothesis,
+  Note,
+  NoteRefType,
+} from './contracts.ts';
+import {minutesLabel} from './conflicts.ts';
 import {NOTE_KIND_LABEL} from './rules.ts';
 
 /** Contract field names (as logged in `changedFields`) → Spanish label. */
@@ -26,6 +32,9 @@ export const FIELD_LABEL: Readonly<Record<string, string>> = {
   dependsOn: 'dependencias',
   heavyLoad: 'carga pesada',
   resourceIds: 'recursos',
+  subsoilReview: 'revisión del subsuelo declarada',
+  delayMinutes: 'minutos de retraso',
+  appliedAt: 'aplicada al plan',
   // The free-text field is shown as «Observaciones»; «Notas» are linked notes.
   notes: 'observaciones',
   phone: 'teléfono',
@@ -77,6 +86,18 @@ export function describeChange(
   if (entry.action === 'delete') return 'Lo borró';
   const what = changedFieldsLabel(entry.changedFields);
   return what ? `Cambió ${what}` : 'Lo guardó sin cambios visibles';
+}
+
+/**
+ * The label of a delay hypothesis in activity and lists: «Retraso ≈ 15 min ·
+ * Camión del escenario». Never its note.
+ */
+export function hypothesisLabel(
+  h: Pick<DelayHypothesis, 'delayMinutes' | 'mode' | 'estimated' | 'taskTitle'>,
+): string {
+  const amount = `${h.estimated ? '≈ ' : ''}${minutesLabel(h.delayMinutes)}`;
+  const what = h.mode === 'extend' ? 'Se alarga' : 'Retraso';
+  return `${what} ${amount} · ${h.taskTitle}`;
 }
 
 /**

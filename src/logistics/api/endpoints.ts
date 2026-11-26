@@ -3,6 +3,8 @@
  */
 import type {
   ActivityEntry,
+  ApplyHypothesisInput,
+  ApplyHypothesisResponse,
   Category,
   CategoryInput,
   Company,
@@ -10,7 +12,9 @@ import type {
   Contact,
   ContactInput,
   CreateEventInput,
+  DelayHypothesis,
   HealthResponse,
+  HypothesisInput,
   ListResponse,
   LoginRequest,
   LoginResponse,
@@ -252,6 +256,27 @@ export const api = {
     apiRequest<void>('DELETE', `/notes/${enc(id)}?version=${version}`, {
       token,
     }),
+
+  // ---- milestone 5: delay hypotheses («¿Y si…?»)
+  hypotheses: (token: string, orgId: string) =>
+    apiRequest<ListResponse<DelayHypothesis>>(
+      'GET',
+      `/organizations/${enc(orgId)}/hypotheses`,
+      {token},
+    ),
+
+  createHypothesis: (token: string, body: HypothesisInput) =>
+    apiRequest<DelayHypothesis>('POST', '/hypotheses', {token, body}),
+
+  deleteHypothesis: (token: string, id: string) =>
+    apiRequest<void>('DELETE', `/hypotheses/${enc(id)}`, {token}),
+
+  applyHypothesis: (token: string, id: string, body: ApplyHypothesisInput) =>
+    apiRequest<ApplyHypothesisResponse>(
+      'POST',
+      `/hypotheses/${enc(id)}/apply`,
+      {token, body},
+    ),
 
   removeDemo: (token: string, orgId: string) =>
     apiRequest<{removed: number}>(

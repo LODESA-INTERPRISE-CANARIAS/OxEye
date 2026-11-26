@@ -20,6 +20,7 @@ const ALL_MIGRATIONS = [
   '0003_demo_removed.sql',
   '0004_contacts_catalogue.sql',
   '0005_inventories.sql',
+  '0006_followup.sql',
 ];
 
 const tempDirs: string[] = [];
@@ -55,6 +56,7 @@ describe('migrations', () => {
       'contact_events',
       'contacts',
       'events',
+      'hypotheses',
       'notes',
       'offers',
       'organization_members',
@@ -445,6 +447,105 @@ describe('migrations', () => {
       `DELETE FROM tasks WHERE id = '${task!.id}'`,
     ];
     for (const sql of bad) await expect(db.query(sql)).rejects.toThrow();
+    await db.close();
+  });
+
+  it('0006 applies on top of a milestone-4 database with data, leaves tasks unreviewed and enforces the hypothesis rules', async () => {
+    const all = readMigrations();
+    const m6 = all[5];
+    expect(m6?.file).toBe('0006_followup.sql');
+    const dir = tempMigrations(
+      Object.fromEntries(all.slice(0, 5).map(m => [m.file, m.sql])),
+    );
+    const db = await createPgliteDb();
+    expect((await migrate(db, {dir})).applied).toHaveLength(5);
+
+    const [user] = await db.query<{id: string}>(
+      `INSERT INTO users (display_name, role, password_hash)
+       VALUES ('Prueba', 'member', 'x') RETURNING id`,
+    );
+    const u = user!.id;
+    const [org] = await db.query<{id: string}>(
+      "INSERT INTO organizations (name) VALUES ('Org Prueba') RETURNING id",
+    );
+    const o = org!.id;
+    const [task] = await db.query<{id: string}>(
+      `INSERT INTO tasks (organization_id, title, heavy_load, created_by, updated_by)
+       VALUES ($1, 'Escenario Prueba', true, $2, $2) RETURNING id`,
+      [o, u],
+    );
+
+    writeFileSync(join(dir, m6!.file), m6!.sql);
+    expect((await migrate(db, {dir})).applied).toEqual(['0006_followup.sql']);
+
+    // Existing tasks keep their data; nothing declares a review for them.
+    const [t] = await db.query<{
+      version: number;
+      heavy_load: boolean | null;
+      subsoil_reviewed_by: string | null;
+      subsoil_reviewed_at: unknown;
+    }>(
+      'SELECT version, heavy_load, subsoil_reviewed_by, subsoil_reviewed_at FROM tasks',
+    );
+    expect(t).toEqual({
+      version: 1,
+      heavy_load: true,
+      subsoil_reviewed_by: null,
+      subsoil_reviewed_at: null,
+    });
+
+    // A valid hypothesis: shift by default, not estimated, open.
+    const [h] = await db.query<{
+      id: string;
+      mode: string;
+      estimated: boolean;
+      applied_at: unknown;
+      is_demo: boolean;
+    }>(
+      `INSERT INTO hypotheses (organization_id, task_id, task_title, delay_minutes, created_by)
+       VALUES ($1, $2, 'Escenario Prueba', 15, $3)
+       RETURNING id, mode, estimated, applied_at, is_demo`,
+      [o, task!.id, u],
+    );
+    expect(h).toMatchObject({
+      mode: 'shift',
+      estimated: false,
+      applied_at: null,
+      is_demo: false,
+    });
+
+    const hyp = (cols: string, values: string) =>
+      `INSERT INTO hypotheses (organization_id, task_id, task_title, delay_minutes, created_by${cols})
+       VALUES ('${o}', '${task!.id}', 'x', ${values}, '${u}'${cols ? ", 'late'" : ''})`;
+    const bad = [
+      // Both or neither: who declared the review and when.
+      `UPDATE tasks SET subsoil_reviewed_by = '${u}' WHERE id = '${task!.id}'`,
+      `UPDATE tasks SET subsoil_reviewed_at = now() WHERE id = '${task!.id}'`,
+      // Delay between 1 minute and one day; known modes; short notes.
+      hyp('', '0'),
+      hyp('', '1441'),
+      hyp(', mode', '15'),
+      `INSERT INTO hypotheses (organization_id, task_title, delay_minutes, created_by, note)
+       VALUES ('${o}', 'x', 15, '${u}', repeat('a', 1001))`,
+      `INSERT INTO hypotheses (organization_id, task_title, delay_minutes, created_by)
+       VALUES ('${o}', '  ', 15, '${u}')`,
+      // Applied: both or neither.
+      `UPDATE hypotheses SET applied_at = now() WHERE id = '${h!.id}'`,
+      `UPDATE hypotheses SET applied_by = '${u}' WHERE id = '${h!.id}'`,
+      // Deleting a task without detaching its hypotheses fails.
+      `DELETE FROM tasks WHERE id = '${task!.id}'`,
+    ];
+    for (const sql of bad) await expect(db.query(sql)).rejects.toThrow();
+
+    await db.query(
+      `UPDATE tasks SET subsoil_reviewed_by = $1, subsoil_reviewed_at = now()
+        WHERE id = $2`,
+      [u, task!.id],
+    );
+    await db.query(
+      'UPDATE hypotheses SET applied_by = $1, applied_at = now() WHERE id = $2',
+      [u, h!.id],
+    );
     await db.close();
   });
 

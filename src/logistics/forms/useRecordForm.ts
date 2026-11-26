@@ -4,18 +4,43 @@
  *
  * - dirty tracking against the record being edited (or the prefilled
  *   values), and a «¿Descartarlos?» step before losing changes;
- * - a 409 conflict never overwrites: the server copy is kept aside until the
- *   user chooses «Ver versión actual»;
+ * - a 409 conflict never overwrites: on save the form is merged with the
+ *   server copy (their changes taken, the user's kept, clashes chosen by the
+ *   user, `MergeNotice`) and nothing is sent until «Guardar» again; on delete
+ *   the server copy is kept aside until the user chooses «Ver versión
+ *   actual»;
  * - server field errors land on their fields, unavailability keeps the text;
  * - if the session expires mid-edit, the values are rescued for this tab and
  *   reopened after signing in again (`lib/rescue.ts`).
  */
-import {useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {
+  createElement,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type {RecordMeta} from '../../../shared/logistics/contracts.ts';
 import {errorMessage, isApiError} from '../api/client';
 import {clearRescue, saveRescue, type RescuedForm} from '../lib/rescue';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {useAlertFocus} from './FormParts';
+import {mergeForm, type MergeClash} from './merge';
+import {
+  chooseSide,
+  MergeNotice,
+  type MergeDescribe,
+  type MergeState,
+} from './MergeNotice';
+
+/** Renders the merge notice where `FormNotices` puts notices. */
+export type MergeSlot = (place: {
+  idPrefix: string;
+  subject: string;
+  alertRef: RefObject<HTMLElement | null>;
+}) => ReactNode;
 
 export type DirectoryEntity =
   'contact' | 'company' | 'offer' | 'warehouse' | 'resource' | 'note';
@@ -39,6 +64,8 @@ export interface RecordFormOptions<V extends object, R extends RecordMeta> {
   onClose: () => void;
   /** 409 DUPLICATE: the existing record with that name. */
   onDuplicate?: (current: unknown) => void;
+  /** Readable values for coded fields in the merge notice. */
+  describe?: MergeDescribe<V>;
 }
 
 const same = (a: unknown, b: unknown) =>
@@ -66,6 +93,7 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
   const [conflict, setConflict] = useState<R | null>(null);
   const [conflictOn, setConflictOn] = useState<'save' | 'delete'>('save');
   const [conflictResolved, setConflictResolved] = useState(false);
+  const [merge, setMerge] = useState<MergeState<V> | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   // Where the user asked to go while «¿Descartarlos?» is showing (another
   // record), instead of simply closing.
@@ -73,7 +101,7 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
     label: string;
     go: () => void;
   } | null>(null);
-  const alertRef = useAlertFocus(conflict ?? errors.form);
+  const alertRef = useAlertFocus(conflict ?? merge ?? errors.form);
 
   const dirty = (Object.keys(values) as (keyof V)[]).some(
     k => !same(values[k], initial[k]),
@@ -197,6 +225,28 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
         err.current && typeof err.current === 'object'
           ? (err.current as R)
           : null;
+      if (action === 'save' && current && base) {
+        // Merge instead of blocking: their changes in, the user's kept.
+        const result = mergeForm(
+          toValues(base),
+          latest.current.values,
+          toValues(current),
+        );
+        setBase(current);
+        setValues(result.merged);
+        setMerge({
+          current,
+          own: !!userId && current.updatedBy?.id === userId,
+          clashes: result.clashes,
+          fromTheirs: result.fromTheirs,
+        });
+        setConflict(null);
+        setConflictResolved(false);
+        setErrors({});
+        setConfirm(null);
+        return;
+      }
+      setMerge(null);
       setConflict(current ?? base);
       setConflictOn(action);
       setConflictResolved(false);
@@ -237,14 +287,42 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
     setErrors({});
     setConflictResolved(true);
     setConflict(null);
+    setMerge(null);
     setRescuedNotice(false);
     setConfirm(null);
   };
+
+  /** «Descartar mis cambios» after a merge: the current version as is. */
+  const discardMine = () => {
+    if (!base) return;
+    setValues(toValues(base));
+    setErrors({});
+    setMerge(null);
+    setConflictResolved(true);
+    setRescuedNotice(false);
+    setConfirm(null);
+  };
+
+  const chooseClash = (clash: MergeClash<V>, side: 'mine' | 'theirs') =>
+    setValues(v => chooseSide(v, clash, side));
+
+  const mergeSlot: MergeSlot | null = merge
+    ? place =>
+        createElement(MergeNotice<V>, {
+          ...place,
+          merge,
+          values,
+          onChoose: chooseClash,
+          onDiscardMine: discardMine,
+          describe: opts.describe,
+        })
+    : null;
 
   /** After a successful save: the rescued values are spent. */
   const markSaved = () => {
     if (opts.rescued) clearRescue();
     setRescuedNotice(false);
+    setMerge(null);
   };
 
   /**
@@ -279,6 +357,8 @@ export function useRecordForm<V extends object, R extends RecordMeta>(
     conflictResolved,
     ownConflict: !!conflict && !!userId && conflict.updatedBy?.id === userId,
     loadCurrent,
+    /** The merge notice after a 409 on save, or null. */
+    merge: mergeSlot,
     markSaved,
     startNext,
     rescuedNotice,

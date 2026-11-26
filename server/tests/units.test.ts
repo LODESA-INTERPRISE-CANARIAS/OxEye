@@ -22,7 +22,9 @@ import {
   DEPENDS_ON_SELF,
   DEPENDS_ON_UNKNOWN,
   dependencyProblem,
+  nextSubsoilReview,
   normalizeIds,
+  SUBSOIL_NEEDS_HEAVY_LOAD,
 } from '../src/tasks/domain.ts';
 import type {TaskState} from '../src/tasks/domain.ts';
 import {normalizeName} from '../src/venues/service.ts';
@@ -276,11 +278,21 @@ describe('tasks domain · dependencies', () => {
       dependsOn: ['a'],
       heavyLoad: null,
       resourceIds: [],
+      subsoilReviewedBy: null,
+      subsoilReviewedAt: null,
       notes: null,
       source: null,
       verification: 'draft',
     };
     expect(changedTaskFields(base, {...base, dependsOn: ['a']})).toEqual([]);
+    // Who and when are one contract field, named once.
+    expect(
+      changedTaskFields(base, {
+        ...base,
+        subsoilReviewedBy: 'u',
+        subsoilReviewedAt: '2026-12-02T09:00:00.000Z',
+      }),
+    ).toEqual(['subsoilReview']);
     expect(
       changedTaskFields(base, {
         ...base,
@@ -290,6 +302,80 @@ describe('tasks domain · dependencies', () => {
         contactId: 'y',
       }),
     ).toEqual(['company', 'contact', 'dependsOn', 'heavyLoad']);
+  });
+});
+
+describe('tasks domain · nextSubsoilReview', () => {
+  const NOW = '2026-12-02T10:00:00.000Z';
+  const OLD = {by: 'u-old', at: '2026-12-01T09:00:00.000Z'};
+  const placed: {
+    venueId: string | null;
+    heavyLoad: boolean | null;
+    resourceIds: string[];
+  } = {venueId: 'v1', heavyLoad: true, resourceIds: ['r1', 'r2']};
+  const next = (
+    after: Partial<typeof placed>,
+    requested: boolean | undefined,
+    review: typeof OLD | null = OLD,
+  ) =>
+    nextSubsoilReview({
+      before: {...placed, review},
+      after: {...placed, ...after},
+      requested,
+      actorId: 'u-new',
+      now: NOW,
+    });
+
+  it('is declared only on a heavy task, true or false', () => {
+    for (const heavyLoad of [false, null]) {
+      for (const requested of [true, false]) {
+        expect(next({heavyLoad}, requested)).toEqual({
+          ok: false,
+          message: SUBSOIL_NEEDS_HEAVY_LOAD,
+        });
+      }
+    }
+  });
+
+  it('declares as the current user now, withdraws on false', () => {
+    expect(next({}, true, null)).toEqual({
+      ok: true,
+      review: {by: 'u-new', at: NOW},
+    });
+    expect(next({}, false)).toEqual({ok: true, review: null});
+  });
+
+  it('keeps the first declaration when declared again with nothing relevant changed', () => {
+    expect(next({}, true)).toEqual({ok: true, review: OLD});
+    expect(next({}, undefined)).toEqual({ok: true, review: OLD});
+  });
+
+  it('clears on a venue, heavy-load or resources change; renews when the same request declares it', () => {
+    for (const change of [
+      {venueId: 'v2'},
+      {venueId: null},
+      {heavyLoad: false},
+      {resourceIds: ['r1']},
+      {resourceIds: ['r1', 'r3']},
+    ]) {
+      expect(next(change, undefined)).toEqual({ok: true, review: null});
+    }
+    expect(next({venueId: 'v2'}, true)).toEqual({
+      ok: true,
+      review: {by: 'u-new', at: NOW},
+    });
+    expect(next({resourceIds: []}, true)).toEqual({
+      ok: true,
+      review: {by: 'u-new', at: NOW},
+    });
+  });
+
+  it('never infers a review: with nothing declared it stays null', () => {
+    expect(next({}, undefined, null)).toEqual({ok: true, review: null});
+    expect(next({venueId: 'v2'}, undefined, null)).toEqual({
+      ok: true,
+      review: null,
+    });
   });
 });
 

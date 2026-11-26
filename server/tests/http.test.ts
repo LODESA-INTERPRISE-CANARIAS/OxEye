@@ -195,6 +195,11 @@ describe('route surface', () => {
         'POST /api/notes',
         'PATCH /api/notes/:id',
         'DELETE /api/notes/:id',
+        // Milestone 5: delay hypotheses (work orders have no route).
+        'GET /api/organizations/:orgId/hypotheses',
+        'POST /api/hypotheses',
+        'DELETE /api/hypotheses/:id',
+        'POST /api/hypotheses/:id/apply',
       ].sort(),
     );
   });

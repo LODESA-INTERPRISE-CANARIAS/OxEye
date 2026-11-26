@@ -57,6 +57,7 @@ import {
 import {SOURCE_LABEL, VERIFICATION_LABEL} from '../lib/events';
 import {initials, plural} from '../lib/format';
 import {sortTasks} from '../lib/tasks';
+import {WorkOrderSheet} from '../orders/WorkOrderSheet';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -288,6 +289,7 @@ const CompanyView: React.FC<{
   const info = company.phone ? phoneInfo(company.phone) : null;
   const w = company.restricted;
   const href = company.website ? websiteHref(company.website) : null;
+  const [ordering, setOrdering] = useState(false);
 
   return (
     <Sheet
@@ -540,19 +542,32 @@ const CompanyView: React.FC<{
               <span className="lx-count lx-num">{tasks.length}</span>
             </h3>
             {canWrite && !gone && (
-              <Button
-                size="sm"
-                icon="plus"
-                id="lx-company-add-task"
-                onClick={() =>
-                  addTask({
-                    companyName: company.name,
-                    contactId: company.mainContactId,
-                  })
-                }
-              >
-                Añadir tarea
-              </Button>
+              <span className="lx-subsection__actions">
+                {tasks.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon="order"
+                    id="lx-company-work-order"
+                    onClick={() => setOrdering(true)}
+                  >
+                    Orden de trabajo
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  icon="plus"
+                  id="lx-company-add-task"
+                  onClick={() =>
+                    addTask({
+                      companyName: company.name,
+                      contactId: company.mainContactId,
+                    })
+                  }
+                >
+                  Añadir tarea
+                </Button>
+              </span>
             )}
           </div>
           {tasks.length ? (
@@ -589,6 +604,14 @@ const CompanyView: React.FC<{
         />
         <Provenance record={company} id="lx-company-provenance" />
       </div>
+      {ordering && canWrite && (
+        <WorkOrderSheet
+          recipient={{kind: 'company', id: company.id, name: company.name}}
+          phone={company.phone}
+          email={company.email}
+          onClose={() => setOrdering(false)}
+        />
+      )}
     </Sheet>
   );
 };
@@ -848,6 +871,7 @@ const CompanyForm: React.FC<{
           currentLoaded={f.conflictResolved}
           error={errors.form}
           alertRef={f.alertRef}
+          merge={f.merge}
         />
         {duplicate && (
           <div

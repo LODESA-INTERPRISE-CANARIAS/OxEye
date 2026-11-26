@@ -939,6 +939,7 @@ const OfferForm: React.FC<{
           }
           error={errors.form}
           alertRef={f.alertRef}
+          merge={f.merge}
         />
 
         <CompanyField

@@ -1,67 +1,104 @@
 /**
- * Today's tasks for «Hoy», ordered for someone on site: what should be
- * happening now, what comes next, the rest by hour, tasks without a time,
- * and (folded) what is already over.
+ * «La jornada»: today's tasks for someone on site with a phone in one hand.
+ * What is late first, then what should be happening now, what comes next,
+ * the rest by hour, tasks without a time, and (folded) what is finished.
+ *
+ * Members move tasks on with one tap («Empezar», «Hecha», with «Deshacer»)
+ * and open «¿Y si…?» from a late or running task. Open hypotheses for today
+ * show as hatched chips: they never change the plan until someone applies
+ * one.
  */
-import React, {useMemo} from 'react';
+import React, {useMemo, useState} from 'react';
 import type {Task} from '../../../shared/logistics/contracts.ts';
+import {minutesLabel} from '../../../shared/logistics/conflicts.ts';
 import {useActions} from '../common/actions';
 import {TaskRow, type RowEmphasis} from '../common/TaskRow';
 import {useNow} from '../common/useNow';
 import type {Plan} from '../common/usePlan';
-import {minutesInDay, spanOnDate} from '../lib/calendar';
-import {taskZone} from '../lib/tasks';
-import {Button, Card, HelpTip, LoadError} from '../ui';
+import {
+  DAY_GROUP_TITLE,
+  canDelay,
+  delayCandidates,
+  groupDay,
+  minutesUntilNext,
+  type DayGroupId,
+  type DayItem,
+} from '../followup/day';
+import {
+  HypothesisSheet,
+  type HypothesisStart,
+} from '../followup/HypothesisSheet';
+import {hypothesisChipLabel} from '../followup/text';
+import {useQuickStatus} from '../followup/useQuickStatus';
+import {useLogisticsStore} from '../store/useLogisticsStore';
+import {Button, Card, HelpTip, Icon, LoadError} from '../ui';
 
-interface Groups {
-  current: {task: Task; emphasis: RowEmphasis | undefined}[];
-  untimed: Task[];
-  past: Task[];
-}
+const EMPHASIS: Partial<Record<DayGroupId, RowEmphasis>> = {
+  late: 'late',
+  now: 'now',
+  next: 'next',
+  done: 'past',
+};
 
-function groupTasks(tasks: Task[], today: string, now: number): Groups {
-  const nowIso = new Date(now).toISOString();
-  const current: Groups['current'] = [];
-  const untimed: Task[] = [];
-  const past: Task[] = [];
-  let nextStart: number | null = null;
-  const timed: {task: Task; start: number; end: number}[] = [];
-  for (const task of tasks) {
-    const span = spanOnDate(task, today);
-    if (!span) {
-      untimed.push(task);
-      continue;
-    }
-    timed.push({task, start: span.start, end: span.end});
-  }
-  for (const {task, start, end} of timed) {
-    const nowMin = minutesInDay(nowIso, today, taskZone(task));
-    const over =
-      task.status === 'done' ||
-      task.status === 'cancelled' ||
-      (end <= nowMin && task.status !== 'in_progress');
-    if (over) {
-      past.push(task);
-      continue;
-    }
-    const running =
-      task.status === 'in_progress' || (start <= nowMin && nowMin < end);
-    if (!running && (nextStart === null || start < nextStart)) {
-      nextStart = start;
-    }
-    current.push({task, emphasis: running ? 'now' : undefined});
-  }
-  for (const row of current) {
-    if (row.emphasis) continue;
-    const span = spanOnDate(row.task, today);
-    if (span && span.start === nextStart) row.emphasis = 'next';
-  }
-  // Running first, then by start (already in time order).
-  current.sort(
-    (a, b) => Number(b.emphasis === 'now') - Number(a.emphasis === 'now'),
+/** Groups whose rows carry quick actions («Más tarde» stays quiet). */
+const ACTION_GROUPS: ReadonlySet<DayGroupId> = new Set([
+  'late',
+  'now',
+  'next',
+  'untimed',
+]);
+
+const QuickActions: React.FC<{
+  task: Task;
+  busy: boolean;
+  onStatus: (task: Task, next: 'in_progress' | 'done') => void;
+  onDelay: (task: Task) => void;
+}> = ({task, busy, onStatus, onDelay}) => {
+  const running = task.status === 'in_progress';
+  const delayable = canDelay(task);
+  return (
+    <div
+      className="lx-dayrow__actions"
+      role="group"
+      aria-label={`Acciones rápidas: ${task.title}`}
+    >
+      {running ? (
+        <Button
+          size="sm"
+          variant="primary"
+          icon="check"
+          id={`lx-quick-done-${task.id}`}
+          busy={busy}
+          onClick={() => onStatus(task, 'done')}
+        >
+          Hecha
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          icon="play"
+          id={`lx-quick-start-${task.id}`}
+          busy={busy}
+          onClick={() => onStatus(task, 'in_progress')}
+        >
+          Empezar
+        </Button>
+      )}
+      {delayable && (
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="clock"
+          id={`lx-quick-delay-${task.id}`}
+          disabled={busy}
+          onClick={() => onDelay(task)}
+        >
+          {running ? 'Se alarga…' : 'Retraso…'}
+        </Button>
+      )}
+    </div>
   );
-  return {current, untimed, past};
-}
+};
 
 export const TodayTasks: React.FC<{
   tasks: Task[];
@@ -70,30 +107,98 @@ export const TodayTasks: React.FC<{
   error: string | null;
   onRetry: () => void;
 }> = ({tasks, plan, state, error, onRetry}) => {
-  const {today, canWrite, openTask, addTask, openDay} = useActions();
-  const now = useNow();
-  const groups = useMemo(
-    () => groupTasks(tasks, today, now),
-    [tasks, today, now],
-  );
-  const row = (task: Task, emphasis?: RowEmphasis) => (
-    <li key={task.id}>
-      <TaskRow
-        task={task}
-        warnings={plan.byTask.get(task.id)}
-        emphasis={emphasis}
-        onOpen={openTask}
-      />
-    </li>
-  );
+  const {today, timeZone, canWrite, openTask, addTask, openDay} = useActions();
+  const now = useNow(30_000);
+  const hypotheses = useLogisticsStore(s => s.hypotheses);
+  const quick = useQuickStatus();
+  const [hypo, setHypo] = useState<HypothesisStart | null>(null);
+
+  const groups = useMemo(() => groupDay(tasks, now), [tasks, now]);
+  const candidates = useMemo(() => delayCandidates(groups), [groups]);
+  const untilNext = minutesUntilNext(groups, now);
+  const openHypotheses = useMemo(() => {
+    const ids = new Set(tasks.map(t => t.id));
+    return hypotheses.filter(
+      h => !h.appliedAt && h.taskId !== null && ids.has(h.taskId),
+    );
+  }, [hypotheses, tasks]);
+
+  const pending =
+    groups.late.length +
+    groups.now.length +
+    groups.next.length +
+    groups.later.length +
+    groups.untimed.length;
+
+  const row = (item: DayItem) => {
+    const {task, group} = item;
+    const actions = canWrite && ACTION_GROUPS.has(group);
+    return (
+      <li key={task.id} className={`lx-dayrow${actions ? ' has-actions' : ''}`}>
+        <TaskRow
+          task={task}
+          warnings={plan.byTask.get(task.id)}
+          emphasis={EMPHASIS[group]}
+          flag={item.flag}
+          onOpen={openTask}
+        />
+        {actions && (
+          <QuickActions
+            task={task}
+            busy={quick.busy.has(task.id)}
+            onStatus={(t, next) => void quick.run(t, next)}
+            onDelay={t => setHypo({kind: 'task', taskId: t.id})}
+          />
+        )}
+      </li>
+    );
+  };
+
+  const group = (id: Exclude<DayGroupId, 'done'>) => {
+    const items = groups[id];
+    if (!items.length) return null;
+    const title = DAY_GROUP_TITLE[id];
+    return (
+      <section
+        className={`lx-daygroup lx-daygroup--${id}`}
+        id={`lx-day-${id}`}
+        aria-labelledby={`lx-day-${id}-title`}
+      >
+        <h3
+          className={`lx-daygroup__title${id === 'untimed' ? ' lx-tasklist__label' : ''}`}
+          id={`lx-day-${id}-title`}
+        >
+          {id === 'late' && <Icon name="alert" size={15} />}
+          {title}
+          {id === 'next' && untilNext !== null && untilNext > 0 && (
+            <span className="lx-daygroup__when lx-num">
+              en {minutesLabel(untilNext)}
+            </span>
+          )}
+          <span className="lx-daygroup__count lx-num">{items.length}</span>
+        </h3>
+        <ul className="lx-tasklist">{items.map(row)}</ul>
+      </section>
+    );
+  };
+
+  const anyCancelled = groups.done.some(i => i.task.status === 'cancelled');
 
   return (
     <Card
       title={
         <>
-          Tareas de hoy
+          La jornada
           {state === 'ready' && (
             <span className="lx-count lx-num">{tasks.length}</span>
+          )}
+          {groups.late.length > 0 && (
+            <span
+              className="lx-count lx-count--danger lx-num"
+              title="Van tarde"
+            >
+              {groups.late.length} tarde
+            </span>
           )}
         </>
       }
@@ -101,11 +206,28 @@ export const TodayTasks: React.FC<{
       className="lx-todaytasks"
       actions={
         <>
-          <HelpTip label="tareas de hoy">
-            Primero lo que debería estar pasando ahora y lo siguiente; después,
-            el resto por hora. Las que ya han terminado quedan plegadas al
-            final.
+          <HelpTip label="la jornada">
+            Primero lo que va tarde, después lo que debería estar pasando ahora
+            y lo siguiente; luego el resto por hora. Las terminadas quedan
+            plegadas al final. «¿Y si…?» calcula qué se movería si una tarea se
+            retrasa, sin cambiar el plan.
           </HelpTip>
+          {candidates.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="flask"
+              id="lx-today-whatif"
+              onClick={() =>
+                setHypo({
+                  kind: 'pick',
+                  candidateIds: candidates.map(t => t.id),
+                })
+              }
+            >
+              ¿Y si…?
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -122,33 +244,52 @@ export const TodayTasks: React.FC<{
         <LoadError message={error ?? ''} onRetry={onRetry} />
       ) : (
         <>
-          {groups.current.length > 0 && (
-            <ul className="lx-tasklist">
-              {groups.current.map(r => row(r.task, r.emphasis))}
-            </ul>
+          {openHypotheses.length > 0 && (
+            <div className="lx-hypochips" id="lx-today-hypotheses">
+              <p className="lx-hypochips__label">
+                <Icon name="flask" size={14} />
+                Hipótesis abiertas · no cambian el plan
+              </p>
+              <ul className="lx-hypochips__list">
+                {openHypotheses.map(h => (
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      className="lx-hypochip lx-num"
+                      id={`lx-hypo-chip-${h.id}`}
+                      onClick={() => setHypo({kind: 'saved', hypothesis: h})}
+                    >
+                      {hypothesisChipLabel(h, today, timeZone)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
-          {groups.untimed.length > 0 && (
-            <>
-              <p className="lx-subtitle lx-tasklist__label">Sin hora</p>
-              <ul className="lx-tasklist">{groups.untimed.map(t => row(t))}</ul>
-            </>
-          )}
-          {groups.current.length === 0 && groups.untimed.length === 0 && (
+
+          {group('late')}
+          {group('now')}
+          {group('next')}
+          {group('later')}
+          {group('untimed')}
+
+          {pending === 0 && (
             <p className="lx-muted lx-todaytasks__none">
-              {groups.past.length
+              {groups.done.length
                 ? 'No queda nada pendiente para hoy.'
                 : 'Hoy no hay tareas registradas.'}
             </p>
           )}
-          {groups.past.length > 0 && (
-            <details className="lx-disclosure lx-todaytasks__past">
+          {groups.done.length > 0 && (
+            <details
+              className="lx-disclosure lx-todaytasks__past"
+              id="lx-day-done"
+            >
               <summary>
-                Ya terminadas o pasadas{' '}
-                <span className="lx-num">({groups.past.length})</span>
+                {anyCancelled ? 'Terminadas o canceladas' : 'Terminadas'}{' '}
+                <span className="lx-num">({groups.done.length})</span>
               </summary>
-              <ul className="lx-tasklist">
-                {groups.past.map(t => row(t, 'past'))}
-              </ul>
+              <ul className="lx-tasklist">{groups.done.map(row)}</ul>
             </details>
           )}
           {canWrite && (
@@ -164,6 +305,7 @@ export const TodayTasks: React.FC<{
           )}
         </>
       )}
+      {hypo && <HypothesisSheet start={hypo} onClose={() => setHypo(null)} />}
     </Card>
   );
 };

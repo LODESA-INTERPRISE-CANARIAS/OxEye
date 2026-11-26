@@ -5,14 +5,15 @@
  * carries `restricted: true`.
  *
  * Every row → record mapping of events, tasks, contacts, companies, offers,
- * warehouses, resources and notes goes through `forViewer`, with the viewer
- * as a required argument, so no route (lists, single records, 409 `current`,
- * DUPLICATE `current`) can skip it. A new free-text field is added here, not
- * copied elsewhere.
+ * warehouses, resources, notes and delay hypotheses goes through
+ * `forViewer`, with the viewer as a required argument, so no route (lists,
+ * single records, 409 `current`, DUPLICATE `current`) can skip it. A new
+ * free-text field is added here, not copied elsewhere.
  */
 import type {
   Company,
   Contact,
+  DelayHypothesis,
   LogisticsEvent,
   Note,
   Offer,
@@ -42,6 +43,7 @@ export const WITHHELD_FROM_GUESTS = {
   warehouse: ['address', 'notes'],
   resource: ['location', 'notes'],
   note: ['text'],
+  hypothesis: ['note'],
 } as const satisfies {
   event: readonly (keyof LogisticsEvent)[];
   task: readonly (keyof Task)[];
@@ -51,6 +53,7 @@ export const WITHHELD_FROM_GUESTS = {
   warehouse: readonly (keyof Warehouse)[];
   resource: readonly (keyof Resource)[];
   note: readonly (keyof Note)[];
+  hypothesis: readonly (keyof DelayHypothesis)[];
 };
 
 type Withheld = typeof WITHHELD_FROM_GUESTS;
@@ -98,6 +101,11 @@ export function forViewer(
   record: Full<Note>,
   viewer: Viewer,
 ): Note;
+export function forViewer(
+  kind: 'hypothesis',
+  record: Full<DelayHypothesis>,
+  viewer: Viewer,
+): DelayHypothesis;
 export function forViewer(
   kind: keyof Withheld,
   record: object,

@@ -13,9 +13,14 @@
  *
  * Guests never receive a task's notes (see records/redact.ts). The resources a
  * task uses never answer its heavy-load question.
+ *
+ * «Subsuelo revisado en el simulador» (M5) is declared by a member with
+ * `subsoilReviewed`; nothing infers it. It is cleared when the venue, the heavy
+ * load or the resources change (see `nextSubsoilReview`). Deleting a task
+ * deletes its open delay hypotheses and unlinks the applied ones.
  */
 import type {Db, Queryable} from '../db/db.ts';
-import {toIsoOrNull} from '../db/db.ts';
+import {toIso, toIsoOrNull} from '../db/db.ts';
 import {AppError, notFound, validationError} from '../errors.ts';
 import {appendActivity} from '../activity/service.ts';
 import {
@@ -42,11 +47,18 @@ import {areOwnResources, RESOURCES_UNKNOWN} from '../resources/links.ts';
 import {resolveSlot, storedToLocal, touchesSlot} from '../records/slot.ts';
 import type {StoredSlot} from '../records/slot.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
-import {changedTaskFields, dependencyProblem} from './domain.ts';
+import {detachHypotheses} from '../hypotheses/links.ts';
+import {
+  changedTaskFields,
+  dependencyProblem,
+  nextSubsoilReview,
+  SUBSOIL_NEEDS_HEAVY_LOAD,
+} from './domain.ts';
 import type {GraphTask, TaskState} from './domain.ts';
 import type {CreateTaskBody, UpdateTaskBody} from './schemas.ts';
 import type {
   SessionUser,
+  SubsoilReview,
   Task,
   TaskKind,
   TaskStatus,
@@ -70,6 +82,9 @@ interface TaskRow extends MetaRow {
   ends_at: unknown;
   timezone: string;
   heavy_load: boolean | null;
+  subsoil_reviewed_by: string | null;
+  subsoil_reviewed_by_name: string | null;
+  subsoil_reviewed_at: unknown;
   notes: string | null;
   depends_on: unknown;
   resource_ids: unknown;
@@ -82,6 +97,8 @@ const SELECT_TASK = `
          t.title, t.kind, t.status,
          t.local_date::text AS local_date, t.end_date::text AS end_date,
          t.starts_at, t.ends_at, t.timezone, t.heavy_load, t.notes,
+         t.subsoil_reviewed_by, sr.display_name AS subsoil_reviewed_by_name,
+         t.subsoil_reviewed_at,
          COALESCE((SELECT jsonb_agg(d.depends_on_id ORDER BY d.depends_on_id)
                      FROM task_dependencies d WHERE d.task_id = t.id),
                   '[]'::jsonb) AS depends_on,
@@ -92,10 +109,23 @@ const SELECT_TASK = `
     LEFT JOIN venues v ON v.id = t.venue_id
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN contacts k ON k.id = t.contact_id
+    LEFT JOIN users sr ON sr.id = t.subsoil_reviewed_by
     ${authorJoins('t')}`;
 
 export const EVENT_NOT_FOUND =
   'No encontramos ese evento en esta organización: puede que se haya eliminado.';
+
+/** The declared subsoil review of a row; never inferred from anything else. */
+function subsoilReviewOf(row: TaskRow): SubsoilReview | null {
+  if (!row.subsoil_reviewed_by || row.subsoil_reviewed_at == null) return null;
+  return {
+    by: {
+      id: row.subsoil_reviewed_by,
+      displayName: row.subsoil_reviewed_by_name ?? '',
+    },
+    at: toIso(row.subsoil_reviewed_at),
+  };
+}
 
 /** The single row → record mapping; the viewer decides what is withheld. */
 function toTask(row: TaskRow, viewer: Viewer): Task {
@@ -128,6 +158,7 @@ function toTask(row: TaskRow, viewer: Viewer): Task {
       dependsOn: parseIds(row.depends_on),
       heavyLoad: row.heavy_load,
       resourceIds: parseIds(row.resource_ids),
+      subsoilReview: subsoilReviewOf(row),
       notes: row.notes,
     },
     viewer,
@@ -157,6 +188,8 @@ function stateOf(row: TaskRow): TaskState {
     dependsOn: parseIds(row.depends_on),
     heavyLoad: row.heavy_load,
     resourceIds: parseIds(row.resource_ids),
+    subsoilReviewedBy: row.subsoil_reviewed_by,
+    subsoilReviewedAt: toIsoOrNull(row.subsoil_reviewed_at),
     notes: row.notes,
     source: row.source,
     verification: row.verification,
@@ -326,6 +359,15 @@ export async function createTask(
     if (!(await areOwnResources(tx, org.id, resourceIds))) {
       fields.resourceIds = RESOURCES_UNKNOWN;
     }
+    // Declared only on a heavy task; never set by default.
+    const review = nextSubsoilReview({
+      before: {venueId: null, heavyLoad: null, resourceIds: [], review: null},
+      after: {venueId: null, heavyLoad: input.heavyLoad ?? null, resourceIds},
+      requested: input.subsoilReviewed,
+      actorId: actor.id,
+      now: now.toISOString(),
+    });
+    if (!review.ok) fields.subsoilReviewed = review.message;
     if (!resolved.ok) throw validationError({...fields, ...resolved.fields});
     throwIfFields(fields);
     const {slot} = resolved;
@@ -353,10 +395,11 @@ export async function createTask(
          (organization_id, event_id, venue_id, company_id, title, kind, status,
           local_date, end_date, starts_at, ends_at, timezone, heavy_load, notes,
           source, verification, created_by, created_at, updated_by, updated_at,
-          contact_id)
+          contact_id, subsoil_reviewed_by, subsoil_reviewed_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9::date,
                $10::timestamptz, $11::timestamptz, $12, $13, $14, $15, $16,
-               $17, $18::timestamptz, $17, $18::timestamptz, $19)
+               $17, $18::timestamptz, $17, $18::timestamptz, $19, $20,
+               $21::timestamptz)
        RETURNING id`,
       [
         org.id,
@@ -379,6 +422,8 @@ export async function createTask(
         actor.id,
         now.toISOString(),
         contact?.id ?? null,
+        review.ok ? (review.review?.by ?? null) : null,
+        review.ok ? (review.review?.at ?? null) : null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -500,6 +545,9 @@ export async function updateTask(
         fields.resourceIds = RESOURCES_UNKNOWN;
       }
     }
+    if (input.subsoilReviewed !== undefined && after.heavyLoad !== true) {
+      fields.subsoilReviewed = SUBSOIL_NEEDS_HEAVY_LOAD;
+    }
     throwIfFields(fields);
 
     if (input.venueName !== undefined) {
@@ -533,6 +581,24 @@ export async function updateTask(
     if (contact && !row.is_demo) {
       await promoteContact(tx, contact, actor.id, now);
     }
+    // The declared subsoil review: cleared when the placement or the material
+    // changes, unless declared again in this request.
+    const review = nextSubsoilReview({
+      before: {
+        ...before,
+        review:
+          before.subsoilReviewedBy && before.subsoilReviewedAt
+            ? {by: before.subsoilReviewedBy, at: before.subsoilReviewedAt}
+            : null,
+      },
+      after,
+      requested: input.subsoilReviewed,
+      actorId: actor.id,
+      now: now.toISOString(),
+    });
+    if (!review.ok) throw validationError({subsoilReviewed: review.message});
+    after.subsoilReviewedBy = review.review?.by ?? null;
+    after.subsoilReviewedAt = review.review?.at ?? null;
 
     const changed = changedTaskFields(before, after);
     if (changed.length === 0) return toTask(row, actor);
@@ -544,7 +610,9 @@ export async function updateTask(
               starts_at = $11::timestamptz, ends_at = $12::timestamptz,
               timezone = $13, heavy_load = $14, notes = $15, source = $16,
               verification = $17, version = version + 1,
-              updated_by = $18, updated_at = $19::timestamptz, contact_id = $20
+              updated_by = $18, updated_at = $19::timestamptz, contact_id = $20,
+              subsoil_reviewed_by = $21,
+              subsoil_reviewed_at = $22::timestamptz
         WHERE id = $1 AND version = $2
         RETURNING id`,
       [
@@ -568,6 +636,8 @@ export async function updateTask(
         actor.id,
         now.toISOString(),
         after.contactId,
+        after.subsoilReviewedBy,
+        after.subsoilReviewedAt,
       ],
     );
     if (updated.length === 0) {
@@ -593,6 +663,39 @@ export async function updateTask(
     });
     return toTask((await loadTask(tx, id)) as TaskRow, actor);
   });
+}
+
+/**
+ * Every task of the organization with full data, for server-side computations
+ * (delay hypotheses). The caller decides what a viewer receives.
+ */
+export async function loadTasksForPlan(
+  tx: Queryable,
+  organizationId: string,
+): Promise<Task[]> {
+  return listTasks(tx, organizationId, {role: 'member'});
+}
+
+/**
+ * Tasks of one organization by id, as `viewer` may see them, sorted by id.
+ * Ids of other organizations are ignored, so client-sent ids never reveal
+ * another organization's tasks.
+ */
+export async function loadTasksByIds(
+  tx: Queryable,
+  organizationId: string,
+  ids: readonly string[],
+  viewer: Viewer,
+): Promise<Task[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.query<TaskRow>(
+    `${SELECT_TASK}
+      WHERE t.organization_id = $1
+        AND t.id IN (SELECT value::uuid FROM jsonb_array_elements_text($2::jsonb))
+      ORDER BY t.id`,
+    [organizationId, JSON.stringify(ids)],
+  );
+  return rows.map(r => toTask(r, viewer));
 }
 
 /**
@@ -632,6 +735,8 @@ export async function deleteTask(
       [id],
     );
     await unlinkNotes(tx, {link: 'task', ids: [id], actorId: actor.id, now});
+    // Open hypotheses about it go; applied ones stay with their label.
+    await detachHypotheses(tx, {taskIds: [id], actorId: actor.id, now});
     // Dependencies and task_resources rows go with the task (ON DELETE CASCADE).
     await tx.query('DELETE FROM tasks WHERE id = $1', [id]);
     for (const dep of dependents) {
