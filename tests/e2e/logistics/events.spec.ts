@@ -25,7 +25,9 @@ const card = (page: Page, id: string) =>
   page.locator(`[data-event-id="${id}"]`);
 
 async function openCreate(page: Page) {
+  // «Añadir» opens a menu (Evento / Tarea) since milestone 2.
   await page.locator('#lx-add').click();
+  await page.locator('#lx-add-event').click();
   await expect(page.locator('#lx-event-form')).toBeVisible();
   await expect(page.locator('#lx-event-name')).toBeFocused();
 }

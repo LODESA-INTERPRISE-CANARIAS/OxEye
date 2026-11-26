@@ -6,47 +6,15 @@ import type {
   DataSource,
   EventStatus,
   LogisticsEvent,
+  Task,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
-import {
-  DEFAULT_TIMEZONE,
-  instantsToSlot,
-} from '../../../shared/logistics/time.ts';
+import {missingForTask} from '../../../shared/logistics/quality.ts';
+import {recordDays, recordSlot, sortRecords} from './tasks';
 
 /** Server order: date, then startsAt, undated last, then name. */
 export function sortEvents(events: LogisticsEvent[]): LogisticsEvent[] {
-  return [...events].sort((a, b) => {
-    if (a.date !== b.date) {
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return a.date < b.date ? -1 : 1;
-    }
-    if (a.startsAt && b.startsAt) {
-      const diff = Date.parse(a.startsAt) - Date.parse(b.startsAt);
-      if (diff !== 0) return diff;
-    } else if (a.startsAt) {
-      return -1;
-    } else if (b.startsAt) {
-      return 1;
-    }
-    return a.name.localeCompare(b.name, 'es');
-  });
-}
-
-export interface EventSlot {
-  date: string | null;
-  startTime: string | null;
-  endTime: string | null;
-}
-
-export function eventSlot(event: LogisticsEvent): EventSlot {
-  const slot = instantsToSlot(
-    event.startsAt,
-    event.endsAt,
-    event.timezone || DEFAULT_TIMEZONE,
-  );
-  // The stored local day wins: it exists even when the times are unknown.
-  return {...slot, date: event.date ?? slot.date};
+  return sortRecords(events, e => e.name);
 }
 
 export const STATUS_LABEL: Record<EventStatus, string> = {
@@ -99,7 +67,7 @@ export const MISSING_LABEL: Record<MissingKey, string> = {
 
 /** What an event still lacks, in display order. Cancelled events count too. */
 export function missingInfo(event: LogisticsEvent): MissingKey[] {
-  const slot = eventSlot(event);
+  const slot = recordSlot(event);
   const missing: MissingKey[] = [];
   if (!event.venue) missing.push('venue');
   if (!slot.date) missing.push('date');
@@ -111,21 +79,53 @@ export function missingInfo(event: LogisticsEvent): MissingKey[] {
   return missing;
 }
 
+/** A record that still lacks information, for «Qué falta». */
+export type PendingRow =
+  | {
+      kind: 'event';
+      id: string;
+      name: string;
+      missing: string[];
+      event: LogisticsEvent;
+    }
+  | {kind: 'task'; id: string; name: string; missing: string[]; task: Task};
+
 export interface VerificationSummary {
   total: number;
   validated: number;
-  /** 0–100, rounded; null when there are no events. */
+  /** 0–100, rounded; null when there is nothing recorded. */
   percent: number | null;
-  incomplete: {event: LogisticsEvent; missing: MissingKey[]}[];
+  incomplete: PendingRow[];
 }
 
+/** Validated share and missing data over events and tasks together. */
 export function verificationSummary(
   events: LogisticsEvent[],
+  tasks: Task[] = [],
 ): VerificationSummary {
-  const total = events.length;
-  const validated = events.filter(e => e.verification === 'validated').length;
-  const incomplete = events
-    .map(event => ({event, missing: missingInfo(event)}))
+  const records = [...events, ...tasks];
+  const total = records.length;
+  const validated = records.filter(r => r.verification === 'validated').length;
+  const rows: PendingRow[] = [
+    ...events.map((event): PendingRow => ({
+      kind: 'event',
+      id: event.id,
+      name: event.name,
+      missing: missingInfo(event).map(m => MISSING_LABEL[m]),
+      event,
+    })),
+    ...tasks.map((task): PendingRow => ({
+      kind: 'task',
+      id: task.id,
+      name: task.title,
+      missing: [
+        ...missingForTask(task),
+        ...(task.verification === 'validated' ? [] : ['validación']),
+      ],
+      task,
+    })),
+  ];
+  const incomplete = rows
     .filter(row => row.missing.length > 0)
     .sort((a, b) => b.missing.length - a.missing.length);
   return {
@@ -136,31 +136,19 @@ export function verificationSummary(
   };
 }
 
-/** Groups events into today, upcoming and undated, relative to `today`. */
+/**
+ * Groups events into today, upcoming and undated, relative to `today`. A
+ * multi-day event that is on today counts as today.
+ */
 export function groupForToday(events: LogisticsEvent[], today: string) {
   const todayEvents: LogisticsEvent[] = [];
   const upcoming: LogisticsEvent[] = [];
   const undated: LogisticsEvent[] = [];
   for (const event of events) {
-    const {date} = eventSlot(event);
-    if (!date) undated.push(event);
-    else if (date === today) todayEvents.push(event);
-    else if (date > today) upcoming.push(event);
+    const days = recordDays(event);
+    if (!days.length) undated.push(event);
+    else if (days.includes(today)) todayEvents.push(event);
+    else if (days[0] > today) upcoming.push(event);
   }
   return {todayEvents, upcoming, undated};
-}
-
-/** Events per local date, for calendar dots. */
-export function eventsByDate(
-  events: LogisticsEvent[],
-): Map<string, LogisticsEvent[]> {
-  const map = new Map<string, LogisticsEvent[]>();
-  for (const event of events) {
-    const {date} = eventSlot(event);
-    if (!date) continue;
-    const list = map.get(date);
-    if (list) list.push(event);
-    else map.set(date, [event]);
-  }
-  return map;
 }

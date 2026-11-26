@@ -3,6 +3,7 @@
  * tab bar and by horizontal swipe; «Cierre de jornada» lives in the sidebar
  * and the account sheet.
  */
+import {isLocalDate} from '../../../shared/logistics/time.ts';
 import type {NavItem} from '../ui';
 
 export type MainSpace =
@@ -36,6 +37,21 @@ export function isSpace(value: string): value is Space {
 export function spaceFromHash(hash: string): Space {
   const match = /^#logistica\/([a-z]+)/.exec(hash);
   return match && isSpace(match[1]) ? match[1] : 'hoy';
+}
+
+/** The day of `#logistica/calendario/2026-12-02`, or null (month view). */
+export function calendarDayFromHash(hash: string): string | null {
+  const match = /^#logistica\/calendario\/(\d{4}-\d{2}-\d{2})$/.exec(hash);
+  return match && isLocalDate(match[1]) ? match[1] : null;
+}
+
+/** Hash of a space; the calendar adds the day when its day view is open. */
+export function hashFor(space: Space, calendarDay?: string | null): string {
+  if (space === 'hoy') return '#logistica';
+  if (space === 'calendario' && calendarDay) {
+    return `#logistica/calendario/${calendarDay}`;
+  }
+  return `#logistica/${space}`;
 }
 
 /** Neighbour in swipe order, or null at the ends. */

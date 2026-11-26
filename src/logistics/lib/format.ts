@@ -54,6 +54,16 @@ export function shortDate(localDate: string): string {
   return `${capitalize(get('weekday'))} ${get('day')} ${get('month')}`;
 }
 
+/** «2 dic». */
+export function dayMonthShort(localDate: string): string {
+  return shortDate(localDate).split(' ').slice(1).join(' ');
+}
+
+/** «1 tarea», «3 tareas». */
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 /** «2 de diciembre». */
 export function dayMonth(localDate: string): string {
   return fmt('daymonth', {

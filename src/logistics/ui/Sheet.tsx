@@ -133,8 +133,8 @@ export const Sheet: React.FC<SheetProps> = ({
   useLayoutEffect(() => {
     const slot = toastSlotRef.current;
     if (!open || !slot || !toastHost) return;
-    toastHost.setHost(slot);
-    return () => toastHost.setHost(prev => (prev === slot ? null : prev));
+    toastHost.add(slot);
+    return () => toastHost.remove(slot);
   }, [open, toastHost]);
 
   return (

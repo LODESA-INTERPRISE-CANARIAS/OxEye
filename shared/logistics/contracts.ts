@@ -26,6 +26,16 @@
  *   GET    /organizations/:orgId/venues          → ListResponse<Venue>
  *   GET    /organizations/:orgId/activity?limit= → ListResponse<ActivityEntry> (newest first, default 20, max 100)
  *   DELETE /organizations/:orgId/demo            → {removed: number} (deletes every isDemo record)
+ *
+ * Milestone 2 (tasks and calendar):
+ *
+ *   GET    /organizations/:orgId/tasks[?eventId=] → ListResponse<Task>
+ *          (all tasks of the organization, or of one event; sorted like events)
+ *   POST   /tasks              TaskInput          → 201 Task
+ *   PATCH  /tasks/:id          TaskInput          → Task (409 VERSION_CONFLICT with `current`)
+ *   DELETE /tasks/:id?version=N                   → 204 (409 VERSION_CONFLICT with `current`);
+ *          removes it from other tasks' `dependsOn` (their version increases)
+ *   GET    /organizations/:orgId/companies        → ListResponse<Company> (by name; M3 adds the rest)
  */
 
 export type Uuid = string;
@@ -118,6 +128,11 @@ export interface LogisticsEvent extends RecordMeta {
   venue: {id: Uuid; name: string} | null;
   /** Local day in `timezone`; kept even when the times are still unknown. */
   date: LocalDate | null;
+  /**
+   * Last local day for events spanning several days (fairs, multi-day
+   * set-ups); `null` = same day (or the next one for an overnight end time).
+   */
+  endDate: LocalDate | null;
   startsAt: IsoInstant | null;
   endsAt: IsoInstant | null;
   timezone: string;
@@ -135,6 +150,8 @@ export interface CreateEventInput extends ProvenanceInput {
   name: string;
   venueName?: string | null;
   date?: LocalDate | null;
+  /** Must be after `date`; requires `date`. */
+  endDate?: LocalDate | null;
   startTime?: LocalTime | null;
   endTime?: LocalTime | null;
   status?: EventStatus;
@@ -146,6 +163,7 @@ export interface UpdateEventInput extends ProvenanceInput {
   name?: string;
   venueName?: string | null;
   date?: LocalDate | null;
+  endDate?: LocalDate | null;
   startTime?: LocalTime | null;
   endTime?: LocalTime | null;
   status?: EventStatus;
@@ -186,15 +204,21 @@ export type TaskStatus =
 
 export interface Task extends RecordMeta {
   organizationId: Uuid;
+  /** Optional: a task can stand alone (e.g. collect fences from the warehouse). */
   eventId: Uuid | null;
   venue: {id: Uuid; name: string} | null;
   title: string;
   kind: TaskKind;
   status: TaskStatus;
+  /** Local day in `timezone`; kept even when the times are still unknown. */
+  date: LocalDate | null;
+  /** Last local day for multi-day tasks; `null` = same day (or overnight). */
+  endDate: LocalDate | null;
   startsAt: IsoInstant | null;
   endsAt: IsoInstant | null;
   timezone: string;
   company: {id: Uuid; name: string} | null;
+  /** Filled from milestone 3 (Contactos); always null before. */
   contact: {id: Uuid; name: string} | null;
   /** Finish-to-start predecessors. */
   dependsOn: Uuid[];
@@ -206,6 +230,18 @@ export interface Task extends RecordMeta {
   notes: string | null;
 }
 
+/**
+ * Create: `organizationId` and `title` required; everything else optional.
+ * Update: `version` required; only the fields sent change.
+ * `venueName` / `companyName` find or create by name (case-insensitive) in the
+ * same organization; `companyId` wins over `companyName` when both are sent.
+ * `dependsOn` replaces the whole list: same-organization tasks only, no self
+ * reference, no cycles (400 VALIDATION with `fields.dependsOn`).
+ * Times without `date` are rejected; `endDate` must be after `date`.
+ * `kind` defaults to `other`. Moving `date` onto or past a stored `endDate`
+ * is a 400: send `endDate` too (or null) when moving a multi-day record.
+ * Clearing `date` clears `endDate`. Same rules for events.
+ */
 export interface TaskInput extends ProvenanceInput {
   organizationId?: Uuid;
   eventId?: Uuid | null;
@@ -214,9 +250,12 @@ export interface TaskInput extends ProvenanceInput {
   kind?: TaskKind;
   status?: TaskStatus;
   date?: LocalDate | null;
+  endDate?: LocalDate | null;
   startTime?: LocalTime | null;
   endTime?: LocalTime | null;
   companyId?: Uuid | null;
+  companyName?: string | null;
+  /** Accepted from milestone 3; ignored before. */
   contactId?: Uuid | null;
   dependsOn?: Uuid[];
   heavyLoad?: boolean | null;

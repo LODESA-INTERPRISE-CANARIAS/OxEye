@@ -148,16 +148,21 @@ describe('route surface', () => {
     expect(routes).toEqual(
       [
         'DELETE /api/organizations/:orgId/demo',
+        'DELETE /api/tasks/:id',
         'GET /api/auth/users',
         'GET /api/health',
         'GET /api/me',
         'GET /api/organizations/:orgId/activity',
+        'GET /api/organizations/:orgId/companies',
         'GET /api/organizations/:orgId/events',
+        'GET /api/organizations/:orgId/tasks',
         'GET /api/organizations/:orgId/venues',
         'PATCH /api/events/:id',
+        'PATCH /api/tasks/:id',
         'POST /api/auth/login',
         'POST /api/auth/logout',
         'POST /api/events',
+        'POST /api/tasks',
       ].sort(),
     );
   });

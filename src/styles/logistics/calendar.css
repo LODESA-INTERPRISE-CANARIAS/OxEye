@@ -1,0 +1,1163 @@
+/**
+ * «Calendario»: toolbar, month grid with multi-day bars, day view (events,
+ * warnings, tasks without a time), the timeline by venue and the list by
+ * hour; plus the mini calendar's task marks. Colours come from the tokens.
+ */
+
+/* ============================================================ layout and toolbar */
+.lx .lx-calendar {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lx .lx-calbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius-lg);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-card);
+}
+
+.lx .lx-calbar__views {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-2);
+  border: 1px solid var(--lx-line);
+}
+
+.lx .lx-calbar__view {
+  --lx-btn-bg-hover: var(--lx-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: var(--lx-pill);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lx-muted);
+}
+
+.lx .lx-calbar__view[aria-pressed='true'] {
+  --lx-btn-bg: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-strong);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-calbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.lx .lx-calbar__title {
+  min-width: 0;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 21px;
+  line-height: 1.2;
+  color: var(--lx-heading);
+}
+
+.lx .lx-calbar__title-short {
+  display: none;
+}
+
+.lx .lx-calbar__nav .lx-btn {
+  margin-left: 6px;
+}
+
+.lx .lx-calbar__date .lx-calbar__dateinput {
+  width: auto;
+  min-height: 38px;
+  padding: 4px 8px;
+  margin-left: 4px;
+  font-size: 14px;
+}
+
+.lx .lx-calbar__tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.lx .lx-calbar__filter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid var(--lx-control-border);
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+}
+
+.lx .lx-calbar__filter:focus-within {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-calbar__filter > .lx-icon:last-child {
+  pointer-events: none;
+  color: var(--lx-muted);
+}
+
+.lx .lx-calbar__select {
+  max-width: 220px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  background-image: none;
+  color: inherit;
+  font-family: var(--lx-font);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+  appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.lx .lx-calbar__select:focus-visible {
+  outline: none;
+}
+
+.lx .lx-calbar__zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lx .lx-calendar__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  font-size: 14px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-calendar__today {
+  padding: 1px 9px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lx .lx-calendar__undated {
+  display: grid;
+  gap: 6px;
+}
+
+/* ============================================================ month */
+.lx .lx-month {
+  --lx-day-h: 120px;
+  --lx-bar-top: 34px;
+  --lx-bar-step: 22px;
+  --lx-bar-h: 19px;
+  container-type: inline-size;
+  display: grid;
+  gap: 6px;
+}
+
+.lx .lx-month__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.lx .lx-month__weekdays span {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+  padding-left: 8px;
+}
+
+.lx .lx-month__grid {
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-month__week {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.lx .lx-month__day {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  min-height: var(--lx-day-h);
+  padding: 6px 8px 8px;
+  border-radius: var(--lx-radius-sm);
+  text-align: left;
+  color: var(--lx-ink);
+}
+
+.lx .lx-month__day.is-outside {
+  --lx-btn-bg: var(--lx-surface-2);
+  color: var(--lx-muted);
+}
+
+.lx .lx-month__day.is-today {
+  --lx-btn-border: var(--lx-accent);
+  border-width: 2px;
+}
+
+.lx .lx-month__day.has-conflict {
+  --lx-btn-border: var(--lx-danger);
+}
+
+.lx .lx-month__num {
+  display: inline-grid;
+  place-items: center;
+  align-self: flex-start;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: var(--lx-pill);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lx .lx-month__day.is-today .lx-month__num {
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-month__conflict {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lx .lx-month__body {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding-top: calc(var(--lx-lanes, 0) * var(--lx-bar-step) + 4px);
+}
+
+.lx .lx-month__line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-month__line .lx-num {
+  font-weight: 500;
+  color: var(--lx-muted);
+}
+
+.lx .lx-month__more {
+  font-size: 12px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-month__tasks {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lx-ink);
+}
+
+.lx .lx-month__tasks .lx-icon {
+  color: var(--lx-muted);
+}
+
+.lx .lx-month__dots {
+  display: none;
+}
+
+/* Multi-day event bars */
+.lx .lx-month__bar {
+  position: absolute;
+  z-index: 1;
+  top: calc(var(--lx-bar-top) + var(--lx-lane) * var(--lx-bar-step));
+  left: calc(var(--lx-start) * (100% + 4px) / 7 + 4px);
+  width: calc(var(--lx-span) * (100% + 4px) / 7 - 12px);
+  height: var(--lx-bar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.lx .lx-month__bar--planned {
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  box-shadow: inset 0 0 0 1.5px var(--lx-accent);
+}
+
+.lx .lx-month__bar--delayed {
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-month__bar--cancelled {
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+  box-shadow: inset 0 0 0 1px var(--lx-line-strong);
+  text-decoration: line-through;
+}
+
+.lx .lx-month__bar.is-cont-before {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  left: calc(var(--lx-start) * (100% + 4px) / 7);
+  width: calc(var(--lx-span) * (100% + 4px) / 7 - 8px);
+}
+
+.lx .lx-month__bar.is-cont-after {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  width: calc(var(--lx-span) * (100% + 4px) / 7 - 4px);
+}
+
+.lx .lx-month__bar.is-cont-before.is-cont-after {
+  width: calc(var(--lx-span) * (100% + 4px) / 7);
+}
+
+.lx .lx-month__bar-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Legends (month and mini calendar) */
+.lx .lx-month__legend,
+.lx .lx-cal__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 4px 2px 0;
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-month__legend span,
+.lx .lx-cal__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-month__legend i,
+.lx .lx-cal__legend i,
+.lx .lx-month__dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lx-accent);
+}
+
+.lx .lx-month__legend b,
+.lx .lx-cal__legend b,
+.lx .lx-month__dots b {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  border: 1.5px solid var(--lx-heading);
+}
+
+.lx .lx-month__legend-bar {
+  width: 24px;
+  height: 8px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent);
+}
+
+.lx .lx-month__legend-conflict .lx-icon,
+.lx .lx-cal__legend-conflict em {
+  color: var(--lx-danger);
+}
+
+.lx .lx-cal__legend em {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--lx-danger);
+}
+
+/* Compact month (phones, narrow panels): numbers, dots and thin bars. */
+@container (max-width: 640px) {
+  /* A container cannot restyle itself: the sizes go on its children. */
+  .lx .lx-month__grid {
+    --lx-day-h: 58px;
+    --lx-bar-top: 31px;
+    --lx-bar-step: 6px;
+    --lx-bar-h: 4px;
+  }
+
+  .lx .lx-month__weekdays span {
+    padding-left: 0;
+    text-align: center;
+    letter-spacing: 0;
+  }
+
+  .lx .lx-month__week,
+  .lx .lx-month__grid {
+    gap: 2px;
+  }
+
+  .lx .lx-month__day {
+    align-items: center;
+    padding: 3px 2px 4px;
+  }
+
+  .lx .lx-month__num {
+    align-self: center;
+    font-size: 13.5px;
+  }
+
+  .lx .lx-month__conflict {
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .lx .lx-month__conflict > * {
+    display: none;
+  }
+
+  .lx .lx-month__body {
+    justify-items: center;
+  }
+
+  .lx .lx-month__line,
+  .lx .lx-month__more,
+  .lx .lx-month__tasks,
+  .lx .lx-month__bar-text {
+    display: none;
+  }
+
+  .lx .lx-month__dots {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px;
+    max-width: 34px;
+  }
+
+  .lx .lx-month__dots i,
+  .lx .lx-month__dots b {
+    width: 6px;
+    height: 6px;
+  }
+
+  .lx .lx-month__bar {
+    padding: 0;
+    left: calc(var(--lx-start) * (100% + 2px) / 7 + 3px);
+    width: calc(var(--lx-span) * (100% + 2px) / 7 - 8px);
+  }
+
+  .lx .lx-month__bar.is-cont-before {
+    left: calc(var(--lx-start) * (100% + 2px) / 7);
+    width: calc(var(--lx-span) * (100% + 2px) / 7 - 5px);
+  }
+
+  .lx .lx-month__bar.is-cont-after {
+    width: calc(var(--lx-span) * (100% + 2px) / 7 - 3px);
+  }
+
+  .lx .lx-month__bar.is-cont-before.is-cont-after {
+    width: calc(var(--lx-span) * (100% + 2px) / 7);
+  }
+}
+
+/* ============================================================ day view */
+.lx .lx-day {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lx .lx-day__extras {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.lx .lx-day__events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lx .lx-daychip {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  max-width: 100%;
+  padding: 6px 12px;
+  border-radius: var(--lx-radius);
+  text-align: left;
+}
+
+.lx .lx-daychip > .lx-icon {
+  color: var(--lx-accent);
+}
+
+.lx .lx-daychip__text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.lx .lx-daychip__text strong {
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 16.5px;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-daychip__text > span {
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-day__warnings {
+  margin-top: 0;
+}
+
+.lx .lx-day__warnings summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-day__warnings.has-conflict {
+  border-color: var(--lx-danger);
+  background: var(--lx-danger-soft);
+}
+
+.lx .lx-day__warnings.has-conflict summary .lx-icon {
+  color: var(--lx-danger);
+}
+
+.lx .lx-day__untimed {
+  display: grid;
+  gap: 6px;
+}
+
+.lx .lx-day__untimed .lx-subtitle {
+  margin-bottom: 0;
+}
+
+.lx .lx-day__notimed {
+  padding: 18px;
+  border-radius: var(--lx-radius);
+  border: 1.5px dashed var(--lx-line-strong);
+  text-align: center;
+}
+
+/* ============================================================ timeline */
+.lx .lx-tl {
+  --lx-hour: 64px;
+  --lx-colw: 190px;
+  --lx-lanew: 128px;
+  --lx-gutter: 58px;
+  --lx-minh: 30px;
+  min-width: 0;
+  border-radius: var(--lx-radius-lg);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-card);
+  overflow: hidden;
+}
+
+.lx .lx-tl__scroller {
+  height: clamp(360px, calc(100dvh - 300px), 980px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  scroll-padding-top: 48px;
+}
+
+.lx .lx-tl__scroller:focus-visible {
+  outline-offset: -3px;
+}
+
+.lx .lx-tl__grid {
+  display: grid;
+  grid-template-columns:
+    var(--lx-gutter)
+    var(--lx-tracks, repeat(var(--lx-cols), minmax(var(--lx-colw), 1fr)));
+  grid-template-rows: auto calc(24 * var(--lx-hour));
+  min-width: min-content;
+}
+
+.lx .lx-tl__corner,
+.lx .lx-tl__head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--lx-surface);
+  border-bottom: 1px solid var(--lx-line-strong);
+}
+
+.lx .lx-tl__corner {
+  left: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  color: var(--lx-muted);
+  border-right: 1px solid var(--lx-line);
+}
+
+.lx .lx-tl__head {
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px;
+  border-left: 1px solid var(--lx-line);
+  min-width: 0;
+}
+
+.lx .lx-tl__venue {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--lx-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lx .lx-tl__venue .lx-icon {
+  color: var(--lx-accent);
+}
+
+.lx .lx-tl__head--none .lx-tl__venue {
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__head--none .lx-tl__venue .lx-icon {
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__count {
+  font-size: 12px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__hours {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--lx-surface);
+  border-right: 1px solid var(--lx-line);
+}
+
+.lx .lx-tl__hour,
+.lx .lx-tl__nowlabel {
+  position: absolute;
+  right: 8px;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60);
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__hour:first-child {
+  transform: none;
+}
+
+.lx .lx-tl__nowlabel {
+  z-index: 1;
+  padding: 1px 5px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-tl__col {
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--lx-line);
+  background-image:
+    linear-gradient(to bottom, var(--lx-line) 1px, transparent 1px),
+    linear-gradient(
+      to bottom,
+      transparent calc(50% - 0.5px),
+      color-mix(in srgb, var(--lx-line) 45%, transparent) calc(50% - 0.5px),
+      color-mix(in srgb, var(--lx-line) 45%, transparent) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    );
+  background-size:
+    100% var(--lx-hour),
+    100% var(--lx-hour);
+}
+
+/* Event window behind the tasks of its venue */
+.lx .lx-tl__band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60);
+  height: calc((var(--lx-e) - var(--lx-s)) * var(--lx-hour) / 60);
+  background: color-mix(in srgb, var(--lx-accent-soft) 70%, transparent);
+  border-top: 1.5px dashed var(--lx-accent);
+  border-bottom: 1.5px dashed var(--lx-accent);
+  pointer-events: none;
+}
+
+.lx .lx-tl__band--cancelled {
+  background: transparent;
+  border-color: var(--lx-line-strong);
+}
+
+.lx .lx-tl__band-label {
+  position: sticky;
+  top: 52px;
+  display: block;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lx .lx-tl__now {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60);
+  height: 2px;
+  background: var(--lx-danger);
+  pointer-events: none;
+}
+
+/* Task blocks: certainty grammar */
+.lx .lx-tl__block {
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-bg: var(--lx-accent);
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-strong);
+  --lx-btn-border-hover: var(--lx-accent-strong);
+  position: absolute;
+  z-index: 1;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60 + 1px);
+  left: calc(var(--lx-lane) * 100% / var(--lx-lanes) + 3px);
+  width: calc(100% / var(--lx-lanes) - 6px);
+  height: max(
+    var(--lx-minh),
+    calc((var(--lx-e) - var(--lx-s)) * var(--lx-hour) / 60 - 2px)
+  );
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: left;
+  color: var(--lx-on-accent);
+  font-size: 12.5px;
+  line-height: 1.25;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--lx-shadow) 40%, transparent);
+}
+
+.lx .lx-tl__block:hover:not(:disabled),
+.lx .lx-tl__block:focus-visible {
+  z-index: 3;
+}
+
+.lx .lx-tl__block--planned {
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  color: var(--lx-heading);
+}
+
+.lx .lx-tl__block--done {
+  --lx-btn-bg: color-mix(in srgb, var(--lx-accent) 55%, var(--lx-surface));
+  --lx-btn-border: color-mix(in srgb, var(--lx-accent) 55%, var(--lx-surface));
+  color: var(--lx-heading);
+}
+
+.lx .lx-tl__block--delayed {
+  --lx-btn-bg: var(--lx-danger);
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-bg-hover: color-mix(in srgb, var(--lx-danger) 86%, var(--lx-ink));
+  --lx-btn-border-hover: color-mix(
+    in srgb,
+    var(--lx-danger) 86%,
+    var(--lx-ink)
+  );
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-tl__block--cancelled {
+  --lx-btn-bg: var(--lx-surface-2);
+  --lx-btn-border: var(--lx-line-strong);
+  --lx-btn-bg-hover: var(--lx-surface-3);
+  --lx-btn-border-hover: var(--lx-line-strong);
+  border-style: dashed;
+  color: var(--lx-muted);
+  box-shadow: none;
+}
+
+.lx .lx-tl__block--cancelled .lx-tl__block-title span {
+  text-decoration: line-through;
+}
+
+.lx .lx-tl__block--in_progress {
+  box-shadow:
+    inset 4px 0 0 var(--lx-on-accent),
+    0 1px 2px color-mix(in srgb, var(--lx-shadow) 40%, transparent);
+}
+
+.lx .lx-tl__block.has-conflict {
+  outline: 2.5px solid var(--lx-danger);
+  outline-offset: 1px;
+}
+
+.lx .lx-tl__block.is-open-end {
+  border-bottom-style: dotted;
+  border-bottom-left-radius: 2px;
+  border-bottom-right-radius: 2px;
+}
+
+.lx .lx-tl__block.is-cont-before {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top-style: dotted;
+}
+
+.lx .lx-tl__block.is-cont-after {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-style: dotted;
+}
+
+/* The kind icon flows with the text, so narrow lanes keep whole words. */
+.lx .lx-tl__block-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.lx .lx-tl__block-title .lx-icon {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
+.lx .lx-tl__block-time,
+.lx .lx-tl__block-company {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+}
+
+.lx .lx-tl__block-warn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+}
+
+.lx .lx-tl__block.has-conflict .lx-tl__block-warn {
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-tl__block:has(.lx-tl__block-warn) .lx-tl__block-title {
+  padding-right: 18px;
+}
+
+/* ============================================================ list by hour (phone upright) */
+.lx .lx-hours {
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-hours__group {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-hours__label {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding-top: 8px;
+  font-family: var(--lx-font);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-hours__now {
+  justify-self: start;
+  padding: 0 6px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lx .lx-hours__group.is-now {
+  border-top: 2px solid var(--lx-danger);
+}
+
+/* ============================================================ mini calendar marks */
+.lx .lx-cal__dots b {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  border: 1.5px solid var(--lx-heading);
+}
+
+.lx .lx-cal__day.is-selected .lx-cal__dots b {
+  border-color: var(--lx-on-accent);
+}
+
+.lx .lx-cal__day.has-conflict::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lx-danger);
+  box-shadow: 0 0 0 2px var(--lx-surface);
+}
+
+.lx .lx-cal__day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.lx .lx-cal__day-list .lx-listrow > .lx-icon {
+  color: var(--lx-muted);
+}
+
+.lx .lx-listrow__main--task {
+  font-weight: 500;
+}
+
+.lx .lx-listrow__alert {
+  color: var(--lx-danger);
+}
+
+/* ============================================================ responsive */
+@media (max-width: 899px) {
+  .lx .lx-calbar {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .lx .lx-calbar__nav {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .lx .lx-calbar__title {
+    flex: 1;
+    font-size: 18px;
+    text-align: center;
+  }
+
+  .lx .lx-calbar__tools {
+    margin-left: auto;
+  }
+
+  .lx .lx-calbar__select {
+    max-width: 150px;
+  }
+
+  .lx .lx-tl {
+    --lx-colw: 150px;
+    --lx-lanew: 112px;
+    --lx-gutter: 50px;
+  }
+
+  .lx .lx-daychip {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .lx .lx-calbar__date {
+    display: none;
+  }
+}
+
+/* Phones (and the landscape timeline): «Jue 26 nov»; the long date stays
+   available to screen readers. */
+@media (max-width: 560px), (max-height: 560px) {
+  .lx .lx-calbar__title-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .lx .lx-calbar__title-short {
+    display: inline;
+  }
+}
+
+/*
+ * Timeline on short screens (phones in landscape): the timeline gets the
+ * screen. Top bars, tab bar and floating button step aside (the toolbar's
+ * «Mes» brings them back), the extras move below the plan, and the timeline
+ * fills the height left.
+ */
+@media (max-height: 560px) {
+  .lx[data-timeline] .lx-topbar,
+  .lx[data-timeline] .lx-header,
+  .lx[data-timeline] .lx-tabbar,
+  .lx[data-timeline] .lx-fab {
+    display: none;
+  }
+
+  .lx[data-timeline] .lx-content {
+    padding-top: 8px;
+    padding-bottom: 16px;
+  }
+
+  .lx[data-timeline] .lx-calendar {
+    gap: 8px;
+  }
+
+  .lx[data-timeline] .lx-calbar {
+    padding: 4px 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .lx[data-timeline] .lx-calbar__nav {
+    order: 0;
+    flex: 0 0 auto;
+  }
+
+  .lx[data-timeline] .lx-calbar__tools {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+
+  .lx[data-timeline] .lx-calbar__view {
+    padding: 0 10px;
+  }
+
+  .lx[data-timeline] .lx-calbar__select {
+    max-width: 130px;
+  }
+
+  .lx[data-timeline] .lx-calbar__zoom .lx-help {
+    display: none;
+  }
+
+  .lx[data-timeline] .lx-calbar__title {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  .lx[data-timeline] .lx-calbar__date,
+  .lx[data-timeline] .lx-calendar__summary {
+    display: none;
+  }
+
+  .lx[data-timeline] .lx-day__extras {
+    order: 2;
+  }
+
+  .lx[data-timeline] .lx-tl__scroller {
+    height: calc(100dvh - 84px);
+    min-height: 220px;
+  }
+}

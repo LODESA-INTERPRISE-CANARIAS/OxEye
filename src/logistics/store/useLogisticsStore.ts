@@ -8,10 +8,13 @@
 import {create} from 'zustand';
 import type {
   ActivityEntry,
+  Company,
   CreateEventInput,
   LogisticsEvent,
   Organization,
   SessionUser,
+  Task,
+  TaskInput,
   UpdateEventInput,
   Venue,
 } from '../../../shared/logistics/contracts.ts';
@@ -23,6 +26,7 @@ import {
 } from '../api/client';
 import {api} from '../api/endpoints';
 import {sortEvents} from '../lib/events';
+import {sortTasks} from '../lib/tasks';
 
 export type Phase =
   | 'checking'
@@ -125,6 +129,10 @@ export interface LogisticsState {
   eventsState: LoadState;
   eventsError: string | null;
   venues: Venue[];
+  tasks: Task[];
+  tasksState: LoadState;
+  tasksError: string | null;
+  companies: Company[];
   activity: ActivityEntry[];
   activityState: LoadState;
   activityError: string | null;
@@ -143,6 +151,15 @@ export interface LogisticsState {
   updateEvent: (id: string, input: UpdateEventInput) => Promise<LogisticsEvent>;
   /** Puts a server copy of an event in the list (e.g. after a conflict). */
   upsertEvent: (event: LogisticsEvent) => void;
+  createTask: (
+    input: Omit<TaskInput, 'organizationId' | 'version'>,
+  ) => Promise<Task>;
+  /** `input.version` is required. */
+  updateTask: (id: string, input: TaskInput) => Promise<Task>;
+  /** Deletes with the version the user saw (409 if it changed since). */
+  deleteTask: (task: Task) => Promise<void>;
+  /** Puts a server copy of a task in the list (e.g. after a conflict). */
+  upsertTask: (task: Task) => void;
   removeDemo: () => Promise<number>;
   setBrowserOnline: (online: boolean) => void;
   toast: (message: string, tone?: ToastTone) => void;
@@ -158,24 +175,74 @@ let toastSeq = 0;
  * dropped: every write triggers its own follow-up refresh.
  */
 let writeEpoch = 0;
+/** Same as `writeEpoch`, for the task list. */
+let taskEpoch = 0;
+
+/**
+ * Same content. Versions alone are not enough: a renamed venue or company
+ * changes the name embedded in a record without bumping its version.
+ */
+function sameContent<T>(a: T, b: T): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 /**
  * Merges a server list over the local one without going back in time: a local
  * copy with a higher `version` (saved by us while the request was in flight)
- * wins over the server copy of the same event.
+ * wins over the server copy of the same record, and an unchanged record keeps
+ * its local object. When nothing changed at all, the local list itself comes
+ * back, so the periodic refresh does not wake every screen up (or rebuild the
+ * plan) for nothing.
  */
+function mergeByVersion<T extends {id: string; version: number}>(
+  local: T[],
+  server: T[],
+  sort: (list: T[]) => T[],
+): T[] {
+  const byId = new Map(local.map(e => [e.id, e]));
+  let changed = server.length !== local.length;
+  const merged = server.map(remote => {
+    const mine = byId.get(remote.id);
+    if (
+      mine &&
+      (mine.version > remote.version ||
+        (mine.version === remote.version && sameContent(mine, remote)))
+    ) {
+      return mine;
+    }
+    changed = true;
+    return remote;
+  });
+  // Same objects and same count: `local` is already in order.
+  return changed ? sort(merged) : local;
+}
+
 export function mergeServerEvents(
   local: LogisticsEvent[],
   server: LogisticsEvent[],
 ): LogisticsEvent[] {
-  const byId = new Map(local.map(e => [e.id, e]));
-  return sortEvents(
-    server.map(remote => {
-      const mine = byId.get(remote.id);
-      return mine && mine.version > remote.version ? mine : remote;
-    }),
-  );
+  return mergeByVersion(local, server, sortEvents);
 }
+
+export function mergeServerTasks(local: Task[], server: Task[]): Task[] {
+  return mergeByVersion(local, server, sortTasks);
+}
+
+/** The server list, or the local one when it holds exactly the same. */
+function keepIfSame<T>(local: T[], server: T[]): T[] {
+  return local.length === server.length &&
+    local.every((item, i) => sameContent(item, server[i]))
+    ? local
+    : server;
+}
+
+const EMPTY_RECORDS = {
+  events: [],
+  venues: [],
+  tasks: [],
+  companies: [],
+  activity: [],
+} satisfies Partial<LogisticsState>;
 
 export const useLogisticsStore = create<LogisticsState>()((set, get) => {
   /** Records the outcome of a server call in the sync chip. */
@@ -194,10 +261,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       phase: 'login',
       session: null,
       organizations: [],
-      events: [],
-      venues: [],
-      activity: [],
+      ...EMPTY_RECORDS,
       eventsState: 'idle',
+      tasksState: 'idle',
       activityState: 'idle',
       sessionNotice: 'Tu sesión ha caducado. Vuelve a entrar para seguir.',
     });
@@ -233,6 +299,10 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     eventsState: 'idle',
     eventsError: null,
     venues: [],
+    tasks: [],
+    tasksState: 'idle',
+    tasksError: null,
+    companies: [],
     activity: [],
     activityState: 'idle',
     activityError: null,
@@ -313,9 +383,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         organizations: res.organizations,
         orgId,
         sessionNotice: null,
-        events: [],
-        activity: [],
-        venues: [],
+        ...EMPTY_RECORDS,
       });
       markReachable();
       void get().refresh();
@@ -328,10 +396,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         phase: 'login',
         session: null,
         organizations: [],
-        events: [],
-        venues: [],
-        activity: [],
+        ...EMPTY_RECORDS,
         eventsState: 'idle',
+        tasksState: 'idle',
         activityState: 'idle',
         sessionNotice: null,
       });
@@ -344,7 +411,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     selectOrg: id => {
       if (id === get().orgId) return;
       writeStoredOrg(id);
-      set({orgId: id, events: [], activity: [], venues: []});
+      set({orgId: id, ...EMPTY_RECORDS});
       void get().refresh();
     },
 
@@ -355,16 +422,22 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         set({
           eventsState: 'loading',
           eventsError: null,
+          tasksState: 'loading',
+          tasksError: null,
           activityState: 'loading',
           activityError: null,
         });
       }
       const epoch = writeEpoch;
-      const [events, activity, venues] = await Promise.allSettled([
-        authed(token => api.events(token, orgId)),
-        authed(token => api.activity(token, orgId, 20)),
-        authed(token => api.venues(token, orgId)),
-      ]);
+      const tEpoch = taskEpoch;
+      const [events, activity, venues, tasks, companies] =
+        await Promise.allSettled([
+          authed(token => api.events(token, orgId)),
+          authed(token => api.activity(token, orgId, 20)),
+          authed(token => api.venues(token, orgId)),
+          authed(token => api.tasks(token, orgId)),
+          authed(token => api.companies(token, orgId)),
+        ]);
       // The organization may have changed while loading.
       if (get().orgId !== orgId || get().phase !== 'ready') return;
       const patch: Partial<LogisticsState> = {};
@@ -381,14 +454,29 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         patch.eventsError = errorMessage(events.reason);
       }
       if (activity.status === 'fulfilled') {
-        patch.activity = activity.value.items;
+        patch.activity = keepIfSame(get().activity, activity.value.items);
         patch.activityState = 'ready';
         patch.activityError = null;
       } else if (!silent || get().activityState !== 'ready') {
         patch.activityState = 'error';
         patch.activityError = errorMessage(activity.reason);
       }
-      if (venues.status === 'fulfilled') patch.venues = venues.value.items;
+      if (tasks.status === 'fulfilled' && tEpoch !== taskEpoch) {
+        // Same as events: a task write's own refresh brings the fresh list.
+      } else if (tasks.status === 'fulfilled') {
+        patch.tasks = mergeServerTasks(get().tasks, tasks.value.items);
+        patch.tasksState = 'ready';
+        patch.tasksError = null;
+      } else if (!silent || get().tasksState !== 'ready') {
+        patch.tasksState = 'error';
+        patch.tasksError = errorMessage(tasks.reason);
+      }
+      if (venues.status === 'fulfilled') {
+        patch.venues = keepIfSame(get().venues, venues.value.items);
+      }
+      if (companies.status === 'fulfilled') {
+        patch.companies = keepIfSame(get().companies, companies.value.items);
+      }
       set(patch);
     },
 
@@ -434,11 +522,89 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       set({events: sortEvents([...rest, event]), eventsState: 'ready'});
     },
 
+    createTask: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const created = await authed(token =>
+        api.createTask(token, {...input, organizationId: orgId}),
+      );
+      get().upsertTask(created);
+      void get().refresh({silent: true});
+      return created;
+    },
+
+    updateTask: async (id, input) => {
+      try {
+        const updated = await authed(token => api.updateTask(token, id, input));
+        get().upsertTask(updated);
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        if (
+          isApiError(err) &&
+          err.code === 'VERSION_CONFLICT' &&
+          err.current &&
+          typeof err.current === 'object'
+        ) {
+          get().upsertTask(err.current as Task);
+        }
+        throw err;
+      }
+    },
+
+    deleteTask: async task => {
+      try {
+        await authed(token => api.deleteTask(token, task.id, task.version));
+      } catch (err) {
+        if (
+          isApiError(err) &&
+          err.code === 'VERSION_CONFLICT' &&
+          err.current &&
+          typeof err.current === 'object'
+        ) {
+          get().upsertTask(err.current as Task);
+          throw err;
+        }
+        // Already gone (someone else deleted it): the outcome is the same.
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      taskEpoch++;
+      // Dependents lose the link on the server (their version increases);
+      // mirror it until the refresh brings their new copies.
+      const hadDependents = get().tasks.some(t =>
+        t.dependsOn.includes(task.id),
+      );
+      set({
+        tasks: get()
+          .tasks.filter(t => t.id !== task.id)
+          .map(t =>
+            t.dependsOn.includes(task.id)
+              ? {...t, dependsOn: t.dependsOn.filter(d => d !== task.id)}
+              : t,
+          ),
+      });
+      const refreshed = get().refresh({silent: true});
+      // With dependents, wait for their new versions before the caller moves
+      // on: editing one with the old version would be rejected as a conflict
+      // with our own change.
+      // The delete itself succeeded either way.
+      if (hadDependents) await refreshed.catch(() => undefined);
+    },
+
+    upsertTask: task => {
+      taskEpoch++;
+      const current = get().tasks.find(t => t.id === task.id);
+      if (current && current.version > task.version) return;
+      const rest = get().tasks.filter(t => t.id !== task.id);
+      set({tasks: sortTasks([...rest, task]), tasksState: 'ready'});
+    },
+
     removeDemo: async () => {
       const orgId = get().orgId;
       if (!orgId) return 0;
       const res = await authed(token => api.removeDemo(token, orgId));
       writeEpoch++;
+      taskEpoch++;
       await get().refresh({silent: true});
       return res?.removed ?? 0;
     },

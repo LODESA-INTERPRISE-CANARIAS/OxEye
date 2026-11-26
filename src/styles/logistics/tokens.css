@@ -55,3 +55,13 @@
     Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
   --lx-serif: var(--font-serif, Georgia, 'Times New Roman', serif);
 }
+
+/*
+ * Bendy's cyan accent gives white text about 3:1 (and its lighter hover even
+ * less). Solid buttons, chips and calendar blocks carry small text, so the
+ * manager uses a deeper cyan of the same hue (≈4.7:1 with white).
+ */
+:root[data-palette='bendy'] .lx {
+  --lx-accent: #007f9f;
+  --lx-accent-strong: #006a86;
+}

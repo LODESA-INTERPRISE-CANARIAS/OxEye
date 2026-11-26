@@ -1,24 +1,34 @@
 /**
- * Rescue of an unsaved event form when the session expires mid-edit.
+ * Rescue of an unsaved event or task form when the session expires mid-edit.
  *
  * One slot in `sessionStorage` (this tab only, gone when the tab closes): the
- * form values, who was typing and, for edits, the event copy the changes
+ * form values, who was typing and, for edits, the record copy the changes
  * apply to. After signing in again as the same person the form reopens with
  * those values; a different person never sees them. Full offline drafts and
  * the outbox arrive later with Dexie; this only bridges a re-login.
  */
-import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
+import type {
+  LogisticsEvent,
+  Task,
+} from '../../../shared/logistics/contracts.ts';
 
 const RESCUE_KEY = 'oxeye.logistics.rescue.v1';
 
-export interface RescuedForm<V = Record<string, unknown>> {
+interface RescueBase<V> {
   userId: string;
   orgId: string | null;
-  /** Event being edited, as it was when editing started; null when creating. */
-  base: LogisticsEvent | null;
   values: V;
   savedAt: string;
 }
+
+export type RescuedForm<V = Record<string, unknown>> =
+  | (RescueBase<V> & {
+      /** Absent in rescues saved before tasks existed. */
+      entity: 'event';
+      /** Event being edited, as it was when editing started; null when creating. */
+      base: LogisticsEvent | null;
+    })
+  | (RescueBase<V> & {entity: 'task'; base: Task | null});
 
 export function saveRescue(rescue: RescuedForm<unknown>): void {
   try {
@@ -32,7 +42,7 @@ export function readRescue(): RescuedForm | null {
   try {
     const raw = sessionStorage.getItem(RESCUE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<RescuedForm>;
+    const parsed = JSON.parse(raw) as Partial<RescuedForm> | null;
     if (
       !parsed ||
       typeof parsed.userId !== 'string' ||
@@ -42,19 +52,28 @@ export function readRescue(): RescuedForm | null {
       clearRescue();
       return null;
     }
-    const base =
+    const validBase =
       parsed.base &&
       typeof parsed.base === 'object' &&
       typeof parsed.base.id === 'string' &&
-      typeof parsed.base.version === 'number'
-        ? parsed.base
-        : null;
-    return {
+      typeof parsed.base.version === 'number';
+    const common = {
       userId: parsed.userId,
       orgId: typeof parsed.orgId === 'string' ? parsed.orgId : null,
-      base,
       values: parsed.values,
       savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : '',
+    };
+    if (parsed.entity === 'task') {
+      return {
+        ...common,
+        entity: 'task',
+        base: validBase ? (parsed.base as Task) : null,
+      };
+    }
+    return {
+      ...common,
+      entity: 'event',
+      base: validBase ? (parsed.base as LogisticsEvent) : null,
     };
   } catch {
     return null;

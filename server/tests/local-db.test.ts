@@ -1,10 +1,28 @@
-import {mkdtempSync, rmSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterAll, describe, expect, it} from 'vitest';
 import {ConfigError, loadConfig} from '../src/config.ts';
-import {migrate} from '../src/db/migrate.ts';
+import {migrate, readMigrations} from '../src/db/migrate.ts';
 import {DbLockedError, openDb} from '../src/db/open.ts';
+import {
+  DEMO_EVENT,
+  DEMO_TASKS,
+  PILOT_ORGANIZATION,
+  seed,
+} from '../src/seed/seed.ts';
+import type {Queryable} from '../src/db/db.ts';
+
+/** The milestone-1 demo event, as `db:seed` left it before 0002. */
+async function insertM1DemoEvent(db: Queryable, orgId: string, userId: string) {
+  await db.query(
+    `INSERT INTO events (organization_id, name, local_date, starts_at, ends_at,
+                         is_demo, created_by, updated_by)
+     VALUES ($1, $2, '2026-12-02', '2026-12-02T09:00:00Z', '2026-12-02T14:00:00Z',
+             true, $3, $3)`,
+    [orgId, DEMO_EVENT.name, userId],
+  );
+}
 
 const root = mkdtempSync(join(tmpdir(), 'oxeye-pglite-'));
 afterAll(() => rmSync(root, {recursive: true, force: true}));
@@ -25,6 +43,47 @@ describe('local database without Docker (pglite:)', () => {
     expect(result.applied).toEqual([]);
     await again.close();
   }, 30_000);
+
+  it('upgrades a seeded milestone-1 folder in place: 0002 applies and the demo tasks arrive', async () => {
+    // A folder migrated and seeded with 0001 only, as the team has it today.
+    const [m1] = readMigrations();
+    const dir = join(root, 'm1-migrations');
+    mkdirSync(dir);
+    writeFileSync(join(dir, m1!.file), m1!.sql);
+    const url = `pglite:${join(root, 'm1-data')}`;
+    const old = await openDb(url);
+    await migrate(old, {dir});
+    const [org] = await old.query<{id: string}>(
+      'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
+      [PILOT_ORGANIZATION.name],
+    );
+    const [user] = await old.query<{id: string}>(
+      `INSERT INTO users (display_name, role, password_hash, is_active)
+       VALUES ('Sistema', 'guest', NULL, false) RETURNING id`,
+    );
+    await insertM1DemoEvent(old, org!.id, user!.id);
+    await old.close();
+
+    const db = await openDb(url);
+    expect((await migrate(db)).applied).toEqual([
+      '0002_tasks.sql',
+      '0003_demo_removed.sql',
+    ]);
+    const seeded = await seed(db, {passwordFor: n => `pw-${n}-1234`});
+    expect(seeded.organizationCreated).toBe(false);
+    expect(seeded.demoEventCreated).toBe(false);
+    expect(seeded.demoTasksCreated).toBe(DEMO_TASKS.length);
+    // The tasks hang from the existing demo event; nothing is duplicated.
+    const rows = await db.query<{events: number; linked: number}>(
+      `SELECT (SELECT count(*)::int FROM events) AS events,
+              (SELECT count(*)::int FROM tasks t JOIN events e ON e.id = t.event_id
+                WHERE e.name = $1) AS linked`,
+      [DEMO_EVENT.name],
+    );
+    expect(rows[0]).toEqual({events: 1, linked: DEMO_TASKS.length});
+    expect((await seed(db, {passwordFor: n => n})).demoTasksCreated).toBe(0);
+    await db.close();
+  }, 60_000);
 
   it('refuses a second process while the folder is in use, then frees it', async () => {
     const url = `pglite:${join(root, 'locked')}`;

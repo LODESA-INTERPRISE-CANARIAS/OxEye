@@ -1,18 +1,24 @@
 /**
- * «Hoy»: today's and upcoming events, how much information is verified,
- * the month at a glance and recent activity.
+ * «Hoy»: today's events and tasks (now / next first), today's warnings,
+ * upcoming events, how much information is verified, the month at a glance
+ * and recent activity.
  */
 import React, {useMemo} from 'react';
 import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
+import {useActions} from '../common/actions';
+import {usePlan} from '../common/usePlan';
 import {EventCard} from '../events/EventCard';
 import {groupForToday} from '../lib/events';
 import {shortDate} from '../lib/format';
+import {sortTasks} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, EmptyState, LoadError} from '../ui';
 import {ActivityCard} from './ActivityCard';
 import {DemoNotice} from './DemoNotice';
 import {MiniCalendar} from './MiniCalendar';
+import {TodayTasks} from './TodayTasks';
 import {VerifiedCard} from './VerifiedCard';
+import {WarningsCard} from './WarningsCard';
 
 const MAX_UPCOMING = 6;
 
@@ -61,17 +67,37 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
   const events = useLogisticsStore(s => s.events);
   const state = useLogisticsStore(s => s.eventsState);
   const error = useLogisticsStore(s => s.eventsError);
+  const tasks = useLogisticsStore(s => s.tasks);
+  const tasksState = useLogisticsStore(s => s.tasksState);
+  const tasksError = useLogisticsStore(s => s.tasksError);
   const refresh = useLogisticsStore(s => s.refresh);
   const hasOrg = useLogisticsStore(s => !!s.orgId);
+  const {addTask, openDay} = useActions();
+  const plan = usePlan();
 
   const {todayEvents, upcoming, undated} = useMemo(
     () => groupForToday(events, today),
     [events, today],
   );
-  const demoCount = events.filter(e => e.isDemo).length;
+  // The plan's day index already holds them (in the store's time order).
+  const todayTasks = useMemo(
+    () => sortTasks(plan.byDay.get(today)?.tasks ?? []),
+    [plan, today],
+  );
+  const taskCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.eventId) counts.set(t.eventId, (counts.get(t.eventId) ?? 0) + 1);
+    }
+    return counts;
+  }, [tasks]);
+  const demoCount =
+    events.filter(e => e.isDemo).length + tasks.filter(t => t.isDemo).length;
   const loading =
     (state === 'loading' || state === 'idle') && events.length === 0;
   const failed = state === 'error' && events.length === 0;
+  const tasksReady = tasksState === 'ready' || tasks.length > 0;
+  const nothingToday = todayEvents.length === 0 && todayTasks.length === 0;
 
   const card = (event: LogisticsEvent, showDate: boolean) => (
     <EventCard
@@ -79,6 +105,8 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
       event={event}
       canWrite={canWrite}
       showDate={showDate}
+      today={today}
+      taskCount={taskCount.get(event.id)}
       onOpen={onOpenEvent}
     />
   );
@@ -110,20 +138,25 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
               <CardsSkeleton />
             ) : failed ? (
               <LoadError message={error ?? ''} onRetry={() => void refresh()} />
-            ) : todayEvents.length ? (
-              <div className="lx-event-grid">
-                {todayEvents.map(e => card(e, false))}
-              </div>
-            ) : (
+            ) : nothingToday && tasksState !== 'error' ? (
               <EmptyState
                 icon="today"
-                title="Hoy no hay eventos registrados"
+                title="Hoy no hay nada registrado"
                 id="lx-today-empty"
                 action={
                   canWrite && (
-                    <Button variant="primary" icon="plus" onClick={onAdd}>
-                      Añadir evento
-                    </Button>
+                    <div className="lx-empty__actions">
+                      <Button variant="primary" icon="plus" onClick={onAdd}>
+                        Añadir evento
+                      </Button>
+                      <Button
+                        icon="task"
+                        id="lx-today-empty-add-task"
+                        onClick={() => addTask({date: today})}
+                      >
+                        Añadir tarea
+                      </Button>
+                    </div>
                   )
                 }
               >
@@ -131,8 +164,36 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
                   ? 'Apunta lo que sepas ahora; podrás completarlo después.'
                   : 'Cuando el equipo registre algo para hoy, aparecerá aquí.'}
               </EmptyState>
+            ) : (
+              <>
+                {todayEvents.length > 0 ? (
+                  <div className="lx-event-grid">
+                    {todayEvents.map(e => card(e, false))}
+                  </div>
+                ) : (
+                  nothingToday && (
+                    <p className="lx-muted" id="lx-today-empty">
+                      Hoy no hay eventos registrados.
+                    </p>
+                  )
+                )}
+                {(todayTasks.length > 0 || tasksState === 'error') && (
+                  <TodayTasks
+                    tasks={todayTasks}
+                    plan={plan}
+                    state={tasksState}
+                    error={tasksError}
+                    onRetry={() => void refresh()}
+                  />
+                )}
+              </>
             )}
           </Section>
+
+          {/* Only with tasks today: «sin avisos» means something then. */}
+          {!loading && !failed && tasksReady && todayTasks.length > 0 && (
+            <WarningsCard plan={plan} />
+          )}
 
           {!loading && !failed && (
             <Section id="lx-upcoming" title="Próximos" count={upcoming.length}>
@@ -142,9 +203,20 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
                     {upcoming.slice(0, MAX_UPCOMING).map(e => card(e, true))}
                   </div>
                   {upcoming.length > MAX_UPCOMING && (
-                    <p className="lx-muted lx-section__more">
-                      Y {upcoming.length - MAX_UPCOMING} más. El calendario
-                      completo llega en la próxima entrega.
+                    <p className="lx-section__more">
+                      <span className="lx-muted">
+                        Y {upcoming.length - MAX_UPCOMING} más.
+                      </span>{' '}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon="month"
+                        onClick={() =>
+                          openDay(upcoming[MAX_UPCOMING].date ?? today)
+                        }
+                      >
+                        Verlos en el calendario
+                      </Button>
                     </p>
                   )}
                 </>
@@ -171,6 +243,7 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
           {!loading && !failed && (
             <VerifiedCard
               events={events}
+              tasks={tasks}
               canWrite={canWrite}
               onOpenEvent={onOpenEvent}
             />
@@ -178,11 +251,7 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
         </div>
 
         <div className="lx-hoy__side">
-          <MiniCalendar
-            events={events}
-            today={today}
-            onOpenEvent={onOpenEvent}
-          />
+          <MiniCalendar today={today} plan={plan} onOpenEvent={onOpenEvent} />
           <ActivityCard timeZone={timeZone} />
         </div>
       </div>

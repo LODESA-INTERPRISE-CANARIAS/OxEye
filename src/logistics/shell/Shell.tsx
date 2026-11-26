@@ -3,8 +3,9 @@
  * bar, bottom tab bar and floating «+ Añadir» on phones. Both layouts are
  * rendered and switched in CSS, so resizing never loses state.
  */
-import React, {useCallback, useRef, useState} from 'react';
+import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {useLogisticsStore} from '../store/useLogisticsStore';
+import {AddMenu, type AddOption} from './AddMenu';
 import {
   Button,
   Chip,
@@ -40,7 +41,10 @@ export interface ShellProps {
   title: React.ReactNode;
   subtitle: React.ReactNode;
   canWrite: boolean;
-  onAdd: () => void;
+  onAddEvent: () => void;
+  onAddTask: () => void;
+  /** Disables the swipe between spaces (e.g. inside the day timeline). */
+  swipeLocked?: boolean;
   onExit: () => void;
   children: React.ReactNode;
 }
@@ -52,10 +56,31 @@ export const Shell: React.FC<ShellProps> = ({
   title,
   subtitle,
   canWrite,
-  onAdd,
+  onAddEvent,
+  onAddTask,
+  swipeLocked = false,
   onExit,
   children,
 }) => {
+  const addOptions = useMemo<AddOption[]>(
+    () => [
+      {
+        id: 'event',
+        label: 'Evento',
+        description: 'Lo que se celebra: fecha, lugar y horario.',
+        icon: 'calendar',
+        onSelect: onAddEvent,
+      },
+      {
+        id: 'task',
+        label: 'Tarea',
+        description: 'Montaje, entrega, transporte… con empresa y hora.',
+        icon: 'task',
+        onSelect: onAddTask,
+      },
+    ],
+    [onAddEvent, onAddTask],
+  );
   const session = useLogisticsStore(s => s.session);
   const logout = useLogisticsStore(s => s.logout);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -75,7 +100,7 @@ export const Shell: React.FC<ShellProps> = ({
     },
     [space, onSpace],
   );
-  useSpaceSwipe(contentRef, {canGo, onSwipe});
+  useSpaceSwipe(contentRef, {canGo, onSwipe, enabled: !swipeLocked});
 
   const readOnlyChip = !canWrite && (
     <span className="lx-readonly" id="lx-readonly">
@@ -186,15 +211,11 @@ export const Shell: React.FC<ShellProps> = ({
             </span>
             {readOnlyChip}
             {canWrite && (
-              <Button
-                variant="primary"
-                icon="plus"
+              <AddMenu
                 id="lx-add"
                 className="lx-desktop-only"
-                onClick={onAdd}
-              >
-                Añadir
-              </Button>
+                options={addOptions}
+              />
             )}
           </div>
         </header>
@@ -227,16 +248,13 @@ export const Shell: React.FC<ShellProps> = ({
       />
 
       {canWrite && (
-        <Button
-          variant="primary"
-          size="lg"
-          icon="plus"
+        <AddMenu
           id="lx-fab"
+          size="lg"
           className="lx-fab"
-          onClick={onAdd}
-        >
-          Añadir
-        </Button>
+          placement="above"
+          options={addOptions}
+        />
       )}
 
       <Sheet

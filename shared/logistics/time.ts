@@ -59,8 +59,9 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
 
 function wallClock(ms: number, timeZone: string) {
   const parts: Record<string, string> = {};
-  for (const p of formatterFor(timeZone).formatToParts(new Date(ms)))
-    {parts[p.type] = p.value;}
+  for (const p of formatterFor(timeZone).formatToParts(new Date(ms))) {
+    parts[p.type] = p.value;
+  }
   return {
     year: Number(parts.year),
     month: Number(parts.month),
@@ -106,8 +107,9 @@ export function localToUtc(
   // Try the earlier offset first so ambiguous times map to summer time.
   for (const off of [Math.max(first, second), Math.min(first, second)]) {
     const candidate = guess - off * 60000;
-    if (offsetMinutes(candidate, timeZone) === off)
-      {return new Date(candidate).toISOString();}
+    if (offsetMinutes(candidate, timeZone) === off) {
+      return new Date(candidate).toISOString();
+    }
   }
   // Gap: the wall-clock time does not exist; shift by the offset before it.
   return new Date(guess - Math.min(first, second) * 60000).toISOString();
@@ -135,25 +137,76 @@ export function addDays(date: LocalDate, days: number): LocalDate {
   return t.toISOString().slice(0, 10);
 }
 
+/** Whole days from `a` to `b` (negative when `b` is earlier). */
+export function daysBetween(a: LocalDate, b: LocalDate): number {
+  const [ya, ma, da] = a.split('-').map(Number);
+  const [yb, mb, db] = b.split('-').map(Number);
+  return Math.round(
+    (Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 864e5,
+  );
+}
+
+/** Every local date from `from` to `to`, both included (empty if reversed). */
+export function eachDate(from: LocalDate, to: LocalDate): LocalDate[] {
+  const out: LocalDate[] = [];
+  for (let i = 0, n = daysBetween(from, to); i <= n; i++) {
+    out.push(addDays(from, i));
+  }
+  return out;
+}
+
 /**
  * Turns a local slot (date, start, end) into UTC instants. Missing parts stay
- * null. An end time at or before the start time means the slot ends the next
- * day (e.g. 22:00–02:00).
+ * null. With `endDate` (multi-day) the end time falls on that day; without it,
+ * an end time at or before the start time means the next day (22:00–02:00).
  */
 export function slotToInstants(
   date: LocalDate | null | undefined,
   startTime: LocalTime | null | undefined,
   endTime: LocalTime | null | undefined,
   timeZone: string = DEFAULT_TIMEZONE,
+  endDate?: LocalDate | null,
 ): {startsAt: IsoInstant | null; endsAt: IsoInstant | null} {
   if (!date) return {startsAt: null, endsAt: null};
   const startsAt = startTime ? localToUtc(date, startTime, timeZone) : null;
   let endsAt: IsoInstant | null = null;
   if (endTime) {
-    const endDate = startTime && endTime <= startTime ? addDays(date, 1) : date;
-    endsAt = localToUtc(endDate, endTime, timeZone);
+    const lastDay =
+      endDate && endDate > date
+        ? endDate
+        : startTime && endTime <= startTime
+          ? addDays(date, 1)
+          : date;
+    endsAt = localToUtc(lastDay, endTime, timeZone);
   }
   return {startsAt, endsAt};
+}
+
+/**
+ * Local days a record occupies: from `date` to `endDate` (or to the local day
+ * of `endsAt` for overnight slots). Empty when undated.
+ */
+export function occupiedDates(
+  record: {
+    date: LocalDate | null;
+    endDate: LocalDate | null;
+    endsAt: IsoInstant | null;
+  },
+  timeZone: string = DEFAULT_TIMEZONE,
+): LocalDate[] {
+  if (!record.date) return [];
+  let last =
+    record.endDate && record.endDate > record.date
+      ? record.endDate
+      : record.date;
+  if (record.endsAt) {
+    const endLocal = utcToLocal(record.endsAt, timeZone);
+    // An overnight end at 00:00 does not occupy the next day.
+    const endDay =
+      endLocal.time === '00:00' ? addDays(endLocal.date, -1) : endLocal.date;
+    if (endDay > last) last = endDay;
+  }
+  return eachDate(record.date, last);
 }
 
 /** Inverse of slotToInstants for editing forms. */

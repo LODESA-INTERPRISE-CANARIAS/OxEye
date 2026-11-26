@@ -1,6 +1,6 @@
 # Servidor del Gestor logístico
 
-API y base de datos del Gestor logístico de OxEye: eventos, lugares, usuarios y registro de actividad. Es un único servicio (Hono + PostgreSQL) que se ejecuta igual en el portátil y en el servidor externo; toda la configuración sale de variables de entorno.
+API y base de datos del Gestor logístico de OxEye: eventos, tareas (montaje, entregas, transporte, desmontaje) con sus dependencias, lugares, empresas, usuarios y registro de actividad. Es un único servicio (Hono + PostgreSQL) que se ejecuta igual en el portátil y en el servidor externo; toda la configuración sale de variables de entorno.
 
 El simulador de OxEye no depende de este servidor: la web publicada sigue funcionando sin él.
 
@@ -19,7 +19,7 @@ Para probar en un portátil sin Docker. Es PostgreSQL de verdad (PGlite), pero d
 ```sh
 npm --prefix server install                 # dependencias del servidor
 npm --prefix server run db:migrate          # crea las tablas
-npm --prefix server run db:seed             # organización, 5 usuarios y evento demo
+npm --prefix server run db:seed             # organización, 5 usuarios, evento y tareas demo
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
@@ -34,7 +34,7 @@ npm --prefix server ci                      # dependencias del servidor
 cp server/.env.example server/.env          # configuración local (no se sube a Git)
 npm --prefix server run db:up               # PostgreSQL en el puerto 5433
 npm --prefix server run db:migrate          # crea las tablas
-npm --prefix server run db:seed             # organización, 5 usuarios y evento demo
+npm --prefix server run db:seed             # organización, 5 usuarios, evento y tareas demo
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
@@ -56,6 +56,10 @@ Después arranca la web con `npm run dev` y abre `http://localhost:5173/#logisti
 | Borrar los datos de demostración                | `npm --prefix server run db:clear-demo`                                    |
 | Base de datos y API en Docker                   | `docker compose -f server/docker-compose.yml --profile full up -d --build` |
 | Tests (sin Docker: PostgreSQL en memoria)       | `npx vitest run --root server`                                             |
+
+**Al actualizar el código** (por ejemplo, al llegar las tareas y el calendario): para la API, ejecuta `db:migrate` y después `db:seed`. Las migraciones nuevas solo añaden tablas y columnas, así que los datos existentes se conservan; `db:seed` conserva los usuarios y contraseñas existentes y añade las tareas de demostración al evento demo si aún no las tiene.
+
+**Datos de demostración**: se borran desde la app («Borrar datos de demostración») o con `db:clear-demo`. Una vez borrados, la base de datos lo recuerda y `db:seed` (también con `--reset-passwords`) ya no los vuelve a crear; lo indica con una línea «Datos de demostración: se borraron el …». Las tareas reales que colgaban del evento demo o de una tarea demo se conservan, pierden ese enlace y quedan en «Actividad reciente» como modificadas por quien borró la demo («Sistema» si fue con `db:clear-demo`).
 
 **Empezar de cero** (borra todos los datos locales): `npm --prefix server run db:down`, elimina la carpeta `server/pgdata` y repite migrate y seed.
 

@@ -420,3 +420,109 @@ describe('activity', () => {
     });
   });
 });
+
+describe('events · multi-day', () => {
+  it('creates an event spanning several days, the end time on the last day', async () => {
+    const res = await create({
+      name: 'Feria de artesanía',
+      date: '2026-12-04',
+      endDate: '2026-12-06',
+      startTime: '10:00',
+      endTime: '21:00',
+    });
+    expect(res.status).toBe(201);
+    const e = await json<LogisticsEvent>(res);
+    expect(e).toMatchObject({
+      date: '2026-12-04',
+      endDate: '2026-12-06',
+      startsAt: '2026-12-04T10:00:00.000Z',
+      endsAt: '2026-12-06T21:00:00.000Z',
+    });
+    const single = await json<LogisticsEvent>(
+      await create({name: 'Un día', date: '2026-12-04'}),
+    );
+    expect(single.endDate).toBeNull();
+  });
+
+  it('rejects an end date without a start date or not after it', async () => {
+    const noDate = await create({name: 'x', endDate: '2026-12-06'});
+    expect(noDate.status).toBe(400);
+    expect((await json<ApiErrorBody>(noDate)).fields).toEqual({
+      endDate: 'Indica la fecha de inicio para poder guardar la fecha de fin.',
+    });
+    for (const endDate of ['2026-12-04', '2026-12-03']) {
+      const bad = await create({name: 'x', date: '2026-12-04', endDate});
+      expect(bad.status).toBe(400);
+      expect((await json<ApiErrorBody>(bad)).fields).toEqual({
+        endDate: 'La fecha de fin debe ser posterior a la de inicio.',
+      });
+    }
+    const badFormat = await create({
+      name: 'x',
+      date: '2026-12-04',
+      endDate: '6/12/2026',
+    });
+    expect((await json<ApiErrorBody>(badFormat)).fields?.endDate).toBe(
+      'Fecha no válida: usa el formato AAAA-MM-DD.',
+    );
+  });
+
+  it('extends and shortens an event, logging endDate and endsAt', async () => {
+    const created = await json<LogisticsEvent>(
+      await create({
+        name: 'Montaje del belén',
+        date: '2026-12-07',
+        startTime: '08:00',
+        endTime: '18:00',
+      }),
+    );
+    const longer = await json<LogisticsEvent>(
+      await h.request('PATCH', `/events/${created.id}`, {
+        token,
+        body: {version: 1, endDate: '2026-12-09'},
+      }),
+    );
+    expect(longer).toMatchObject({
+      version: 2,
+      endDate: '2026-12-09',
+      startsAt: '2026-12-07T08:00:00.000Z',
+      endsAt: '2026-12-09T18:00:00.000Z',
+    });
+    expect((await activity(1))[0]?.changedFields).toEqual([
+      'endDate',
+      'endsAt',
+    ]);
+
+    // Moving the start past the end date is refused, nothing changes.
+    const tooLate = await h.request('PATCH', `/events/${created.id}`, {
+      token,
+      body: {version: 2, date: '2026-12-10'},
+    });
+    expect(tooLate.status).toBe(400);
+    expect((await json<ApiErrorBody>(tooLate)).fields?.endDate).toMatch(
+      /posterior/,
+    );
+
+    const back = await json<LogisticsEvent>(
+      await h.request('PATCH', `/events/${created.id}`, {
+        token,
+        body: {version: 2, endDate: null},
+      }),
+    );
+    expect(back).toMatchObject({
+      version: 3,
+      endDate: null,
+      endsAt: '2026-12-07T18:00:00.000Z',
+    });
+
+    // A date cleared in the same edit as a new end date is an error.
+    const clearedDate = await h.request('PATCH', `/events/${created.id}`, {
+      token,
+      body: {version: 3, endDate: '2026-12-08', date: null},
+    });
+    expect(clearedDate.status).toBe(400);
+    expect((await json<ApiErrorBody>(clearedDate)).fields?.endDate).toMatch(
+      /fecha de inicio/,
+    );
+  });
+});

@@ -3,9 +3,15 @@
  * hub, lazy-loaded from the main menu. Default export for `React.lazy`.
  */
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import type {LogisticsEvent} from '../../shared/logistics/contracts.ts';
+import type {LogisticsEvent, Task} from '../../shared/logistics/contracts.ts';
 import {DEFAULT_TIMEZONE} from '../../shared/logistics/time.ts';
 import '../styles/logistics/index.css';
+import {CalendarScreen} from './calendar/CalendarScreen';
+import {
+  ActionsContext,
+  type LogisticsActions,
+  type TaskPrefill,
+} from './common/actions';
 import {EventSheet, type EventSheetMode} from './events/EventSheet';
 import {HoyScreen} from './hoy/HoyScreen';
 import {longDate, todayIn, zoneNote} from './lib/format';
@@ -15,12 +21,15 @@ import {PlaceholderScreen} from './screens/PlaceholderScreen';
 import {ServerGate} from './screens/ServerGate';
 import {Shell} from './shell/Shell';
 import {
+  calendarDayFromHash,
+  hashFor,
   MAIN_SPACES,
   SPACE_TITLE,
   spaceFromHash,
   type Space,
 } from './shell/spaces';
 import {useLogisticsStore} from './store/useLogisticsStore';
+import {TaskSheet, type TaskSheetMode} from './tasks/TaskSheet';
 import {ToastHostContext, Toaster, type ToastHost} from './ui';
 
 const BACKGROUND_REFRESH_MS = 60_000;
@@ -35,8 +44,14 @@ function spaceIndex(space: Space): number {
   return i < 0 ? MAIN_SPACES.length : i;
 }
 
-function hashFor(space: Space): string {
-  return space === 'hoy' ? '#logistica' : `#logistica/${space}`;
+function replaceHash(target: string) {
+  if (window.location.hash !== target) {
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${window.location.search}${target}`,
+    );
+  }
 }
 
 const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
@@ -54,10 +69,22 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const [space, setSpace] = useState<Space>(() =>
     spaceFromHash(window.location.hash),
   );
+  const [calendarDay, setCalendarDay] = useState<string | null>(() =>
+    calendarDayFromHash(window.location.hash),
+  );
+  const [timeline, setTimeline] = useState(false);
   const [direction, setDirection] = useState<1 | -1 | 0>(0);
-  const [sheet, setSheet] = useState<EventSheetMode | null>(null);
-  const [toastSlot, setToastSlot] = useState<HTMLElement | null>(null);
-  const toastHost = useMemo<ToastHost>(() => ({setHost: setToastSlot}), []);
+  const [eventSheet, setEventSheet] = useState<EventSheetMode | null>(null);
+  const [taskSheet, setTaskSheet] = useState<TaskSheetMode | null>(null);
+  // Open sheets offer a slot for the toasts; the topmost one wins.
+  const [toastSlots, setToastSlots] = useState<HTMLElement[]>([]);
+  const toastHost = useMemo<ToastHost>(
+    () => ({
+      add: slot => setToastSlots(s => [...s.filter(x => x !== slot), slot]),
+      remove: slot => setToastSlots(s => s.filter(x => x !== slot)),
+    }),
+    [],
+  );
 
   const org = organizations.find(o => o.id === orgId);
   const timeZone = org?.timezone || DEFAULT_TIMEZONE;
@@ -76,7 +103,8 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   // session (same person only; anyone else's rescue is discarded).
   useEffect(() => {
     if (phase !== 'ready') {
-      setSheet(null);
+      setEventSheet(null);
+      setTaskSheet(null);
       return;
     }
     if (!userId) return;
@@ -87,11 +115,19 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       return;
     }
     if (rescued.orgId && rescued.orgId !== orgId) return;
-    setSheet(
-      rescued.base
-        ? {kind: 'edit', event: rescued.base, rescued: rescued.values}
-        : {kind: 'create', rescued: rescued.values},
-    );
+    if (rescued.entity === 'task') {
+      setTaskSheet(
+        rescued.base
+          ? {kind: 'edit', task: rescued.base, rescued: rescued.values}
+          : {kind: 'create', rescued: rescued.values},
+      );
+    } else {
+      setEventSheet(
+        rescued.base
+          ? {kind: 'edit', event: rescued.base, rescued: rescued.values}
+          : {kind: 'create', rescued: rescued.values},
+      );
+    }
   }, [phase, userId, orgId, canWrite]);
 
   // Keep «today» right across midnight and time-zone changes.
@@ -126,21 +162,19 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   }, [refresh, setBrowserOnline]);
 
   const goTo = useCallback(
-    (next: Space) => {
-      if (next === space) return;
-      setDirection(spaceIndex(next) > spaceIndex(space) ? 1 : -1);
-      setSpace(next);
-      const target = hashFor(next);
-      if (window.location.hash !== target) {
-        window.history.replaceState(
-          null,
-          '',
-          `${window.location.pathname}${window.location.search}${target}`,
-        );
+    (next: Space, day: string | null = null) => {
+      if (next === space && (next !== 'calendario' || day === calendarDay)) {
+        return;
       }
-      rootRef.current?.querySelector('.lx-main')?.scrollTo?.({top: 0});
+      if (next !== space) {
+        setDirection(spaceIndex(next) > spaceIndex(space) ? 1 : -1);
+        setSpace(next);
+        rootRef.current?.querySelector('.lx-main')?.scrollTo?.({top: 0});
+      }
+      setCalendarDay(next === 'calendario' ? day : null);
+      replaceHash(hashFor(next, next === 'calendario' ? day : null));
     },
-    [space],
+    [space, calendarDay],
   );
 
   // Follow links pasted or navigated while the module is open.
@@ -148,6 +182,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     const onHashChange = () => {
       if (!window.location.hash.startsWith('#logistica')) return;
       const next = spaceFromHash(window.location.hash);
+      setCalendarDay(calendarDayFromHash(window.location.hash));
       setSpace(current => {
         if (current !== next) {
           setDirection(spaceIndex(next) > spaceIndex(current) ? 1 : -1);
@@ -159,12 +194,68 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  /** The calendar moved between month and a day: keep the link in step. */
+  const onCalendarDay = useCallback((day: string | null) => {
+    setCalendarDay(day);
+    replaceHash(hashFor('calendario', day));
+  }, []);
+
   const openEvent = useCallback(
     (event: LogisticsEvent) =>
-      setSheet(canWrite ? {kind: 'edit', event} : {kind: 'view', event}),
+      setEventSheet(canWrite ? {kind: 'edit', event} : {kind: 'view', event}),
     [canWrite],
   );
-  const addEvent = useCallback(() => setSheet({kind: 'create'}), []);
+  const addEvent = useCallback(() => setEventSheet({kind: 'create'}), []);
+  const openTask = useCallback(
+    (task: Task) =>
+      setTaskSheet(canWrite ? {kind: 'edit', task} : {kind: 'view', task}),
+    [canWrite],
+  );
+  const addTask = useCallback(
+    (prefill?: TaskPrefill) => setTaskSheet({kind: 'create', prefill}),
+    [],
+  );
+  /** «+ Añadir → Tarea» starts on the calendar day being looked at. */
+  const addTaskHere = useCallback(
+    () =>
+      addTask(
+        space === 'calendario' && calendarDay
+          ? {date: calendarDay}
+          : space === 'hoy'
+            ? {date: today}
+            : undefined,
+      ),
+    [addTask, space, calendarDay, today],
+  );
+  const openDay = useCallback(
+    (date: string) => goTo('calendario', date),
+    [goTo],
+  );
+
+  const actions = useMemo<LogisticsActions>(
+    () => ({
+      canWrite,
+      today,
+      timeZone,
+      openEvent,
+      addEvent,
+      openTask,
+      addTask,
+      openDay,
+    }),
+    [
+      canWrite,
+      today,
+      timeZone,
+      openEvent,
+      addEvent,
+      openTask,
+      addTask,
+      openDay,
+    ],
+  );
+
+  const timelineActive = space === 'calendario' && timeline;
 
   let body: React.ReactNode;
   if (phase === 'login') {
@@ -186,7 +277,9 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
           </>
         }
         canWrite={canWrite}
-        onAdd={addEvent}
+        onAddEvent={addEvent}
+        onAddTask={addTaskHere}
+        swipeLocked={timelineActive}
         onExit={onClose}
       >
         {space === 'hoy' ? (
@@ -196,6 +289,12 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
             canWrite={canWrite}
             onOpenEvent={openEvent}
             onAdd={addEvent}
+          />
+        ) : space === 'calendario' ? (
+          <CalendarScreen
+            day={calendarDay}
+            onDay={onCalendarDay}
+            onTimelineChange={setTimeline}
           />
         ) : (
           <PlaceholderScreen space={space} onGoToday={() => goTo('hoy')} />
@@ -213,14 +312,42 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       role="region"
       aria-label="Gestor logístico"
       data-phase={phase}
+      data-timeline={timelineActive || undefined}
     >
       <ToastHostContext.Provider value={toastHost}>
-        {body}
-        {phase === 'ready' && (
-          <EventSheet mode={sheet} onClose={() => setSheet(null)} />
-        )}
+        <ActionsContext.Provider value={actions}>
+          {body}
+          {phase === 'ready' && (
+            <>
+              {/* Keyed by record (namespaced, they are siblings): opening
+                  another one starts a fresh form. */}
+              <EventSheet
+                key={`event:${
+                  eventSheet?.kind === 'create'
+                    ? 'new'
+                    : (eventSheet?.event.id ?? 'closed')
+                }`}
+                mode={eventSheet}
+                onClose={() => setEventSheet(null)}
+              />
+              <TaskSheet
+                key={`task:${
+                  taskSheet?.kind === 'create'
+                    ? 'new'
+                    : (taskSheet?.task.id ?? 'closed')
+                }`}
+                mode={taskSheet}
+                onClose={() => setTaskSheet(null)}
+              />
+            </>
+          )}
+        </ActionsContext.Provider>
       </ToastHostContext.Provider>
-      <Toaster toasts={toasts} onDismiss={dismissToast} host={toastSlot} />
+      <Toaster
+        toasts={toasts}
+        onDismiss={dismissToast}
+        host={toastSlots[toastSlots.length - 1] ?? null}
+      />
     </div>
   );
 };

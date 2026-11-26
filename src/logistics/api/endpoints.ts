@@ -3,6 +3,7 @@
  */
 import type {
   ActivityEntry,
+  Company,
   CreateEventInput,
   HealthResponse,
   ListResponse,
@@ -11,6 +12,8 @@ import type {
   LoginUserOption,
   LogisticsEvent,
   MeResponse,
+  Task,
+  TaskInput,
   UpdateEventInput,
   Venue,
 } from '../../../shared/logistics/contracts.ts';
@@ -49,6 +52,31 @@ export const api = {
     apiRequest<ListResponse<Venue>>(
       'GET',
       `/organizations/${enc(orgId)}/venues`,
+      {token},
+    ),
+
+  tasks: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Task>>(
+      'GET',
+      `/organizations/${enc(orgId)}/tasks`,
+      {token},
+    ),
+
+  createTask: (token: string, body: TaskInput) =>
+    apiRequest<Task>('POST', '/tasks', {token, body}),
+
+  updateTask: (token: string, id: string, body: TaskInput) =>
+    apiRequest<Task>('PATCH', `/tasks/${enc(id)}`, {token, body}),
+
+  deleteTask: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/tasks/${enc(id)}?version=${version}`, {
+      token,
+    }),
+
+  companies: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Company>>(
+      'GET',
+      `/organizations/${enc(orgId)}/companies`,
       {token},
     ),
 

@@ -1,16 +1,24 @@
 /**
  * Pilot seed: the organization, the five pilot users and one fictitious demo
- * event. Idempotent: running it again creates only what is missing and keeps
+ * event with its demo tasks. Idempotent: running it again creates only what is missing and keeps
  * existing passwords unless `resetPasswords` is set. Passwords are generated
  * here and returned once; they are never stored in clear or committed.
  */
 import type {Db, Queryable} from '../db/db.ts';
+import {toIso} from '../db/db.ts';
 import {appendActivity} from '../activity/service.ts';
 import {generatePassword, hashPassword} from '../auth/password.ts';
 import {deleteUserSessions} from '../auth/sessions.ts';
+import {findOrCreateCompany} from '../companies/service.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
 import {slotToInstants} from '../../../shared/logistics/time.ts';
-import type {Organization, Role} from '../../../shared/logistics/contracts.ts';
+import type {
+  DataSource,
+  Organization,
+  Role,
+  TaskKind,
+  TaskStatus,
+} from '../../../shared/logistics/contracts.ts';
 
 export const PILOT_ORGANIZATION = {
   name: 'Ayuntamiento de San Cristóbal de La Laguna',
@@ -38,6 +46,120 @@ export const DEMO_EVENT = {
     'Evento ficticio de demostración. Elimínalo con «Borrar datos de demostración» antes de la jornada real.',
 };
 
+export const DEMO_COMPANY = 'Escenarios Demo';
+
+export interface DemoTask {
+  /** Local key to wire dependencies; not stored. */
+  key: string;
+  title: string;
+  kind: TaskKind;
+  status: TaskStatus;
+  venueName: string | null;
+  companyName: string | null;
+  startTime: string;
+  endTime: string;
+  heavyLoad: boolean | null;
+  dependsOn: string[];
+  source: DataSource | null;
+  notes: string | null;
+}
+
+/**
+ * The demo event's day (2 Dec 2026, Canary time), built to show every kind of
+ * calendar warning: a deliberate venue overlap (lighting during the stage
+ * assembly), heavy loads (subsoil reminder), a delivery whose load is still
+ * unknown, and a transport while the event is on (routes A/B/C reminder).
+ * Listed so that predecessors come first.
+ */
+export const DEMO_TASKS: DemoTask[] = [
+  {
+    key: 'fences',
+    title: 'Entrega de vallas',
+    kind: 'delivery',
+    status: 'confirmed',
+    venueName: DEMO_EVENT.venueName,
+    companyName: null,
+    startTime: '08:00',
+    endTime: '08:45',
+    heavyLoad: null,
+    dependsOn: [],
+    source: 'reported',
+    notes:
+      'Dato ficticio. Peso de las bases de las vallas pendiente de verificar.',
+  },
+  {
+    key: 'stage',
+    title: 'Montaje del escenario',
+    kind: 'assembly',
+    status: 'planned',
+    venueName: DEMO_EVENT.venueName,
+    companyName: DEMO_COMPANY,
+    startTime: '09:00',
+    endTime: '12:00',
+    heavyLoad: true,
+    dependsOn: ['fences'],
+    source: null,
+    notes: null,
+  },
+  {
+    key: 'generator',
+    title: 'Traslado del generador',
+    kind: 'transport',
+    status: 'planned',
+    venueName: 'Almacén municipal',
+    companyName: null,
+    startTime: '10:00',
+    endTime: '10:45',
+    heavyLoad: true,
+    dependsOn: [],
+    source: null,
+    notes: 'Dato ficticio. Del almacén a la plaza con el evento ya en marcha.',
+  },
+  {
+    key: 'lights',
+    title: 'Instalación de iluminación',
+    kind: 'assembly',
+    status: 'planned',
+    venueName: DEMO_EVENT.venueName,
+    companyName: null,
+    startTime: '11:00',
+    endTime: '12:00',
+    heavyLoad: false,
+    dependsOn: [],
+    source: null,
+    notes:
+      'Dato ficticio. Coincide a propósito con el montaje del escenario para mostrar el aviso de solape.',
+  },
+  {
+    key: 'sound',
+    title: 'Prueba de sonido',
+    kind: 'activity',
+    status: 'planned',
+    venueName: DEMO_EVENT.venueName,
+    companyName: DEMO_COMPANY,
+    startTime: '12:00',
+    endTime: '13:00',
+    heavyLoad: false,
+    dependsOn: ['stage'],
+    source: null,
+    notes: null,
+  },
+  {
+    key: 'dismantle',
+    title: 'Desmontaje del escenario',
+    kind: 'dismantling',
+    status: 'planned',
+    venueName: DEMO_EVENT.venueName,
+    companyName: DEMO_COMPANY,
+    startTime: '14:00',
+    endTime: '16:00',
+    heavyLoad: true,
+    dependsOn: ['sound'],
+    source: null,
+    notes: null,
+  },
+];
+
 export interface SeededUser {
   displayName: string;
   role: Role;
@@ -51,6 +173,13 @@ export interface SeedResult {
   organizationCreated: boolean;
   users: SeededUser[];
   demoEventCreated: boolean;
+  /** Demo tasks created in this run (0 when they already existed). */
+  demoTasksCreated: number;
+  /**
+   * When the organization removed its demo data (ISO instant); the seed then
+   * leaves the demo alone. Null when the demo was never removed.
+   */
+  demoRemovedAt: string | null;
 }
 
 export interface SeedOptions {
@@ -165,11 +294,40 @@ export async function seed(
 
     const systemId = await ensureSystemUser(tx, now);
 
+    // Once the team removed the demo (API or db:clear-demo), it never comes
+    // back, whatever else this run does (e.g. --reset-passwords).
+    const demoRemovedAt =
+      (
+        await tx.query<{demo_removed_at: unknown}>(
+          'SELECT demo_removed_at FROM organizations WHERE id = $1',
+          [org.id],
+        )
+      )[0]?.demo_removed_at ?? null;
+    if (demoRemovedAt !== null) {
+      return {
+        organization: org,
+        organizationCreated,
+        users,
+        demoEventCreated: false,
+        demoTasksCreated: 0,
+        demoRemovedAt: toIso(demoRemovedAt),
+      };
+    }
+
     const hasDemo = await tx.query(
       'SELECT 1 FROM events WHERE organization_id = $1 AND is_demo LIMIT 1',
       [org.id],
     );
     let demoEventCreated = false;
+    let demoEventId: string | null =
+      (
+        await tx.query<{id: string}>(
+          `SELECT id FROM events
+            WHERE organization_id = $1 AND is_demo AND lower(name) = lower($2)
+            ORDER BY created_at, id LIMIT 1`,
+          [org.id, DEMO_EVENT.name],
+        )
+      )[0]?.id ?? null;
     if (hasDemo.length === 0) {
       const venue = await findOrCreateVenue(tx, {
         organizationId: org.id,
@@ -218,10 +376,133 @@ export async function seed(
         isDemo: true,
       });
       demoEventCreated = true;
+      demoEventId = event.id;
     }
 
-    return {organization: org, organizationCreated, users, demoEventCreated};
+    // Added in milestone 2: databases seeded before get the demo tasks on the
+    // next run, as long as the demo event is still there. Only once: if the
+    // demo tasks were ever created (their activity survives until the demo
+    // is removed), deleting them one by one does not bring them back.
+    const hasDemoTasks = await tx.query(
+      `SELECT 1 FROM tasks WHERE organization_id = $1 AND is_demo
+       UNION ALL
+       SELECT 1 FROM activity_log
+        WHERE organization_id = $1 AND entity_type = 'task' AND is_demo
+       LIMIT 1`,
+      [org.id],
+    );
+    let demoTasksCreated = 0;
+    if (demoEventId && hasDemoTasks.length === 0) {
+      demoTasksCreated = await seedDemoTasks(tx, {
+        organization: org,
+        eventId: demoEventId,
+        actorId: systemId,
+        now,
+      });
+    }
+
+    return {
+      organization: org,
+      organizationCreated,
+      users,
+      demoEventCreated,
+      demoTasksCreated,
+      demoRemovedAt: null,
+    };
   });
+}
+
+/**
+ * Creates the demo tasks of the demo event (fictitious, `is_demo`), each with
+ * its activity row, and returns how many were created.
+ */
+async function seedDemoTasks(
+  tx: Queryable,
+  args: {
+    organization: Organization;
+    eventId: string;
+    actorId: string;
+    now: Date;
+  },
+): Promise<number> {
+  const {organization: org, actorId, now} = args;
+  const idByKey = new Map<string, string>();
+  for (const t of DEMO_TASKS) {
+    const venue = t.venueName
+      ? await findOrCreateVenue(tx, {
+          organizationId: org.id,
+          name: t.venueName,
+          actorId,
+          now,
+          isDemo: true,
+        })
+      : null;
+    const company = t.companyName
+      ? await findOrCreateCompany(tx, {
+          organizationId: org.id,
+          name: t.companyName,
+          actorId,
+          now,
+          isDemo: true,
+        })
+      : null;
+    const {startsAt, endsAt} = slotToInstants(
+      DEMO_EVENT.date,
+      t.startTime,
+      t.endTime,
+      org.timezone,
+    );
+    const id = (
+      (
+        await tx.query<{id: string}>(
+          `INSERT INTO tasks
+             (organization_id, event_id, venue_id, company_id, title, kind, status,
+              local_date, starts_at, ends_at, timezone, heavy_load, notes, source,
+              verification, is_demo, created_by, created_at, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9::timestamptz,
+                   $10::timestamptz, $11, $12, $13, $14, 'draft', true,
+                   $15, $16::timestamptz, $15, $16::timestamptz)
+           RETURNING id`,
+          [
+            org.id,
+            args.eventId,
+            venue?.id ?? null,
+            company?.id ?? null,
+            t.title,
+            t.kind,
+            t.status,
+            DEMO_EVENT.date,
+            startsAt,
+            endsAt,
+            org.timezone,
+            t.heavyLoad,
+            t.notes,
+            t.source,
+            actorId,
+            now.toISOString(),
+          ],
+        )
+      )[0] as {id: string}
+    ).id;
+    idByKey.set(t.key, id);
+    for (const dep of t.dependsOn) {
+      await tx.query(
+        'INSERT INTO task_dependencies (task_id, depends_on_id) VALUES ($1, $2)',
+        [id, idByKey.get(dep)],
+      );
+    }
+    await appendActivity(tx, {
+      organizationId: org.id,
+      userId: actorId,
+      entityType: 'task',
+      entityId: id,
+      entityLabel: t.title,
+      action: 'create',
+      at: now,
+      isDemo: true,
+    });
+  }
+  return DEMO_TASKS.length;
 }
 
 async function ensureSystemUser(tx: Queryable, now: Date): Promise<string> {

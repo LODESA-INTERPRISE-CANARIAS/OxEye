@@ -1,0 +1,792 @@
+/**
+ * Planning pieces shared by «Hoy», the calendar and the sheets: the add menu,
+ * task rows, warnings, the task form (kind tiles, switch, dependencies) and
+ * sub-sections inside sheets. Colours come from the tokens only.
+ */
+
+/* ============================================================ add menu */
+.lx .lx-addmenu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--lx-radius-lg);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  box-shadow: var(--lx-shadow-float);
+  font-family: var(--lx-font);
+}
+
+/* Without the Popover API (iOS Safari 16, older Samsung Internet): a plain
+   fixed layer above the tab bar and the floating button, below the toasts. */
+.lx .lx-addmenu--fallback {
+  z-index: 35;
+}
+
+.lx .lx-addmenu[hidden] {
+  display: none;
+}
+
+/* Belt and braces: a `popover` that the browser ignores must not show. */
+@supports not selector(:popover-open) {
+  .lx .lx-addmenu[popover] {
+    display: none;
+  }
+}
+
+.lx .lx-addmenu__title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-addmenu__item {
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border-radius: var(--lx-radius);
+  text-align: left;
+}
+
+.lx .lx-addmenu__item:focus-visible {
+  outline-offset: -3px;
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-addmenu__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+}
+
+.lx .lx-addmenu__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.lx .lx-addmenu__text strong {
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-addmenu__text span {
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+/* ============================================================ counts, chips */
+.lx .lx-count--danger {
+  background: var(--lx-danger);
+  border-color: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-venuechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 8px 1px 6px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-2);
+  border: 1px solid var(--lx-line);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lx-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lx .lx-venuechip--none {
+  border-style: dotted;
+  border-color: var(--lx-control-border);
+  color: var(--lx-muted);
+  font-weight: 500;
+}
+
+.lx .lx-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-heavy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.lx .lx-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* ============================================================ task rows */
+.lx .lx-tasklist {
+  display: grid;
+  gap: 6px;
+}
+
+.lx .lx-tasklist__label {
+  margin: 14px 0 6px;
+}
+
+.lx .lx-taskrow {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  --lx-btn-border-hover: var(--lx-line-strong);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(92px, auto) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 12px 8px 14px;
+  border-radius: var(--lx-radius);
+  text-align: left;
+}
+
+/* Left edge: the certainty grammar in one stroke. */
+.lx .lx-taskrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--lx-accent);
+}
+
+.lx .lx-taskrow--planned::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lx-accent);
+}
+
+.lx .lx-taskrow--delayed::before {
+  background: var(--lx-danger);
+}
+
+.lx .lx-taskrow--cancelled::before {
+  background: var(--lx-line-strong);
+}
+
+.lx .lx-taskrow--cancelled .lx-taskrow__title {
+  text-decoration: line-through;
+  color: var(--lx-muted);
+}
+
+.lx .lx-taskrow--done .lx-taskrow__title,
+.lx .lx-taskrow--past .lx-taskrow__title {
+  color: var(--lx-muted);
+}
+
+.lx .lx-taskrow--now {
+  --lx-btn-bg: var(--lx-accent-soft);
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  border-width: 1.5px;
+}
+
+.lx .lx-taskrow--next {
+  --lx-btn-border: var(--lx-accent);
+}
+
+.lx .lx-taskrow--conflict {
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-border-hover: var(--lx-danger);
+  border-width: 1.5px;
+}
+
+.lx .lx-taskrow__time {
+  display: grid;
+  gap: 1px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-taskrow__flag {
+  justify-self: start;
+  padding: 0 7px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lx .lx-taskrow--next .lx-taskrow__flag {
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  box-shadow: inset 0 0 0 1.5px var(--lx-accent);
+}
+
+.lx .lx-taskrow__date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-muted);
+}
+
+.lx .lx-taskrow__kind {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--lx-surface-2);
+  color: var(--lx-heading);
+}
+
+.lx .lx-taskrow__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lx .lx-taskrow__title {
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.lx .lx-taskrow__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-taskrow__pending {
+  font-size: 12.5px;
+}
+
+.lx .lx-taskrow__end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-taskrow__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid var(--lx-control-border);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-taskrow__warn.is-conflict {
+  background: var(--lx-danger);
+  border-color: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+/* ============================================================ warnings */
+.lx .lx-warnings {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-warning__row {
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  text-align: left;
+}
+
+.lx .lx-warning--conflict .lx-warning__row {
+  border: 1.5px solid var(--lx-danger);
+  background: var(--lx-danger-soft);
+}
+
+.lx button.lx-warning__row > .lx-icon {
+  align-self: center;
+  color: var(--lx-muted);
+}
+
+.lx .lx-warning__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--lx-surface-2);
+  color: var(--lx-heading);
+}
+
+.lx .lx-warning--conflict .lx-warning__icon {
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-warning__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.lx .lx-warning__text strong {
+  color: var(--lx-heading);
+  font-weight: 600;
+}
+
+.lx .lx-warning__kind {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-warning--conflict .lx-warning__kind {
+  color: var(--lx-danger);
+}
+
+.lx .lx-warnings__none {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-warnings__more {
+  margin-top: 8px;
+}
+
+/* ============================================================ «Hoy» additions */
+.lx .lx-todaytasks .lx-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lx .lx-warnings-card .lx-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lx .lx-todaytasks__none {
+  padding: 4px 2px 8px;
+}
+
+.lx .lx-todaytasks__past {
+  margin-top: 12px;
+}
+
+.lx .lx-todaytasks__add {
+  margin-top: 14px;
+}
+
+.lx .lx-section__more {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+/* ============================================================ sub-sections inside sheets */
+.lx .lx-subsection {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-subsection__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lx .lx-subsection__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 19px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-sheet .lx-subsection + .lx-provenance {
+  margin-top: 0;
+}
+
+/* ============================================================ form additions */
+.lx .lx-form__row--2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.lx .lx-slot {
+  display: grid;
+  gap: 12px;
+}
+
+.lx .lx-slot .lx-form__note {
+  margin-top: 0;
+}
+
+.lx .lx-slot__multi {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lx .lx-slot__enddate {
+  max-width: 260px;
+}
+
+/* Switch on a native checkbox */
+.lx .lx-switch {
+  position: relative;
+  display: inline-flex;
+}
+
+.lx .lx-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.lx .lx-switch label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lx-target);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+  cursor: pointer;
+  user-select: none;
+}
+
+.lx .lx-switch__track {
+  position: relative;
+  width: 42px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid var(--lx-control-border);
+  background: var(--lx-surface-2);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.lx .lx-switch__track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--lx-muted);
+  transition: transform 0.15s ease;
+}
+
+.lx .lx-switch input:checked + label .lx-switch__track {
+  background: var(--lx-accent);
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-switch input:checked + label .lx-switch__track::after {
+  transform: translateX(16px);
+  background: var(--lx-on-accent);
+}
+
+.lx .lx-switch input:focus-visible + label .lx-switch__track {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+/* Segmented options with icons; tiles for task kinds */
+.lx .lx-segmented__option label {
+  gap: 7px;
+}
+
+.lx .lx-segmented--tiles .lx-segmented__options {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lx .lx-segmented--tiles .lx-segmented__option {
+  display: grid;
+}
+
+.lx .lx-segmented--tiles .lx-segmented__option label {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  min-height: 70px;
+  padding: 8px 4px;
+  border-radius: var(--lx-radius);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Heavy-load question */
+.lx .lx-heavyq {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-heavyq__note {
+  margin-top: 0;
+}
+
+/* Dependencies */
+.lx .lx-deps {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-deps__list {
+  display: grid;
+  gap: 4px;
+  max-height: 290px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-deps__list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  padding: 4px 8px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+}
+
+.lx .lx-deps__list input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--lx-accent);
+}
+
+.lx .lx-deps__list label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  min-height: 44px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.lx .lx-deps__list label > .lx-icon {
+  grid-row: span 2;
+  color: var(--lx-muted);
+}
+
+.lx .lx-deps__title {
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-deps__when,
+.lx .lx-deps__venue {
+  grid-column: 2;
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-deps__list li.is-blocked label {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.lx .lx-deps__why {
+  grid-column: 2;
+  padding-bottom: 6px;
+  font-size: 12.5px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-deps__empty {
+  font-size: 14px;
+}
+
+/* A predecessor deleted meanwhile: explained, removable, never sent. */
+.lx .lx-deps__list li.lx-deps__gone {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 52px;
+  border: 1px dashed var(--lx-muted);
+  background: transparent;
+}
+
+.lx .lx-deps__gone > .lx-icon {
+  color: var(--lx-muted);
+}
+
+.lx .lx-deps__gone-text {
+  display: grid;
+  min-width: 0;
+}
+
+.lx .lx-deps__gone .lx-deps__title {
+  color: var(--lx-ink);
+}
+
+.lx .lx-deps__gone .lx-deps__when {
+  grid-column: auto;
+}
+
+/* Delete and its confirmation */
+.lx .lx-btn--danger-text {
+  color: var(--lx-danger);
+}
+
+.lx .lx-confirm-strip__detail {
+  margin-top: 2px;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--lx-ink);
+}
+
+/* Pending chips (undated tasks) */
+.lx .lx-chiplist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lx .lx-pendingchip {
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-control-border);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-style: dotted;
+  border-radius: var(--lx-pill);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-pendingchip .lx-chip__dot {
+  color: var(--lx-muted);
+}
+
+@media (pointer: coarse) {
+  .lx .lx-pendingchip {
+    min-height: var(--lx-target);
+  }
+}
+
+/* ============================================================ responsive */
+@media (max-width: 899px) {
+  .lx .lx-form__row--2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lx .lx-segmented--tiles .lx-segmented__options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .lx .lx-slot__enddate {
+    max-width: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .lx .lx-taskrow {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'kind main'
+      'kind time'
+      'kind end';
+    align-items: start;
+    gap: 4px 12px;
+    padding: 10px 12px 10px 14px;
+  }
+
+  .lx .lx-taskrow__kind {
+    grid-area: kind;
+  }
+
+  .lx .lx-taskrow__main {
+    grid-area: main;
+  }
+
+  .lx .lx-taskrow__time {
+    grid-area: time;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+  }
+
+  .lx .lx-taskrow__end {
+    grid-area: end;
+    flex-wrap: wrap;
+  }
+}

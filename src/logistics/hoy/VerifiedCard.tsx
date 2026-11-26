@@ -1,20 +1,30 @@
 /**
- * «Información verificada»: share of events validated against their source,
- * plus an actionable list of what is still missing.
+ * «Información verificada»: share of events and tasks validated against their
+ * source, plus an actionable list of what is still missing.
  */
 import React, {useMemo} from 'react';
-import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
-import {MISSING_LABEL, verificationSummary} from '../lib/events';
+import type {
+  LogisticsEvent,
+  Task,
+} from '../../../shared/logistics/contracts.ts';
+import {useActions} from '../common/actions';
+import {verificationSummary} from '../lib/events';
+import {TASK_KIND_ICON} from '../lib/tasks';
 import {Card, EmptyState, Gauge, HelpTip, Icon} from '../ui';
 
 const MAX_ROWS = 4;
 
 export const VerifiedCard: React.FC<{
   events: LogisticsEvent[];
+  tasks: Task[];
   canWrite: boolean;
   onOpenEvent: (event: LogisticsEvent) => void;
-}> = ({events, canWrite, onOpenEvent}) => {
-  const summary = useMemo(() => verificationSummary(events), [events]);
+}> = ({events, tasks, canWrite, onOpenEvent}) => {
+  const {openTask} = useActions();
+  const summary = useMemo(
+    () => verificationSummary(events, tasks),
+    [events, tasks],
+  );
   const pending = summary.total - summary.validated;
   const rows = summary.incomplete.slice(0, MAX_ROWS);
   const more = summary.incomplete.length - rows.length;
@@ -26,15 +36,15 @@ export const VerifiedCard: React.FC<{
       className="lx-verified"
       actions={
         <HelpTip label="información verificada">
-          Porcentaje de eventos marcados como «Validado», es decir, comprobados
-          con su fuente. Lo demás es borrador o está por verificar. Es una ayuda
-          para saber qué falta, no una certificación.
+          Porcentaje de eventos y tareas marcados como «Validado», es decir,
+          comprobados con su fuente. Lo demás es borrador o está por verificar.
+          Es una ayuda para saber qué falta, no una certificación.
         </HelpTip>
       }
     >
       {summary.total === 0 ? (
         <EmptyState compact icon="check" title="Aún no hay nada que comprobar">
-          Cuando registréis eventos, aquí verás cuánta información está
+          Cuando registréis eventos y tareas, aquí verás cuánta información está
           comprobada y qué falta.
         </EmptyState>
       ) : (
@@ -43,7 +53,7 @@ export const VerifiedCard: React.FC<{
             <Gauge
               value={summary.percent}
               caption="validado"
-              label={`${summary.percent} % de los eventos validados`}
+              label={`${summary.percent} % de los eventos y tareas validados`}
             />
             <dl className="lx-verified__legend">
               <div>
@@ -76,21 +86,34 @@ export const VerifiedCard: React.FC<{
               </p>
             ) : (
               <ul className="lx-missing">
-                {rows.map(({event, missing}) => (
-                  <li key={event.id}>
+                {rows.map(row => (
+                  <li key={`${row.kind}:${row.id}`}>
                     <button
                       type="button"
                       className="lx-missing__row"
-                      onClick={() => onOpenEvent(event)}
-                      aria-label={`${canWrite ? 'Completar' : 'Ver'} ${event.name}: falta ${missing
-                        .map(m => MISSING_LABEL[m])
-                        .join(', ')}`}
+                      onClick={() =>
+                        row.kind === 'event'
+                          ? onOpenEvent(row.event)
+                          : openTask(row.task)
+                      }
+                      aria-label={`${canWrite ? 'Completar' : 'Ver'} ${
+                        row.kind === 'event' ? 'el evento' : 'la tarea'
+                      } ${row.name}: falta ${row.missing.join(', ')}`}
                     >
-                      <span className="lx-missing__name">{event.name}</span>
+                      <Icon
+                        name={
+                          row.kind === 'event'
+                            ? 'calendar'
+                            : TASK_KIND_ICON[row.task.kind]
+                        }
+                        size={18}
+                        className="lx-missing__kind"
+                      />
+                      <span className="lx-missing__name">{row.name}</span>
                       <span className="lx-missing__tags">
-                        {missing.map(m => (
+                        {row.missing.map(m => (
                           <span key={m} className="lx-missing__tag">
-                            {MISSING_LABEL[m]}
+                            {m}
                           </span>
                         ))}
                       </span>
@@ -102,8 +125,8 @@ export const VerifiedCard: React.FC<{
             )}
             {more > 0 && (
               <p className="lx-muted lx-num">
-                y {more} {more === 1 ? 'evento más' : 'eventos más'} con datos
-                pendientes
+                y {more} {more === 1 ? 'registro más' : 'registros más'} con
+                datos pendientes
               </p>
             )}
           </div>

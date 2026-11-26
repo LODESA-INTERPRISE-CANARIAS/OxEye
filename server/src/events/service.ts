@@ -31,6 +31,7 @@ interface EventRow extends MetaRow {
   venue_id: string | null;
   venue_name: string | null;
   local_date: string | null;
+  end_date: string | null;
   starts_at: unknown;
   ends_at: unknown;
   timezone: string;
@@ -41,7 +42,7 @@ interface EventRow extends MetaRow {
 const SELECT_EVENT = `
   SELECT ${metaColumns('e')}, e.organization_id, e.name, e.venue_id,
          v.name AS venue_name, e.local_date::text AS local_date,
-         e.starts_at, e.ends_at, e.timezone, e.status, e.notes
+         e.end_date::text AS end_date, e.starts_at, e.ends_at, e.timezone, e.status, e.notes
     FROM events e
     LEFT JOIN venues v ON v.id = e.venue_id
     ${authorJoins('e')}`;
@@ -56,6 +57,7 @@ function toEvent(row: EventRow): LogisticsEvent {
         ? {id: row.venue_id, name: row.venue_name}
         : null,
     date: row.local_date,
+    endDate: row.end_date,
     startsAt: toIsoOrNull(row.starts_at),
     endsAt: toIsoOrNull(row.ends_at),
     timezone: row.timezone,
@@ -67,6 +69,7 @@ function toEvent(row: EventRow): LogisticsEvent {
 function storedSlot(row: EventRow): StoredSlot {
   return {
     localDate: row.local_date,
+    endDate: row.end_date,
     startsAt: toIsoOrNull(row.starts_at),
     endsAt: toIsoOrNull(row.ends_at),
   };
@@ -139,17 +142,18 @@ export async function createEvent(
 
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO events
-         (organization_id, name, venue_id, local_date, starts_at, ends_at, timezone,
-          status, notes, source, verification,
+         (organization_id, name, venue_id, local_date, end_date, starts_at, ends_at,
+          timezone, status, notes, source, verification,
           created_by, created_at, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4::date, $5::timestamptz, $6::timestamptz, $7,
-               $8, $9, $10, $11, $12, $13::timestamptz, $12, $13::timestamptz)
+       VALUES ($1, $2, $3, $4::date, $5::date, $6::timestamptz, $7::timestamptz,
+               $8, $9, $10, $11, $12, $13, $14::timestamptz, $13, $14::timestamptz)
        RETURNING id`,
       [
         org.id,
         input.name,
         venue?.id ?? null,
         slot.localDate,
+        slot.endDate,
         slot.startsAt,
         slot.endsAt,
         org.timezone,
@@ -242,10 +246,10 @@ export async function updateEvent(
 
     const updated = await tx.query<{id: string}>(
       `UPDATE events
-          SET name = $3, venue_id = $4, local_date = $5::date,
-              starts_at = $6::timestamptz, ends_at = $7::timestamptz,
-              status = $8, notes = $9, source = $10, verification = $11,
-              version = version + 1, updated_by = $12, updated_at = $13::timestamptz
+          SET name = $3, venue_id = $4, local_date = $5::date, end_date = $6::date,
+              starts_at = $7::timestamptz, ends_at = $8::timestamptz,
+              status = $9, notes = $10, source = $11, verification = $12,
+              version = version + 1, updated_by = $13, updated_at = $14::timestamptz
         WHERE id = $1 AND version = $2
         RETURNING id`,
       [
@@ -254,6 +258,7 @@ export async function updateEvent(
         after.name,
         after.venueId,
         after.localDate,
+        after.endDate,
         after.startsAt,
         after.endsAt,
         after.status,

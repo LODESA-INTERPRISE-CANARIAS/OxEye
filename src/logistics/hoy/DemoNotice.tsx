@@ -50,8 +50,8 @@ export const DemoNotice: React.FC<{count: number; canWrite: boolean}> = ({
           <h2 id="lx-demo-title">Hay datos de demostración</h2>
           <p>
             {count === 1
-              ? 'Un evento ficticio, marcado «Demo», sirve para probar la aplicación.'
-              : `${count} eventos ficticios, marcados «Demo», sirven para probar la aplicación.`}{' '}
+              ? 'Un registro ficticio, marcado «Demo», sirve para probar la aplicación.'
+              : `${count} registros ficticios (eventos y tareas), marcados «Demo», sirven para probar la aplicación.`}{' '}
             {canWrite
               ? 'Quítalos antes de registrar la jornada real.'
               : 'Solo el equipo puede quitarlos.'}

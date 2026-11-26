@@ -3,6 +3,7 @@
  * captured data is validated. Drives «Pendiente de verificar», the
  * «Información verificada» gauge and the day-close report.
  */
+import {LOAD_BEARING_KINDS} from './conflicts.ts';
 import type {
   Company,
   Contact,
@@ -23,14 +24,6 @@ export function missingForEvent(
   if (!e.endsAt) out.push('hora de fin');
   return out;
 }
-
-/** Task kinds that may put heavy material on the venue. */
-const LOAD_BEARING_KINDS: ReadonlySet<Task['kind']> = new Set([
-  'assembly',
-  'delivery',
-  'transport',
-  'dismantling',
-]);
 
 export function missingForTask(
   t: Pick<

@@ -1,6 +1,7 @@
 /**
  * `npm --prefix server run db:seed [-- --reset-passwords]`: creates the pilot
- * organization, users and demo event. New passwords are printed once.
+ * organization, users and demo event and tasks (never again once the demo was
+ * removed). New passwords are printed once.
  */
 import {pendingMigrations} from '../db/migrate.ts';
 import {seed} from '../seed/seed.ts';
@@ -43,9 +44,25 @@ await runCli(async db => {
     );
   }
   console.log('');
+  if (result.demoRemovedAt) {
+    const when = new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: result.organization.timezone,
+    }).format(new Date(result.demoRemovedAt));
+    console.log(
+      `Datos de demostración: se borraron el ${when}; no se vuelven a crear.`,
+    );
+    return;
+  }
   console.log(
     result.demoEventCreated
       ? 'Evento de demostración creado: «Navidad en la Plaza del Cristo» (2 dic 2026, 09:00–14:00).'
       : 'Evento de demostración: ya existía, no se ha tocado.',
+  );
+  console.log(
+    result.demoTasksCreated > 0
+      ? `Tareas de demostración creadas: ${result.demoTasksCreated} (montaje, entregas y desmontaje del 2 dic).`
+      : 'Tareas de demostración: ya existían o no hay evento de demostración; no se ha tocado nada.',
   );
 });

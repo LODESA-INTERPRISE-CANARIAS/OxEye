@@ -127,8 +127,9 @@ export function slackMinutes(items: ScheduleItem[], id: Uuid): number | null {
   let latestEnd = -Infinity;
   for (const p of it.dependsOn) {
     const pred = byId.get(p);
-    if (pred && !pred.cancelled && !Number.isNaN(toMs(pred.endsAt)))
-      {latestEnd = Math.max(latestEnd, toMs(pred.endsAt));}
+    if (pred && !pred.cancelled && !Number.isNaN(toMs(pred.endsAt))) {
+      latestEnd = Math.max(latestEnd, toMs(pred.endsAt));
+    }
   }
   if (latestEnd === -Infinity) return null;
   return Math.round((toMs(it.startsAt) - latestEnd) / MIN);
@@ -178,8 +179,9 @@ export function simulateDelay(
     newOverlaps: [],
     unknown: [],
   };
-  if (!root || !Number.isFinite(delayMinutes) || delayMinutes <= 0)
-    {return empty;}
+  if (!root || !Number.isFinite(delayMinutes) || delayMinutes <= 0) {
+    return empty;
+  }
   if (!scheduled(root)) return {...empty, unknown: [rootId]};
 
   const newStart = new Map<Uuid, number>();

@@ -7,6 +7,7 @@
  */
 import React from 'react';
 import {HelpTip} from './HelpTip';
+import {Icon, type IconName} from './icons';
 
 export interface FieldProps {
   id: string;
@@ -124,6 +125,8 @@ export interface SegmentedOption<T extends string> {
   label: string;
   /** Short explanation shown as the option's tooltip. */
   title?: string;
+  /** Optional icon shown before (or, with `tiles`, above) the label. */
+  icon?: IconName;
 }
 
 export interface SegmentedProps<T extends string> {
@@ -138,6 +141,8 @@ export interface SegmentedProps<T extends string> {
   disabled?: boolean;
   help?: React.ReactNode;
   id?: string;
+  /** Large tiles with the icon above the label (e.g. task kinds). */
+  tiles?: boolean;
 }
 
 export function Segmented<T extends string>({
@@ -151,12 +156,22 @@ export function Segmented<T extends string>({
   disabled,
   help,
   id,
+  tiles = false,
 }: SegmentedProps<T>) {
-  const all: {value: T | null; label: string; title?: string}[] = allowNone
-    ? [{value: null, label: noneLabel}, ...options]
-    : options;
+  const all: {
+    value: T | null;
+    label: string;
+    title?: string;
+    icon?: IconName;
+  }[] = allowNone ? [{value: null, label: noneLabel}, ...options] : options;
   return (
-    <fieldset className="lx-segmented" id={id} disabled={disabled}>
+    <fieldset
+      className={['lx-segmented', tiles ? 'lx-segmented--tiles' : '']
+        .filter(Boolean)
+        .join(' ')}
+      id={id}
+      disabled={disabled}
+    >
       <legend className="lx-field__label lx-segmented__legend">
         {legend}
         {help && (
@@ -179,7 +194,8 @@ export function Segmented<T extends string>({
                 onChange={() => onChange(opt.value)}
               />
               <label htmlFor={optId} title={opt.title}>
-                {opt.label}
+                {opt.icon && <Icon name={opt.icon} size={tiles ? 24 : 18} />}
+                <span>{opt.label}</span>
               </label>
             </span>
           );

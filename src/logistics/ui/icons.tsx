@@ -32,7 +32,21 @@ export type IconName =
   | 'user'
   | 'activity'
   | 'menu'
-  | 'flask';
+  | 'flask'
+  | 'minus'
+  | 'task'
+  | 'assembly'
+  | 'dismantling'
+  | 'activityKind'
+  | 'transport'
+  | 'delivery'
+  | 'other'
+  | 'link'
+  | 'weight'
+  | 'list'
+  | 'month'
+  | 'columns'
+  | 'bell';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   today: (
@@ -163,6 +177,83 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M9.5 3.5h5M10.5 3.5v5.5L5 19a1.5 1.5 0 0 0 1.3 2.2h11.4A1.5 1.5 0 0 0 19 19l-5.5-10V3.5" />
       <path d="M7.5 15h9" />
+    </>
+  ),
+  minus: <path d="M5 12h14" />,
+  task: (
+    <>
+      <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+      <path d="m7.5 9 1.5 1.5L11.5 8M7.5 15l1.5 1.5 2.5-2.5M14 9.5h3M14 15.5h3" />
+    </>
+  ),
+  // Scaffold with an arrow up: putting a structure up.
+  assembly: (
+    <>
+      <path d="M4.5 21V10M12.5 21V10M4.5 13.5h8M4.5 17.5h8M2.5 21h12" />
+      <path d="M18.5 15V4M15.5 7l3-3 3 3" />
+    </>
+  ),
+  // Same scaffold, arrow down: taking it apart.
+  dismantling: (
+    <>
+      <path d="M4.5 21V10M12.5 21V10M4.5 13.5h8M4.5 17.5h8M2.5 21h12" />
+      <path d="M18.5 4v11M15.5 12l3 3 3-3" />
+    </>
+  ),
+  activityKind: (
+    <path d="M12 3.5 14.4 8.7l5.6.7-4.2 3.8 1.1 5.6L12 16l-4.9 2.8 1.1-5.6L4 9.4l5.6-.7Z" />
+  ),
+  transport: (
+    <>
+      <path d="M2.5 6.5h11v9.5h-11Z" />
+      <path d="M13.5 10h4l3.5 3.5V16h-7.5" />
+      <circle cx="6.5" cy="17.5" r="1.8" />
+      <circle cx="17" cy="17.5" r="1.8" />
+    </>
+  ),
+  // A box with an arrow going into it.
+  delivery: (
+    <>
+      <path d="M4 10.5 12 7l8 3.5V18l-8 3.5L4 18Z" />
+      <path d="M4 10.5 12 14l8-3.5M12 14v7.5" />
+      <path d="M12 1.5v3.8M10 3.5l2 2 2-2" />
+    </>
+  ),
+  other: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M8 12h.01M12 12h.01M16 12h.01" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+      <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+    </>
+  ),
+  weight: (
+    <>
+      <path d="M9 8a3 3 0 1 1 6 0" />
+      <path d="M6.5 8h11l2.5 12.5H4Z" />
+    </>
+  ),
+  list: <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
+  month: (
+    <>
+      <rect x="3.5" y="4" width="17" height="16.5" rx="3" />
+      <path d="M3.5 9.5h17M3.5 15h17M9.2 9.5v11M14.8 9.5v11" />
+    </>
+  ),
+  columns: (
+    <>
+      <rect x="3.5" y="4" width="17" height="16.5" rx="3" />
+      <path d="M9.2 4v16.5M14.8 4v16.5M3.5 8.5h17" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15Z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
     </>
   ),
 };

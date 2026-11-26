@@ -1,12 +1,20 @@
 import {expect, type Page, type Route} from '@playwright/test';
-import {slotToInstants} from '../../../shared/logistics/time.ts';
+import {slotToInstants, utcToLocal} from '../../../shared/logistics/time.ts';
 
 /**
  * Stateful in-memory mock of the Logistics Manager API for behavioural E2E
- * tests (milestone 1). It follows the route table and error bodies of
- * `shared/logistics/contracts.ts` and `server/src`, keeps the event list so
- * refetches after a write see the change, and records every request so tests
- * can assert what the UI actually sent.
+ * tests (milestones 1 and 2). It follows the route table and error bodies of
+ * `shared/logistics/contracts.ts` and `server/src`, keeps events, tasks,
+ * venues and companies so refetches after a write see the change, and
+ * records every request so tests can assert what the UI actually sent.
+ *
+ * Milestone 2 rules mirrored from `server/src/tasks`: only the title is
+ * required; venue and company are found or created by name
+ * (case-insensitive); times need a date and `endDate` must be after `date`;
+ * `dependsOn` rejects unknown ids, self references and cycles (400
+ * VALIDATION `fields.dependsOn`); PATCH and DELETE check `version` (409
+ * VERSION_CONFLICT with `current`); DELETE needs `?version=` and removes the
+ * task from its dependents' `dependsOn`, bumping their version.
  *
  * Only `/api/*` is intercepted: Vite module URLs such as
  * `/src/logistics/api/client.ts` must reach the dev server.
@@ -42,15 +50,30 @@ export const LOGIN_USERS = [
 
 type Json = Record<string, unknown>;
 
+export interface LocalSlot {
+  date?: string | null;
+  /** Last day of a multi-day record. */
+  endDate?: string | null;
+  start?: string | null;
+  end?: string | null;
+}
+
 /** A contract-shaped event; local slot converted with the shared helper. */
 export function makeEvent(
   id: string,
   name: string,
-  slot: {date?: string | null; start?: string | null; end?: string | null},
+  slot: LocalSlot,
   extra: Json = {},
 ): Json {
   const date = slot.date ?? null;
-  const {startsAt, endsAt} = slotToInstants(date, slot.start, slot.end, TZ);
+  const endDate = slot.endDate ?? null;
+  const {startsAt, endsAt} = slotToInstants(
+    date,
+    slot.start,
+    slot.end,
+    TZ,
+    endDate,
+  );
   const created = new Date(Date.now() - 3 * 3600_000).toISOString();
   return {
     id,
@@ -59,6 +82,7 @@ export function makeEvent(
     name,
     venue: null,
     date,
+    endDate,
     startsAt,
     endsAt,
     timezone: TZ,
@@ -108,10 +132,85 @@ export function defaultEvents(): Json[] {
 export const demoEvent = (): Json =>
   makeEvent('e-demo', 'Cabalgata de demostración', {}, {isDemo: true});
 
+/** A contract-shaped task (milestone 2); same slot rules as events. */
+export function makeTask(
+  id: string,
+  title: string,
+  slot: LocalSlot = {},
+  extra: Json = {},
+): Json {
+  const date = slot.date ?? null;
+  const endDate = slot.endDate ?? null;
+  const {startsAt, endsAt} = slotToInstants(
+    date,
+    slot.start,
+    slot.end,
+    TZ,
+    endDate,
+  );
+  const created = new Date(Date.now() - 3 * 3600_000).toISOString();
+  return {
+    id,
+    version: 1,
+    organizationId: ORG,
+    eventId: null,
+    venue: null,
+    title,
+    kind: 'other',
+    status: 'planned',
+    date,
+    endDate,
+    startsAt,
+    endsAt,
+    timezone: TZ,
+    company: null,
+    contact: null,
+    dependsOn: [],
+    heavyLoad: null,
+    notes: null,
+    source: null,
+    verification: 'draft',
+    isDemo: false,
+    createdBy: elvis,
+    createdAt: created,
+    updatedBy: elvis,
+    updatedAt: created,
+    ...extra,
+  };
+}
+
+/** A contract-shaped company (milestone 2 only lists them by name). */
+export function makeCompany(id: string, name: string, extra: Json = {}): Json {
+  const created = new Date(Date.now() - 3 * 3600_000).toISOString();
+  return {
+    id,
+    version: 1,
+    organizationId: ORG,
+    name,
+    categoryIds: [],
+    phone: null,
+    email: null,
+    website: null,
+    notes: null,
+    mainContactId: null,
+    offerCount: 0,
+    source: null,
+    verification: 'draft',
+    isDemo: false,
+    createdBy: elvis,
+    createdAt: created,
+    updatedBy: elvis,
+    updatedAt: created,
+    ...extra,
+  };
+}
+
 export interface RecordedRequest {
   method: string;
   /** Path without the `/api` prefix and without the query string. */
   path: string;
+  /** Query string including the leading `?`, or '' when there is none. */
+  query: string;
   body: unknown;
   authorization: string | null;
 }
@@ -119,6 +218,9 @@ export interface RecordedRequest {
 export interface MockOptions {
   health?: 'ok' | 'down' | 'database';
   events?: Json[];
+  tasks?: Json[];
+  venues?: {id: string; name: string}[];
+  companies?: Json[];
 }
 
 export interface MockApi {
@@ -130,17 +232,66 @@ export interface MockApi {
   writesOffline: boolean;
   /** Server-side records; tests may edit them to simulate another user. */
   events: Json[];
+  tasks: Json[];
+  venues: {id: string; name: string}[];
+  companies: Json[];
   requests: RecordedRequest[];
   /** Requests matching a method and a path (string or pattern). */
   calls: (method: string, path: string | RegExp) => RecordedRequest[];
   /** Simulates another person saving an event: bumps its version. */
   editOnServer: (id: string, patch: Json, by?: typeof dailos) => Json;
+  /** Simulates another person saving a task: bumps its version. */
+  editTaskOnServer: (id: string, patch: Json, by?: typeof dailos) => Json;
 }
 
 const VENUES = [
   {id: 'v1', name: 'Plaza del Cristo'},
   {id: 'v2', name: 'Plaza del Adelantado'},
 ];
+
+// Same texts as server/src/tasks (domain.ts, schemas.ts, service.ts).
+const TASK_CONFLICT =
+  'Otra persona ha cambiado esta tarea mientras la editabas. Revisa la versión actual antes de guardar tus cambios.';
+const DEPENDS_ON_SELF = 'Una tarea no puede depender de sí misma.';
+const DEPENDS_ON_UNKNOWN =
+  'Alguna de las tareas previas ya no existe o no es de esta organización.';
+const VERSION_MISSING =
+  'Falta la versión del registro: recarga la tarea y vuelve a intentarlo.';
+
+const nameKey = (s: string) => s.trim().toLocaleLowerCase('es-ES');
+const text = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim() ? v.trim() : null;
+
+/** Local date and times of a stored record, for partial slot updates. */
+function storedSlot(record: Json) {
+  const local = (iso: unknown) =>
+    typeof iso === 'string' ? utcToLocal(iso, TZ).time : null;
+  return {
+    date: (record.date as string | null) ?? null,
+    endDate: (record.endDate as string | null) ?? null,
+    startTime: local(record.startsAt),
+    endTime: local(record.endsAt),
+  };
+}
+
+/** Slot rules of the contract; returns field errors (empty when valid). */
+function slotProblems(slot: {
+  date: string | null;
+  endDate: string | null;
+  startTime: string | null;
+  endTime: string | null;
+}): Record<string, string> {
+  const fields: Record<string, string> = {};
+  if ((slot.startTime || slot.endTime) && !slot.date) {
+    fields.date = 'Indica la fecha para poder guardar el horario.';
+  }
+  if (slot.endDate && !slot.date) {
+    fields.endDate = 'Indica el primer día para poder guardar varios días.';
+  } else if (slot.endDate && slot.date && slot.endDate <= slot.date) {
+    fields.endDate = 'El último día tiene que ser posterior al primero.';
+  }
+  return fields;
+}
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
@@ -166,6 +317,9 @@ export async function mockApi(
     sessionExpired: false,
     writesOffline: false,
     events: opts.events ?? defaultEvents(),
+    tasks: opts.tasks ?? [],
+    venues: opts.venues ?? VENUES.map(v => ({...v})),
+    companies: opts.companies ?? [],
     requests: [],
     calls: (method, path) =>
       state.requests.filter(
@@ -183,9 +337,104 @@ export async function mockApi(
       });
       return event;
     },
+    editTaskOnServer: (id, patch, by = dailos) => {
+      const task = state.tasks.find(t => t.id === id);
+      if (!task) throw new Error(`No task ${id}`);
+      Object.assign(task, patch, {
+        version: (task.version as number) + 1,
+        updatedBy: by,
+        updatedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+      });
+      return task;
+    },
   };
 
   const orgs = [{id: ORG, name: 'Ayuntamiento de La Laguna', timezone: TZ}];
+
+  /** Find or create by name, case-insensitive, as the server does. */
+  const venueRef = (name: unknown) => {
+    const n = text(name);
+    if (!n) return null;
+    let venue = state.venues.find(v => nameKey(v.name) === nameKey(n));
+    if (!venue) {
+      venue = {id: `v-new-${++seq}`, name: n};
+      state.venues.push(venue);
+    }
+    return {id: venue.id, name: venue.name};
+  };
+  const companyRef = (input: Json, current: unknown = null) => {
+    if (typeof input.companyId === 'string') {
+      const c = state.companies.find(x => x.id === input.companyId);
+      return c ? {id: c.id, name: c.name} : current;
+    }
+    if (input.companyId === null && input.companyName === undefined) {
+      return null;
+    }
+    if (input.companyName === undefined) return current;
+    const n = text(input.companyName);
+    if (!n) return null;
+    let company = state.companies.find(
+      c => nameKey(c.name as string) === nameKey(n),
+    );
+    if (!company) {
+      company = makeCompany(`c-new-${++seq}`, n);
+      state.companies.push(company);
+    }
+    return {id: company.id, name: company.name};
+  };
+
+  /** Path of predecessors from `from` back to `target`, if any. */
+  const pathTo = (
+    from: string,
+    target: string,
+    edges: Map<string, string[]>,
+    seen = new Set<string>(),
+  ): string[] | null => {
+    if (from === target) return [from];
+    if (seen.has(from)) return null;
+    seen.add(from);
+    for (const next of edges.get(from) ?? []) {
+      const rest = pathTo(next, target, edges, seen);
+      if (rest) return [from, ...rest];
+    }
+    return null;
+  };
+  /** Same checks and message as server/src/tasks/domain.ts. */
+  const dependencyProblem = (
+    taskId: string | null,
+    dependsOn: string[],
+  ): string | null => {
+    if (taskId && dependsOn.includes(taskId)) return DEPENDS_ON_SELF;
+    if (dependsOn.some(id => !state.tasks.some(t => t.id === id))) {
+      return DEPENDS_ON_UNKNOWN;
+    }
+    if (!taskId) return null;
+    const edges = new Map(
+      state.tasks.map(t => [t.id as string, t.dependsOn as string[]]),
+    );
+    for (const dep of dependsOn) {
+      const back = pathTo(dep, taskId, edges);
+      if (back) {
+        const title = (id: string) =>
+          `«${state.tasks.find(t => t.id === id)?.title ?? id}»`;
+        const cycle = [taskId, ...back].map(title).join(' → ');
+        return `Esa dependencia crearía un ciclo: ${cycle}. Cada tarea esperaría a la siguiente y ninguna podría empezar.`;
+      }
+    }
+    return null;
+  };
+  const validation = (route: Route, fields: Record<string, string>) =>
+    json(
+      route,
+      {code: 'VALIDATION', message: 'Revisa los datos marcados.', fields},
+      400,
+    );
+  const taskConflict = (route: Route, task: Json) =>
+    json(
+      route,
+      {code: 'VERSION_CONFLICT', message: TASK_CONFLICT, current: task},
+      409,
+    );
 
   await page.route(
     u => u.pathname.startsWith('/api/'),
@@ -201,7 +450,13 @@ export async function mockApi(
       } catch {
         body = request.postData();
       }
-      state.requests.push({method, path, body, authorization});
+      state.requests.push({
+        method,
+        path,
+        query: url.search,
+        body,
+        authorization,
+      });
 
       // ---- public routes
       if (path === '/health') {
@@ -233,7 +488,9 @@ export async function mockApi(
         state.sessionExpired = false;
         return json(route, {
           token: TOKEN,
-          expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+          // Far ahead: specs that fix the browser clock must still restore
+          // the stored session after a reload.
+          expiresAt: '2099-01-01T00:00:00.000Z',
           user: currentUser,
           organizations: orgs,
         });
@@ -270,15 +527,18 @@ export async function mockApi(
         return json(route, {items: state.events});
       }
       if (path === `/organizations/${ORG}/venues`) {
-        return json(route, {items: VENUES});
+        return json(route, {items: state.venues});
       }
       if (path === `/organizations/${ORG}/activity`) {
         return json(route, {items: []});
       }
       if (path === `/organizations/${ORG}/demo` && method === 'DELETE') {
-        const before = state.events.length;
+        const before = state.events.length + state.tasks.length;
         state.events = state.events.filter(e => !e.isDemo);
-        return json(route, {removed: before - state.events.length});
+        state.tasks = state.tasks.filter(t => !t.isDemo);
+        return json(route, {
+          removed: before - state.events.length - state.tasks.length,
+        });
       }
       if (path === '/events' && method === 'POST') {
         const input = (body ?? {}) as Json;
@@ -339,6 +599,7 @@ export async function mockApi(
           version: _v,
           venueName,
           date,
+          endDate,
           startTime,
           endTime,
           ...changes
@@ -350,12 +611,13 @@ export async function mockApi(
         if (date !== undefined) {
           Object.assign(
             event,
-            {date: date ?? null},
+            {date: date ?? null, endDate: date ? (endDate ?? null) : null},
             slotToInstants(
               date as string | null,
               startTime as string | null,
               endTime as string | null,
               TZ,
+              date ? ((endDate as string | null) ?? null) : null,
             ),
           );
         }
@@ -365,6 +627,156 @@ export async function mockApi(
           updatedAt: new Date().toISOString(),
         });
         return json(route, event);
+      }
+
+      // ---- milestone 2: tasks and companies
+      if (path === `/organizations/${ORG}/tasks` && method === 'GET') {
+        const eventId = url.searchParams.get('eventId');
+        return json(route, {
+          items: eventId
+            ? state.tasks.filter(t => t.eventId === eventId)
+            : state.tasks,
+        });
+      }
+      if (path === `/organizations/${ORG}/companies` && method === 'GET') {
+        return json(route, {items: state.companies});
+      }
+      const ref = {id: user.id, displayName: user.displayName};
+      if (path === '/tasks' && method === 'POST') {
+        const input = (body ?? {}) as Json;
+        const slot = {
+          date: (input.date as string | null) ?? null,
+          endDate: (input.endDate as string | null) ?? null,
+          startTime: (input.startTime as string | null) ?? null,
+          endTime: (input.endTime as string | null) ?? null,
+        };
+        const fields = slotProblems(slot);
+        if (!text(input.title)) fields.title = 'El título es obligatorio.';
+        const dependsOn = (input.dependsOn as string[] | undefined) ?? [];
+        const depProblem = dependencyProblem(null, dependsOn);
+        if (depProblem) fields.dependsOn = depProblem;
+        if (Object.keys(fields).length) return validation(route, fields);
+        const now = new Date().toISOString();
+        const created = makeTask(
+          `t-new-${++seq}`,
+          text(input.title)!,
+          {
+            date: slot.date,
+            endDate: slot.endDate,
+            start: slot.startTime,
+            end: slot.endTime,
+          },
+          {
+            eventId: (input.eventId as string | null) ?? null,
+            venue: venueRef(input.venueName),
+            company: companyRef(input),
+            kind: input.kind ?? 'other',
+            status: input.status ?? 'planned',
+            dependsOn,
+            heavyLoad: input.heavyLoad ?? null,
+            notes: text(input.notes),
+            source: input.source ?? null,
+            verification: input.verification ?? 'draft',
+            createdBy: ref,
+            updatedBy: ref,
+            createdAt: now,
+            updatedAt: now,
+          },
+        );
+        state.tasks.push(created);
+        return json(route, created, 201);
+      }
+      const taskMatch = /^\/tasks\/([^/]+)$/.exec(path);
+      const task = taskMatch
+        ? state.tasks.find(t => t.id === taskMatch[1])
+        : undefined;
+      if (taskMatch && !task && (method === 'PATCH' || method === 'DELETE')) {
+        return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      }
+      if (task && method === 'PATCH') {
+        const input = (body ?? {}) as Json;
+        if (typeof input.version !== 'number') {
+          return validation(route, {version: VERSION_MISSING});
+        }
+        if (input.version !== task.version) return taskConflict(route, task);
+        const fields: Record<string, string> = {};
+        if ('title' in input && !text(input.title)) {
+          fields.title = 'El título es obligatorio.';
+        }
+        const slotKeys = ['date', 'endDate', 'startTime', 'endTime'];
+        const touchesSlot = slotKeys.some(k => k in input);
+        const slot = {...storedSlot(task)};
+        for (const k of slotKeys) {
+          if (k in input) {
+            (slot as Record<string, string | null>)[k] =
+              (input[k] as string | null) ?? null;
+          }
+        }
+        if (touchesSlot) Object.assign(fields, slotProblems(slot));
+        if (Array.isArray(input.dependsOn)) {
+          const problem = dependencyProblem(
+            task.id as string,
+            input.dependsOn as string[],
+          );
+          if (problem) fields.dependsOn = problem;
+        }
+        if (Object.keys(fields).length) return validation(route, fields);
+
+        for (const k of [
+          'title',
+          'kind',
+          'status',
+          'eventId',
+          'heavyLoad',
+          'source',
+          'verification',
+          'dependsOn',
+        ]) {
+          if (k in input) task[k] = k === 'title' ? text(input[k]) : input[k];
+        }
+        if ('notes' in input) task.notes = text(input.notes);
+        if ('venueName' in input) task.venue = venueRef(input.venueName);
+        if ('companyName' in input || 'companyId' in input) {
+          task.company = companyRef(input, task.company);
+        }
+        if (touchesSlot) {
+          Object.assign(
+            task,
+            {date: slot.date, endDate: slot.endDate},
+            slotToInstants(
+              slot.date,
+              slot.startTime,
+              slot.endTime,
+              TZ,
+              slot.endDate,
+            ),
+          );
+        }
+        Object.assign(task, {
+          version: (task.version as number) + 1,
+          updatedBy: ref,
+          updatedAt: new Date().toISOString(),
+        });
+        return json(route, task);
+      }
+      if (task && method === 'DELETE') {
+        const raw = url.searchParams.get('version');
+        if (raw === null || raw.trim() === '') {
+          return validation(route, {version: VERSION_MISSING});
+        }
+        if (Number(raw) !== task.version) return taskConflict(route, task);
+        state.tasks = state.tasks.filter(t => t !== task);
+        for (const t of state.tasks) {
+          const deps = t.dependsOn as string[];
+          if (!deps.includes(task.id as string)) continue;
+          Object.assign(t, {
+            dependsOn: deps.filter(d => d !== task.id),
+            version: (t.version as number) + 1,
+            updatedBy: ref,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        return route.fulfill({status: 204, body: ''});
       }
       return error(route, 404, 'NOT_FOUND', 'No encontrado');
     },

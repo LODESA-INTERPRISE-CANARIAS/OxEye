@@ -8,14 +8,9 @@
  * - Guests get a read-only detail view.
  * - If the session expires mid-edit, the values are rescued for this tab and
  *   the form reopens with them after signing in again (`lib/rescue.ts`).
+ * - Multi-day events («Varios días») and the event's tasks («Tareas»).
  */
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {
   DataSource,
   EventStatus,
@@ -23,24 +18,34 @@ import type {
   UpdateEventInput,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
+import {EVENT_STATUSES} from '../../../shared/logistics/rules.ts';
 import {DEFAULT_TIMEZONE} from '../../../shared/logistics/time.ts';
 import {errorMessage, isApiError} from '../api/client';
+import {TimeWindow} from '../common/TimeWindow';
 import {
-  eventSlot,
-  SOURCE_HELP,
+  ConflictNotice,
+  DiscardStrip,
+  Provenance,
+  QualityFields,
+  ReadOnlyNotice,
+  useAlertFocus,
+} from '../forms/FormParts';
+import {
+  SlotFields,
+  slotChanged,
+  slotInput,
+  validateSlot,
+  type SlotValues,
+} from '../forms/SlotFields';
+import {
   SOURCE_LABEL,
   STATUS_HELP,
   STATUS_LABEL,
-  VERIFICATION_HELP,
   VERIFICATION_LABEL,
 } from '../lib/events';
-import {
-  instantShort,
-  longDate,
-  relativeTime,
-  zoneHoursNote,
-} from '../lib/format';
+import {longDate} from '../lib/format';
 import {clearRescue, saveRescue} from '../lib/rescue';
+import {recordSlot} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -54,7 +59,7 @@ import {
   describedBy,
 } from '../ui';
 import {DemoChip, StatusChip, VerificationChip} from './EventChips';
-import {timeWindow} from './EventCard';
+import {EventTasks} from './EventTasks';
 
 /** Form values recovered from `lib/rescue.ts`; checked before use. */
 export type RescuedValues = Record<string, unknown>;
@@ -64,12 +69,9 @@ export type EventSheetMode =
   | {kind: 'edit'; event: LogisticsEvent; rescued?: RescuedValues}
   | {kind: 'view'; event: LogisticsEvent};
 
-interface FormValues {
+interface FormValues extends SlotValues {
   name: string;
   venueName: string;
-  date: string;
-  startTime: string;
-  endTime: string;
   status: EventStatus;
   notes: string;
   source: DataSource | null;
@@ -80,6 +82,8 @@ const EMPTY: FormValues = {
   name: '',
   venueName: '',
   date: '',
+  endDate: '',
+  multiDay: false,
   startTime: '',
   endTime: '',
   status: 'planned',
@@ -89,11 +93,13 @@ const EMPTY: FormValues = {
 };
 
 function valuesFromEvent(event: LogisticsEvent): FormValues {
-  const slot = eventSlot(event);
+  const slot = recordSlot(event);
   return {
     name: event.name,
     venueName: event.venue?.name ?? '',
     date: slot.date ?? '',
+    endDate: event.endDate ?? '',
+    multiDay: !!event.endDate,
     startTime: slot.startTime ?? '',
     endTime: slot.endTime ?? '',
     status: event.status,
@@ -103,37 +109,39 @@ function valuesFromEvent(event: LogisticsEvent): FormValues {
   };
 }
 
+const TEXT_KEYS = [
+  'name',
+  'venueName',
+  'date',
+  'endDate',
+  'startTime',
+  'endTime',
+  'notes',
+] as const;
+
 /** Rescued values over `fallback`, keeping only fields of the right shape. */
 function valuesFromRescue(
   raw: RescuedValues,
   fallback: FormValues,
 ): FormValues {
-  const text = (
-    key: 'name' | 'venueName' | 'date' | 'startTime' | 'endTime' | 'notes',
-  ): string => {
-    const value = raw[key];
-    return typeof value === 'string' ? value : fallback[key];
-  };
   const oneOf = <T extends string>(value: unknown, allowed: object) =>
     typeof value === 'string' && Object.hasOwn(allowed, value)
       ? (value as T)
       : undefined;
-  return {
-    name: text('name'),
-    venueName: text('venueName'),
-    date: text('date'),
-    startTime: text('startTime'),
-    endTime: text('endTime'),
-    notes: text('notes'),
-    status: oneOf<EventStatus>(raw.status, STATUS_LABEL) ?? fallback.status,
-    source:
-      raw.source === null
-        ? null
-        : (oneOf<DataSource>(raw.source, SOURCE_LABEL) ?? fallback.source),
-    verification:
-      oneOf<Verification>(raw.verification, VERIFICATION_LABEL) ??
-      fallback.verification,
-  };
+  const out: FormValues = {...fallback};
+  for (const key of TEXT_KEYS) {
+    if (typeof raw[key] === 'string') out[key] = raw[key];
+  }
+  if (typeof raw.multiDay === 'boolean') out.multiDay = raw.multiDay;
+  out.status = oneOf<EventStatus>(raw.status, STATUS_LABEL) ?? fallback.status;
+  out.source =
+    raw.source === null
+      ? null
+      : (oneOf<DataSource>(raw.source, SOURCE_LABEL) ?? fallback.source);
+  out.verification =
+    oneOf<Verification>(raw.verification, VERIFICATION_LABEL) ??
+    fallback.verification;
+  return out;
 }
 
 interface FormSnapshot {
@@ -148,6 +156,7 @@ interface FormSnapshot {
 function rescueForm(form: FormSnapshot): void {
   if (!form.dirty || !form.userId) return;
   saveRescue({
+    entity: 'event',
     userId: form.userId,
     orgId: form.orgId,
     base: form.base,
@@ -164,6 +173,7 @@ const SERVER_FIELD: Record<string, keyof FormValues> = {
   venueName: 'venueName',
   venue: 'venueName',
   date: 'date',
+  endDate: 'endDate',
   startTime: 'startTime',
   endTime: 'endTime',
   startsAt: 'startTime',
@@ -179,30 +189,15 @@ function validate(v: FormValues): Errors {
   if (!v.name.trim()) {
     errors.name = 'Escribe un nombre, aunque sea provisional.';
   }
-  if ((v.startTime || v.endTime) && !v.date) {
-    errors.date = 'Indica la fecha para poder guardar el horario.';
-  }
-  return errors;
+  return {...errors, ...validateSlot(v)};
 }
 
 const nullIfEmpty = (s: string) => (s.trim() ? s.trim() : null);
 
-const STATUS_OPTIONS = (Object.keys(STATUS_LABEL) as EventStatus[]).map(v => ({
+const STATUS_OPTIONS = EVENT_STATUSES.map(v => ({
   value: v,
   label: STATUS_LABEL[v],
   title: STATUS_HELP[v],
-}));
-const SOURCE_OPTIONS = (Object.keys(SOURCE_LABEL) as DataSource[]).map(v => ({
-  value: v,
-  label: SOURCE_LABEL[v],
-  title: SOURCE_HELP[v],
-}));
-const VERIFICATION_OPTIONS = (
-  Object.keys(VERIFICATION_LABEL) as Verification[]
-).map(v => ({
-  value: v,
-  label: VERIFICATION_LABEL[v],
-  title: VERIFICATION_HELP[v],
 }));
 
 export interface EventSheetProps {
@@ -244,25 +239,34 @@ export const EventSheet: React.FC<EventSheetProps> = ({mode, onClose}) => {
 };
 
 const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
-  const {date} = eventSlot(event);
+  const {date, endDate} = recordSlot(event);
   return (
     <>
-      <p className="lx-notice lx-notice--quiet">
-        <Icon name="lock" size={16} />
-        Estás en modo solo lectura: puedes consultar, pero no cambiar.
-      </p>
+      <ReadOnlyNotice />
       <dl className="lx-detail">
         <div>
           <dt>Lugar</dt>
           <dd>{event.venue?.name ?? <Pending />}</dd>
         </div>
         <div>
-          <dt>Fecha</dt>
-          <dd>{date ? longDate(date) : <Pending />}</dd>
+          <dt>{endDate ? 'Fechas' : 'Fecha'}</dt>
+          <dd>
+            {date ? (
+              endDate ? (
+                `Del ${longDate(date)} al ${longDate(endDate)}`
+              ) : (
+                longDate(date)
+              )
+            ) : (
+              <Pending />
+            )}
+          </dd>
         </div>
         <div>
           <dt>Horario</dt>
-          <dd>{timeWindow(event)}</dd>
+          <dd>
+            <TimeWindow record={event} />
+          </dd>
         </div>
         <div>
           <dt>Origen del dato</dt>
@@ -273,27 +277,9 @@ const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
           <dd className="lx-detail__notes">{event.notes || '—'}</dd>
         </div>
       </dl>
-      <Provenance event={event} />
+      <EventTasks event={event} />
+      <Provenance record={event} id="lx-event-provenance" />
     </>
-  );
-};
-
-const Provenance: React.FC<{event: LogisticsEvent}> = ({event}) => {
-  const tz = event.timezone || DEFAULT_TIMEZONE;
-  const edited = event.updatedAt !== event.createdAt;
-  return (
-    <p className="lx-provenance" id="lx-event-provenance">
-      Registrado por <strong>{event.createdBy.displayName}</strong> el{' '}
-      <span className="lx-num">{instantShort(event.createdAt, tz)}</span>
-      {edited && (
-        <>
-          {' '}
-          · última modificación de{' '}
-          <strong>{event.updatedBy.displayName}</strong>,{' '}
-          {relativeTime(event.updatedAt, tz)}
-        </>
-      )}
-    </p>
   );
 };
 
@@ -328,19 +314,7 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   // Conflict and form error are exclusive; whichever is shown owns the ref.
-  const alertRef = useRef<HTMLElement | null>(null);
-
-  // Save is pressed at the bottom of a long form; a blocking notice appears at
-  // the top. Bring it into view and focus so nobody is left with a dead button.
-  useEffect(() => {
-    const el = alertRef.current;
-    if (!el || (!conflict && !errors.form)) return;
-    const reduce = window.matchMedia?.(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
-    el.scrollIntoView({block: 'start', behavior: reduce ? 'auto' : 'smooth'});
-    el.focus({preventScroll: true});
-  }, [conflict, errors.form]);
+  const alertRef = useAlertFocus(conflict ?? errors.form);
 
   const dirty = (Object.keys(values) as (keyof FormValues)[]).some(
     k => values[k] !== initial[k],
@@ -375,11 +349,6 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
     if (mode.rescued) clearRescue();
     onClose();
   };
-
-  const endsNextDay =
-    !!values.startTime &&
-    !!values.endTime &&
-    values.endTime <= values.startTime;
 
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => {
     setValues(v => ({...v, [key]: value}));
@@ -448,9 +417,7 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
         const created = await createEvent({
           name: values.name.trim(),
           venueName: nullIfEmpty(values.venueName),
-          date: nullIfEmpty(values.date),
-          startTime: nullIfEmpty(values.startTime),
-          endTime: nullIfEmpty(values.endTime),
+          ...slotInput(values),
           status: values.status,
           notes: nullIfEmpty(values.notes),
           source: values.source,
@@ -475,19 +442,13 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
         return;
       }
       const patch: UpdateEventInput = {version: base.version};
-      const changedSlot =
-        values.date !== initial.date ||
-        values.startTime !== initial.startTime ||
-        values.endTime !== initial.endTime;
       if (values.name !== initial.name) patch.name = values.name.trim();
       if (values.venueName !== initial.venueName) {
         patch.venueName = nullIfEmpty(values.venueName);
       }
-      if (changedSlot) {
+      if (slotChanged(values, initial)) {
         // Date and times travel together so the server can rebuild the slot.
-        patch.date = nullIfEmpty(values.date);
-        patch.startTime = nullIfEmpty(values.startTime);
-        patch.endTime = nullIfEmpty(values.endTime);
+        Object.assign(patch, slotInput(values));
       }
       if (values.status !== initial.status) patch.status = values.status;
       if (values.notes !== initial.notes) {
@@ -550,26 +511,11 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
       }
       footer={
         confirmDiscard ? (
-          <div
-            className="lx-confirm-strip"
-            role="alertdialog"
-            aria-labelledby="lx-discard-text"
-          >
-            <p id="lx-discard-text">
-              Tienes cambios sin guardar. ¿Descartarlos?
-            </p>
-            <div className="lx-confirm-strip__actions">
-              <Button
-                onClick={() => setConfirmDiscard(false)}
-                id="lx-discard-keep"
-              >
-                Seguir editando
-              </Button>
-              <Button variant="danger" onClick={close} id="lx-discard-confirm">
-                Descartar
-              </Button>
-            </div>
-          </div>
+          <DiscardStrip
+            idPrefix="lx-discard"
+            onKeep={() => setConfirmDiscard(false)}
+            onDiscard={close}
+          />
         ) : (
           <>
             <Button variant="ghost" onClick={requestClose} id="lx-event-cancel">
@@ -609,51 +555,15 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
         }}
       >
         {conflict && (
-          <div
-            className="lx-conflict"
+          <ConflictNotice
             id="lx-event-conflict"
-            role="alert"
-            tabIndex={-1}
-            ref={el => {
-              alertRef.current = el;
-            }}
-          >
-            <Icon name="alert" size={20} />
-            <div>
-              <p className="lx-conflict__title">
-                {ownConflict
-                  ? 'Este evento ha cambiado desde otra sesión tuya'
-                  : 'Otra persona ha cambiado este evento'}
-              </p>
-              {ownConflict ? (
-                <p>
-                  Lo guardaste tú{' '}
-                  {conflict.updatedAt
-                    ? relativeTime(conflict.updatedAt, conflict.timezone)
-                    : 'hace poco'}{' '}
-                  desde otra pestaña o dispositivo. Estos cambios no se han
-                  guardado para no sobrescribir aquella versión.
-                </p>
-              ) : (
-                <p>
-                  {conflict.updatedBy?.displayName ?? 'Alguien'} lo guardó{' '}
-                  {conflict.updatedAt
-                    ? relativeTime(conflict.updatedAt, conflict.timezone)
-                    : 'hace poco'}
-                  . Tus cambios no se han guardado para no sobrescribir los
-                  suyos.
-                </p>
-              )}
-              <Button
-                size="sm"
-                variant="primary"
-                id="lx-event-load-current"
-                onClick={loadCurrent}
-              >
-                Ver versión actual
-              </Button>
-            </div>
-          </div>
+            loadId="lx-event-load-current"
+            subject="este evento"
+            current={conflict}
+            ownConflict={ownConflict}
+            onLoad={loadCurrent}
+            alertRef={alertRef}
+          />
         )}
         {rescuedNotice && (
           <p className="lx-notice" role="status" id="lx-event-rescued">
@@ -739,65 +649,14 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
           </datalist>
         </Field>
 
-        <div className="lx-form__row lx-form__row--slot">
-          <Field id="lx-event-date" label="Fecha" optional error={errors.date}>
-            <Input
-              id="lx-event-date"
-              name="lx-event-date"
-              type="date"
-              value={values.date}
-              invalid={!!errors.date}
-              aria-describedby={describedBy('lx-event-date', {
-                error: errors.date,
-              })}
-              onChange={e => set('date', e.target.value)}
-            />
-          </Field>
-          <Field
-            id="lx-event-start"
-            label="Inicio"
-            optional
-            error={errors.startTime}
-          >
-            <Input
-              id="lx-event-start"
-              name="lx-event-start"
-              type="time"
-              className="lx-num"
-              value={values.startTime}
-              invalid={!!errors.startTime}
-              aria-describedby={describedBy('lx-event-start', {
-                error: errors.startTime,
-              })}
-              onChange={e => set('startTime', e.target.value)}
-            />
-          </Field>
-          <Field
-            id="lx-event-end"
-            label="Fin"
-            optional
-            error={errors.endTime}
-            hint={endsNextDay ? 'Termina al día siguiente.' : undefined}
-          >
-            <Input
-              id="lx-event-end"
-              name="lx-event-end"
-              type="time"
-              className="lx-num"
-              value={values.endTime}
-              invalid={!!errors.endTime}
-              aria-describedby={describedBy('lx-event-end', {
-                error: errors.endTime,
-                hint: endsNextDay,
-              })}
-              onChange={e => set('endTime', e.target.value)}
-            />
-          </Field>
-        </div>
-        <p className="lx-form__note">
-          {zoneHoursNote(zone)}. Si aún no las sabes, déjalas en blanco: el
-          evento quedará como «Pendiente de verificar».
-        </p>
+        <SlotFields
+          idPrefix="lx-event"
+          values={values}
+          errors={errors}
+          onChange={set}
+          zone={zone}
+          subject="el evento"
+        />
 
         <Segmented<EventStatus>
           name="lx-event-status"
@@ -809,28 +668,13 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
           help="Previsto: está en el plan. Confirmado: lo ha confirmado quien organiza. Con retraso: va tarde respecto a lo previsto. Cancelado: no se celebrará."
         />
 
-        <div className="lx-form__group">
-          <p className="lx-form__group-title">Calidad del dato</p>
-          <Segmented<DataSource>
-            name="lx-event-source"
-            id="lx-event-source"
-            legend="¿De dónde sale?"
-            value={values.source}
-            options={SOURCE_OPTIONS}
-            allowNone
-            onChange={v => set('source', v)}
-            help="Observado: lo hemos visto. Comunicado: nos lo ha dicho alguien. Documento: consta en un papel, contrato o correo."
-          />
-          <Segmented<Verification>
-            name="lx-event-verification"
-            id="lx-event-verification"
-            legend="Verificación"
-            value={values.verification}
-            options={VERIFICATION_OPTIONS}
-            onChange={v => v && set('verification', v)}
-            help="Borrador: apunte rápido. Por verificar: hay que comprobarlo. Validado: comprobado con la fuente. Validar no es certificar."
-          />
-        </div>
+        <QualityFields
+          idPrefix="lx-event"
+          source={values.source}
+          verification={values.verification}
+          onSource={v => set('source', v)}
+          onVerification={v => set('verification', v)}
+        />
 
         <Field id="lx-event-notes" label="Notas" optional error={errors.notes}>
           <Textarea
@@ -844,7 +688,8 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
           />
         </Field>
 
-        {base && <Provenance event={base} />}
+        {base && <EventTasks event={base} />}
+        {base && <Provenance record={base} id="lx-event-provenance" />}
         {/* Enter in a text field submits. */}
         <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
       </form>
@@ -860,6 +705,8 @@ function fieldDomId(field: string): string {
       return 'start';
     case 'endTime':
       return 'end';
+    case 'endDate':
+      return 'enddate';
     default:
       return field;
   }

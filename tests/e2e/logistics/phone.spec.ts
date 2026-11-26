@@ -76,6 +76,7 @@ test.describe('Gestor logístico · móvil', () => {
     await expect(fab).toBeVisible();
     await expect(fab).toBeInViewport();
     await fab.click();
+    await page.locator('#lx-fab-event').click();
     await expect(page.locator('#lx-event-form')).toBeVisible();
     await expect(page.locator('#lx-event-name')).toBeFocused();
     await expect(page.locator('#lx-event-save')).toBeInViewport();

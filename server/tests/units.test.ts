@@ -10,11 +10,21 @@ import {ConfigError, loadConfig, parseOrigins} from '../src/config.ts';
 import {resolveClientIp} from '../src/http/client-ip.ts';
 import {
   changedEventFields,
+  END_DATE_NOT_AFTER,
+  END_DATE_WITHOUT_DATE,
   resolveSlot,
   storedToLocal,
   TIME_WITHOUT_DATE,
 } from '../src/events/domain.ts';
 import type {EventState} from '../src/events/domain.ts';
+import {
+  changedTaskFields,
+  DEPENDS_ON_SELF,
+  DEPENDS_ON_UNKNOWN,
+  dependencyProblem,
+  normalizeIds,
+} from '../src/tasks/domain.ts';
+import type {TaskState} from '../src/tasks/domain.ts';
 import {normalizeName} from '../src/venues/service.ts';
 
 const TZ = 'Atlantic/Canary';
@@ -23,14 +33,19 @@ describe('events domain · resolveSlot', () => {
   it('keeps everything null when nothing is known', () => {
     expect(resolveSlot({}, null, TZ)).toEqual({
       ok: true,
-      slot: {localDate: null, startsAt: null, endsAt: null},
+      slot: {localDate: null, endDate: null, startsAt: null, endsAt: null},
     });
   });
 
   it('keeps a date without times', () => {
     expect(resolveSlot({date: '2026-12-02'}, null, TZ)).toEqual({
       ok: true,
-      slot: {localDate: '2026-12-02', startsAt: null, endsAt: null},
+      slot: {
+        localDate: '2026-12-02',
+        endDate: null,
+        startsAt: null,
+        endsAt: null,
+      },
     });
   });
 
@@ -42,12 +57,18 @@ describe('events domain · resolveSlot', () => {
   });
 
   it('merges a partial edit with the current slot', () => {
-    const current = {date: '2026-12-02', startTime: '09:00', endTime: '14:00'};
+    const current = {
+      date: '2026-12-02',
+      endDate: null,
+      startTime: '09:00',
+      endTime: '14:00',
+    };
     const r = resolveSlot({startTime: '10:30'}, current, TZ);
     expect(r).toEqual({
       ok: true,
       slot: {
         localDate: '2026-12-02',
+        endDate: null,
         startsAt: '2026-12-02T10:30:00.000Z',
         endsAt: '2026-12-02T14:00:00.000Z',
       },
@@ -55,13 +76,19 @@ describe('events domain · resolveSlot', () => {
   });
 
   it('moving the date moves both times, across a DST change', () => {
-    const current = {date: '2026-03-28', startTime: '09:00', endTime: '14:00'};
+    const current = {
+      date: '2026-03-28',
+      endDate: null,
+      startTime: '09:00',
+      endTime: '14:00',
+    };
     // 29 March 2026: Canary summer time starts (UTC+1).
     const r = resolveSlot({date: '2026-03-30'}, current, TZ);
     expect(r).toEqual({
       ok: true,
       slot: {
         localDate: '2026-03-30',
+        endDate: null,
         startsAt: '2026-03-30T08:00:00.000Z',
         endsAt: '2026-03-30T13:00:00.000Z',
       },
@@ -69,10 +96,15 @@ describe('events domain · resolveSlot', () => {
   });
 
   it('clearing the date clears the times unless new ones are given', () => {
-    const current = {date: '2026-12-02', startTime: '09:00', endTime: null};
+    const current = {
+      date: '2026-12-02',
+      endDate: null,
+      startTime: '09:00',
+      endTime: null,
+    };
     expect(resolveSlot({date: null}, current, TZ)).toEqual({
       ok: true,
-      slot: {localDate: null, startsAt: null, endsAt: null},
+      slot: {localDate: null, endDate: null, startsAt: null, endsAt: null},
     });
     expect(resolveSlot({date: null, startTime: '09:00'}, current, TZ)).toEqual({
       ok: false,
@@ -85,12 +117,167 @@ describe('events domain · resolveSlot', () => {
       storedToLocal(
         {
           localDate: '2026-12-05',
+          endDate: null,
           startsAt: '2026-12-05T22:00:00.000Z',
           endsAt: '2026-12-06T02:00:00.000Z',
         },
         TZ,
       ),
-    ).toEqual({date: '2026-12-05', startTime: '22:00', endTime: '02:00'});
+    ).toEqual({
+      date: '2026-12-05',
+      endDate: null,
+      startTime: '22:00',
+      endTime: '02:00',
+    });
+  });
+});
+
+describe('slot · multi-day', () => {
+  const none = {date: null, endDate: null, startTime: null, endTime: null};
+
+  it('puts the end time on the end date', () => {
+    expect(
+      resolveSlot(
+        {
+          date: '2026-12-01',
+          endDate: '2026-12-03',
+          startTime: '18:00',
+          endTime: '02:00',
+        },
+        null,
+        TZ,
+      ),
+    ).toEqual({
+      ok: true,
+      slot: {
+        localDate: '2026-12-01',
+        endDate: '2026-12-03',
+        startsAt: '2026-12-01T18:00:00.000Z',
+        endsAt: '2026-12-03T02:00:00.000Z',
+      },
+    });
+  });
+
+  it('requires a start date and an end date after it', () => {
+    expect(resolveSlot({endDate: '2026-12-03'}, null, TZ)).toEqual({
+      ok: false,
+      fields: {endDate: END_DATE_WITHOUT_DATE},
+    });
+    for (const endDate of ['2026-12-02', '2026-12-01']) {
+      expect(resolveSlot({date: '2026-12-02', endDate}, none, TZ)).toEqual({
+        ok: false,
+        fields: {endDate: END_DATE_NOT_AFTER},
+      });
+    }
+    const far = resolveSlot(
+      {date: '2026-12-02', endDate: '2027-12-04'},
+      null,
+      TZ,
+    );
+    expect(far.ok).toBe(false);
+    if (!far.ok) expect(far.fields.endDate).toMatch(/Como máximo 366 días/);
+  });
+
+  it('keeps the end date when only the start moves, and checks it again', () => {
+    const current = {
+      date: '2026-12-01',
+      endDate: '2026-12-03',
+      startTime: '09:00',
+      endTime: '14:00',
+    };
+    const moved = resolveSlot({date: '2026-12-02'}, current, TZ);
+    expect(moved).toMatchObject({
+      ok: true,
+      slot: {endDate: '2026-12-03', endsAt: '2026-12-03T14:00:00.000Z'},
+    });
+    expect(resolveSlot({date: '2026-12-03'}, current, TZ)).toEqual({
+      ok: false,
+      fields: {endDate: END_DATE_NOT_AFTER},
+    });
+  });
+
+  it('clearing the date clears the end date; clearing the end date keeps the day', () => {
+    const current = {
+      date: '2026-12-01',
+      endDate: '2026-12-03',
+      startTime: '09:00',
+      endTime: '14:00',
+    };
+    expect(resolveSlot({date: null}, current, TZ)).toEqual({
+      ok: true,
+      slot: {localDate: null, endDate: null, startsAt: null, endsAt: null},
+    });
+    expect(resolveSlot({endDate: null}, current, TZ)).toEqual({
+      ok: true,
+      slot: {
+        localDate: '2026-12-01',
+        endDate: null,
+        startsAt: '2026-12-01T09:00:00.000Z',
+        endsAt: '2026-12-01T14:00:00.000Z',
+      },
+    });
+  });
+});
+
+describe('tasks domain · dependencies', () => {
+  const graph = [
+    {id: 'a', title: 'Entrega', dependsOn: []},
+    {id: 'b', title: 'Montaje', dependsOn: ['a']},
+    {id: 'c', title: 'Prueba', dependsOn: ['b']},
+  ];
+
+  it('accepts a valid predecessor list, and any list for a new task', () => {
+    expect(dependencyProblem('c', ['a', 'b'], graph)).toBeNull();
+    expect(dependencyProblem(null, ['c'], graph)).toBeNull();
+    expect(dependencyProblem('a', [], graph)).toBeNull();
+  });
+
+  it('rejects self reference and unknown tasks', () => {
+    expect(dependencyProblem('a', ['a'], graph)).toBe(DEPENDS_ON_SELF);
+    expect(dependencyProblem('a', ['zzz'], graph)).toBe(DEPENDS_ON_UNKNOWN);
+    expect(dependencyProblem(null, ['zzz'], graph)).toBe(DEPENDS_ON_UNKNOWN);
+  });
+
+  it('rejects cycles and names the tasks involved', () => {
+    const msg = dependencyProblem('a', ['c'], graph);
+    expect(msg).toMatch(/ciclo/);
+    expect(msg).toContain('«Entrega»');
+    expect(msg).toContain('«Montaje»');
+    expect(msg).toContain('«Prueba»');
+  });
+
+  it('normalizes id lists', () => {
+    expect(normalizeIds(['B', 'a', 'b'])).toEqual(['a', 'b']);
+  });
+
+  it('lists changed task fields in contract names, dependsOn compared as a list', () => {
+    const base: TaskState = {
+      title: 'Montaje',
+      kind: 'assembly',
+      status: 'planned',
+      eventId: null,
+      venueId: null,
+      companyId: null,
+      localDate: null,
+      endDate: null,
+      startsAt: null,
+      endsAt: null,
+      timezone: TZ,
+      dependsOn: ['a'],
+      heavyLoad: null,
+      notes: null,
+      source: null,
+      verification: 'draft',
+    };
+    expect(changedTaskFields(base, {...base, dependsOn: ['a']})).toEqual([]);
+    expect(
+      changedTaskFields(base, {
+        ...base,
+        dependsOn: ['a', 'b'],
+        heavyLoad: false,
+        companyId: 'x',
+      }),
+    ).toEqual(['company', 'dependsOn', 'heavyLoad']);
   });
 });
 
@@ -99,6 +286,7 @@ describe('events domain · changedEventFields', () => {
     name: 'A',
     venueId: null,
     localDate: '2026-12-02',
+    endDate: null,
     startsAt: '2026-12-02T09:00:00.000Z',
     endsAt: null,
     status: 'planned',

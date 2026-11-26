@@ -12,30 +12,26 @@ import {
   requiredText,
   uuid,
 } from '../http/validate.ts';
+import {
+  NAME_MAX,
+  NOTES_MAX,
+  source,
+  verification,
+  versionField,
+} from '../records/schemas.ts';
+import {EVENT_STATUSES} from '../../../shared/logistics/rules.ts';
 
 const status = oneOf(
-  ['planned', 'confirmed', 'delayed', 'cancelled'],
+  EVENT_STATUSES,
   'Estado no válido: usa previsto, confirmado, retrasado o cancelado.',
 );
-const source = oneOf(
-  ['observed', 'reported', 'document'],
-  'Origen no válido: usa observado, comunicado o documento.',
-)
-  .nullable()
-  .optional();
-const verification = oneOf(
-  ['draft', 'to_verify', 'validated'],
-  'Verificación no válida: usa borrador, por verificar o validado.',
-).optional();
-
-export const NAME_MAX = 200;
-export const NOTES_MAX = 5000;
 
 export const createEventSchema = z.object({
   organizationId: uuid,
   name: requiredText(NAME_MAX),
   venueName: optionalText(NAME_MAX),
   date: localDate,
+  endDate: localDate,
   startTime: localTime,
   endTime: localTime,
   status: status.optional(),
@@ -45,18 +41,11 @@ export const createEventSchema = z.object({
 });
 
 export const updateEventSchema = z.object({
-  version: z
-    .number({
-      error: iss =>
-        iss.input === undefined
-          ? 'Falta la versión del registro: recarga el evento y vuelve a intentarlo.'
-          : 'La versión debe ser un número entero.',
-    })
-    .int({error: 'La versión debe ser un número entero.'})
-    .min(1, {error: 'La versión debe ser un número entero positivo.'}),
+  version: versionField('el evento'),
   name: requiredText(NAME_MAX).optional(),
   venueName: optionalText(NAME_MAX),
   date: localDate,
+  endDate: localDate,
   startTime: localTime,
   endTime: localTime,
   status: status.optional(),

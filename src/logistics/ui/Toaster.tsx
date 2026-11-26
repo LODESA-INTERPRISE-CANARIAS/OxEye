@@ -18,8 +18,13 @@ export interface ToastItem {
   tone: 'info' | 'success' | 'error';
 }
 
+/**
+ * Sheets can stack (a task opened from an event): each open sheet adds its
+ * slot and removes it on close, and the toasts go to the topmost one.
+ */
 export interface ToastHost {
-  setHost: React.Dispatch<React.SetStateAction<HTMLElement | null>>;
+  add: (slot: HTMLElement) => void;
+  remove: (slot: HTMLElement) => void;
 }
 
 export const ToastHostContext = createContext<ToastHost | null>(null);
