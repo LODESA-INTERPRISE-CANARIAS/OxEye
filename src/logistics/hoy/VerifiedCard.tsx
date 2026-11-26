@@ -1,6 +1,7 @@
 /**
- * «Información verificada»: share of events and tasks validated against their
- * source, plus an actionable list of what is still missing.
+ * «Información verificada»: share of the recorded information (events, tasks,
+ * people, companies and offers) validated against its source, plus an
+ * actionable list of what is still missing.
  */
 import React, {useMemo} from 'react';
 import type {
@@ -8,11 +9,35 @@ import type {
   Task,
 } from '../../../shared/logistics/contracts.ts';
 import {useActions} from '../common/actions';
-import {verificationSummary} from '../lib/events';
+import {verificationSummary, type PendingRow} from '../lib/events';
 import {TASK_KIND_ICON} from '../lib/tasks';
-import {Card, EmptyState, Gauge, HelpTip, Icon} from '../ui';
+import {useLogisticsStore} from '../store/useLogisticsStore';
+import {Card, EmptyState, Gauge, HelpTip, Icon, type IconName} from '../ui';
 
 const MAX_ROWS = 4;
+
+const NOUN: Record<PendingRow['kind'], string> = {
+  event: 'el evento',
+  task: 'la tarea',
+  contact: 'la persona',
+  company: 'la empresa o entidad',
+  offer: 'la oferta',
+};
+
+function rowIcon(row: PendingRow): IconName {
+  switch (row.kind) {
+    case 'event':
+      return 'calendar';
+    case 'task':
+      return TASK_KIND_ICON[row.task.kind];
+    case 'contact':
+      return 'user';
+    case 'company':
+      return 'building';
+    case 'offer':
+      return 'offer';
+  }
+}
 
 export const VerifiedCard: React.FC<{
   events: LogisticsEvent[];
@@ -20,14 +45,32 @@ export const VerifiedCard: React.FC<{
   canWrite: boolean;
   onOpenEvent: (event: LogisticsEvent) => void;
 }> = ({events, tasks, canWrite, onOpenEvent}) => {
-  const {openTask} = useActions();
+  const {openTask, openContact, openCompany, openOffer} = useActions();
+  const contacts = useLogisticsStore(s => s.contacts);
+  const companies = useLogisticsStore(s => s.companies);
+  const offers = useLogisticsStore(s => s.offers);
   const summary = useMemo(
-    () => verificationSummary(events, tasks),
-    [events, tasks],
+    () => verificationSummary(events, tasks, {contacts, companies, offers}),
+    [events, tasks, contacts, companies, offers],
   );
   const pending = summary.total - summary.validated;
   const rows = summary.incomplete.slice(0, MAX_ROWS);
   const more = summary.incomplete.length - rows.length;
+
+  const open = (row: PendingRow) => {
+    switch (row.kind) {
+      case 'event':
+        return onOpenEvent(row.event);
+      case 'task':
+        return openTask(row.task);
+      case 'contact':
+        return openContact(row.contact);
+      case 'company':
+        return openCompany(row.company);
+      case 'offer':
+        return openOffer(row.offer);
+    }
+  };
 
   return (
     <Card
@@ -36,16 +79,17 @@ export const VerifiedCard: React.FC<{
       className="lx-verified"
       actions={
         <HelpTip label="información verificada">
-          Porcentaje de eventos y tareas marcados como «Validado», es decir,
-          comprobados con su fuente. Lo demás es borrador o está por verificar.
-          Es una ayuda para saber qué falta, no una certificación.
+          Porcentaje de lo registrado (eventos, tareas, personas, empresas y
+          ofertas) marcado como «Validado», es decir, comprobado con su fuente.
+          Lo demás es borrador o está por verificar. Es una ayuda para saber qué
+          falta, no una certificación.
         </HelpTip>
       }
     >
       {summary.total === 0 ? (
         <EmptyState compact icon="check" title="Aún no hay nada que comprobar">
-          Cuando registréis eventos y tareas, aquí verás cuánta información está
-          comprobada y qué falta.
+          Cuando registréis eventos, tareas o contactos, aquí verás cuánta
+          información está comprobada y qué falta.
         </EmptyState>
       ) : (
         <div className="lx-verified__body">
@@ -53,7 +97,11 @@ export const VerifiedCard: React.FC<{
             <Gauge
               value={summary.percent}
               caption="validado"
-              label={`${summary.percent} % de los eventos y tareas validados`}
+              label={`${summary.percent} % de ${
+                contacts.length + companies.length + offers.length
+                  ? 'los registros'
+                  : 'los eventos y tareas'
+              } validados`}
             />
             <dl className="lx-verified__legend">
               <div>
@@ -91,21 +139,13 @@ export const VerifiedCard: React.FC<{
                     <button
                       type="button"
                       className="lx-missing__row"
-                      onClick={() =>
-                        row.kind === 'event'
-                          ? onOpenEvent(row.event)
-                          : openTask(row.task)
-                      }
+                      onClick={() => open(row)}
                       aria-label={`${canWrite ? 'Completar' : 'Ver'} ${
-                        row.kind === 'event' ? 'el evento' : 'la tarea'
+                        NOUN[row.kind]
                       } ${row.name}: falta ${row.missing.join(', ')}`}
                     >
                       <Icon
-                        name={
-                          row.kind === 'event'
-                            ? 'calendar'
-                            : TASK_KIND_ICON[row.task.kind]
-                        }
+                        name={rowIcon(row)}
                         size={18}
                         className="lx-missing__kind"
                       />

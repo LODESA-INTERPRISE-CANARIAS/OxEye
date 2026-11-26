@@ -8,10 +8,13 @@ import {appendActivity} from '../activity/service.ts';
 
 /** Tables with `organization_id`, `name`, record meta and a unique (organization_id, lower(name)) index. */
 type NamedTable = 'venues' | 'companies';
+/** Demo records real data can start using (and so make real). */
+type PromotableTable = NamedTable | 'contacts';
 
-const ENTITY_TYPE: Record<NamedTable, string> = {
+const ENTITY_TYPE: Record<PromotableTable, string> = {
   venues: 'venue',
   companies: 'company',
+  contacts: 'contact',
 };
 
 export interface NamedRef {
@@ -90,7 +93,7 @@ export async function findOrCreateByName(
 /** Turns a demo record used by real data into a real one (with its activity). */
 export async function promoteDemo(
   tx: Queryable,
-  table: NamedTable,
+  table: PromotableTable,
   id: string,
   actorId: string,
   now: Date,

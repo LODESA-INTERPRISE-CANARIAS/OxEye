@@ -10,7 +10,13 @@
  *   the form reopens with them after signing in again (`lib/rescue.ts`).
  * - Multi-day events («Varios días») and the event's tasks («Tareas»).
  */
-import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   DataSource,
   EventStatus,
@@ -203,9 +209,15 @@ const STATUS_OPTIONS = EVENT_STATUSES.map(v => ({
 export interface EventSheetProps {
   mode: EventSheetMode | null;
   onClose: () => void;
+  /** Told whether the form has unsaved changes (so it is never replaced). */
+  onDirty?: (dirty: boolean) => void;
 }
 
-export const EventSheet: React.FC<EventSheetProps> = ({mode, onClose}) => {
+export const EventSheet: React.FC<EventSheetProps> = ({
+  mode,
+  onClose,
+  onDirty,
+}) => {
   // Mounted only while open, so every opening starts from fresh values.
   if (!mode) return null;
 
@@ -235,7 +247,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({mode, onClose}) => {
     );
   }
 
-  return <EventForm mode={mode} onClose={onClose} />;
+  return <EventForm mode={mode} onClose={onClose} onDirty={onDirty} />;
 };
 
 const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
@@ -286,9 +298,10 @@ const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
 interface EventFormProps {
   mode: Exclude<EventSheetMode, {kind: 'view'}>;
   onClose: () => void;
+  onDirty?: (dirty: boolean) => void;
 }
 
-const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
+const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
   const createEvent = useLogisticsStore(s => s.createEvent);
   const updateEvent = useLogisticsStore(s => s.updateEvent);
   const toast = useLogisticsStore(s => s.toast);
@@ -319,6 +332,8 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose}) => {
   const dirty = (Object.keys(values) as (keyof FormValues)[]).some(
     k => values[k] !== initial[k],
   );
+
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
 
   // Latest form state for the rescue, readable after the session is gone.
   const latest = useRef<FormSnapshot>({values, base, dirty, userId, orgId});

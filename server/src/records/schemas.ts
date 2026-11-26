@@ -3,10 +3,94 @@
  * concurrency version and common text limits.
  */
 import {z} from 'zod';
-import {oneOf} from '../http/validate.ts';
+import {validationError} from '../errors.ts';
+import {isUuid} from '../organizations/service.ts';
+import {oneOf, uuid} from '../http/validate.ts';
+import {normalizeIds} from './ids.ts';
+import {
+  EMAIL_MAX,
+  isPlausibleEmail,
+  isPlausiblePhone,
+  isValidAmount,
+  PHONE_MAX,
+} from '../../../shared/logistics/rules.ts';
 
 export const NAME_MAX = 200;
 export const NOTES_MAX = 5000;
+
+/** Optional text that must pass `check` when given; empty or blank becomes null. */
+function checkedText(
+  max: number,
+  check: (value: string) => boolean,
+  message: string,
+) {
+  return z
+    .string({error: 'Debe ser un texto.'})
+    .max(max, {error: `Máximo ${max} caracteres.`})
+    .transform(v => (v.trim() === '' ? null : v.trim()))
+    .refine(v => v === null || check(v), {error: message})
+    .nullable()
+    .optional();
+}
+
+/** A phone as typed on site; free text («mañana lo paso») is rejected. */
+export const phone = checkedText(
+  PHONE_MAX,
+  isPlausiblePhone,
+  'Teléfono no válido: escribe solo el número (por ejemplo, +34 000 000 000). Si aún no lo tienes, déjalo vacío.',
+);
+
+export const email = checkedText(
+  EMAIL_MAX,
+  isPlausibleEmail,
+  'Correo no válido: escribe una dirección como nombre@dominio.es. Si aún no lo tienes, déjalo vacío.',
+);
+
+/** Euros, at most two decimals; null = unknown (never 0). */
+export const amount = z
+  .number({
+    error: 'Debe ser un importe en euros (un número) o vacío si no se sabe.',
+  })
+  .refine(isValidAmount, {
+    error:
+      'Importe no válido: entre 0 y 10.000.000 €, con dos decimales como máximo.',
+  })
+  .nullable()
+  .optional();
+
+/** A nullable reference to another record. */
+export const optionalUuid = uuid.nullable().optional();
+
+/**
+ * A list of ids that replaces the stored one: at most `max`, every entry a
+ * UUID; returned lower-case, de-duplicated and sorted.
+ */
+export function idList(max: number, what: {list: string; invalid: string}) {
+  return z
+    .array(z.unknown(), {error: `Debe ser una lista de ${what.list}.`})
+    .max(max, {error: `Como máximo ${max} ${what.list}.`})
+    .refine(list => list.every(isUuid), {error: what.invalid})
+    .transform(list => normalizeIds(list as string[]))
+    .optional();
+}
+
+/** `?version=N` of DELETE routes; `what` names the record («la tarea»). */
+export function parseVersionParam(
+  raw: string | undefined,
+  what: string,
+): number {
+  if (raw === undefined || raw.trim() === '') {
+    throw validationError({
+      version: `Falta la versión del registro: recarga ${what} y vuelve a intentarlo.`,
+    });
+  }
+  if (!/^\d{1,9}$/.test(raw.trim()) || Number(raw) < 1) {
+    throw validationError({
+      version: 'La versión debe ser un número entero positivo.',
+    });
+  }
+  return Number(raw);
+}
 
 export const source = oneOf(
   ['observed', 'reported', 'document'],

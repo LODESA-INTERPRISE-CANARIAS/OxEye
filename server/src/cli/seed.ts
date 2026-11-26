@@ -65,4 +65,9 @@ await runCli(async db => {
       ? `Tareas de demostración creadas: ${result.demoTasksCreated} (montaje, entregas y desmontaje del 2 dic).`
       : 'Tareas de demostración: ya existían o no hay evento de demostración; no se ha tocado nada.',
   );
+  console.log(
+    result.demoContactsCreated + result.demoOffersCreated > 0
+      ? `Contactos y catálogo de demostración creados: ${result.demoContactsCreated} personas y ${result.demoOffersCreated} ofertas (empresas y entidades ficticias, teléfonos +34 000 000 00X).`
+      : 'Contactos y catálogo de demostración: ya existían o no hay evento de demostración; no se ha tocado nada.',
+  );
 });

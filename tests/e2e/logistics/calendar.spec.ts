@@ -202,7 +202,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
     ).toBeVisible();
 
     const t1 = timeline.getByRole('button', {
-      name: /^Montaje del escenario, montaje, 08:00 – 13:00, Plaza del Cristo, Escenarios Teide, confirmada/,
+      name: /^Montaje del escenario, montaje, 08:00 – 13:00, Plaza del Cristo, Escenarios Demo, confirmada/,
     });
     await expect(t1).toBeVisible();
     await expect(t1).toHaveAttribute('data-task-id', 't1');

@@ -14,7 +14,7 @@ import {sortTasks} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, EmptyState, LoadError} from '../ui';
 import {ActivityCard} from './ActivityCard';
-import {DemoNotice} from './DemoNotice';
+import {DemoNotice, type DemoCounts} from './DemoNotice';
 import {MiniCalendar} from './MiniCalendar';
 import {TodayTasks} from './TodayTasks';
 import {VerifiedCard} from './VerifiedCard';
@@ -91,8 +91,31 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
     }
     return counts;
   }, [tasks]);
-  const demoCount =
-    events.filter(e => e.isDemo).length + tasks.filter(t => t.isDemo).length;
+  const contacts = useLogisticsStore(s => s.contacts);
+  const companies = useLogisticsStore(s => s.companies);
+  const offers = useLogisticsStore(s => s.offers);
+  // Every kind the demo seed creates, so the notice (and the only way to
+  // remove them) stays while any removable demo record is left.
+  const demo = useMemo<DemoCounts>(() => {
+    const count = (list: {isDemo: boolean}[]) =>
+      list.filter(r => r.isDemo).length;
+    // As on the server: a demo company still used by a real task, person or
+    // offer is kept, so it is not counted (the notice would never go away).
+    const usedByReal = new Set<string>();
+    for (const r of [...tasks, ...contacts]) {
+      if (!r.isDemo && r.company) usedByReal.add(r.company.id);
+    }
+    for (const o of offers) if (!o.isDemo) usedByReal.add(o.company.id);
+    return {
+      events: count(events),
+      tasks: count(tasks),
+      contacts: count(contacts),
+      companies: companies.filter(c => c.isDemo && !usedByReal.has(c.id))
+        .length,
+      offers: count(offers),
+    };
+  }, [events, tasks, contacts, companies, offers]);
+  const demoCount = Object.values(demo).reduce((a, b) => a + b, 0);
   const loading =
     (state === 'loading' || state === 'idle') && events.length === 0;
   const failed = state === 'error' && events.length === 0;
@@ -126,7 +149,7 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
 
   return (
     <div className="lx-hoy" id="lx-space-hoy">
-      {demoCount > 0 && <DemoNotice count={demoCount} canWrite={canWrite} />}
+      {demoCount > 0 && <DemoNotice counts={demo} canWrite={canWrite} />}
       <div className="lx-hoy__grid">
         <div className="lx-hoy__main">
           <Section

@@ -107,23 +107,42 @@ export const DiscardStrip: React.FC<{
   idPrefix: string;
   onKeep: () => void;
   onDiscard: () => void;
-}> = ({idPrefix, onKeep, onDiscard}) => (
-  <div
-    className="lx-confirm-strip"
-    role="alertdialog"
-    aria-labelledby={`${idPrefix}-text`}
-  >
-    <p id={`${idPrefix}-text`}>Tienes cambios sin guardar. ¿Descartarlos?</p>
-    <div className="lx-confirm-strip__actions">
-      <Button onClick={onKeep} id={`${idPrefix}-keep`}>
-        Seguir editando
-      </Button>
-      <Button variant="danger" onClick={onDiscard} id={`${idPrefix}-confirm`}>
-        Descartar
-      </Button>
+  /** Name of the record that opens after discarding, if not just closing. */
+  leavingFor?: string | null;
+}> = ({idPrefix, onKeep, onDiscard, leavingFor}) => {
+  const keepRef = useRef<HTMLButtonElement>(null);
+  // Asked from the middle of the form («Abrir»): bring the question to the
+  // user instead of leaving it unseen in the footer.
+  useEffect(() => {
+    if (leavingFor) keepRef.current?.focus();
+  }, [leavingFor]);
+  return (
+    <div
+      className="lx-confirm-strip"
+      role="alertdialog"
+      aria-labelledby={`${idPrefix}-text`}
+    >
+      <p id={`${idPrefix}-text`}>
+        {leavingFor ? (
+          <>
+            Para abrir «{leavingFor}» se descartará lo que has escrito aquí.
+            ¿Descartarlo?
+          </>
+        ) : (
+          'Tienes cambios sin guardar. ¿Descartarlos?'
+        )}
+      </p>
+      <div className="lx-confirm-strip__actions">
+        <Button ref={keepRef} onClick={onKeep} id={`${idPrefix}-keep`}>
+          Seguir editando
+        </Button>
+        <Button variant="danger" onClick={onDiscard} id={`${idPrefix}-confirm`}>
+          Descartar
+        </Button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export const Provenance: React.FC<{record: Versioned; id?: string}> = ({
   record,
@@ -188,6 +207,131 @@ export const QualityFields: React.FC<{
       onChange={v => v && onVerification(v)}
       help="Borrador: apunte rápido. Por verificar: hay que comprobarlo. Validado: comprobado con la fuente. Validar no es certificar."
     />
+  </div>
+);
+
+/**
+ * The notices at the top of a form: conflict, rescued values, current
+ * version loaded, «Guardado» after «Guardar y seguir», form-level error.
+ */
+export const FormNotices: React.FC<{
+  idPrefix: string;
+  /** «esta persona», «esta empresa», «esta oferta». */
+  subject: string;
+  conflict: Versioned | null;
+  conflictOn: 'save' | 'delete';
+  ownConflict: boolean;
+  onLoadCurrent: () => void;
+  rescued: boolean;
+  currentLoaded: boolean;
+  saved?: React.ReactNode;
+  error?: string;
+  alertRef: React.RefObject<HTMLElement | null>;
+}> = ({
+  idPrefix,
+  subject,
+  conflict,
+  conflictOn,
+  ownConflict,
+  onLoadCurrent,
+  rescued,
+  currentLoaded,
+  saved,
+  error,
+  alertRef,
+}) => (
+  <>
+    {conflict && (
+      <ConflictNotice
+        id={`${idPrefix}-conflict`}
+        loadId={`${idPrefix}-load-current`}
+        subject={subject}
+        outcome={
+          conflictOn === 'delete'
+            ? 'No se ha borrado'
+            : 'Tus cambios no se han guardado'
+        }
+        current={conflict}
+        ownConflict={ownConflict}
+        onLoad={onLoadCurrent}
+        alertRef={alertRef}
+      />
+    )}
+    {rescued && (
+      <p className="lx-notice" role="status" id={`${idPrefix}-rescued`}>
+        <Icon name="refresh" size={16} />
+        Hemos recuperado lo que estabas escribiendo. Revísalo y guarda.
+      </p>
+    )}
+    {currentLoaded && (
+      <p className="lx-notice" role="status" id={`${idPrefix}-current-loaded`}>
+        <Icon name="refresh" size={16} />
+        Estás viendo la versión actual. Vuelve a aplicar tus cambios si siguen
+        haciendo falta y guarda.
+      </p>
+    )}
+    {saved && (
+      <p
+        className="lx-notice lx-notice--success"
+        role="status"
+        id={`${idPrefix}-saved`}
+      >
+        <Icon name="check" size={16} />
+        {saved}
+      </p>
+    )}
+    {error && (
+      <p
+        className="lx-notice lx-notice--error"
+        role="alert"
+        id={`${idPrefix}-error`}
+        tabIndex={-1}
+        ref={el => {
+          alertRef.current = el;
+        }}
+      >
+        <Icon name="alert" size={16} />
+        {error}
+      </p>
+    )}
+  </>
+);
+
+/** «¿Borrar …?» in a sheet's footer, saying exactly what else changes. */
+export const DeleteStrip: React.FC<{
+  idPrefix: string;
+  question: React.ReactNode;
+  detail: React.ReactNode;
+  busy: boolean;
+  onKeep: () => void;
+  onDelete: () => void;
+}> = ({idPrefix, question, detail, busy, onKeep, onDelete}) => (
+  <div
+    className="lx-confirm-strip"
+    role="alertdialog"
+    aria-labelledby={`${idPrefix}-delete-text`}
+    aria-describedby={`${idPrefix}-delete-detail`}
+  >
+    <div>
+      <p id={`${idPrefix}-delete-text`}>{question}</p>
+      <p className="lx-confirm-strip__detail" id={`${idPrefix}-delete-detail`}>
+        {detail}
+      </p>
+    </div>
+    <div className="lx-confirm-strip__actions">
+      <Button onClick={onKeep} id={`${idPrefix}-delete-keep`}>
+        Cancelar
+      </Button>
+      <Button
+        variant="danger"
+        icon="trash"
+        busy={busy}
+        onClick={onDelete}
+        id={`${idPrefix}-delete-confirm`}
+      >
+        {busy ? 'Borrando…' : 'Borrar'}
+      </Button>
+    </div>
   </div>
 );
 

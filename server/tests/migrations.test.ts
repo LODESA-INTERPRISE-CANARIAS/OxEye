@@ -9,11 +9,13 @@ import {
   pendingMigrations,
   readMigrations,
 } from '../src/db/migrate.ts';
+import {BUILT_IN_SERVICE_CATEGORIES} from '../../shared/logistics/rules.ts';
 
 const ALL_MIGRATIONS = [
   '0001_init.sql',
   '0002_tasks.sql',
   '0003_demo_removed.sql',
+  '0004_contacts_catalogue.sql',
 ];
 
 const tempDirs: string[] = [];
@@ -43,10 +45,16 @@ describe('migrations', () => {
     );
     expect(tables.map(t => t.table_name)).toEqual([
       'activity_log',
+      'categories',
       'companies',
+      'company_categories',
+      'contact_events',
+      'contacts',
       'events',
+      'offers',
       'organization_members',
       'organizations',
+      'recent_searches',
       'schema_migrations',
       'sessions',
       'task_dependencies',
@@ -179,6 +187,101 @@ describe('migrations', () => {
               (SELECT count(*)::int FROM tasks) AS tasks`,
     );
     expect(counts[0]).toEqual({events: 1, tasks: 1});
+    await db.close();
+  });
+
+  it('0004 applies on top of a milestone-2 database with tasks and companies, and gives every organization the built-in categories', async () => {
+    const [m1, m2, m3, m4] = readMigrations();
+    const dir = tempMigrations({
+      [m1!.file]: m1!.sql,
+      [m2!.file]: m2!.sql,
+      [m3!.file]: m3!.sql,
+    });
+    const db = await createPgliteDb();
+    expect((await migrate(db, {dir})).applied).toHaveLength(3);
+
+    const [user] = await db.query<{id: string}>(
+      `INSERT INTO users (display_name, role, password_hash)
+       VALUES ('Ana', 'member', 'x') RETURNING id`,
+    );
+    const orgIds: string[] = [];
+    for (const name of ['Org A', 'Org B']) {
+      orgIds.push(
+        (
+          await db.query<{id: string}>(
+            'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
+            [name],
+          )
+        )[0]!.id,
+      );
+    }
+    // A milestone-2 company (with a stray main_contact_id: no contacts existed)
+    // and a task that uses it.
+    const [company] = await db.query<{id: string}>(
+      `INSERT INTO companies (organization_id, name, main_contact_id, created_by, updated_by)
+       VALUES ($1, 'Sonido Prueba', gen_random_uuid(), $2, $2) RETURNING id`,
+      [orgIds[0], user!.id],
+    );
+    await db.query(
+      `INSERT INTO tasks (organization_id, company_id, title, heavy_load, created_by, updated_by)
+       VALUES ($1, $2, 'Prueba de sonido', NULL, $3, $3)`,
+      [orgIds[0], company!.id, user!.id],
+    );
+
+    writeFileSync(join(dir, m4!.file), m4!.sql);
+    expect((await migrate(db, {dir})).applied).toEqual([
+      '0004_contacts_catalogue.sql',
+    ]);
+
+    // Existing rows are kept; the company is a supplier with no main contact.
+    const [c] = await db.query<{
+      kind: string;
+      main_contact_id: string | null;
+      version: number;
+    }>('SELECT kind, main_contact_id, version FROM companies');
+    expect(c).toEqual({kind: 'supplier', main_contact_id: null, version: 1});
+    const [t] = await db.query<{
+      contact_id: string | null;
+      heavy_load: boolean | null;
+      company_id: string;
+    }>('SELECT contact_id, heavy_load, company_id FROM tasks');
+    expect(t).toEqual({
+      contact_id: null,
+      heavy_load: null,
+      company_id: company!.id,
+    });
+
+    // The SQL copy of the built-in list matches the shared constant, in order,
+    // for every organization that already existed.
+    for (const orgId of orgIds) {
+      const cats = await db.query<{name: string; position: number}>(
+        `SELECT name, position FROM categories
+          WHERE organization_id = $1 AND scope = 'service' AND built_in
+          ORDER BY position`,
+        [orgId],
+      );
+      expect(cats.map(r => r.name)).toEqual([...BUILT_IN_SERVICE_CATEGORIES]);
+      expect(cats.map(r => r.position)).toEqual(
+        BUILT_IN_SERVICE_CATEGORIES.map((_, i) => i + 1),
+      );
+    }
+
+    // The new constraints hold.
+    const bad = [
+      "UPDATE companies SET kind = 'shop'",
+      'UPDATE companies SET main_contact_id = gen_random_uuid()',
+      'UPDATE tasks SET contact_id = gen_random_uuid()',
+      `INSERT INTO offers (organization_id, company_id, name, price, created_by, updated_by)
+       VALUES ('${orgIds[0]}', '${company!.id}', 'x', -1, '${user!.id}', '${user!.id}')`,
+      `INSERT INTO offers (organization_id, company_id, name, price, created_by, updated_by)
+       VALUES ('${orgIds[0]}', '${company!.id}', 'x', 10000000.01, '${user!.id}', '${user!.id}')`,
+      `INSERT INTO offers (organization_id, company_id, name, unit, custom_unit, created_by, updated_by)
+       VALUES ('${orgIds[0]}', '${company!.id}', 'x', 'day', 'por escenario', '${user!.id}', '${user!.id}')`,
+      `INSERT INTO categories (organization_id, scope, name, created_by)
+       VALUES ('${orgIds[0]}', 'service', 'montaje', '${user!.id}')`,
+      `INSERT INTO categories (organization_id, scope, name) VALUES ('${orgIds[0]}', 'service', 'Sin autor')`,
+    ];
+    for (const sql of bad) await expect(db.query(sql)).rejects.toThrow();
     await db.close();
   });
 

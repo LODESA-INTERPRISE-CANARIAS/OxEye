@@ -4,6 +4,7 @@
  * pending = dotted marker («Pendiente de verificar»).
  */
 import React from 'react';
+import {Icon} from './icons';
 
 export type Certainty = 'confirmed' | 'planned' | 'hypothesis' | 'pending';
 
@@ -71,6 +72,22 @@ export const Chip: React.FC<ChipProps> = ({
     </span>
   );
 };
+
+/**
+ * Inline «Visible para el equipo» marker: the value exists but was withheld
+ * from this viewer (a guest). Never shown as «Pendiente de verificar».
+ */
+export const Withheld: React.FC<{children?: React.ReactNode}> = ({
+  children,
+}) => (
+  <span
+    className="lx-withheld"
+    title="Solo el equipo, con su propio usuario, ve teléfonos, correos, precios y observaciones."
+  >
+    <Icon name="lock" size={13} />
+    {children ?? 'Visible para el equipo'}
+  </span>
+);
 
 /** Inline «Pendiente de verificar» marker for a missing value. */
 export const Pending: React.FC<{children?: React.ReactNode}> = ({children}) => (

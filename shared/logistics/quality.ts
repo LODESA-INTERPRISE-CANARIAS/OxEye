@@ -43,31 +43,40 @@ export function missingForTask(
   return out;
 }
 
+/**
+ * Fields withheld from a guest (`restricted`) are not «missing»: the UI shows
+ * «Visible para el equipo» for them instead.
+ */
 export function missingForContact(
-  c: Pick<Contact, 'phone' | 'email' | 'role'>,
+  c: Pick<Contact, 'phone' | 'email' | 'role' | 'company'> &
+    Partial<Pick<Contact, 'restricted'>>,
 ): string[] {
   const out: string[] = [];
-  if (!c.phone && !c.email) out.push('teléfono o correo');
+  if (!c.restricted && !c.phone && !c.email) out.push('teléfono o correo');
   if (!c.role) out.push('cargo');
+  if (!c.company) out.push('empresa o entidad');
   return out;
 }
 
 export function missingForCompany(
-  c: Pick<Company, 'phone' | 'email' | 'mainContactId' | 'categoryIds'>,
+  c: Pick<Company, 'phone' | 'email' | 'mainContactId' | 'categoryIds'> &
+    Partial<Pick<Company, 'restricted'>>,
 ): string[] {
   const out: string[] = [];
-  if (!c.phone && !c.email) out.push('teléfono o correo');
+  if (!c.restricted && !c.phone && !c.email) out.push('teléfono o correo');
   if (!c.mainContactId) out.push('persona responsable');
   if (!c.categoryIds.length) out.push('categoría');
   return out;
 }
 
 export function missingForOffer(
-  o: Pick<Offer, 'price' | 'unit' | 'customUnit'>,
+  o: Pick<Offer, 'price' | 'unit' | 'customUnit' | 'categoryId'> &
+    Partial<Pick<Offer, 'restricted'>>,
 ): string[] {
   const out: string[] = [];
-  if (o.price === null) out.push('precio');
+  if (!o.restricted && o.price === null) out.push('precio');
   if (o.unit === 'custom' && !o.customUnit) out.push('unidad de contratación');
+  if (!o.categoryId) out.push('categoría');
   return out;
 }
 

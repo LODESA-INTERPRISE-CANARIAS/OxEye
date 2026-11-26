@@ -4,9 +4,13 @@
  */
 import {createContext, useContext} from 'react';
 import type {
+  Company,
+  Contact,
   LocalDate,
   LogisticsEvent,
+  Offer,
   Task,
+  Uuid,
 } from '../../../shared/logistics/contracts.ts';
 
 /** Values a new task starts with, from where it was added. */
@@ -14,6 +18,24 @@ export interface TaskPrefill {
   eventId?: string | null;
   date?: LocalDate | null;
   venueName?: string | null;
+  companyName?: string | null;
+  contactId?: Uuid | null;
+}
+
+/** Values a new person starts with (e.g. from a company or a search). */
+export interface ContactPrefill {
+  name?: string;
+  companyName?: string | null;
+}
+
+export interface CompanyPrefill {
+  name?: string;
+}
+
+export interface OfferPrefill {
+  companyName?: string | null;
+  categoryId?: Uuid | null;
+  name?: string;
 }
 
 export interface LogisticsActions {
@@ -27,6 +49,16 @@ export interface LogisticsActions {
   addTask: (prefill?: TaskPrefill) => void;
   /** Goes to the calendar's day view. */
   openDay: (date: LocalDate) => void;
+  // Milestone 3: people, companies, offers and search.
+  openContact: (contact: Contact) => void;
+  addContact: (prefill?: ContactPrefill) => void;
+  openCompany: (company: Company) => void;
+  addCompany: (prefill?: CompanyPrefill) => void;
+  openOffer: (offer: Offer) => void;
+  addOffer: (prefill?: OfferPrefill) => void;
+  /** A small card with a venue's events and tasks. */
+  openVenue: (venueId: Uuid) => void;
+  openSearch: () => void;
 }
 
 export const ActionsContext = createContext<LogisticsActions | null>(null);

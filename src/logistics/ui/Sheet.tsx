@@ -29,8 +29,11 @@ export interface SheetProps {
   /** Extra header content (chips) next to the title. */
   meta?: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'sm' | 'md';
+  /** `tall`: full height on every screen (search). */
+  size?: 'sm' | 'md' | 'tall';
   id?: string;
+  /** Extra class on the dialog. */
+  className?: string;
   /** Role for confirmation sheets that need an immediate answer. */
   role?: 'dialog' | 'alertdialog';
   children?: React.ReactNode;
@@ -66,6 +69,7 @@ export const Sheet: React.FC<SheetProps> = ({
   footer,
   size = 'md',
   id,
+  className,
   role,
   children,
 }) => {
@@ -142,9 +146,14 @@ export const Sheet: React.FC<SheetProps> = ({
       ref={ref}
       id={id}
       role={role}
-      className={`lx-sheet lx-sheet--${size}`}
+      className={['lx-sheet', `lx-sheet--${size}`, className]
+        .filter(Boolean)
+        .join(' ')}
       aria-labelledby={titleId}
       onCancel={e => {
+        // React bubbles `cancel` through the component tree: a sheet opened
+        // inside this one (reach out, share) handles its own.
+        if (e.target !== e.currentTarget) return;
         const active = document.activeElement;
         focusInside.current = active instanceof HTMLElement ? active : null;
         // Chromium makes repeated Escapes without user activation
@@ -154,7 +163,9 @@ export const Sheet: React.FC<SheetProps> = ({
         e.preventDefault();
         onClose();
       }}
-      onClose={() => {
+      onClose={e => {
+        // Same as `cancel`: a nested sheet's close is not ours.
+        if (e.target !== e.currentTarget) return;
         // Our own close (open → false or unmount): nothing to sync.
         if (ownCloses.current > 0) {
           ownCloses.current--;

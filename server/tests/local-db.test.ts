@@ -68,6 +68,7 @@ describe('local database without Docker (pglite:)', () => {
     expect((await migrate(db)).applied).toEqual([
       '0002_tasks.sql',
       '0003_demo_removed.sql',
+      '0004_contacts_catalogue.sql',
     ]);
     const seeded = await seed(db, {passwordFor: n => `pw-${n}-1234`});
     expect(seeded.organizationCreated).toBe(false);
@@ -81,7 +82,12 @@ describe('local database without Docker (pglite:)', () => {
       [DEMO_EVENT.name],
     );
     expect(rows[0]).toEqual({events: 1, linked: DEMO_TASKS.length});
-    expect((await seed(db, {passwordFor: n => n})).demoTasksCreated).toBe(0);
+    // Milestone 3's demo contacts and offers arrive in the same run.
+    expect(seeded.demoContactsCreated).toBeGreaterThan(0);
+    expect(seeded.demoOffersCreated).toBeGreaterThan(0);
+    const again = await seed(db, {passwordFor: n => n});
+    expect(again.demoTasksCreated).toBe(0);
+    expect(again.demoContactsCreated + again.demoOffersCreated).toBe(0);
     await db.close();
   }, 60_000);
 

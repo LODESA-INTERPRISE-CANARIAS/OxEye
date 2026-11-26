@@ -1,0 +1,4 @@
+# Applied migrations are checksummed byte for byte (src/db/migrate.ts).
+# Always check them out with LF so a Windows checkout (core.autocrlf) or the
+# external server never sees a different checksum for the same migration.
+migrations/*.sql text eol=lf

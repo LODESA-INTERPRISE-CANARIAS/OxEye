@@ -6,20 +6,29 @@
  */
 import type {Db, Queryable} from '../db/db.ts';
 import {appendActivity} from '../activity/service.ts';
+import {lockCatalogue, lockGraph} from '../records/locks.ts';
 import {SYSTEM_USER} from '../seed/seed.ts';
+
+interface Bumped {
+  id: string;
+  organization_id: string;
+  name: string;
+}
 
 /**
  * Deletes every demo record of the organization (or of all organizations when
  * `organizationId` is null) and returns how many records were removed: demo
- * tasks, events, venues and companies, and their activity. Demo venues and
- * companies still used by real records are kept.
+ * tasks, offers, contacts, events, venues and companies, and their activity.
+ * Demo venues and companies still used by real records are kept.
  *
- * Real tasks that lose a link to a demo record (their event or a predecessor)
- * get a new version, `updated_by`/`updated_at` and an activity entry, so a
- * stale edit cannot restore the link silently and the team sees why the task
- * changed. The author is the user who removed the demo, or «Sistema» from the
- * command line. The removal itself is logged once per organization that had
- * demo data, and the organization is marked so the seed skips the demo.
+ * Real records that lose a link to a demo record get a new version,
+ * `updated_by`/`updated_at` and an activity entry, so a stale edit cannot
+ * restore the link silently and the team sees why the record changed: tasks
+ * (their event, a predecessor or their contact), contacts (a demo event) and
+ * companies (a demo main contact). The author is the user who removed the
+ * demo, or «Sistema» from the command line. The removal itself is logged once
+ * per organization that had demo data, and the organization is marked so the
+ * seed skips the demo.
  */
 export async function clearDemo(
   db: Db,
@@ -33,52 +42,96 @@ export async function clearDemo(
     const now = args.now.toISOString();
     const actorId = args.actorId ?? (await systemUserId(tx));
 
-    const bumped = await tx.query<{
-      id: string;
-      organization_id: string;
-      title: string;
-      lost_event: boolean;
-      lost_dependency: boolean;
-    }>(
-      `UPDATE tasks r
-          SET version = version + 1,
+    // Same lock order as every other writer: graph, then catalogue, per
+    // organization in id order, before any row lock.
+    const orgIds = all
+      ? (
+          await tx.query<{id: string}>(
+            'SELECT id FROM organizations ORDER BY id',
+          )
+        ).map(o => o.id)
+      : [args.organizationId as string];
+    for (const id of orgIds) await lockGraph(tx, id);
+    for (const id of orgIds) await lockCatalogue(tx, id);
+
+    const touch = `version = version + 1,
               updated_at = $${params.length + 1}::timestamptz,
-              updated_by = COALESCE($${params.length + 2}::uuid, r.updated_by)
+              updated_by = COALESCE($${params.length + 2}::uuid, r.updated_by)`;
+    const bumped = await tx.query<
+      Bumped & {
+        lost_event: boolean;
+        lost_contact: boolean;
+        lost_dependency: boolean;
+      }
+    >(
+      `UPDATE tasks r
+          SET ${touch}
         WHERE NOT r.is_demo ${inOrg('r')}
           AND (EXISTS (SELECT 1 FROM events e WHERE e.id = r.event_id AND e.is_demo)
+               OR EXISTS (SELECT 1 FROM contacts k WHERE k.id = r.contact_id AND k.is_demo)
                OR EXISTS (SELECT 1 FROM task_dependencies d
                             JOIN tasks p ON p.id = d.depends_on_id
                            WHERE d.task_id = r.id AND p.is_demo))
-        RETURNING r.id, r.organization_id, r.title,
+        RETURNING r.id, r.organization_id, r.title AS name,
                   EXISTS (SELECT 1 FROM events e
                            WHERE e.id = r.event_id AND e.is_demo) AS lost_event,
+                  EXISTS (SELECT 1 FROM contacts k
+                           WHERE k.id = r.contact_id AND k.is_demo) AS lost_contact,
                   EXISTS (SELECT 1 FROM task_dependencies d
                             JOIN tasks p ON p.id = d.depends_on_id
                            WHERE d.task_id = r.id AND p.is_demo) AS lost_dependency`,
       [...params, now, actorId],
     );
-    const tasks = await tx.query<{organization_id: string}>(
+    const bumpedContacts = await tx.query<Bumped>(
+      `UPDATE contacts r
+          SET ${touch}
+        WHERE NOT r.is_demo ${inOrg('r')}
+          AND EXISTS (SELECT 1 FROM contact_events ce
+                        JOIN events e ON e.id = ce.event_id
+                       WHERE ce.contact_id = r.id AND e.is_demo)
+        RETURNING r.id, r.organization_id, r.name`,
+      [...params, now, actorId],
+    );
+    const bumpedCompanies = await tx.query<Bumped>(
+      `UPDATE companies r
+          SET main_contact_id = NULL, ${touch}
+        WHERE NOT r.is_demo ${inOrg('r')}
+          AND EXISTS (SELECT 1 FROM contacts k
+                       WHERE k.id = r.main_contact_id AND k.is_demo)
+        RETURNING r.id, r.organization_id, r.name`,
+      [...params, now, actorId],
+    );
+
+    const remove = (sql: string) =>
+      tx.query<{organization_id: string}>(sql, params);
+    // Children first; foreign keys clear the links of real records
+    // (tasks.event_id, tasks.contact_id, contact_events) bumped above.
+    const tasks = await remove(
       `DELETE FROM tasks t WHERE t.is_demo ${inOrg('t')} RETURNING t.organization_id`,
-      params,
     );
-    const events = await tx.query<{organization_id: string}>(
+    const offers = await remove(
+      `DELETE FROM offers o WHERE o.is_demo ${inOrg('o')} RETURNING o.organization_id`,
+    );
+    const contacts = await remove(
+      `DELETE FROM contacts k WHERE k.is_demo ${inOrg('k')} RETURNING k.organization_id`,
+    );
+    const events = await remove(
       `DELETE FROM events e WHERE e.is_demo ${inOrg('e')} RETURNING e.organization_id`,
-      params,
     );
-    const venues = await tx.query<{organization_id: string}>(
+    const venues = await remove(
       `DELETE FROM venues v
         WHERE v.is_demo ${inOrg('v')}
           AND NOT EXISTS (SELECT 1 FROM events e WHERE e.venue_id = v.id)
           AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.venue_id = v.id)
         RETURNING v.organization_id`,
-      params,
     );
-    const companies = await tx.query<{organization_id: string}>(
+    const companies = await remove(
       `DELETE FROM companies c
         WHERE c.is_demo ${inOrg('c')}
           AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.company_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM contacts k WHERE k.company_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM offers o WHERE o.company_id = c.id)
         RETURNING c.organization_id`,
-      params,
     );
     await tx.query(
       `DELETE FROM activity_log a WHERE a.is_demo ${inOrg('a')}`,
@@ -93,27 +146,38 @@ export async function clearDemo(
       [...params, now],
     );
 
+    const removedRows = [
+      ...tasks,
+      ...offers,
+      ...contacts,
+      ...events,
+      ...venues,
+      ...companies,
+    ];
     if (actorId) {
-      for (const t of bumped) {
-        await appendActivity(tx, {
-          organizationId: t.organization_id,
+      const log = (entityType: string, r: Bumped, changedFields: string[]) =>
+        appendActivity(tx, {
+          organizationId: r.organization_id,
           userId: actorId,
-          entityType: 'task',
-          entityId: t.id,
-          entityLabel: t.title,
+          entityType,
+          entityId: r.id,
+          entityLabel: r.name,
           action: 'update',
-          changedFields: [
-            ...(t.lost_event ? ['eventId'] : []),
-            ...(t.lost_dependency ? ['dependsOn'] : []),
-          ],
+          changedFields,
           at: args.now,
         });
+      for (const c of bumpedCompanies) {
+        await log('company', c, ['mainContactId']);
       }
-      const touched = new Set(
-        [...tasks, ...events, ...venues, ...companies].map(
-          r => r.organization_id,
-        ),
-      );
+      for (const c of bumpedContacts) await log('contact', c, ['eventIds']);
+      for (const t of bumped) {
+        await log('task', t, [
+          ...(t.lost_event ? ['eventId'] : []),
+          ...(t.lost_contact ? ['contact'] : []),
+          ...(t.lost_dependency ? ['dependsOn'] : []),
+        ]);
+      }
+      const touched = new Set(removedRows.map(r => r.organization_id));
       for (const organizationId of [...touched].sort()) {
         await appendActivity(tx, {
           organizationId,
@@ -126,9 +190,7 @@ export async function clearDemo(
         });
       }
     }
-    return {
-      removed: tasks.length + events.length + venues.length + companies.length,
-    };
+    return {removed: removedRows.length};
   });
 }
 

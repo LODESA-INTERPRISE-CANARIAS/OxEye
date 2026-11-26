@@ -3,7 +3,7 @@ import {slotToInstants, utcToLocal} from '../../../shared/logistics/time.ts';
 
 /**
  * Stateful in-memory mock of the Logistics Manager API for behavioural E2E
- * tests (milestones 1 and 2). It follows the route table and error bodies of
+ * tests (milestones 1 to 3). It follows the route table and error bodies of
  * `shared/logistics/contracts.ts` and `server/src`, keeps events, tasks,
  * venues and companies so refetches after a write see the change, and
  * records every request so tests can assert what the UI actually sent.
@@ -179,7 +179,7 @@ export function makeTask(
   };
 }
 
-/** A contract-shaped company (milestone 2 only lists them by name). */
+/** A contract-shaped company (milestone 3 shape; M2 only lists them by name). */
 export function makeCompany(id: string, name: string, extra: Json = {}): Json {
   const created = new Date(Date.now() - 3 * 3600_000).toISOString();
   return {
@@ -187,6 +187,9 @@ export function makeCompany(id: string, name: string, extra: Json = {}): Json {
     version: 1,
     organizationId: ORG,
     name,
+    kind: 'supplier',
+    contactCount: 0,
+    restricted: false,
     categoryIds: [],
     phone: null,
     email: null,
@@ -194,6 +197,106 @@ export function makeCompany(id: string, name: string, extra: Json = {}): Json {
     notes: null,
     mainContactId: null,
     offerCount: 0,
+    source: null,
+    verification: 'draft',
+    isDemo: false,
+    createdBy: elvis,
+    createdAt: created,
+    updatedBy: elvis,
+    updatedAt: created,
+    ...extra,
+  };
+}
+
+/** Stable id of a built-in category: `cat-` + name without accents. */
+export const categoryId = (name: string) =>
+  `cat-${name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')}`;
+
+/** The built-in service categories, as the server seeds them. */
+export const BUILT_IN_CATEGORIES = [
+  'Montaje',
+  'Estructuras',
+  'Carpas',
+  'Vallas',
+  'Transporte',
+  'Catering',
+  'Publicidad',
+  'Personal',
+  'Seguridad',
+  'Sonido',
+  'Iluminación',
+  'Audiovisuales',
+  'Limpieza',
+  'Ocio',
+  'Otros servicios',
+];
+
+export function makeCategories(): Json[] {
+  return BUILT_IN_CATEGORIES.map(name => ({
+    id: categoryId(name),
+    organizationId: ORG,
+    scope: 'service',
+    name,
+    builtIn: true,
+  }));
+}
+
+/** A contract-shaped person (milestone 3). Fictitious data only. */
+export function makeContact(id: string, name: string, extra: Json = {}): Json {
+  const created = new Date(Date.now() - 3 * 3600_000).toISOString();
+  return {
+    id,
+    version: 1,
+    organizationId: ORG,
+    name,
+    role: null,
+    company: null,
+    phone: null,
+    email: null,
+    description: null,
+    notes: null,
+    eventIds: [],
+    restricted: false,
+    source: null,
+    verification: 'draft',
+    isDemo: false,
+    createdBy: elvis,
+    createdAt: created,
+    updatedBy: elvis,
+    updatedAt: created,
+    ...extra,
+  };
+}
+
+/** A contract-shaped catalogue offer (milestone 3). */
+export function makeOffer(
+  id: string,
+  name: string,
+  company: {id: string; name: string},
+  extra: Json = {},
+): Json {
+  const created = new Date(Date.now() - 3 * 3600_000).toISOString();
+  return {
+    id,
+    version: 1,
+    organizationId: ORG,
+    company: {...company},
+    categoryId: null,
+    name,
+    description: null,
+    price: null,
+    unit: 'unit',
+    customUnit: null,
+    transportCost: null,
+    assemblyCost: null,
+    maintenanceCost: null,
+    conditions: null,
+    vatIncluded: null,
+    restricted: false,
     source: null,
     verification: 'draft',
     isDemo: false,
@@ -221,6 +324,12 @@ export interface MockOptions {
   tasks?: Json[];
   venues?: {id: string; name: string}[];
   companies?: Json[];
+  /** Milestone 3. Categories default to the built-in service ones. */
+  categories?: Json[];
+  contacts?: Json[];
+  offers?: Json[];
+  /** Recent searches of the signed-in member, newest first. */
+  recentSearches?: {query: string; at: string}[];
 }
 
 export interface MockApi {
@@ -235,6 +344,10 @@ export interface MockApi {
   tasks: Json[];
   venues: {id: string; name: string}[];
   companies: Json[];
+  categories: Json[];
+  contacts: Json[];
+  offers: Json[];
+  recentSearches: {query: string; at: string}[];
   requests: RecordedRequest[];
   /** Requests matching a method and a path (string or pattern). */
   calls: (method: string, path: string | RegExp) => RecordedRequest[];
@@ -242,6 +355,13 @@ export interface MockApi {
   editOnServer: (id: string, patch: Json, by?: typeof dailos) => Json;
   /** Simulates another person saving a task: bumps its version. */
   editTaskOnServer: (id: string, patch: Json, by?: typeof dailos) => Json;
+  /** Milestone 3: another person saving a company, person or offer. */
+  editDirectoryOnServer: (
+    list: 'companies' | 'contacts' | 'offers',
+    id: string,
+    patch: Json,
+    by?: typeof dailos,
+  ) => Json;
 }
 
 const VENUES = [
@@ -320,6 +440,10 @@ export async function mockApi(
     tasks: opts.tasks ?? [],
     venues: opts.venues ?? VENUES.map(v => ({...v})),
     companies: opts.companies ?? [],
+    categories: opts.categories ?? makeCategories(),
+    contacts: opts.contacts ?? [],
+    offers: opts.offers ?? [],
+    recentSearches: opts.recentSearches ?? [],
     requests: [],
     calls: (method, path) =>
       state.requests.filter(
@@ -346,6 +470,16 @@ export async function mockApi(
         updatedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
       });
       return task;
+    },
+    editDirectoryOnServer: (list, id, patch, by = dailos) => {
+      const record = state[list].find(r => r.id === id);
+      if (!record) throw new Error(`No ${list} ${id}`);
+      Object.assign(record, patch, {
+        version: (record.version as number) + 1,
+        updatedBy: by,
+        updatedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+      });
+      return record;
     },
   };
 
@@ -381,6 +515,475 @@ export async function mockApi(
       state.companies.push(company);
     }
     return {id: company.id, name: company.name};
+  };
+
+  // ---- milestone 3: people, companies, catalogue, recent searches
+  const contactRef = (id: unknown) => {
+    if (typeof id !== 'string') return null;
+    const c = state.contacts.find(x => x.id === id);
+    return c ? {id: c.id as string, name: c.name as string} : null;
+  };
+  const byName = (list: Json[]) =>
+    [...list].sort((a, b) =>
+      (a.name as string).localeCompare(b.name as string, 'es', {
+        sensitivity: 'base',
+      }),
+    );
+  const isGuest = (role: string) => role === 'guest';
+  // Same withholding as server/src/records/redact.ts: guests never receive
+  // contact details, prices or free-text observations. The field lists below
+  // are a hand-written copy of `WITHHELD_FROM_GUESTS` in that file (the mock
+  // cannot import server code): keep them in step when it changes.
+  const viewCompany = (c: Json, role: string): Json => {
+    const counted = {
+      ...c,
+      contactCount: state.contacts.filter(
+        p => (p.company as Json | null)?.id === c.id,
+      ).length,
+      offerCount: state.offers.filter(
+        o => (o.company as Json | null)?.id === c.id,
+      ).length,
+    };
+    return isGuest(role)
+      ? {...counted, phone: null, email: null, notes: null, restricted: true}
+      : counted;
+  };
+  const viewContact = (c: Json, role: string): Json =>
+    isGuest(role)
+      ? {
+          ...c,
+          phone: null,
+          email: null,
+          description: null,
+          notes: null,
+          restricted: true,
+        }
+      : c;
+  const viewOffer = (o: Json, role: string): Json =>
+    isGuest(role)
+      ? {
+          ...o,
+          price: null,
+          transportCost: null,
+          assemblyCost: null,
+          maintenanceCost: null,
+          conditions: null,
+          restricted: true,
+        }
+      : o;
+  const bump = (record: Json, by: Json) =>
+    Object.assign(record, {
+      version: (record.version as number) + 1,
+      updatedBy: by,
+      updatedAt: new Date().toISOString(),
+    });
+  const conflict = (route: Route, current: Json, what: string) =>
+    json(
+      route,
+      {
+        code: 'VERSION_CONFLICT',
+        message: `Otra persona ha cambiado ${what} mientras la editabas. Revisa la versión actual antes de guardar tus cambios.`,
+        current,
+      },
+      409,
+    );
+  const checkVersion = (
+    route: Route,
+    record: Json,
+    version: unknown,
+    what: string,
+  ) => {
+    if (typeof version !== 'number' || Number.isNaN(version)) {
+      return validation(route, {
+        version:
+          'Falta la versión del registro: recarga y vuelve a intentarlo.',
+      });
+    }
+    if (version !== record.version) return conflict(route, record, what);
+    return null;
+  };
+  const companyFrom = (input: Json): Json | null => {
+    if (typeof input.companyId === 'string') {
+      return state.companies.find(c => c.id === input.companyId) ?? null;
+    }
+    const n = text(input.companyName);
+    if (!n) return null;
+    let company = state.companies.find(
+      c => nameKey(c.name as string) === nameKey(n),
+    );
+    if (!company) {
+      company = makeCompany(`c-new-${++seq}`, n);
+      state.companies.push(company);
+    }
+    return company;
+  };
+  const refOf = (c: Json | null) =>
+    c ? {id: c.id as string, name: c.name as string} : null;
+  const PROVENANCE = ['source', 'verification'];
+  const amountKeys = [
+    'price',
+    'transportCost',
+    'assemblyCost',
+    'maintenanceCost',
+  ];
+  const amountProblems = (input: Json) => {
+    const fields: Record<string, string> = {};
+    for (const k of amountKeys) {
+      const v = input[k];
+      if (v === undefined || v === null) continue;
+      if (
+        typeof v !== 'number' ||
+        v < 0 ||
+        v > 10_000_000 ||
+        Math.round(v * 100) !== v * 100
+      ) {
+        fields[k] = 'Importe no válido: hasta dos decimales.';
+      }
+    }
+    return fields;
+  };
+
+  const directoryRoute = async (
+    route: Route,
+    ctx: {
+      path: string;
+      method: string;
+      body: unknown;
+      url: URL;
+      user: {id: string; displayName: string; role: string};
+      ref: Json;
+    },
+  ): Promise<void | null> => {
+    const {path, method, url, user, ref} = ctx;
+    const input = (ctx.body ?? {}) as Json;
+    const now = () => new Date().toISOString();
+
+    // categories
+    if (path === `/organizations/${ORG}/categories` && method === 'GET') {
+      return json(route, {items: state.categories});
+    }
+    if (path === '/categories' && method === 'POST') {
+      const n = text(input.name);
+      if (!n) return validation(route, {name: 'Escribe el nombre.'});
+      const existing = state.categories.find(
+        c =>
+          c.scope === input.scope && nameKey(c.name as string) === nameKey(n),
+      );
+      if (existing) return json(route, existing);
+      const created = {
+        id: `cat-new-${++seq}`,
+        organizationId: ORG,
+        scope: input.scope ?? 'service',
+        name: n,
+        builtIn: false,
+      };
+      state.categories.push(created);
+      return json(route, created, 201);
+    }
+
+    // recent searches (members only)
+    const recentPath = `/organizations/${ORG}/recent-searches`;
+    if (path === recentPath) {
+      if (method === 'GET') return json(route, {items: state.recentSearches});
+      if (isGuest(user.role)) {
+        return error(route, 403, 'FORBIDDEN', 'Solo lectura.');
+      }
+      if (method === 'POST') {
+        const q = text(input.query);
+        if (!q) return validation(route, {query: 'Búsqueda vacía.'});
+        const key = (s: string) =>
+          s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        state.recentSearches = [
+          {query: q, at: now()},
+          ...state.recentSearches.filter(r => key(r.query) !== key(q)),
+        ].slice(0, 5);
+        return json(route, {items: state.recentSearches});
+      }
+      if (method === 'DELETE') {
+        state.recentSearches = [];
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+
+    // companies
+    if (path === '/companies' && method === 'POST') {
+      const n = text(input.name);
+      if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
+      const dup = state.companies.find(
+        c => nameKey(c.name as string) === nameKey(n),
+      );
+      if (dup) {
+        return json(
+          route,
+          {
+            code: 'DUPLICATE',
+            message: `Ya existe «${dup.name}».`,
+            current: viewCompany(dup, user.role),
+          },
+          409,
+        );
+      }
+      const created = makeCompany(`c-new-${++seq}`, n, {
+        kind: input.kind ?? 'supplier',
+        categoryIds: input.categoryIds ?? [],
+        phone: text(input.phone),
+        email: text(input.email),
+        website: text(input.website),
+        notes: text(input.notes),
+        source: input.source ?? null,
+        verification: input.verification ?? 'draft',
+        createdBy: ref,
+        updatedBy: ref,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      state.companies.push(created);
+      return json(route, viewCompany(created, user.role), 201);
+    }
+    const companyMatch = /^\/companies\/([^/]+)$/.exec(path);
+    if (companyMatch) {
+      const company = state.companies.find(c => c.id === companyMatch[1]);
+      if (!company) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (method === 'PATCH') {
+        const bad = checkVersion(route, company, input.version, 'esta empresa');
+        if (bad) return bad;
+        if ('name' in input) {
+          const n = text(input.name);
+          if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
+          const dup = state.companies.find(
+            c => c !== company && nameKey(c.name as string) === nameKey(n),
+          );
+          if (dup) {
+            return json(
+              route,
+              {
+                code: 'DUPLICATE',
+                message: `Ya existe «${dup.name}».`,
+                current: viewCompany(dup, user.role),
+              },
+              409,
+            );
+          }
+          company.name = n;
+          for (const list of [state.contacts, state.offers, state.tasks]) {
+            for (const r of list) {
+              const c = r.company as Json | null;
+              if (c?.id === company.id) r.company = {id: company.id, name: n};
+            }
+          }
+        }
+        for (const k of ['phone', 'email', 'website', 'notes']) {
+          if (k in input) company[k] = text(input[k]);
+        }
+        for (const k of [
+          'kind',
+          'categoryIds',
+          'mainContactId',
+          ...PROVENANCE,
+        ]) {
+          if (k in input) company[k] = input[k];
+        }
+        bump(company, ref);
+        return json(route, viewCompany(company, user.role));
+      }
+      if (method === 'DELETE') {
+        const bad = checkVersion(
+          route,
+          company,
+          Number(url.searchParams.get('version') ?? NaN),
+          'esta empresa',
+        );
+        if (bad) return bad;
+        state.companies = state.companies.filter(c => c !== company);
+        state.offers = state.offers.filter(
+          o => (o.company as Json).id !== company.id,
+        );
+        for (const list of [state.contacts, state.tasks]) {
+          for (const r of list) {
+            if ((r.company as Json | null)?.id === company.id) {
+              r.company = null;
+              bump(r, ref);
+            }
+          }
+        }
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+
+    // contacts
+    if (path === `/organizations/${ORG}/contacts` && method === 'GET') {
+      return json(route, {
+        items: byName(state.contacts).map(c => viewContact(c, user.role)),
+      });
+    }
+    if (path === '/contacts' && method === 'POST') {
+      const n = text(input.name);
+      if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
+      const created = makeContact(`p-new-${++seq}`, n, {
+        role: text(input.role),
+        company: refOf(companyFrom(input)),
+        phone: text(input.phone),
+        email: text(input.email),
+        description: text(input.description),
+        notes: text(input.notes),
+        eventIds: input.eventIds ?? [],
+        source: input.source ?? null,
+        verification: input.verification ?? 'draft',
+        createdBy: ref,
+        updatedBy: ref,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      state.contacts.push(created);
+      return json(route, created, 201);
+    }
+    const contactMatch = /^\/contacts\/([^/]+)$/.exec(path);
+    if (contactMatch) {
+      const contact = state.contacts.find(c => c.id === contactMatch[1]);
+      if (!contact) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (method === 'PATCH') {
+        const bad = checkVersion(route, contact, input.version, 'esta persona');
+        if (bad) return bad;
+        if ('name' in input) {
+          const n = text(input.name);
+          if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
+          contact.name = n;
+        }
+        for (const k of ['role', 'phone', 'email', 'description', 'notes']) {
+          if (k in input) contact[k] = text(input[k]);
+        }
+        for (const k of ['eventIds', ...PROVENANCE]) {
+          if (k in input) contact[k] = input[k];
+        }
+        if ('companyId' in input || 'companyName' in input) {
+          const before = (contact.company as Json | null)?.id;
+          contact.company = refOf(companyFrom(input));
+          const old = state.companies.find(c => c.id === before);
+          if (
+            old &&
+            old.mainContactId === contact.id &&
+            before !== (contact.company as Json | null)?.id
+          ) {
+            old.mainContactId = null;
+            bump(old, ref);
+          }
+        }
+        bump(contact, ref);
+        return json(route, contact);
+      }
+      if (method === 'DELETE') {
+        const bad = checkVersion(
+          route,
+          contact,
+          Number(url.searchParams.get('version') ?? NaN),
+          'esta persona',
+        );
+        if (bad) return bad;
+        state.contacts = state.contacts.filter(c => c !== contact);
+        for (const t of state.tasks) {
+          if ((t.contact as Json | null)?.id === contact.id) {
+            t.contact = null;
+            bump(t, ref);
+          }
+        }
+        for (const c of state.companies) {
+          if (c.mainContactId === contact.id) {
+            c.mainContactId = null;
+            bump(c, ref);
+          }
+        }
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+
+    // offers
+    if (path === `/organizations/${ORG}/offers` && method === 'GET') {
+      return json(route, {
+        items: [...state.offers]
+          .sort(
+            (a, b) =>
+              ((a.company as Json).name as string).localeCompare(
+                (b.company as Json).name as string,
+                'es',
+              ) || (a.name as string).localeCompare(b.name as string, 'es'),
+          )
+          .map(o => viewOffer(o, user.role)),
+      });
+    }
+    if (path === '/offers' && method === 'POST') {
+      const fields = amountProblems(input);
+      const n = text(input.name);
+      if (!n) fields.name = 'Escribe qué se ofrece.';
+      const company = companyFrom(input);
+      if (!company) fields.companyName = 'Indica la empresa que lo ofrece.';
+      if (Object.keys(fields).length) return validation(route, fields);
+      const created = makeOffer(`o-new-${++seq}`, n!, refOf(company)!, {
+        categoryId: input.categoryId ?? null,
+        description: text(input.description),
+        price: input.price ?? null,
+        unit: input.unit ?? 'unit',
+        customUnit: input.unit === 'custom' ? text(input.customUnit) : null,
+        transportCost: input.transportCost ?? null,
+        assemblyCost: input.assemblyCost ?? null,
+        maintenanceCost: input.maintenanceCost ?? null,
+        conditions: text(input.conditions),
+        vatIncluded: input.vatIncluded ?? null,
+        source: input.source ?? null,
+        verification: input.verification ?? 'draft',
+        createdBy: ref,
+        updatedBy: ref,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      state.offers.push(created);
+      return json(route, created, 201);
+    }
+    const offerMatch = /^\/offers\/([^/]+)$/.exec(path);
+    if (offerMatch) {
+      const offer = state.offers.find(o => o.id === offerMatch[1]);
+      if (!offer) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (method === 'PATCH') {
+        const bad = checkVersion(route, offer, input.version, 'esta oferta');
+        if (bad) return bad;
+        const fields = amountProblems(input);
+        if ('name' in input && !text(input.name)) {
+          fields.name = 'Escribe qué se ofrece.';
+        }
+        if (Object.keys(fields).length) return validation(route, fields);
+        if ('name' in input) offer.name = text(input.name);
+        for (const k of ['description', 'conditions', 'customUnit']) {
+          if (k in input) offer[k] = text(input[k]);
+        }
+        for (const k of [
+          'categoryId',
+          'unit',
+          'vatIncluded',
+          ...amountKeys,
+          ...PROVENANCE,
+        ]) {
+          if (k in input) offer[k] = input[k];
+        }
+        if (offer.unit !== 'custom') offer.customUnit = null;
+        if ('companyId' in input || 'companyName' in input) {
+          const company = companyFrom(input);
+          if (company) offer.company = refOf(company);
+        }
+        bump(offer, ref);
+        return json(route, offer);
+      }
+      if (method === 'DELETE') {
+        const bad = checkVersion(
+          route,
+          offer,
+          Number(url.searchParams.get('version') ?? NaN),
+          'esta oferta',
+        );
+        if (bad) return bad;
+        state.offers = state.offers.filter(o => o !== offer);
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+    return null;
   };
 
   /** Path of predecessors from `from` back to `target`, if any. */
@@ -533,12 +1136,66 @@ export async function mockApi(
         return json(route, {items: []});
       }
       if (path === `/organizations/${ORG}/demo` && method === 'DELETE') {
-        const before = state.events.length + state.tasks.length;
-        state.events = state.events.filter(e => !e.isDemo);
+        // Same contract as server/src/demo/service.ts: demo tasks, offers,
+        // contacts and events go; demo companies (and venues) go only when no
+        // real record uses them; real records that lose a link to a demo
+        // record get a new version and author.
+        const by = {id: user.id, displayName: user.displayName};
+        const ids = (list: Json[]) =>
+          new Set(list.filter(r => r.isDemo).map(r => r.id as string));
+        const demoEvents = ids(state.events);
+        const demoTasks = ids(state.tasks);
+        const demoContacts = ids(state.contacts);
+        for (const t of state.tasks) {
+          if (t.isDemo) continue;
+          const deps = t.dependsOn as string[];
+          const lostEvent = demoEvents.has(t.eventId as string);
+          const lostContact = demoContacts.has(
+            (t.contact as Json | null)?.id as string,
+          );
+          const lostDependency = deps.some(d => demoTasks.has(d));
+          if (!lostEvent && !lostContact && !lostDependency) continue;
+          if (lostEvent) t.eventId = null;
+          if (lostContact) t.contact = null;
+          t.dependsOn = deps.filter(d => !demoTasks.has(d));
+          bump(t, by);
+        }
+        for (const c of state.contacts) {
+          const events = c.eventIds as string[];
+          if (c.isDemo || !events.some(e => demoEvents.has(e))) continue;
+          c.eventIds = events.filter(e => !demoEvents.has(e));
+          bump(c, by);
+        }
+        for (const c of state.companies) {
+          const main = c.mainContactId as string;
+          if (c.isDemo || !demoContacts.has(main)) continue;
+          c.mainContactId = null;
+          bump(c, by);
+        }
+        const before =
+          state.tasks.length +
+          state.offers.length +
+          state.contacts.length +
+          state.events.length +
+          state.companies.length;
         state.tasks = state.tasks.filter(t => !t.isDemo);
-        return json(route, {
-          removed: before - state.events.length - state.tasks.length,
-        });
+        state.offers = state.offers.filter(o => !o.isDemo);
+        state.contacts = state.contacts.filter(c => !c.isDemo);
+        state.events = state.events.filter(e => !e.isDemo);
+        const usedCompany = (id: unknown) =>
+          [...state.tasks, ...state.contacts, ...state.offers].some(
+            r => (r.company as Json | null)?.id === id,
+          );
+        state.companies = state.companies.filter(
+          c => !c.isDemo || usedCompany(c.id),
+        );
+        const after =
+          state.tasks.length +
+          state.offers.length +
+          state.contacts.length +
+          state.events.length +
+          state.companies.length;
+        return json(route, {removed: before - after});
       }
       if (path === '/events' && method === 'POST') {
         const input = (body ?? {}) as Json;
@@ -639,9 +1296,20 @@ export async function mockApi(
         });
       }
       if (path === `/organizations/${ORG}/companies` && method === 'GET') {
-        return json(route, {items: state.companies});
+        return json(route, {
+          items: byName(state.companies).map(c => viewCompany(c, user.role)),
+        });
       }
       const ref = {id: user.id, displayName: user.displayName};
+      const m3 = await directoryRoute(route, {
+        path,
+        method,
+        body,
+        url,
+        user,
+        ref,
+      });
+      if (m3 !== null) return m3;
       if (path === '/tasks' && method === 'POST') {
         const input = (body ?? {}) as Json;
         const slot = {
@@ -670,6 +1338,7 @@ export async function mockApi(
             eventId: (input.eventId as string | null) ?? null,
             venue: venueRef(input.venueName),
             company: companyRef(input),
+            contact: contactRef(input.contactId),
             kind: input.kind ?? 'other',
             status: input.status ?? 'planned',
             dependsOn,
@@ -739,6 +1408,7 @@ export async function mockApi(
         if ('companyName' in input || 'companyId' in input) {
           task.company = companyRef(input, task.company);
         }
+        if ('contactId' in input) task.contact = contactRef(input.contactId);
         if (touchesSlot) {
           Object.assign(
             task,

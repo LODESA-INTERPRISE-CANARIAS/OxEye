@@ -19,7 +19,7 @@ Para probar en un portátil sin Docker. Es PostgreSQL de verdad (PGlite), pero d
 ```sh
 npm --prefix server install                 # dependencias del servidor
 npm --prefix server run db:migrate          # crea las tablas
-npm --prefix server run db:seed             # organización, 5 usuarios, evento y tareas demo
+npm --prefix server run db:seed             # organización, 5 usuarios y datos de demostración
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
@@ -34,7 +34,7 @@ npm --prefix server ci                      # dependencias del servidor
 cp server/.env.example server/.env          # configuración local (no se sube a Git)
 npm --prefix server run db:up               # PostgreSQL en el puerto 5433
 npm --prefix server run db:migrate          # crea las tablas
-npm --prefix server run db:seed             # organización, 5 usuarios, evento y tareas demo
+npm --prefix server run db:seed             # organización, 5 usuarios y datos de demostración
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
@@ -57,9 +57,11 @@ Después arranca la web con `npm run dev` y abre `http://localhost:5173/#logisti
 | Base de datos y API en Docker                   | `docker compose -f server/docker-compose.yml --profile full up -d --build` |
 | Tests (sin Docker: PostgreSQL en memoria)       | `npx vitest run --root server`                                             |
 
-**Al actualizar el código** (por ejemplo, al llegar las tareas y el calendario): para la API, ejecuta `db:migrate` y después `db:seed`. Las migraciones nuevas solo añaden tablas y columnas, así que los datos existentes se conservan; `db:seed` conserva los usuarios y contraseñas existentes y añade las tareas de demostración al evento demo si aún no las tiene.
+**Al actualizar el código** (por ejemplo, al llegar las tareas y el calendario, o los contactos y el catálogo): para la API, ejecuta `db:migrate` y después `db:seed`. Las migraciones nuevas solo añaden tablas y columnas, así que los datos existentes se conservan; `db:seed` conserva los usuarios y contraseñas existentes, da a la organización las 15 categorías de serie y añade al evento demo lo que le falte (tareas; empresas, personas y ofertas de demostración), una sola vez.
 
-**Datos de demostración**: se borran desde la app («Borrar datos de demostración») o con `db:clear-demo`. Una vez borrados, la base de datos lo recuerda y `db:seed` (también con `--reset-passwords`) ya no los vuelve a crear; lo indica con una línea «Datos de demostración: se borraron el …». Las tareas reales que colgaban del evento demo o de una tarea demo se conservan, pierden ese enlace y quedan en «Actividad reciente» como modificadas por quien borró la demo («Sistema» si fue con `db:clear-demo`).
+**Datos de demostración**: se borran desde la app («Borrar datos de demostración») o con `db:clear-demo`. Una vez borrados, la base de datos lo recuerda y `db:seed` (también con `--reset-passwords`) ya no los vuelve a crear; lo indica con una línea «Datos de demostración: se borraron el …». Los registros reales que tenían un enlace a la demo se conservan y lo pierden: tareas (su evento, una tarea previa o su contacto), personas (el evento demo) y empresas (su contacto principal). Quedan en «Actividad reciente» como modificados por quien borró la demo («Sistema» si fue con `db:clear-demo`). Las personas y empresas de demostración son ficticias (teléfonos `+34 000 000 00X`, correos `@example.com`); si una tarea real usa una de ellas, pasa a ser real y no se borra.
+
+**Invitado** ve nombres, empresas, cargos y ofertas, pero nunca teléfonos, correos, observaciones, precios, costes ni condiciones: el servidor los envía vacíos con `restricted: true`.
 
 **Empezar de cero** (borra todos los datos locales): `npm --prefix server run db:down`, elimina la carpeta `server/pgdata` y repite migrate y seed.
 

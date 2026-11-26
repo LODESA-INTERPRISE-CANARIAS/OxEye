@@ -17,6 +17,7 @@ const STATUS: Record<ApiErrorCode, ContentfulStatusCode> = {
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   VERSION_CONFLICT: 409,
+  DUPLICATE: 409,
   RATE_LIMITED: 429,
   INTERNAL: 500,
 };

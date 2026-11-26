@@ -1,5 +1,6 @@
 /**
- * Rescue of an unsaved event or task form when the session expires mid-edit.
+ * Rescue of an unsaved form (event, task, contact, company, offer) when the
+ * session expires mid-edit.
  *
  * One slot in `sessionStorage` (this tab only, gone when the tab closes): the
  * form values, who was typing and, for edits, the record copy the changes
@@ -8,7 +9,10 @@
  * the outbox arrive later with Dexie; this only bridges a re-login.
  */
 import type {
+  Company,
+  Contact,
   LogisticsEvent,
+  Offer,
   Task,
 } from '../../../shared/logistics/contracts.ts';
 
@@ -28,7 +32,13 @@ export type RescuedForm<V = Record<string, unknown>> =
       /** Event being edited, as it was when editing started; null when creating. */
       base: LogisticsEvent | null;
     })
-  | (RescueBase<V> & {entity: 'task'; base: Task | null});
+  | (RescueBase<V> & {entity: 'task'; base: Task | null})
+  | (RescueBase<V> & {entity: 'contact'; base: Contact | null})
+  | (RescueBase<V> & {entity: 'company'; base: Company | null})
+  | (RescueBase<V> & {entity: 'offer'; base: Offer | null});
+
+type DirectoryEntity = 'contact' | 'company' | 'offer';
+const DIRECTORY: readonly string[] = ['contact', 'company', 'offer'];
 
 export function saveRescue(rescue: RescuedForm<unknown>): void {
   try {
@@ -69,6 +79,16 @@ export function readRescue(): RescuedForm | null {
         entity: 'task',
         base: validBase ? (parsed.base as Task) : null,
       };
+    }
+    if (
+      typeof parsed.entity === 'string' &&
+      DIRECTORY.includes(parsed.entity)
+    ) {
+      return {
+        ...common,
+        entity: parsed.entity as DirectoryEntity,
+        base: validBase ? parsed.base : null,
+      } as RescuedForm;
     }
     return {
       ...common,

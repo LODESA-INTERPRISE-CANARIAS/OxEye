@@ -43,6 +43,11 @@ export interface ShellProps {
   canWrite: boolean;
   onAddEvent: () => void;
   onAddTask: () => void;
+  onAddContact: () => void;
+  onAddCompany: () => void;
+  onAddOffer: () => void;
+  /** Opens the universal search. */
+  onSearch: () => void;
   /** Disables the swipe between spaces (e.g. inside the day timeline). */
   swipeLocked?: boolean;
   onExit: () => void;
@@ -58,6 +63,10 @@ export const Shell: React.FC<ShellProps> = ({
   canWrite,
   onAddEvent,
   onAddTask,
+  onAddContact,
+  onAddCompany,
+  onAddOffer,
+  onSearch,
   swipeLocked = false,
   onExit,
   children,
@@ -78,8 +87,29 @@ export const Shell: React.FC<ShellProps> = ({
         icon: 'task',
         onSelect: onAddTask,
       },
+      {
+        id: 'contact',
+        label: 'Persona',
+        description: 'Alguien a quien llamar: basta con el nombre.',
+        icon: 'user',
+        onSelect: () => onAddContact(),
+      },
+      {
+        id: 'company',
+        label: 'Empresa o entidad',
+        description: 'Proveedor, área municipal, asociación…',
+        icon: 'building',
+        onSelect: () => onAddCompany(),
+      },
+      {
+        id: 'offer',
+        label: 'Oferta',
+        description: 'Lo que ofrece un proveedor y a qué precio.',
+        icon: 'offer',
+        onSelect: () => onAddOffer(),
+      },
     ],
-    [onAddEvent, onAddTask],
+    [onAddEvent, onAddTask, onAddContact, onAddCompany, onAddOffer],
   );
   const session = useLogisticsStore(s => s.session);
   const logout = useLogisticsStore(s => s.logout);
@@ -186,6 +216,17 @@ export const Shell: React.FC<ShellProps> = ({
           <SyncChip compact id="lx-sync-chip-phone" />
           <button
             type="button"
+            id="lx-search-phone"
+            className="lx-iconbtn lx-iconbtn--secondary"
+            aria-label="Buscar"
+            title="Buscar"
+            aria-haspopup="dialog"
+            onClick={onSearch}
+          >
+            <Icon name="search" size={20} />
+          </button>
+          <button
+            type="button"
             id="lx-account-button"
             className="lx-avatar lx-avatar--button"
             aria-label={`Menú de ${user?.displayName ?? 'usuario'}`}
@@ -206,6 +247,20 @@ export const Shell: React.FC<ShellProps> = ({
             <p className="lx-header__subtitle">{subtitle}</p>
           </div>
           <div className="lx-header__actions">
+            <button
+              type="button"
+              id="lx-search"
+              className="lx-searchbtn lx-desktop-only"
+              aria-haspopup="dialog"
+              aria-keyshortcuts="/ Control+K"
+              onClick={onSearch}
+            >
+              <Icon name="search" size={18} />
+              <span className="lx-searchbtn__label">Buscar</span>
+              <kbd className="lx-searchbtn__key" aria-hidden="true">
+                /
+              </kbd>
+            </button>
             <span className="lx-desktop-only">
               <SyncChip />
             </span>

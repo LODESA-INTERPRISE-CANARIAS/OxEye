@@ -1,7 +1,7 @@
 import {expect, test, type Page, type Route} from '@playwright/test';
 
 /**
- * Visual review harness for the Logistics Manager (milestone 1), written by
+ * Visual review harness for the Logistics Manager (milestones 1–3), written by
  * the UI engineer to look at the screens while building them. It mocks the
  * API with page.route, so no server is needed, and only takes screenshots:
  * behavioural assertions belong to the QA suite.
@@ -74,9 +74,11 @@ const PLAZA_ADELANTADO = {id: 'v2', name: 'Plaza del Adelantado'};
 const RECINTO = {id: 'v4', name: 'Recinto ferial'};
 const ALMACEN = {id: 'v5', name: 'Almacén municipal'};
 
-const ESCENARIOS = {id: 'c1', name: 'Escenarios Teide'};
-const SONIDO = {id: 'c2', name: 'Sonido Atlántico'};
-const VALLAS = {id: 'c3', name: 'Vallas Canarias'};
+// Fictitious names only («Demo»): never attach contact details or people to
+// names that could be real businesses or municipal units.
+const ESCENARIOS = {id: 'c1', name: 'Escenarios Demo'};
+const SONIDO = {id: 'c2', name: 'Sonido Demo'};
+const VALLAS = {id: 'c3', name: 'Vallas Demo'};
 
 const EVENTS = [
   event('e1', 'Navidad en la Plaza del Cristo', {
@@ -177,6 +179,7 @@ const TASKS = [
     endsAt: at(today, '13:00'),
     status: 'confirmed',
     company: ESCENARIOS,
+    contact: {id: 'p1', name: 'Ana Demo'},
     heavyLoad: true,
     verification: 'validated',
     source: 'document',
@@ -188,6 +191,7 @@ const TASKS = [
     startsAt: at(today, '12:00'),
     endsAt: at(today, '15:00'),
     company: SONIDO,
+    contact: {id: 'p2', name: 'Bruno Demo'},
     heavyLoad: false,
     dependsOn: ['t1'],
   }),
@@ -259,25 +263,283 @@ const TASKS = [
   task('t11', 'Confirmar grúa con la empresa', {date: null}),
 ];
 
-const COMPANIES = [ESCENARIOS, SONIDO, VALLAS].map(c => ({
-  ...c,
+// ---- milestone 3: people, companies and catalogue (fictitious data only)
+const CATEGORY_NAMES = [
+  'Montaje',
+  'Estructuras',
+  'Carpas',
+  'Vallas',
+  'Transporte',
+  'Catering',
+  'Publicidad',
+  'Personal',
+  'Seguridad',
+  'Sonido',
+  'Iluminación',
+  'Audiovisuales',
+  'Limpieza',
+  'Ocio',
+  'Otros servicios',
+];
+const cat = (name: string) =>
+  `cat-${name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')}`;
+const CATEGORIES = CATEGORY_NAMES.map(name => ({
+  id: cat(name),
+  organizationId: ORG,
+  scope: 'service',
+  name,
+  builtIn: true,
+}));
+
+const CARPAS = {id: 'c4', name: 'Carpas Demo'};
+const FIESTAS = {id: 'c5', name: 'Concejalía Demo'};
+const VECINOS = {id: 'c6', name: 'Asociación Vecinal Demo'};
+
+const meta = (extra: Record<string, unknown> = {}) => ({
   version: 1,
   organizationId: ORG,
-  categoryIds: [],
-  phone: null,
-  email: null,
-  website: null,
-  notes: null,
-  mainContactId: null,
-  offerCount: 0,
   source: null,
   verification: 'draft',
   isDemo: false,
   createdBy: elvis,
   createdAt: at(today, '08:00'),
-  updatedBy: elvis,
-  updatedAt: at(today, '08:00'),
-}));
+  updatedBy: dailos,
+  updatedAt: at(today, '09:15'),
+  ...extra,
+});
+
+function company(
+  ref: {id: string; name: string},
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...ref,
+    ...meta(),
+    kind: 'supplier',
+    categoryIds: [],
+    phone: null,
+    email: null,
+    website: null,
+    notes: null,
+    mainContactId: null,
+    contactCount: 0,
+    offerCount: 0,
+    restricted: false,
+    ...extra,
+  };
+}
+
+const COMPANIES = [
+  company(ESCENARIOS, {
+    categoryIds: [cat('Montaje'), cat('Estructuras'), cat('Carpas')],
+    phone: '+34 000 000 001',
+    email: 'escenarios@example.com',
+    website: 'https://example.com/escenarios',
+    mainContactId: 'p1',
+    contactCount: 1,
+    offerCount: 2,
+    verification: 'validated',
+    source: 'document',
+    notes: 'Llegan siempre por la calle de atrás.',
+  }),
+  company(SONIDO, {
+    categoryIds: [cat('Sonido'), cat('Iluminación')],
+    phone: '000 000 002',
+    contactCount: 1,
+    offerCount: 1,
+    mainContactId: 'p2',
+  }),
+  company(VALLAS, {
+    categoryIds: [cat('Vallas')],
+    contactCount: 1,
+    offerCount: 1,
+  }),
+  company(CARPAS, {
+    categoryIds: [cat('Carpas')],
+    email: 'carpas@example.com',
+    offerCount: 2,
+    verification: 'to_verify',
+  }),
+  company(FIESTAS, {
+    kind: 'public_body',
+    phone: '+34 000 000 004',
+    contactCount: 1,
+    mainContactId: 'p3',
+  }),
+  company(VECINOS, {kind: 'association'}),
+];
+
+function contact(
+  id: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    ...meta(),
+    name,
+    role: null,
+    company: null,
+    phone: null,
+    email: null,
+    description: null,
+    notes: null,
+    eventIds: [],
+    restricted: false,
+    ...extra,
+  };
+}
+
+const CONTACTS = [
+  contact('p1', 'Ana Demo', {
+    role: 'Jefa de montaje',
+    company: ESCENARIOS,
+    phone: '+34 000 000 001',
+    email: 'ana@example.com',
+    description: 'Coordina el montaje de escenarios y carpas.',
+    notes: 'Prefiere WhatsApp antes de las 9:00.',
+    eventIds: ['e1', 'e7'],
+    verification: 'validated',
+    source: 'reported',
+  }),
+  contact('p2', 'Bruno Demo', {
+    role: 'Técnico de sonido',
+    company: SONIDO,
+    phone: '000 000 002',
+  }),
+  contact('p3', 'Carla Demo', {
+    role: 'Técnica de cultura',
+    company: FIESTAS,
+    email: 'carla@example.com',
+    verification: 'to_verify',
+  }),
+  contact('p4', 'Diego Demo'),
+  contact('p5', 'Elena Demo', {
+    role: 'Responsable de almacén',
+    company: VALLAS,
+    phone: '+34 000 000 005',
+  }),
+  contact('p6', 'Óscar Demo', {
+    role: 'Voluntario',
+    company: VECINOS,
+    phone: '+34 000 000 006',
+  }),
+];
+
+function offer(
+  id: string,
+  name: string,
+  by: {id: string; name: string},
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    ...meta(),
+    company: by,
+    categoryId: null,
+    name,
+    description: null,
+    price: null,
+    unit: 'unit',
+    customUnit: null,
+    transportCost: null,
+    assemblyCost: null,
+    maintenanceCost: null,
+    conditions: null,
+    vatIncluded: null,
+    restricted: false,
+    ...extra,
+  };
+}
+
+const OFFERS = [
+  offer('o1', 'Carpa 6 × 3 m', CARPAS, {
+    categoryId: cat('Carpas'),
+    price: 180,
+    unit: 'day',
+    transportCost: 60,
+    vatIncluded: false,
+    conditions: 'Mínimo dos días. Montaje incluido en la Plaza del Cristo.',
+    verification: 'validated',
+    source: 'document',
+  }),
+  offer('o2', 'Carpa 6 × 3 m reforzada', ESCENARIOS, {
+    categoryId: cat('Carpas'),
+    price: 210.5,
+    unit: 'day',
+    assemblyCost: 90,
+    vatIncluded: true,
+  }),
+  offer('o3', 'Carpa 3 × 3 m', CARPAS, {
+    categoryId: cat('Carpas'),
+    unit: 'day',
+  }),
+  offer('o4', 'Valla tipo ayuntamiento', VALLAS, {
+    categoryId: cat('Vallas'),
+    price: 4.2,
+    transportCost: 120,
+    assemblyCost: 0,
+    maintenanceCost: null,
+  }),
+  offer('o5', 'Escenario modular 8 × 6 m', ESCENARIOS, {
+    categoryId: cat('Estructuras'),
+    price: 1250,
+    unit: 'custom',
+    customUnit: 'montaje',
+    transportCost: 300,
+    assemblyCost: 400,
+    maintenanceCost: 0,
+    vatIncluded: false,
+  }),
+  offer('o6', 'Equipo de sonido 2 kW', SONIDO, {
+    categoryId: cat('Sonido'),
+    price: 450,
+    unit: 'day',
+    vatIncluded: true,
+    maintenanceCost: 40,
+  }),
+];
+
+const RECENT = [
+  {query: 'carpas', at: new Date(Date.now() - 20 * 60_000).toISOString()},
+  {query: 'Ana', at: new Date(Date.now() - 3 * 3600_000).toISOString()},
+  {
+    query: 'Plaza del Cristo',
+    at: new Date(Date.now() - 26 * 3600_000).toISOString(),
+  },
+];
+
+/** What a guest receives: same records, details withheld (server redact). */
+const asGuest = {
+  company: (c: Record<string, unknown>) => ({
+    ...c,
+    phone: null,
+    email: null,
+    notes: null,
+    restricted: true,
+  }),
+  contact: (c: Record<string, unknown>) => ({
+    ...c,
+    phone: null,
+    email: null,
+    description: null,
+    notes: null,
+    restricted: true,
+  }),
+  offer: (o: Record<string, unknown>) => ({
+    ...o,
+    price: null,
+    transportCost: null,
+    assemblyCost: null,
+    maintenanceCost: null,
+    conditions: null,
+    restricted: true,
+  }),
+};
 
 const ACTIVITY = [
   {
@@ -308,6 +570,8 @@ interface MockOptions {
   events?: unknown[];
   tasks?: unknown[];
   conflict?: boolean;
+  /** false: no people, companies or offers yet. */
+  directory?: boolean;
 }
 
 async function mockApi(page: Page, opts: MockOptions = {}) {
@@ -364,8 +628,30 @@ async function mockApi(page: Page, opts: MockOptions = {}) {
       if (path.endsWith('/tasks') && method === 'GET') {
         return json(route, {items: opts.tasks ?? TASKS});
       }
+      const guest = role === 'guest';
+      const none = opts.directory === false;
       if (path.endsWith('/companies') && method === 'GET') {
-        return json(route, {items: COMPANIES});
+        return json(route, {
+          items: none ? [] : guest ? COMPANIES.map(asGuest.company) : COMPANIES,
+        });
+      }
+      if (path.endsWith('/categories') && method === 'GET') {
+        return json(route, {items: CATEGORIES});
+      }
+      if (path.endsWith('/contacts') && method === 'GET') {
+        return json(route, {
+          items: none ? [] : guest ? CONTACTS.map(asGuest.contact) : CONTACTS,
+        });
+      }
+      if (path.endsWith('/offers') && method === 'GET') {
+        return json(route, {
+          items: none ? [] : guest ? OFFERS.map(asGuest.offer) : OFFERS,
+        });
+      }
+      if (path.endsWith('/recent-searches')) {
+        if (method === 'GET') return json(route, {items: guest ? [] : RECENT});
+        if (method === 'POST') return json(route, {items: RECENT});
+        return route.fulfill({status: 204, body: ''});
       }
       if (path.endsWith('/venues')) {
         return json(route, {
@@ -442,6 +728,8 @@ async function scrollTimelineTo(page: Page, hour: number) {
 
 // Native date and time inputs follow the browser locale; show what users see.
 test.use({locale: 'es-ES', timezoneId: 'Atlantic/Canary'});
+// Each capture is six palettes; tests with several captures need the time.
+test.describe.configure({timeout: 120_000});
 
 test.describe('Gestor logístico · revisión visual', () => {
   test('server unreachable', async ({page}) => {
@@ -615,8 +903,208 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize(PHONE);
     await mockApi(page);
     await signIn(page);
-    await page.locator('#lx-tab-contactos').click();
-    await expect(page.locator('#lx-space-contactos')).toBeVisible();
+    await page.locator('#lx-tab-inventarios').click();
+    await expect(page.locator('#lx-space-inventarios')).toBeVisible();
     await capture(page, 'placeholder-phone');
+  });
+});
+
+test.describe('Gestor logístico · contactos y catálogo', () => {
+  test('contactos desktop: people and companies', async ({page}) => {
+    await page.setViewportSize({width: 1440, height: 1000});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/contactos');
+    await expect(page.locator('#lx-space-contactos .lx-dirrow')).toHaveCount(6);
+    await capture(page, 'contacts-people-desktop');
+    await page.locator('#lx-contacts-tab-companies').click();
+    await expect(page.locator('[data-company-id="c1"]')).toBeVisible();
+    await capture(page, 'contacts-companies-desktop');
+    await page.locator('#lx-contacts-search').fill('sonido');
+    await capture(page, 'contacts-search-desktop');
+  });
+
+  test('contactos phone', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page);
+    await signIn(page);
+    await page.locator('#lx-tab-contactos').click();
+    await expect(page.locator('[data-contact-id="p1"]')).toBeVisible();
+    await capture(page, 'contacts-people-phone');
+    await page.locator('#lx-contacts-tab-companies').click();
+    await capture(page, 'contacts-companies-phone');
+  });
+
+  test('contactos empty', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page, {directory: false});
+    await signIn(page);
+    await page.locator('#lx-tab-contactos').click();
+    await expect(page.locator('#lx-contacts-empty')).toBeVisible();
+    await capture(page, 'contacts-empty-phone');
+  });
+
+  test('contact sheet, reach out and share (desktop)', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/contactos');
+    await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
+    await expect(page.locator('#lx-contact-sheet')).toBeVisible();
+    await capture(page, 'contact-sheet-desktop');
+    await page.locator('#lx-contact-reach-call').click();
+    await expect(page.locator('#lx-reach-sheet')).toBeVisible();
+    await capture(page, 'reach-call-desktop');
+    await page.locator('#lx-reach-cancel').click();
+    await page.locator('#lx-contact-share').click();
+    await expect(page.locator('#lx-share-sheet')).toBeVisible();
+    await capture(page, 'share-sheet-desktop');
+    await page.keyboard.press('Escape');
+    await page.locator('#lx-contact-edit').click();
+    await expect(page.locator('#lx-contact-form')).toBeVisible();
+    await capture(page, 'contact-form-desktop');
+  });
+
+  test('contact without prefix: WhatsApp explained', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/contactos');
+    await page.locator('[data-contact-id="p2"] .lx-dirrow__main').click();
+    await page.locator('#lx-contact-reach-whatsapp').click();
+    await expect(page.locator('#lx-reach-sheet')).toBeVisible();
+    await capture(page, 'reach-whatsapp-noprefix');
+  });
+
+  test('company sheet desktop and look-alike', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/contactos');
+    await page.locator('#lx-contacts-tab-companies').click();
+    await page.locator('[data-company-id="c1"] .lx-dirrow__main').click();
+    await expect(page.locator('#lx-company-sheet')).toBeVisible();
+    await capture(page, 'company-sheet-desktop');
+    await page.locator('#lx-company-people-title').scrollIntoViewIfNeeded();
+    await capture(page, 'company-sheet-desktop-lower');
+    await page.keyboard.press('Escape');
+    await page.locator('#lx-contacts-add').click();
+    await page.locator('#lx-company-name').fill('Escenarios Dmo');
+    await expect(page.locator('.lx-lookalike')).toBeVisible();
+    await capture(page, 'company-form-lookalike');
+  });
+
+  test('catálogo desktop with filter', async ({page}) => {
+    await page.setViewportSize({width: 1440, height: 1000});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/catalogo');
+    await expect(page.locator('.lx-offerrow')).toHaveCount(6);
+    await capture(page, 'catalog-desktop');
+    await page
+      .locator(`#lx-catalog-filters [data-category-id="${cat('Carpas')}"]`)
+      .click();
+    await expect(page.locator('.lx-offerrow')).toHaveCount(3);
+    await capture(page, 'catalog-filter-desktop');
+  });
+
+  test('catálogo phone', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page);
+    await signIn(page);
+    await page.locator('#lx-tab-catalogo').click();
+    await expect(page.locator('.lx-offerrow').first()).toBeVisible();
+    await capture(page, 'catalog-phone');
+  });
+
+  test('offer sheet with comparison and form', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/catalogo');
+    await page.locator('[data-offer-id="o1"]').click();
+    await expect(page.locator('#lx-offer-sheet')).toBeVisible();
+    await capture(page, 'offer-sheet-desktop');
+    await page.locator('#lx-offer-compare').scrollIntoViewIfNeeded();
+    await capture(page, 'offer-sheet-compare');
+    await page.locator('#lx-offer-edit').click();
+    await expect(page.locator('#lx-offer-form')).toBeVisible();
+    await capture(page, 'offer-form-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-offer-price').scrollIntoViewIfNeeded();
+    await capture(page, 'offer-form-phone');
+  });
+
+  test('search sheet: recents and results', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await page.locator('#lx-main').click({position: {x: 5, y: 5}});
+    await page.keyboard.press('/');
+    await expect(page.locator('#lx-search-sheet')).toBeVisible();
+    await expect(page.locator('#lx-search-recent .lx-recent__row')).toHaveCount(
+      3,
+    );
+    await capture(page, 'search-recent-desktop');
+    await page.locator('#lx-search-input').fill('carpa');
+    await page.keyboard.press('ArrowDown');
+    await capture(page, 'search-results-desktop');
+    await page.locator('#lx-search-input').fill('zzzz');
+    await expect(page.locator('#lx-search-noresults')).toBeVisible();
+    await capture(page, 'search-noresults-desktop');
+  });
+
+  test('search sheet phone', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page);
+    await signIn(page);
+    await page.locator('#lx-search-phone').click();
+    await page.locator('#lx-search-input').fill('ana');
+    await capture(page, 'search-phone');
+  });
+
+  test('task with contact person', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, `#logistica/calendario/${today}`);
+    await scrollTimelineTo(page, 7);
+    await page.locator('#lx-timeline [data-task-id="t1"]').click();
+    await expect(page.locator('#lx-task-contact')).toBeVisible();
+    await page.locator('#lx-task-contact').scrollIntoViewIfNeeded();
+    await capture(page, 'task-contact-desktop');
+  });
+
+  test('guest: contact, company and offer withheld', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page, {role: 'guest'});
+    await signIn(page, 'Invitado');
+    await page.locator('#lx-tab-contactos').click();
+    await capture(page, 'guest-contacts-phone');
+    await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
+    await expect(page.locator('#lx-contact-reach-withheld')).toBeVisible();
+    await capture(page, 'guest-contact-sheet');
+    await page.keyboard.press('Escape');
+    await page.locator('#lx-tab-catalogo').click();
+    await capture(page, 'guest-catalog-phone');
+    await page.locator('[data-offer-id="o1"]').click();
+    await expect(page.locator('#lx-offer-sheet')).toBeVisible();
+    await capture(page, 'guest-offer-sheet');
+  });
+});
+
+test.describe('Gestor logístico · llamar desde el móvil', () => {
+  test.use({hasTouch: true, isMobile: true, viewport: PHONE});
+
+  test('reach out on a touch phone', async ({page}) => {
+    await mockApi(page);
+    await signIn(page);
+    await page.locator('#lx-tab-contactos').click();
+    await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
+    await expect(page.locator('#lx-contact-sheet')).toBeVisible();
+    await capture(page, 'contact-sheet-phone');
+    await page.locator('#lx-contact-reach-call').click();
+    await expect(page.locator('#lx-reach-sheet')).toBeVisible();
+    await capture(page, 'reach-call-phone');
   });
 });

@@ -34,6 +34,7 @@ export interface TaskState {
   eventId: Uuid | null;
   venueId: Uuid | null;
   companyId: Uuid | null;
+  contactId: Uuid | null;
   localDate: LocalDate | null;
   endDate: LocalDate | null;
   startsAt: IsoInstant | null;
@@ -55,6 +56,7 @@ const FIELD_NAMES: readonly (readonly [keyof TaskState, string])[] = [
   ['eventId', 'eventId'],
   ['venueId', 'venue'],
   ['companyId', 'company'],
+  ['contactId', 'contact'],
   ['localDate', 'date'],
   ['endDate', 'endDate'],
   ['startsAt', 'startsAt'],
@@ -74,10 +76,7 @@ export function changedTaskFields(
   return changedFields(before, after, FIELD_NAMES);
 }
 
-/** Lower-case, de-duplicated and sorted, so lists compare reliably. */
-export function normalizeIds(ids: readonly string[]): Uuid[] {
-  return [...new Set(ids.map(id => id.toLowerCase()))].sort();
-}
+export {normalizeIds} from '../records/ids.ts';
 
 export const DEPENDS_ON_SELF = 'Una tarea no puede depender de sí misma.';
 export const DEPENDS_ON_UNKNOWN =

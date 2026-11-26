@@ -1,6 +1,6 @@
 /**
  * One task as an actionable row: time window, kind, title, venue, company,
- * status and warnings. Opens the task sheet. Used by «Hoy», the event sheet
+ * contact person, status and warnings. Opens the task sheet. Used by «Hoy», the event sheet
  * and the calendar's list by hour.
  */
 import React from 'react';
@@ -33,6 +33,7 @@ export function taskLabel(
     windowText(task),
     task.venue ? task.venue.name : 'lugar pendiente de verificar',
     task.company ? task.company.name : '',
+    task.contact ? `contacto ${task.contact.name}` : '',
     TASK_STATUS_LABEL[task.status].toLocaleLowerCase('es-ES'),
     warnings.length ? warningsSummary(warnings) : '',
   ];
@@ -96,6 +97,12 @@ export const TaskRow: React.FC<{
           </span>
           {task.company && (
             <span className="lx-taskrow__company">{task.company.name}</span>
+          )}
+          {task.contact && (
+            <span className="lx-taskrow__contact">
+              <Icon name="user" size={13} />
+              {task.contact.name}
+            </span>
           )}
           {pending && (
             <span className="lx-pending lx-taskrow__pending">

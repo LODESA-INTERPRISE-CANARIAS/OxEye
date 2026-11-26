@@ -20,6 +20,7 @@ const FALLBACK_MESSAGES: Record<ClientErrorCode, string> = {
   FORBIDDEN: 'No tienes permiso para hacer este cambio.',
   NOT_FOUND: 'No se ha encontrado lo que buscabas.',
   VERSION_CONFLICT: 'Otra persona ha cambiado este registro.',
+  DUPLICATE: 'Ya existe un registro con ese nombre.',
   RATE_LIMITED: 'Demasiados intentos. Espera un momento y vuelve a probar.',
   INTERNAL: 'El servidor ha tenido un problema. Inténtalo de nuevo.',
   UNAVAILABLE: 'Servidor no disponible.',

@@ -11,12 +11,19 @@
  * - Same guarantees as events: version conflicts never overwrite, guests get
  *   a read-only view, unsaved values survive a session expiry.
  */
-import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   planWarnings,
   type PlanTask,
 } from '../../../shared/logistics/conflicts.ts';
 import type {
+  Contact,
   DataSource,
   LogisticsEvent,
   Task,
@@ -77,6 +84,9 @@ import {
   TASK_STATUS_LABEL,
 } from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
+import {TaskContactField} from './TaskContactField';
+import {ReachOut} from '../contacts/ReachOut';
+import {useActions} from '../common/actions';
 import {
   Button,
   Chip,
@@ -107,6 +117,8 @@ interface FormValues extends SlotValues {
   eventId: string;
   venueName: string;
   companyName: string;
+  /** Person to call about this task; '' = none. */
+  contactId: string;
   status: TaskStatus;
   heavy: Heavy;
   dependsOn: string[];
@@ -121,6 +133,7 @@ const EMPTY: FormValues = {
   eventId: '',
   venueName: '',
   companyName: '',
+  contactId: '',
   date: '',
   endDate: '',
   multiDay: false,
@@ -147,6 +160,7 @@ function valuesFromTask(task: Task): FormValues {
     eventId: task.eventId ?? '',
     venueName: task.venue?.name ?? '',
     companyName: task.company?.name ?? '',
+    contactId: task.contact?.id ?? '',
     date: slot.date ?? '',
     endDate: task.endDate ?? '',
     multiDay: !!task.endDate,
@@ -174,6 +188,8 @@ function valuesFromPrefill(
     eventId: event?.id ?? '',
     venueName: prefill.venueName ?? event?.venue?.name ?? '',
     date: prefill.date ?? (event ? (recordDate(event) ?? '') : ''),
+    companyName: prefill.companyName ?? '',
+    contactId: prefill.contactId ?? '',
   };
 }
 
@@ -182,6 +198,7 @@ const TEXT_KEYS = [
   'eventId',
   'venueName',
   'companyName',
+  'contactId',
   'date',
   'endDate',
   'startTime',
@@ -257,6 +274,8 @@ const SERVER_FIELD: Record<string, keyof FormValues> = {
   companyName: 'companyName',
   companyId: 'companyName',
   company: 'companyName',
+  contactId: 'contactId',
+  contact: 'contactId',
   date: 'date',
   endDate: 'endDate',
   startTime: 'startTime',
@@ -276,6 +295,7 @@ const DOM_ID: Partial<Record<keyof FormValues, string>> = {
   eventId: 'event',
   venueName: 'venue',
   companyName: 'company',
+  contactId: 'contact',
   date: 'date',
   endDate: 'enddate',
   startTime: 'start',
@@ -337,14 +357,20 @@ function refByName(
 export interface TaskSheetProps {
   mode: TaskSheetMode | null;
   onClose: () => void;
+  /** Told whether the form has unsaved changes (so it is never replaced). */
+  onDirty?: (dirty: boolean) => void;
 }
 
-export const TaskSheet: React.FC<TaskSheetProps> = ({mode, onClose}) => {
+export const TaskSheet: React.FC<TaskSheetProps> = ({
+  mode,
+  onClose,
+  onDirty,
+}) => {
   if (!mode) return null;
   if (mode.kind === 'view') {
     return <TaskView task={mode.task} onClose={onClose} />;
   }
-  return <TaskForm mode={mode} onClose={onClose} />;
+  return <TaskForm mode={mode} onClose={onClose} onDirty={onDirty} />;
 };
 
 // ---------------------------------------------------------------- view
@@ -417,6 +443,16 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
           <dt>Empresa</dt>
           <dd>{task.company?.name ?? <Pending />}</dd>
         </div>
+        <div>
+          <dt>Persona de contacto</dt>
+          <dd>
+            {task.contact ? (
+              <TaskContactView contact={task.contact} />
+            ) : (
+              <span className="lx-muted">Sin persona de contacto</span>
+            )}
+          </dd>
+        </div>
         {(isLoadBearing(task.kind) || task.heavyLoad === true) && (
           <div>
             <dt>Carga pesada</dt>
@@ -456,6 +492,38 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
   );
 };
 
+/** The task's person: a link to the card and, for the team, a quick reach-out. */
+const TaskContactView: React.FC<{contact: {id: string; name: string}}> = ({
+  contact: ref,
+}) => {
+  const contact = useLogisticsStore(s => s.contacts.find(c => c.id === ref.id));
+  const {openContact} = useActions();
+  if (!contact) return <>{ref.name}</>;
+  return (
+    <div className="lx-taskcontact__view">
+      <button
+        type="button"
+        className="lx-link"
+        id="lx-task-contact-link"
+        onClick={() => openContact(contact)}
+      >
+        {contact.name}
+        {contact.role ? ` · ${contact.role}` : ''}
+      </button>
+      <ReachOut
+        compact
+        idPrefix="lx-task-contact-reach"
+        target={{
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          restricted: contact.restricted,
+        }}
+      />
+    </div>
+  );
+};
+
 const TaskWarnings: React.FC<{
   warnings: ReturnType<typeof planWarnings>;
   selfId: string;
@@ -478,9 +546,10 @@ const TaskWarnings: React.FC<{
 interface TaskFormProps {
   mode: Exclude<TaskSheetMode, {kind: 'view'}>;
   onClose: () => void;
+  onDirty?: (dirty: boolean) => void;
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({mode, onClose}) => {
+const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
   const createTask = useLogisticsStore(s => s.createTask);
   const updateTask = useLogisticsStore(s => s.updateTask);
   const deleteTask = useLogisticsStore(s => s.deleteTask);
@@ -524,6 +593,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose}) => {
       ? !sameList(values.dependsOn, initial.dependsOn)
       : values[k] !== initial[k],
   );
+
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
 
   const latest = useRef<FormSnapshot>({values, base, dirty, userId, orgId});
   useLayoutEffect(() => {
@@ -571,6 +642,19 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose}) => {
       date: v.date || (event ? (recordDate(event) ?? '') : ''),
     }));
     setSavedTitle(null);
+  };
+
+  /** Choosing a person fills the company when it is still empty. */
+  const chooseContact = (contactId: string, contact: Contact | null) => {
+    setValues(v => ({
+      ...v,
+      contactId,
+      companyName: v.companyName || contact?.company?.name || '',
+    }));
+    setSavedTitle(null);
+    if (errors.contactId || errors.form) {
+      setErrors(e => ({...e, contactId: undefined, form: undefined}));
+    }
   };
 
   const requestClose = () => {
@@ -747,6 +831,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose}) => {
     eventId: v.eventId || null,
     venueName: nullIfEmpty(v.venueName),
     companyName: nullIfEmpty(v.companyName),
+    // Only sent when chosen, so a task without a person reads as before.
+    ...(v.contactId ? {contactId: v.contactId} : {}),
     ...slotInput(v),
     dependsOn: liveDeps(v.dependsOn),
     heavyLoad: showsHeavyLoad(v) ? fromHeavy(v.heavy) : null,
@@ -803,6 +889,9 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose}) => {
       }
       if (values.companyName !== initial.companyName) {
         patch.companyName = full.companyName;
+      }
+      if (values.contactId !== initial.contactId) {
+        patch.contactId = values.contactId || null;
       }
       if (slotChanged(values, initial)) Object.assign(patch, slotInput(values));
       if (!sameList(full.dependsOn ?? [], initial.dependsOn)) {
@@ -1177,6 +1266,14 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose}) => {
             ))}
           </datalist>
         </Field>
+
+        <TaskContactField
+          value={values.contactId}
+          companyName={values.companyName}
+          saved={base?.contact ?? null}
+          error={errors.contactId}
+          onChange={chooseContact}
+        />
 
         <Segmented<TaskStatus>
           name="lx-task-status"

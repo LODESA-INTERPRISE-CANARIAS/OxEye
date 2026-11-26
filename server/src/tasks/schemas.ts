@@ -16,6 +16,7 @@ import {
 import {
   NAME_MAX,
   NOTES_MAX,
+  parseVersionParam as parseRecordVersion,
   source,
   verification,
   versionField,
@@ -64,7 +65,6 @@ const common = {
   endTime: localTime,
   companyId: optionalUuid,
   companyName: optionalText(NAME_MAX),
-  // Accepted from milestone 3 (Contactos); validated, then ignored.
   contactId: optionalUuid,
   dependsOn,
   heavyLoad,
@@ -92,18 +92,7 @@ export type TaskBody = CreateTaskBody | UpdateTaskBody;
 
 /** `?version=N` of DELETE /tasks/:id. */
 export function parseVersionParam(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === '') {
-    throw validationError({
-      version:
-        'Falta la versión del registro: recarga la tarea y vuelve a intentarlo.',
-    });
-  }
-  if (!/^\d{1,9}$/.test(raw.trim()) || Number(raw) < 1) {
-    throw validationError({
-      version: 'La versión debe ser un número entero positivo.',
-    });
-  }
-  return Number(raw);
+  return parseRecordVersion(raw, 'la tarea');
 }
 
 /** `?eventId=` of GET /organizations/:orgId/tasks. */

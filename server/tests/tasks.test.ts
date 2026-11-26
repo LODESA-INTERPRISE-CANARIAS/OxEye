@@ -127,6 +127,7 @@ describe('tasks · demo day', () => {
     expect(stage).toMatchObject({
       heavyLoad: true,
       company: {name: 'Escenarios Demo'},
+      contact: {name: 'Ana Demo'},
       dependsOn: [delivery.id],
     });
   });
@@ -188,14 +189,20 @@ describe('tasks · create', () => {
 
   it('creates a full task: event, venue, company, times, load and predecessor', async () => {
     const before = await createOk({title: 'Descarga de tarimas'});
+    const person = await json<{id: string}>(
+      await h.request('POST', '/contacts', {
+        token,
+        body: {organizationId: h.org.id, name: 'Persona Prueba'},
+      }),
+    );
     const t = await createOk({
       title: 'Montaje de carpas',
       kind: 'assembly',
       status: 'confirmed',
       eventId: demoEventId,
       venueName: 'plaza del cristo',
-      companyName: 'Carpas Teide',
-      contactId: crypto.randomUUID(),
+      companyName: 'Carpas Prueba',
+      contactId: person.id,
       date: '2026-12-01',
       startTime: '07:30',
       endTime: '10:00',
@@ -208,8 +215,8 @@ describe('tasks · create', () => {
     expect(t).toMatchObject({
       eventId: demoEventId,
       venue: {name: 'Plaza del Cristo'},
-      company: {name: 'Carpas Teide'},
-      contact: null,
+      company: {name: 'Carpas Prueba'},
+      contact: {id: person.id, name: 'Persona Prueba'},
       kind: 'assembly',
       status: 'confirmed',
       date: '2026-12-01',
@@ -252,10 +259,10 @@ describe('tasks · create', () => {
   });
 
   it('finds or creates companies by name, ignoring case; companyId wins', async () => {
-    const a = await createOk({title: 'A', companyName: 'Sonido Atlántico'});
+    const a = await createOk({title: 'A', companyName: 'Sonido Prueba'});
     const b = await createOk({
       title: 'B',
-      companyName: '  SONIDO   atlántico ',
+      companyName: '  SONIDO   prueba ',
     });
     expect(b.company).toEqual(a.company);
     const c = await createOk({
@@ -269,24 +276,27 @@ describe('tasks · create', () => {
       await h.request('GET', `/organizations/${h.org.id}/companies`, {token}),
     );
     const names = companies.items.map(x => x.name);
-    expect(names.filter(n => /sonido atlántico/i.test(n))).toHaveLength(1);
+    expect(names.filter(n => /sonido prueba/i.test(n))).toHaveLength(1);
     expect(names).not.toContain('Otra empresa');
     expect(names).not.toContain('Empresa ajena');
     expect([...names].sort((x, y) => x.localeCompare(y, 'es'))).toEqual(names);
-    expect(
-      companies.items.find(x => x.name === 'Sonido Atlántico'),
-    ).toMatchObject({
-      categoryIds: [],
-      phone: null,
-      email: null,
-      website: null,
-      notes: null,
-      mainContactId: null,
-      offerCount: 0,
-      isDemo: false,
-      version: 1,
-      createdBy: {displayName: 'Elvis'},
-    });
+    expect(companies.items.find(x => x.name === 'Sonido Prueba')).toMatchObject(
+      {
+        kind: 'supplier',
+        categoryIds: [],
+        contactCount: 0,
+        restricted: false,
+        phone: null,
+        email: null,
+        website: null,
+        notes: null,
+        mainContactId: null,
+        offerCount: 0,
+        isDemo: false,
+        version: 1,
+        createdBy: {displayName: 'Elvis'},
+      },
+    );
   });
 
   it('rejects references to another organization or to nothing', async () => {
@@ -404,7 +414,7 @@ describe('tasks · update', () => {
         startTime: '07:00',
         endTime: '07:30',
         venueName: 'Calle Herradores',
-        companyName: 'Rótulos Laguna',
+        companyName: 'Rótulos Prueba',
         heavyLoad: false,
         eventId: demoEventId,
       },
@@ -418,7 +428,7 @@ describe('tasks · update', () => {
       startsAt: '2026-12-02T07:00:00.000Z',
       endsAt: '2026-12-02T07:30:00.000Z',
       venue: {name: 'Calle Herradores'},
-      company: {name: 'Rótulos Laguna'},
+      company: {name: 'Rótulos Prueba'},
       heavyLoad: false,
       eventId: demoEventId,
       updatedBy: {displayName: 'Dailos'},
@@ -453,14 +463,14 @@ describe('tasks · update', () => {
     const t = await createOk({
       title: 'Revisar extintores',
       venueName: 'Teatro Leal',
-      companyName: 'Extintores Norte',
+      companyName: 'Extintores Prueba',
     });
     const before = (await activity(1))[0];
     const res = await patch(t.id, {
       version: 1,
       title: 'Revisar extintores',
       venueName: 'teatro leal',
-      companyName: 'EXTINTORES NORTE',
+      companyName: 'EXTINTORES PRUEBA',
       dependsOn: [],
       contactId: null,
     });

@@ -1,5 +1,6 @@
 /**
- * «+ Añadir» with a choice of what to add (Evento, Tarea). Opens on click or
+ * «+ Añadir» with a choice of what to add (Evento, Tarea, Persona, Empresa o
+ * entidad, Oferta). Opens on click or
  * Enter, closes on Escape or a tap elsewhere, sits above everything. Arrow
  * keys move between options; focus goes back to the button before a sheet
  * opens, so closing the sheet returns there.

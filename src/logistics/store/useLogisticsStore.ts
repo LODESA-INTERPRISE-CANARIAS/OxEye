@@ -8,16 +8,25 @@
 import {create} from 'zustand';
 import type {
   ActivityEntry,
+  Category,
   Company,
+  CompanyInput,
+  Contact,
+  ContactInput,
   CreateEventInput,
   LogisticsEvent,
+  Offer,
+  OfferInput,
   Organization,
+  RecentSearch,
   SessionUser,
   Task,
   TaskInput,
   UpdateEventInput,
   Venue,
 } from '../../../shared/logistics/contracts.ts';
+import {RECENT_SEARCHES_KEPT} from '../../../shared/logistics/rules.ts';
+import {normalize} from '../../../shared/logistics/search.ts';
 import {
   ApiError,
   errorMessage,
@@ -25,6 +34,7 @@ import {
   resolveApiBaseUrl,
 } from '../api/client';
 import {api} from '../api/endpoints';
+import {sortCompanies, sortContacts, sortOffers} from '../lib/directory';
 import {sortEvents} from '../lib/events';
 import {sortTasks} from '../lib/tasks';
 
@@ -103,6 +113,63 @@ function writeStoredOrg(id: string | null): void {
   }
 }
 
+/**
+ * Recent searches of a guest stay on this device (a shared login must not
+ * show one guest's searches to the next), per organization.
+ */
+const RECENT_KEY = 'oxeye.logistics.recent.v1';
+
+function readDeviceRecent(orgId: string): RecentSearch[] {
+  try {
+    const raw = localStorage.getItem(`${RECENT_KEY}:${orgId}`);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (r): r is RecentSearch =>
+          !!r &&
+          typeof (r as RecentSearch).query === 'string' &&
+          typeof (r as RecentSearch).at === 'string',
+      )
+      .slice(0, RECENT_SEARCHES_KEPT);
+  } catch {
+    return [];
+  }
+}
+
+function writeDeviceRecent(orgId: string, list: RecentSearch[]): void {
+  try {
+    if (list.length) {
+      localStorage.setItem(`${RECENT_KEY}:${orgId}`, JSON.stringify(list));
+    } else {
+      localStorage.removeItem(`${RECENT_KEY}:${orgId}`);
+    }
+  } catch {
+    // Not remembered on this device; the search itself still works.
+  }
+}
+
+/** Puts `query` first, without accent/case duplicates, keeping five. */
+function pushRecentSearch(list: RecentSearch[], query: string): RecentSearch[] {
+  const q = query.trim();
+  if (!q) return list;
+  const key = normalize(q);
+  return [
+    {query: q, at: new Date().toISOString()},
+    ...list.filter(r => normalize(r.query) !== key),
+  ].slice(0, RECENT_SEARCHES_KEPT);
+}
+
+/** The server copy carried by a 409 VERSION_CONFLICT, if any. */
+function conflictCopy<T>(err: unknown): T | null {
+  return isApiError(err) &&
+    err.code === 'VERSION_CONFLICT' &&
+    err.current &&
+    typeof err.current === 'object'
+    ? (err.current as T)
+    : null;
+}
+
 function pickOrg(
   orgs: Organization[],
   preferred: string | null,
@@ -133,6 +200,19 @@ export interface LogisticsState {
   tasksState: LoadState;
   tasksError: string | null;
   companies: Company[];
+  companiesState: LoadState;
+  companiesError: string | null;
+  /** Service and resource categories (built-ins first, then custom). */
+  categories: Category[];
+  contacts: Contact[];
+  contactsState: LoadState;
+  contactsError: string | null;
+  offers: Offer[];
+  offersState: LoadState;
+  offersError: string | null;
+  /** The current user's five recent searches, newest first. */
+  recentSearches: RecentSearch[];
+  recentState: LoadState;
   activity: ActivityEntry[];
   activityState: LoadState;
   activityError: string | null;
@@ -160,6 +240,37 @@ export interface LogisticsState {
   deleteTask: (task: Task) => Promise<void>;
   /** Puts a server copy of a task in the list (e.g. after a conflict). */
   upsertTask: (task: Task) => void;
+
+  /** Finds or creates a service category by name (any case). */
+  createCategory: (name: string) => Promise<Category>;
+  createCompany: (
+    input: Omit<CompanyInput, 'organizationId' | 'version'>,
+  ) => Promise<Company>;
+  /** `input.version` is required. 409 VERSION_CONFLICT or DUPLICATE. */
+  updateCompany: (id: string, input: CompanyInput) => Promise<Company>;
+  /** Deletes its offers; its people and tasks lose the company. */
+  deleteCompany: (company: Company) => Promise<void>;
+  upsertCompany: (company: Company) => void;
+  createContact: (
+    input: Omit<ContactInput, 'organizationId' | 'version'>,
+  ) => Promise<Contact>;
+  updateContact: (id: string, input: ContactInput) => Promise<Contact>;
+  /** Tasks and a company that had them as main contact lose the link. */
+  deleteContact: (contact: Contact) => Promise<void>;
+  upsertContact: (contact: Contact) => void;
+  createOffer: (
+    input: Omit<OfferInput, 'organizationId' | 'version'>,
+  ) => Promise<Offer>;
+  updateOffer: (id: string, input: OfferInput) => Promise<Offer>;
+  deleteOffer: (offer: Offer) => Promise<void>;
+  upsertOffer: (offer: Offer) => void;
+
+  /** Loads the recent searches (server for members, device for guests). */
+  loadRecentSearches: () => Promise<void>;
+  /** Records a query the user opened a result for or submitted. */
+  recordSearch: (query: string) => void;
+  clearRecentSearches: () => Promise<void>;
+
   removeDemo: () => Promise<number>;
   setBrowserOnline: (online: boolean) => void;
   toast: (message: string, tone?: ToastTone) => void;
@@ -177,6 +288,11 @@ let toastSeq = 0;
 let writeEpoch = 0;
 /** Same as `writeEpoch`, for the task list. */
 let taskEpoch = 0;
+/** Same as `writeEpoch`, for the directory lists (milestone 3). */
+let companyEpoch = 0;
+let contactEpoch = 0;
+let offerEpoch = 0;
+let categoryEpoch = 0;
 
 /**
  * Same content. Versions alone are not enough: a renamed venue or company
@@ -228,6 +344,24 @@ export function mergeServerTasks(local: Task[], server: Task[]): Task[] {
   return mergeByVersion(local, server, sortTasks);
 }
 
+export function mergeServerCompanies(
+  local: Company[],
+  server: Company[],
+): Company[] {
+  return mergeByVersion(local, server, sortCompanies);
+}
+
+export function mergeServerContacts(
+  local: Contact[],
+  server: Contact[],
+): Contact[] {
+  return mergeByVersion(local, server, sortContacts);
+}
+
+export function mergeServerOffers(local: Offer[], server: Offer[]): Offer[] {
+  return mergeByVersion(local, server, sortOffers);
+}
+
 /** The server list, or the local one when it holds exactly the same. */
 function keepIfSame<T>(local: T[], server: T[]): T[] {
   return local.length === server.length &&
@@ -236,12 +370,37 @@ function keepIfSame<T>(local: T[], server: T[]): T[] {
     : server;
 }
 
+/** Puts `item` in `list` unless a newer copy is there; null when unchanged. */
+function upsertInto<T extends {id: string; version: number}>(
+  list: T[],
+  item: T,
+  sort: (list: T[]) => T[],
+): T[] | null {
+  const current = list.find(x => x.id === item.id);
+  if (current && current.version > item.version) return null;
+  return sort([...list.filter(x => x.id !== item.id), item]);
+}
+
 const EMPTY_RECORDS = {
   events: [],
   venues: [],
   tasks: [],
   companies: [],
+  categories: [],
+  contacts: [],
+  offers: [],
+  recentSearches: [],
   activity: [],
+} satisfies Partial<LogisticsState>;
+
+const IDLE_STATES = {
+  eventsState: 'idle',
+  tasksState: 'idle',
+  companiesState: 'idle',
+  contactsState: 'idle',
+  offersState: 'idle',
+  recentState: 'idle',
+  activityState: 'idle',
 } satisfies Partial<LogisticsState>;
 
 export const useLogisticsStore = create<LogisticsState>()((set, get) => {
@@ -262,9 +421,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       session: null,
       organizations: [],
       ...EMPTY_RECORDS,
-      eventsState: 'idle',
-      tasksState: 'idle',
-      activityState: 'idle',
+      ...IDLE_STATES,
       sessionNotice: 'Tu sesión ha caducado. Vuelve a entrar para seguir.',
     });
   };
@@ -287,6 +444,25 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     }
   }
 
+  /**
+   * 409 DUPLICATE: the existing company may not be in our list yet (created
+   * by someone else since the last refresh). Keep it, so «Abrir la existente»
+   * opens a live record, and bring the rest up to date quietly.
+   */
+  const keepDuplicate = (err: unknown) => {
+    if (
+      isApiError(err) &&
+      err.code === 'DUPLICATE' &&
+      err.current &&
+      typeof err.current === 'object'
+    ) {
+      get().upsertCompany(err.current as Company);
+      void get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    }
+  };
+
   return {
     phase: 'checking',
     unreachableReason: 'network',
@@ -303,6 +479,17 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     tasksState: 'idle',
     tasksError: null,
     companies: [],
+    companiesState: 'idle',
+    companiesError: null,
+    categories: [],
+    contacts: [],
+    contactsState: 'idle',
+    contactsError: null,
+    offers: [],
+    offersState: 'idle',
+    offersError: null,
+    recentSearches: [],
+    recentState: 'idle',
     activity: [],
     activityState: 'idle',
     activityError: null,
@@ -384,6 +571,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         orgId,
         sessionNotice: null,
         ...EMPTY_RECORDS,
+        recentState: 'idle',
       });
       markReachable();
       void get().refresh();
@@ -391,15 +579,18 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
 
     logout: async () => {
       const token = get().session?.token;
+      // A guest login is shared and so is the device: its recent searches
+      // must not stay behind for the next person.
+      if (get().session?.user.role !== 'member') {
+        for (const org of get().organizations) writeDeviceRecent(org.id, []);
+      }
       writeStoredSession(null);
       set({
         phase: 'login',
         session: null,
         organizations: [],
         ...EMPTY_RECORDS,
-        eventsState: 'idle',
-        tasksState: 'idle',
-        activityState: 'idle',
+        ...IDLE_STATES,
         sessionNotice: null,
       });
       if (token) {
@@ -411,7 +602,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     selectOrg: id => {
       if (id === get().orgId) return;
       writeStoredOrg(id);
-      set({orgId: id, ...EMPTY_RECORDS});
+      set({orgId: id, ...EMPTY_RECORDS, recentState: 'idle'});
       void get().refresh();
     },
 
@@ -426,18 +617,39 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
           tasksError: null,
           activityState: 'loading',
           activityError: null,
+          companiesState: 'loading',
+          companiesError: null,
+          contactsState: 'loading',
+          contactsError: null,
+          offersState: 'loading',
+          offersError: null,
         });
       }
       const epoch = writeEpoch;
       const tEpoch = taskEpoch;
-      const [events, activity, venues, tasks, companies] =
-        await Promise.allSettled([
-          authed(token => api.events(token, orgId)),
-          authed(token => api.activity(token, orgId, 20)),
-          authed(token => api.venues(token, orgId)),
-          authed(token => api.tasks(token, orgId)),
-          authed(token => api.companies(token, orgId)),
-        ]);
+      const coEpoch = companyEpoch;
+      const ctEpoch = contactEpoch;
+      const ofEpoch = offerEpoch;
+      const caEpoch = categoryEpoch;
+      const [
+        events,
+        activity,
+        venues,
+        tasks,
+        companies,
+        categories,
+        contacts,
+        offers,
+      ] = await Promise.allSettled([
+        authed(token => api.events(token, orgId)),
+        authed(token => api.activity(token, orgId, 20)),
+        authed(token => api.venues(token, orgId)),
+        authed(token => api.tasks(token, orgId)),
+        authed(token => api.companies(token, orgId)),
+        authed(token => api.categories(token, orgId)),
+        authed(token => api.contacts(token, orgId)),
+        authed(token => api.offers(token, orgId)),
+      ]);
       // The organization may have changed while loading.
       if (get().orgId !== orgId || get().phase !== 'ready') return;
       const patch: Partial<LogisticsState> = {};
@@ -474,8 +686,45 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (venues.status === 'fulfilled') {
         patch.venues = keepIfSame(get().venues, venues.value.items);
       }
-      if (companies.status === 'fulfilled') {
-        patch.companies = keepIfSame(get().companies, companies.value.items);
+      // Directory lists (milestone 3): same rules as tasks.
+      if (companies.status === 'fulfilled' && coEpoch !== companyEpoch) {
+        // A company write's own refresh brings the fresh list.
+      } else if (companies.status === 'fulfilled') {
+        patch.companies = mergeServerCompanies(
+          get().companies,
+          companies.value.items,
+        );
+        patch.companiesState = 'ready';
+        patch.companiesError = null;
+      } else if (!silent || get().companiesState !== 'ready') {
+        patch.companiesState = 'error';
+        patch.companiesError = errorMessage(companies.reason);
+      }
+      if (contacts.status === 'fulfilled' && ctEpoch !== contactEpoch) {
+        // Same as above.
+      } else if (contacts.status === 'fulfilled') {
+        patch.contacts = mergeServerContacts(
+          get().contacts,
+          contacts.value.items,
+        );
+        patch.contactsState = 'ready';
+        patch.contactsError = null;
+      } else if (!silent || get().contactsState !== 'ready') {
+        patch.contactsState = 'error';
+        patch.contactsError = errorMessage(contacts.reason);
+      }
+      if (offers.status === 'fulfilled' && ofEpoch !== offerEpoch) {
+        // Same as above.
+      } else if (offers.status === 'fulfilled') {
+        patch.offers = mergeServerOffers(get().offers, offers.value.items);
+        patch.offersState = 'ready';
+        patch.offersError = null;
+      } else if (!silent || get().offersState !== 'ready') {
+        patch.offersState = 'error';
+        patch.offersError = errorMessage(offers.reason);
+      }
+      if (categories.status === 'fulfilled' && caEpoch === categoryEpoch) {
+        patch.categories = keepIfSame(get().categories, categories.value.items);
       }
       set(patch);
     },
@@ -599,12 +848,305 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       set({tasks: sortTasks([...rest, task]), tasksState: 'ready'});
     },
 
+    // ---------------------------------------------------- directory (M3)
+
+    createCategory: async name => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const category = await authed(token =>
+        api.createCategory(token, {
+          organizationId: orgId,
+          scope: 'service',
+          name,
+        }),
+      );
+      categoryEpoch++;
+      // An existing name comes back as that category (200): no duplicate.
+      if (!get().categories.some(c => c.id === category.id)) {
+        set({categories: [...get().categories, category]});
+      }
+      void get().refresh({silent: true});
+      return category;
+    },
+
+    createCompany: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      try {
+        const created = await authed(token =>
+          api.createCompany(token, {...input, organizationId: orgId}),
+        );
+        get().upsertCompany(created);
+        void get().refresh({silent: true});
+        return created;
+      } catch (err) {
+        keepDuplicate(err);
+        throw err;
+      }
+    },
+
+    updateCompany: async (id, input) => {
+      try {
+        const updated = await authed(token =>
+          api.updateCompany(token, id, input),
+        );
+        get().upsertCompany(updated);
+        // Tasks, people and offers embed the company name.
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        const current = conflictCopy<Company>(err);
+        if (current) get().upsertCompany(current);
+        keepDuplicate(err);
+        throw err;
+      }
+    },
+
+    deleteCompany: async company => {
+      try {
+        await authed(token =>
+          api.deleteCompany(token, company.id, company.version),
+        );
+      } catch (err) {
+        const current = conflictCopy<Company>(err);
+        if (current) {
+          get().upsertCompany(current);
+          throw err;
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      companyEpoch++;
+      offerEpoch++;
+      contactEpoch++;
+      taskEpoch++;
+      // Mirror the server until the refresh brings the new versions: its
+      // offers are deleted, its people and tasks lose the company.
+      const id = company.id;
+      set({
+        companies: get().companies.filter(c => c.id !== id),
+        offers: get().offers.filter(o => o.company.id !== id),
+        contacts: get().contacts.map(c =>
+          c.company?.id === id ? {...c, company: null} : c,
+        ),
+        tasks: get().tasks.map(t =>
+          t.company?.id === id ? {...t, company: null} : t,
+        ),
+      });
+      // Wait for the new versions: editing a person right after with the
+      // old one would be rejected as a conflict with our own change.
+      await get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    },
+
+    upsertCompany: company => {
+      companyEpoch++;
+      const next = upsertInto(get().companies, company, sortCompanies);
+      if (next) set({companies: next, companiesState: 'ready'});
+    },
+
+    createContact: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const created = await authed(token =>
+        api.createContact(token, {...input, organizationId: orgId}),
+      );
+      get().upsertContact(created);
+      // A company may have been created by name, or its count changed.
+      void get().refresh({silent: true});
+      return created;
+    },
+
+    updateContact: async (id, input) => {
+      try {
+        const updated = await authed(token =>
+          api.updateContact(token, id, input),
+        );
+        get().upsertContact(updated);
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        const current = conflictCopy<Contact>(err);
+        if (current) get().upsertContact(current);
+        throw err;
+      }
+    },
+
+    deleteContact: async contact => {
+      try {
+        await authed(token =>
+          api.deleteContact(token, contact.id, contact.version),
+        );
+      } catch (err) {
+        const current = conflictCopy<Contact>(err);
+        if (current) {
+          get().upsertContact(current);
+          throw err;
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      contactEpoch++;
+      companyEpoch++;
+      taskEpoch++;
+      const id = contact.id;
+      set({
+        contacts: get().contacts.filter(c => c.id !== id),
+        companies: get().companies.map(c =>
+          c.id === contact.company?.id || c.mainContactId === id
+            ? {
+                ...c,
+                mainContactId: c.mainContactId === id ? null : c.mainContactId,
+                contactCount:
+                  c.id === contact.company?.id
+                    ? Math.max(0, c.contactCount - 1)
+                    : c.contactCount,
+              }
+            : c,
+        ),
+        tasks: get().tasks.map(t =>
+          t.contact?.id === id ? {...t, contact: null} : t,
+        ),
+      });
+      await get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    },
+
+    upsertContact: contact => {
+      contactEpoch++;
+      const next = upsertInto(get().contacts, contact, sortContacts);
+      if (next) set({contacts: next, contactsState: 'ready'});
+    },
+
+    createOffer: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const created = await authed(token =>
+        api.createOffer(token, {...input, organizationId: orgId}),
+      );
+      get().upsertOffer(created);
+      void get().refresh({silent: true});
+      return created;
+    },
+
+    updateOffer: async (id, input) => {
+      try {
+        const updated = await authed(token =>
+          api.updateOffer(token, id, input),
+        );
+        get().upsertOffer(updated);
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        const current = conflictCopy<Offer>(err);
+        if (current) get().upsertOffer(current);
+        throw err;
+      }
+    },
+
+    deleteOffer: async offer => {
+      try {
+        await authed(token => api.deleteOffer(token, offer.id, offer.version));
+      } catch (err) {
+        const current = conflictCopy<Offer>(err);
+        if (current) {
+          get().upsertOffer(current);
+          throw err;
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      offerEpoch++;
+      companyEpoch++;
+      set({
+        offers: get().offers.filter(o => o.id !== offer.id),
+        companies: get().companies.map(c =>
+          c.id === offer.company.id
+            ? {...c, offerCount: Math.max(0, c.offerCount - 1)}
+            : c,
+        ),
+      });
+      // Same as the other deletes: the company's new version must be in.
+      await get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    },
+
+    upsertOffer: offer => {
+      offerEpoch++;
+      const next = upsertInto(get().offers, offer, sortOffers);
+      if (next) set({offers: next, offersState: 'ready'});
+    },
+
+    // ---------------------------------------------------- recent searches
+
+    loadRecentSearches: async () => {
+      const orgId = get().orgId;
+      const role = get().session?.user.role;
+      if (!orgId || get().recentState === 'loading') return;
+      if (role !== 'member') {
+        set({recentSearches: readDeviceRecent(orgId), recentState: 'ready'});
+        return;
+      }
+      set({recentState: 'loading'});
+      try {
+        const res = await authed(token => api.recentSearches(token, orgId));
+        if (get().orgId !== orgId) return;
+        set({
+          recentSearches: res.items.slice(0, RECENT_SEARCHES_KEPT),
+          recentState: 'ready',
+        });
+      } catch {
+        // Not essential: searching works without them.
+        if (get().orgId === orgId) set({recentState: 'error'});
+      }
+    },
+
+    recordSearch: query => {
+      const orgId = get().orgId;
+      const q = query.trim().slice(0, 100);
+      if (!orgId || !q) return;
+      const next = pushRecentSearch(get().recentSearches, q);
+      set({recentSearches: next});
+      if (get().session?.user.role !== 'member') {
+        writeDeviceRecent(orgId, next);
+        return;
+      }
+      void authed(token => api.pushRecentSearch(token, orgId, {query: q}))
+        .then(res => {
+          if (get().orgId === orgId) {
+            set({recentSearches: res.items.slice(0, RECENT_SEARCHES_KEPT)});
+          }
+        })
+        // Offline: the local list already shows it for this session.
+        .catch(() => undefined);
+    },
+
+    clearRecentSearches: async () => {
+      const orgId = get().orgId;
+      if (!orgId) return;
+      const before = get().recentSearches;
+      set({recentSearches: []});
+      if (get().session?.user.role !== 'member') {
+        writeDeviceRecent(orgId, []);
+        return;
+      }
+      try {
+        await authed(token => api.clearRecentSearches(token, orgId));
+      } catch (err) {
+        set({recentSearches: before});
+        throw err;
+      }
+    },
+
     removeDemo: async () => {
       const orgId = get().orgId;
       if (!orgId) return 0;
       const res = await authed(token => api.removeDemo(token, orgId));
       writeEpoch++;
       taskEpoch++;
+      companyEpoch++;
+      contactEpoch++;
+      offerEpoch++;
       await get().refresh({silent: true});
       return res?.removed ?? 0;
     },

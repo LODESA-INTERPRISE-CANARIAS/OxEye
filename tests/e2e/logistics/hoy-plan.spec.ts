@@ -210,26 +210,49 @@ test.describe('Gestor logístico · «Hoy» con tareas', () => {
     await expect(page.locator('#lx-warnings')).toHaveCount(0);
   });
 
-  test('«Información verificada» counts events and tasks', async ({page}) => {
+  test('«Información verificada» counts events, tasks and companies', async ({
+    page,
+  }) => {
     await mockApi(page, planData());
     await signIn(page);
     const card = page.locator('#lx-verified');
-    // 2 events + 8 tasks; validated: e1 and t1.
+    // 2 events + 8 tasks + 3 companies (milestone 3: the directory counts
+    // too); validated: e1 and t1 → 2 of 13 = 15 %.
     await expect(card.getByRole('img')).toHaveAttribute(
       'aria-label',
-      '20 % de los eventos y tareas validados',
+      '15 % de los registros validados',
     );
     await expect(card.locator('.lx-verified__legend dd')).toHaveText([
       '2',
-      '8',
+      '11',
     ]);
+    // Events and tasks come first in «Qué falta»: the day depends on them.
+    await expect(card.locator('.lx-missing__row').first()).toHaveAttribute(
+      'aria-label',
+      /^Completar (el evento|la tarea) /,
+    );
     await expect(
       card.getByRole('button', {name: /^Completar la tarea /}).first(),
     ).toBeVisible();
 
-    // Only events: the tasks are what moved the figure.
+    // Only events (and the companies): the tasks are what moved the figure.
+    // 1 of 5 validated = 20 %.
     await page.unrouteAll({behavior: 'ignoreErrors'});
     await mockApi(page, {...planData(), events: planEvents(), tasks: []});
+    await page.reload();
+    await expect(card.getByRole('img')).toHaveAttribute(
+      'aria-label',
+      '20 % de los registros validados',
+    );
+
+    // Only events, no directory: the wording goes back to events and tasks.
+    await page.unrouteAll({behavior: 'ignoreErrors'});
+    await mockApi(page, {
+      ...planData(),
+      events: planEvents(),
+      tasks: [],
+      companies: [],
+    });
     await page.reload();
     await expect(card.getByRole('img')).toHaveAttribute(
       'aria-label',

@@ -7,10 +7,38 @@ import {errorMessage} from '../api/client';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon, Sheet} from '../ui';
 
-export const DemoNotice: React.FC<{count: number; canWrite: boolean}> = ({
-  count,
+/** Demo records left, by kind. */
+export interface DemoCounts {
+  events: number;
+  tasks: number;
+  contacts: number;
+  companies: number;
+  offers: number;
+}
+
+const KIND_WORDS: Record<keyof DemoCounts, [string, string]> = {
+  events: ['evento', 'eventos'],
+  tasks: ['tarea', 'tareas'],
+  contacts: ['persona', 'personas'],
+  companies: ['empresa o entidad', 'empresas o entidades'],
+  offers: ['oferta', 'ofertas'],
+};
+
+/** «2 eventos, 3 personas y 5 ofertas». */
+function breakdown(counts: DemoCounts): string {
+  const parts = (Object.keys(KIND_WORDS) as (keyof DemoCounts)[])
+    .filter(k => counts[k] > 0)
+    .map(k => `${counts[k]} ${KIND_WORDS[k][counts[k] === 1 ? 0 : 1]}`);
+  return parts.length > 1
+    ? `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`
+    : (parts[0] ?? '');
+}
+
+export const DemoNotice: React.FC<{counts: DemoCounts; canWrite: boolean}> = ({
+  counts,
   canWrite,
 }) => {
+  const count = Object.values(counts).reduce((a, b) => a + b, 0);
   const removeDemo = useLogisticsStore(s => s.removeDemo);
   const toast = useLogisticsStore(s => s.toast);
   const [confirming, setConfirming] = useState(false);
@@ -50,8 +78,8 @@ export const DemoNotice: React.FC<{count: number; canWrite: boolean}> = ({
           <h2 id="lx-demo-title">Hay datos de demostración</h2>
           <p>
             {count === 1
-              ? 'Un registro ficticio, marcado «Demo», sirve para probar la aplicación.'
-              : `${count} registros ficticios (eventos y tareas), marcados «Demo», sirven para probar la aplicación.`}{' '}
+              ? `Un registro ficticio (${breakdown(counts)}), marcado «Demo», sirve para probar la aplicación.`
+              : `${count} registros ficticios (${breakdown(counts)}), marcados «Demo», sirven para probar la aplicación.`}{' '}
             {canWrite
               ? 'Quítalos antes de registrar la jornada real.'
               : 'Solo el equipo puede quitarlos.'}

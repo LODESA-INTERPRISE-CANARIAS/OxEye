@@ -3,7 +3,12 @@
  */
 import type {
   ActivityEntry,
+  Category,
+  CategoryInput,
   Company,
+  CompanyInput,
+  Contact,
+  ContactInput,
   CreateEventInput,
   HealthResponse,
   ListResponse,
@@ -12,6 +17,10 @@ import type {
   LoginUserOption,
   LogisticsEvent,
   MeResponse,
+  Offer,
+  OfferInput,
+  RecentSearch,
+  RecentSearchInput,
   Task,
   TaskInput,
   UpdateEventInput,
@@ -79,6 +88,83 @@ export const api = {
       `/organizations/${enc(orgId)}/companies`,
       {token},
     ),
+
+  createCompany: (token: string, body: CompanyInput) =>
+    apiRequest<Company>('POST', '/companies', {token, body}),
+
+  updateCompany: (token: string, id: string, body: CompanyInput) =>
+    apiRequest<Company>('PATCH', `/companies/${enc(id)}`, {token, body}),
+
+  deleteCompany: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/companies/${enc(id)}?version=${version}`, {
+      token,
+    }),
+
+  // ---- milestone 3: categories, contacts, offers, recent searches
+  categories: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Category>>(
+      'GET',
+      `/organizations/${enc(orgId)}/categories`,
+      {token},
+    ),
+
+  createCategory: (token: string, body: CategoryInput) =>
+    apiRequest<Category>('POST', '/categories', {token, body}),
+
+  contacts: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Contact>>(
+      'GET',
+      `/organizations/${enc(orgId)}/contacts`,
+      {token},
+    ),
+
+  createContact: (token: string, body: ContactInput) =>
+    apiRequest<Contact>('POST', '/contacts', {token, body}),
+
+  updateContact: (token: string, id: string, body: ContactInput) =>
+    apiRequest<Contact>('PATCH', `/contacts/${enc(id)}`, {token, body}),
+
+  deleteContact: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/contacts/${enc(id)}?version=${version}`, {
+      token,
+    }),
+
+  offers: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Offer>>(
+      'GET',
+      `/organizations/${enc(orgId)}/offers`,
+      {token},
+    ),
+
+  createOffer: (token: string, body: OfferInput) =>
+    apiRequest<Offer>('POST', '/offers', {token, body}),
+
+  updateOffer: (token: string, id: string, body: OfferInput) =>
+    apiRequest<Offer>('PATCH', `/offers/${enc(id)}`, {token, body}),
+
+  deleteOffer: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/offers/${enc(id)}?version=${version}`, {
+      token,
+    }),
+
+  recentSearches: (token: string, orgId: string) =>
+    apiRequest<ListResponse<RecentSearch>>(
+      'GET',
+      `/organizations/${enc(orgId)}/recent-searches`,
+      {token},
+    ),
+
+  pushRecentSearch: (token: string, orgId: string, body: RecentSearchInput) =>
+    apiRequest<ListResponse<RecentSearch>>(
+      'POST',
+      `/organizations/${enc(orgId)}/recent-searches`,
+      {token, body},
+    ),
+
+  clearRecentSearches: (token: string, orgId: string) =>
+    apiRequest<void>('DELETE', `/organizations/${enc(orgId)}/recent-searches`, {
+      token,
+    }),
 
   activity: (token: string, orgId: string, limit = 20) =>
     apiRequest<ListResponse<ActivityEntry>>(

@@ -4,6 +4,7 @@ import {
   pushRecent,
   rank,
   scoreMatch,
+  universalSearch,
 } from '../../../shared/logistics/search';
 import {
   missingForEvent,
@@ -23,26 +24,42 @@ describe('logistics search', () => {
 
   it('matches prefixes in any order, title first', () => {
     const items = [
-      {name: 'Nova Staff', tags: 'personal azafatos'},
-      {name: 'Carpas Teide', tags: 'carpas estructuras'},
-      {name: 'Aseos Norte', tags: 'aseos portátiles transporte'},
+      {name: 'Personal Demo', tags: 'personal azafatos'},
+      {name: 'Carpas Demo', tags: 'carpas estructuras'},
+      {name: 'Aseos Demo', tags: 'aseos portátiles transporte'},
     ];
     expect(
       rank('carp', items, i => [i.name, i.tags]).map(r => r.item.name),
-    ).toEqual(['Carpas Teide']);
+    ).toEqual(['Carpas Demo']);
     expect(
       rank('portatiles aseos', items, i => [i.name, i.tags]).map(
         r => r.item.name,
       ),
-    ).toEqual(['Aseos Norte']);
+    ).toEqual(['Aseos Demo']);
     expect(rank('azafat', items, i => [i.name, i.tags])[0].item.name).toBe(
-      'Nova Staff',
+      'Personal Demo',
     );
+  });
+
+  it('never matches or quotes free-text notes in the universal search', () => {
+    const contacts = [
+      {
+        id: 'p1',
+        name: 'Ana Demo',
+        role: null,
+        company: null,
+        description: null,
+        notes: 'clave secreta del portal',
+      },
+    ];
+    expect(universalSearch('secreta', {contacts})).toEqual([]);
+    const hit = universalSearch('ana', {contacts})[0];
+    expect(JSON.stringify(hit)).not.toContain('secreta');
   });
 
   it('tolerates one typo in longer words and requires every word', () => {
     expect(scoreMatch('vallas', ['Valas metálicas'])).toBeGreaterThan(0);
-    expect(scoreMatch('carpa sonido', ['Carpas Teide'])).toBe(0);
+    expect(scoreMatch('carpa sonido', ['Carpas Demo'])).toBe(0);
     expect(scoreMatch('', ['x'])).toBe(0);
   });
 
@@ -97,14 +114,15 @@ describe('logistics quality', () => {
   });
 
   it('never treats an unknown price as zero', () => {
+    const cat = {categoryId: 'c1'};
     expect(
-      missingForOffer({price: null, unit: 'day', customUnit: null}),
+      missingForOffer({...cat, price: null, unit: 'day', customUnit: null}),
     ).toEqual(['precio']);
-    expect(missingForOffer({price: 0, unit: 'day', customUnit: null})).toEqual(
-      [],
-    );
     expect(
-      missingForOffer({price: 10, unit: 'custom', customUnit: null}),
+      missingForOffer({...cat, price: 0, unit: 'day', customUnit: null}),
+    ).toEqual([]);
+    expect(
+      missingForOffer({...cat, price: 10, unit: 'custom', customUnit: null}),
     ).toEqual(['unidad de contratación']);
   });
 

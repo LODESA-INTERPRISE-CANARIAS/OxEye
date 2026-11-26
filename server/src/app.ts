@@ -16,11 +16,15 @@ import {registerActivityRoutes} from './activity/routes.ts';
 import {requireAuth} from './auth/middleware.ts';
 import {createRateLimiter} from './auth/rate-limit.ts';
 import {registerAuthRoutes} from './auth/routes.ts';
+import {registerCategoryRoutes} from './categories/routes.ts';
 import {registerCompanyRoutes} from './companies/routes.ts';
+import {registerContactRoutes} from './contacts/routes.ts';
 import {registerDemoRoutes} from './demo/routes.ts';
 import {registerEventRoutes} from './events/routes.ts';
 import type {AppEnv, Deps} from './http/env.ts';
 import {errorResponse, handleError, notFoundResponse} from './http/errors.ts';
+import {registerOfferRoutes} from './offers/routes.ts';
+import {registerSearchRoutes} from './searches/routes.ts';
 import {registerTaskRoutes} from './tasks/routes.ts';
 import {registerVenueRoutes} from './venues/routes.ts';
 import type {HealthResponse} from '../../shared/logistics/contracts.ts';
@@ -124,6 +128,10 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   registerVenueRoutes(api, deps, auth);
   registerTaskRoutes(api, deps, auth);
   registerCompanyRoutes(api, deps, auth);
+  registerCategoryRoutes(api, deps, auth);
+  registerContactRoutes(api, deps, auth);
+  registerOfferRoutes(api, deps, auth);
+  registerSearchRoutes(api, deps, auth);
   registerActivityRoutes(api, deps, auth);
   registerDemoRoutes(api, deps, auth);
 

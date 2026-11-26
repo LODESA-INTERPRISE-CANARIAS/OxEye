@@ -26,6 +26,8 @@ import {
 } from '../src/tasks/domain.ts';
 import type {TaskState} from '../src/tasks/domain.ts';
 import {normalizeName} from '../src/venues/service.ts';
+import {resolveUnit, toAmount} from '../src/offers/domain.ts';
+import {forViewer, WITHHELD_FROM_GUESTS} from '../src/records/redact.ts';
 
 const TZ = 'Atlantic/Canary';
 
@@ -258,6 +260,7 @@ describe('tasks domain · dependencies', () => {
       eventId: null,
       venueId: null,
       companyId: null,
+      contactId: null,
       localDate: null,
       endDate: null,
       startsAt: null,
@@ -276,8 +279,109 @@ describe('tasks domain · dependencies', () => {
         dependsOn: ['a', 'b'],
         heavyLoad: false,
         companyId: 'x',
+        contactId: 'y',
       }),
-    ).toEqual(['company', 'dependsOn', 'heavyLoad']);
+    ).toEqual(['company', 'contact', 'dependsOn', 'heavyLoad']);
+  });
+});
+
+describe('guest redaction · forViewer', () => {
+  const meta = {
+    id: 'x',
+    version: 1,
+    createdBy: {id: 'u', displayName: 'Elvis'},
+    createdAt: '2026-11-26T10:00:00.000Z',
+    updatedBy: {id: 'u', displayName: 'Elvis'},
+    updatedAt: '2026-11-26T10:00:00.000Z',
+    source: null,
+    verification: 'draft' as const,
+    isDemo: false,
+    organizationId: 'o',
+  };
+
+  it('withholds every listed field from guests and nothing else', () => {
+    const offer = {
+      ...meta,
+      company: {id: 'c', name: 'Empresa'},
+      categoryId: null,
+      name: 'Oferta',
+      description: 'Visible',
+      price: 10,
+      unit: 'day' as const,
+      customUnit: null,
+      transportCost: 1,
+      assemblyCost: 2,
+      maintenanceCost: 3,
+      conditions: 'Privadas',
+      vatIncluded: true,
+    };
+    const asGuest = forViewer('offer', offer, {role: 'guest'});
+    expect(asGuest).toEqual({
+      ...offer,
+      price: null,
+      transportCost: null,
+      assemblyCost: null,
+      maintenanceCost: null,
+      conditions: null,
+      restricted: true,
+    });
+    expect(forViewer('offer', offer, {role: 'member'})).toEqual({
+      ...offer,
+      restricted: false,
+    });
+    const contact = forViewer(
+      'contact',
+      {
+        ...meta,
+        name: 'Ana',
+        role: 'Jefa',
+        company: null,
+        phone: '1',
+        email: 'ana.prueba@example.com',
+        description: 'd',
+        notes: 'n',
+        eventIds: [],
+      },
+      {role: 'guest'},
+    );
+    expect(contact).toMatchObject({
+      name: 'Ana',
+      role: 'Jefa',
+      phone: null,
+      email: null,
+      description: null,
+      notes: null,
+      restricted: true,
+    });
+    expect(WITHHELD_FROM_GUESTS.company).toEqual(['phone', 'email', 'notes']);
+  });
+});
+
+describe('offers domain · resolveUnit and toAmount', () => {
+  it('keeps the custom wording only for a custom unit', () => {
+    const custom = {unit: 'custom' as const, customUnit: 'por pase'};
+    expect(resolveUnit(custom, {})).toEqual(custom);
+    expect(resolveUnit(custom, {unit: 'day'})).toEqual({
+      unit: 'day',
+      customUnit: null,
+    });
+    expect(resolveUnit(custom, {customUnit: null})).toEqual({
+      unit: 'custom',
+      customUnit: null,
+    });
+    expect(
+      resolveUnit({unit: 'day', customUnit: null}, {customUnit: 'por kg'}),
+    ).toEqual({unit: 'day', customUnit: null});
+    expect(
+      resolveUnit({unit: 'day', customUnit: null}, {unit: 'custom'}),
+    ).toEqual({unit: 'custom', customUnit: null});
+  });
+
+  it('reads amounts from either driver; unknown stays null, never 0', () => {
+    expect(toAmount('12.50')).toBe(12.5);
+    expect(toAmount(0)).toBe(0);
+    expect(toAmount('0.00')).toBe(0);
+    expect(toAmount(null)).toBeNull();
   });
 });
 

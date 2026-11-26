@@ -81,15 +81,25 @@ test.describe('Gestor logístico · menú «Añadir»', () => {
     const add = page.locator('#lx-add');
     const event = page.locator('#lx-add-event');
     const task = page.locator('#lx-add-task');
+    // Milestone 3: Evento, Tarea, Persona, Empresa o entidad, Oferta.
+    const offer = page.locator('#lx-add-offer');
     await add.focus();
     await page.keyboard.press('Enter');
     await expect(event).toBeFocused();
+    await expect(
+      page
+        .getByRole('menu', {name: 'Qué quieres añadir'})
+        .getByRole('menuitem'),
+    ).toHaveCount(5);
     await page.keyboard.press('ArrowDown');
     await expect(task).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(event).toBeFocused();
+    // Arrows wrap at both ends.
+    await page.keyboard.press('ArrowUp');
+    await expect(offer).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(event).toBeFocused();
-    await page.keyboard.press('ArrowUp');
-    await expect(task).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(task).toBeHidden();
     await expect(add).toBeFocused();
@@ -98,6 +108,10 @@ test.describe('Gestor logístico · menú «Añadir»', () => {
     await page.keyboard.press('Enter');
     await expect(event).toBeFocused();
     await page.keyboard.press('End');
+    await expect(offer).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(event).toBeFocused();
+    await page.keyboard.press('ArrowDown');
     await expect(task).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.locator('#lx-task-form')).toBeVisible();
@@ -230,7 +244,7 @@ test.describe('Gestor logístico · crear tarea', () => {
     await openAddTask(page);
     await page.locator('#lx-task-title').fill('Entrega del generador');
     await page.locator('#lx-task-venue').fill('plaza del cristo');
-    await page.locator('#lx-task-company').fill('Nova Staff');
+    await page.locator('#lx-task-company').fill('Personal Prueba');
     await page.locator('#lx-task-start').fill('09:00');
     await page.locator('#lx-task-end').fill('10:00');
     await page.locator('#lx-task-save').click();
@@ -238,7 +252,7 @@ test.describe('Gestor logístico · crear tarea', () => {
 
     expect(postBodies(api)[0]).toMatchObject({
       venueName: 'plaza del cristo',
-      companyName: 'Nova Staff',
+      companyName: 'Personal Prueba',
       date: DAY,
       startTime: '09:00',
       endTime: '10:00',
@@ -246,13 +260,13 @@ test.describe('Gestor logístico · crear tarea', () => {
     expect(postBodies(api)[0]).not.toHaveProperty('venueId');
     // Existing venue matched case-insensitively; the company was created.
     expect(api.venues).toHaveLength(4);
-    expect(api.companies.map(c => c.name)).toContain('Nova Staff');
+    expect(api.companies.map(c => c.name)).toContain('Personal Prueba');
 
     const row = page.locator('#lx-today-tasks .lx-taskrow', {
       hasText: 'Entrega del generador',
     });
     await expect(row).toContainText('Plaza del Cristo');
-    await expect(row).toContainText('Nova Staff');
+    await expect(row).toContainText('Personal Prueba');
 
     // After the refresh the new company is offered by name.
     await expect
@@ -260,7 +274,7 @@ test.describe('Gestor logístico · crear tarea', () => {
       .toBeGreaterThan(1);
     await openAddTask(page);
     await expect(
-      page.locator('#lx-task-companies option[value="Nova Staff"]'),
+      page.locator('#lx-task-companies option[value="Personal Prueba"]'),
     ).toHaveCount(1);
   });
 
@@ -695,7 +709,7 @@ test.describe('Gestor logístico · tareas para el invitado', () => {
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText('modo solo lectura');
     await expect(sheet).toContainText('Montaje del escenario');
-    await expect(sheet).toContainText('Escenarios Teide');
+    await expect(sheet).toContainText('Escenarios Demo');
     await expect(page.locator('#lx-task-form')).toHaveCount(0);
     await expect(page.locator('#lx-task-save')).toHaveCount(0);
     await expect(page.locator('#lx-task-delete')).toHaveCount(0);

@@ -1,9 +1,16 @@
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {describe, expect, it} from 'vitest';
 import {createApp} from '../src/app.ts';
-import {migrate} from '../src/db/migrate.ts';
+import {migrate, readMigrations} from '../src/db/migrate.ts';
 import {createPgliteDb} from '../src/db/pglite.ts';
+import {BUILT_IN_SERVICE_CATEGORIES} from '../../shared/logistics/rules.ts';
 import {
+  DEMO_COMPANIES,
+  DEMO_CONTACTS,
   DEMO_EVENT,
+  DEMO_OFFERS,
   DEMO_TASKS,
   PILOT_ORGANIZATION,
   PILOT_USERS,
@@ -22,13 +29,20 @@ import type {ListResponse, Task} from '../../shared/logistics/contracts.ts';
 
 /** Demo rows left in the database. */
 async function demoCounts(db: Queryable) {
-  return (
-    await db.query<{events: number; tasks: number; activity: number}>(
-      `SELECT (SELECT count(*)::int FROM events WHERE is_demo) AS events,
-              (SELECT count(*)::int FROM tasks WHERE is_demo) AS tasks,
-              (SELECT count(*)::int FROM activity_log WHERE is_demo) AS activity`,
-    )
-  )[0];
+  const rows = await db.query<{
+    events: number;
+    tasks: number;
+    activity: number;
+    catalogue: number;
+  }>(
+    `SELECT (SELECT count(*)::int FROM events WHERE is_demo) AS events,
+            (SELECT count(*)::int FROM tasks WHERE is_demo) AS tasks,
+            (SELECT count(*)::int FROM activity_log WHERE is_demo) AS activity,
+            (SELECT count(*)::int FROM contacts WHERE is_demo)
+              + (SELECT count(*)::int FROM offers WHERE is_demo)
+              + (SELECT count(*)::int FROM companies WHERE is_demo) AS catalogue`,
+  );
+  return rows[0];
 }
 
 async function loginStatus(
@@ -71,6 +85,9 @@ describe('seed', () => {
     );
     expect(second.demoEventCreated).toBe(false);
     expect(second.demoTasksCreated).toBe(0);
+    expect(first.demoContactsCreated).toBe(DEMO_CONTACTS.length);
+    expect(first.demoOffersCreated).toBe(DEMO_OFFERS.length);
+    expect(second.demoContactsCreated + second.demoOffersCreated).toBe(0);
 
     const counts = await db.query<{
       orgs: number;
@@ -90,7 +107,7 @@ describe('seed', () => {
       users: 5,
       events: 1,
       tasks: DEMO_TASKS.length,
-      companies: 1,
+      companies: DEMO_COMPANIES.length,
     });
 
     // Passwords survive a second run.
@@ -177,7 +194,12 @@ describe('seed', () => {
     expect(again.demoRemovedAt).toBe('2026-12-01T18:00:00.000Z');
     // Passwords were still reset.
     expect(again.users.every(u => u.password?.startsWith('new-'))).toBe(true);
-    expect(await demoCounts(h.db)).toEqual({events: 0, tasks: 0, activity: 0});
+    expect(await demoCounts(h.db)).toEqual({
+      events: 0,
+      tasks: 0,
+      activity: 0,
+      catalogue: 0,
+    });
     await h.db.close();
   });
 
@@ -192,7 +214,12 @@ describe('seed', () => {
     expect(again.demoEventCreated).toBe(false);
     expect(again.demoTasksCreated).toBe(0);
     expect(again.demoRemovedAt).toBe(h.clock.now().toISOString());
-    expect(await demoCounts(h.db)).toEqual({events: 0, tasks: 0, activity: 0});
+    expect(await demoCounts(h.db)).toEqual({
+      events: 0,
+      tasks: 0,
+      activity: 0,
+      catalogue: 0,
+    });
 
     // A second removal keeps the first date.
     h.clock.advance(60_000);
@@ -231,6 +258,99 @@ describe('seed', () => {
     expect(again.demoRemovedAt).toBeNull();
     expect((await demoCounts(h.db)).tasks).toBe(0);
     await h.db.close();
+  });
+
+  it('adds the demo people and offers, once, to a database seeded in milestone 2', async () => {
+    // Milestone-2 state: 0001–0003 applied, the demo event, the demo company
+    // and the stage assembly that uses it, as db:seed left them.
+    const dir = mkdtempSync(join(tmpdir(), 'oxeye-m2-'));
+    const [m1, m2, m3] = readMigrations();
+    for (const m of [m1!, m2!, m3!]) writeFileSync(join(dir, m.file), m.sql);
+    const db = await createPgliteDb();
+    await migrate(db, {dir});
+    const [org] = await db.query<{id: string}>(
+      'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
+      [PILOT_ORGANIZATION.name],
+    );
+    const [system] = await db.query<{id: string}>(
+      `INSERT INTO users (display_name, role, password_hash, is_active)
+       VALUES ('Sistema', 'guest', NULL, false) RETURNING id`,
+    );
+    await db.query(
+      `INSERT INTO events (organization_id, name, local_date, is_demo, created_by, updated_by)
+       VALUES ($1, $2, '2026-12-02', true, $3, $3)`,
+      [org!.id, DEMO_EVENT.name, system!.id],
+    );
+    const [company] = await db.query<{id: string}>(
+      `INSERT INTO companies (organization_id, name, is_demo, created_by, updated_by)
+       VALUES ($1, 'Escenarios Demo', true, $2, $2) RETURNING id`,
+      [org!.id, system!.id],
+    );
+    const [stage] = await db.query<{id: string}>(
+      `INSERT INTO tasks (organization_id, company_id, title, heavy_load, is_demo,
+                          created_by, updated_by)
+       VALUES ($1, $2, 'Montaje del escenario', true, true, $3, $3) RETURNING id`,
+      [org!.id, company!.id, system!.id],
+    );
+    rmSync(dir, {recursive: true, force: true});
+
+    expect((await migrate(db)).applied).toEqual([
+      '0004_contacts_catalogue.sql',
+    ]);
+    const first = await seed(db, {passwordFor});
+    expect(first.demoTasksCreated).toBe(0);
+    expect(first.demoContactsCreated).toBe(DEMO_CONTACTS.length);
+    expect(first.demoOffersCreated).toBe(DEMO_OFFERS.length);
+
+    // The existing demo company and task changed: new version, logged.
+    const [co] = await db.query<{version: number; main: string | null}>(
+      'SELECT version, main_contact_id AS main FROM companies WHERE id = $1',
+      [company!.id],
+    );
+    expect(co?.version).toBe(2);
+    expect(co?.main).not.toBeNull();
+    const [task] = await db.query<{
+      version: number;
+      contact: string;
+      heavy_load: boolean;
+    }>(
+      `SELECT t.version, k.name AS contact, t.heavy_load
+         FROM tasks t JOIN contacts k ON k.id = t.contact_id WHERE t.id = $1`,
+      [stage!.id],
+    );
+    expect(task).toEqual({version: 2, contact: 'Ana Demo', heavy_load: true});
+    const log = await db.query<{type: string; fields: string[]}>(
+      `SELECT entity_type AS type, changed_fields AS fields FROM activity_log
+        WHERE action = 'update' ORDER BY seq`,
+    );
+    expect(log).toEqual([
+      {type: 'task', fields: ['contact']},
+      {type: 'company', fields: ['categoryIds', 'mainContactId']},
+    ]);
+
+    const again = await seed(db, {passwordFor});
+    expect(again.demoContactsCreated + again.demoOffersCreated).toBe(0);
+    const [counts] = await db.query<{contacts: number; offers: number}>(
+      `SELECT (SELECT count(*)::int FROM contacts) AS contacts,
+              (SELECT count(*)::int FROM offers) AS offers`,
+    );
+    expect(counts).toEqual({
+      contacts: DEMO_CONTACTS.length,
+      offers: DEMO_OFFERS.length,
+    });
+    await db.close();
+  });
+
+  it('gives a new organization the built-in categories and never duplicates them', async () => {
+    const db = await createPgliteDb();
+    await migrate(db);
+    await seed(db, {passwordFor});
+    await seed(db, {passwordFor});
+    const rows = await db.query<{name: string}>(
+      'SELECT name FROM categories WHERE built_in ORDER BY position',
+    );
+    expect(rows.map(r => r.name)).toEqual([...BUILT_IN_SERVICE_CATEGORIES]);
+    await db.close();
   });
 
   it('seeds the demo event as planned draft on 2 Dec 2026 09:00–14:00 Canary time', async () => {

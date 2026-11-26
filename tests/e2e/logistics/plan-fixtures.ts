@@ -27,9 +27,10 @@ export const PLAZA_ADELANTADO = {id: 'v2', name: 'Plaza del Adelantado'};
 export const RECINTO = {id: 'v4', name: 'Recinto ferial'};
 export const ALMACEN = {id: 'v5', name: 'Almacén municipal'};
 
-export const ESCENARIOS = {id: 'c1', name: 'Escenarios Teide'};
-export const SONIDO = {id: 'c2', name: 'Sonido Atlántico'};
-export const VALLAS = {id: 'c3', name: 'Vallas Canarias'};
+// Fictitious names only («Demo»): never names of possibly real businesses.
+export const ESCENARIOS = {id: 'c1', name: 'Escenarios Demo'};
+export const SONIDO = {id: 'c2', name: 'Sonido Demo'};
+export const VALLAS = {id: 'c3', name: 'Vallas Demo'};
 
 export const planVenues = () => [
   {...PLAZA_CRISTO},

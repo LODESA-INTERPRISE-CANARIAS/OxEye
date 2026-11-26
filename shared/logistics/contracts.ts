@@ -35,7 +35,39 @@
  *   PATCH  /tasks/:id          TaskInput          → Task (409 VERSION_CONFLICT with `current`)
  *   DELETE /tasks/:id?version=N                   → 204 (409 VERSION_CONFLICT with `current`);
  *          removes it from other tasks' `dependsOn` (their version increases)
- *   GET    /organizations/:orgId/companies        → ListResponse<Company> (by name; M3 adds the rest)
+ *   GET    /organizations/:orgId/companies        → ListResponse<Company> (by name, ignoring case)
+ *
+ * Milestone 3 (contacts and catalogue):
+ *
+ *   GET    /organizations/:orgId/categories       → ListResponse<Category>
+ *          (built-ins in BUILT_IN_SERVICE_CATEGORIES order, then custom by name)
+ *   POST   /categories         CategoryInput      → 201 Category; an existing name
+ *          (any case) in the same scope returns 200 with that category
+ *   DELETE /categories/:id                        → 204; custom only (400 for built-in);
+ *          companies and offers lose it (their version increases)
+ *   POST   /companies          CompanyInput       → 201 Company (409 DUPLICATE with `current`)
+ *   PATCH  /companies/:id      CompanyInput       → Company (409 VERSION_CONFLICT | DUPLICATE)
+ *   DELETE /companies/:id?version=N               → 204 (409 VERSION_CONFLICT); deletes
+ *          its offers; its contacts and tasks lose the company (versions increase)
+ *   GET    /organizations/:orgId/contacts         → ListResponse<Contact> (by name, ignoring case)
+ *   POST   /contacts           ContactInput       → 201 Contact
+ *   PATCH  /contacts/:id       ContactInput       → Contact (409 VERSION_CONFLICT)
+ *   DELETE /contacts/:id?version=N                → 204 (409); tasks lose the contact and
+ *          a company that had it as main contact loses it (versions increase)
+ *   GET    /organizations/:orgId/offers           → ListResponse<Offer> (by company, then name)
+ *   POST   /offers             OfferInput         → 201 Offer
+ *   PATCH  /offers/:id         OfferInput         → Offer (409 VERSION_CONFLICT)
+ *   DELETE /offers/:id?version=N                  → 204 (409)
+ *   GET    /organizations/:orgId/recent-searches  → ListResponse<RecentSearch>
+ *          (the current user's, newest first, at most 5)
+ *   POST   /organizations/:orgId/recent-searches  RecentSearchInput → ListResponse<RecentSearch>
+ *          (403 for guests: a shared login keeps its searches on the device)
+ *   DELETE /organizations/:orgId/recent-searches  → 204 (clears the current user's)
+ *
+ * Guests (role `guest`, a shared login) never receive contact details,
+ * prices or free-text observations of people, companies and offers: the
+ * server sends those fields as null and sets `restricted: true`, and the UI
+ * shows «Visible para el equipo» instead of «Pendiente de verificar».
  */
 
 export type Uuid = string;
@@ -218,7 +250,7 @@ export interface Task extends RecordMeta {
   endsAt: IsoInstant | null;
   timezone: string;
   company: {id: Uuid; name: string} | null;
-  /** Filled from milestone 3 (Contactos); always null before. */
+  /** Person to call about this task (milestone 3). */
   contact: {id: Uuid; name: string} | null;
   /** Finish-to-start predecessors. */
   dependsOn: Uuid[];
@@ -255,7 +287,10 @@ export interface TaskInput extends ProvenanceInput {
   endTime?: LocalTime | null;
   companyId?: Uuid | null;
   companyName?: string | null;
-  /** Accepted from milestone 3; ignored before. */
+  /**
+   * A contact of the same organization (any company: the UI suggests the
+   * task company's people first). Unknown or foreign id → 400.
+   */
   contactId?: Uuid | null;
   dependsOn?: Uuid[];
   heavyLoad?: boolean | null;
@@ -280,27 +315,71 @@ export interface DelayHypothesis {
 
 // ---------------------------------------------------------------- contacts, companies, catalogue (M3)
 
+export type CategoryScope = 'service' | 'resource';
+
 export interface Category {
   id: Uuid;
   organizationId: Uuid;
-  /** Which lists use it. */
-  scope: 'service' | 'resource';
+  /** Which lists use it: `service` = companies and offers (M3), `resource` = inventory (M4). */
+  scope: CategoryScope;
   name: string;
   /** Built-in categories cannot be deleted; users can add more. */
   builtIn: boolean;
 }
 
+export interface CategoryInput {
+  organizationId: Uuid;
+  scope: CategoryScope;
+  /** 1–60 characters; trimmed, inner whitespace collapsed. */
+  name: string;
+}
+
+/**
+ * Not every counterpart is a supplier: municipal departments, associations
+ * and the like live in the same list («Empresas y entidades»).
+ */
+export type CompanyKind = 'supplier' | 'public_body' | 'association' | 'other';
+
 export interface Company extends RecordMeta {
   organizationId: Uuid;
   name: string;
+  /** Defaults to `supplier` (also when created by name from a task or offer). */
+  kind: CompanyKind;
+  /** Scope `service`, in category order. */
   categoryIds: Uuid[];
+  /** Null for guests (`restricted`). */
   phone: string | null;
+  /** Null for guests (`restricted`). */
   email: string | null;
   website: string | null;
+  /** Null for guests (`restricted`). */
   notes: string | null;
-  /** Main contact person, if known. */
+  /** Main contact person: always one of this company's contacts. */
   mainContactId: Uuid | null;
+  contactCount: number;
   offerCount: number;
+  /** True when contact details and notes were withheld for this viewer. */
+  restricted: boolean;
+}
+
+/**
+ * Create: `organizationId` and `name` required. Update: `version` required;
+ * only the fields sent change. `categoryIds` replaces the whole list (scope
+ * `service`, same organization). `mainContactId` must be a contact whose
+ * company is this one (400 otherwise). Same name as another company of the
+ * organization (any case) → 409 DUPLICATE with `current` = that company.
+ */
+export interface CompanyInput extends ProvenanceInput {
+  organizationId?: Uuid;
+  name?: string;
+  kind?: CompanyKind;
+  categoryIds?: Uuid[];
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  notes?: string | null;
+  mainContactId?: Uuid | null;
+  version?: number;
 }
 
 export interface Contact extends RecordMeta {
@@ -308,33 +387,98 @@ export interface Contact extends RecordMeta {
   name: string;
   role: string | null;
   company: {id: Uuid; name: string} | null;
+  /** Null for guests (`restricted`). */
   phone: string | null;
+  /** Null for guests (`restricted`). */
   email: string | null;
+  /** Null for guests (`restricted`). */
   description: string | null;
+  /** Null for guests (`restricted`). */
   notes: string | null;
+  /** Linked events of the same organization. */
   eventIds: Uuid[];
+  /** True when contact details and observations were withheld for this viewer. */
+  restricted: boolean;
+}
+
+/**
+ * Create: `organizationId` and `name` required (two people may share a
+ * name). Update: `version` required. `companyId` wins over `companyName`
+ * (find-or-create by name). Moving a contact to another company (or none)
+ * clears it as main contact of the old one (whose version increases).
+ * `eventIds` replaces the whole list (same organization).
+ */
+export interface ContactInput extends ProvenanceInput {
+  organizationId?: Uuid;
+  name?: string;
+  role?: string | null;
+  companyId?: Uuid | null;
+  companyName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  description?: string | null;
+  notes?: string | null;
+  eventIds?: Uuid[];
+  version?: number;
 }
 
 export type PriceUnit =
   'unit' | 'metre' | 'hour' | 'day' | 'km' | 'pack' | 'custom';
 
+/**
+ * A product or service a company offers. Amounts are euros with at most two
+ * decimals (0 – MAX_AMOUNT_EUR); `null` = unknown, never 0. Costs are kept
+ * apart and never summed into an invented total when one is unknown.
+ * A unit such as «kg» is only a billing unit: it never derives a load per
+ * square metre and never answers a task's heavy-load question.
+ */
 export interface Offer extends RecordMeta {
   organizationId: Uuid;
   company: {id: Uuid; name: string};
+  /** Scope `service`. */
   categoryId: Uuid | null;
   name: string;
   description: string | null;
-  /** Euros, null when unknown («Pendiente de verificar»). */
+  /** Euros per unit, null when unknown («Pendiente de verificar») or `restricted`. */
   price: number | null;
   unit: PriceUnit;
-  /** Required when unit = custom (e.g. «por escenario»). */
+  /** Wording of a custom unit (e.g. «por escenario»); null until known. Cleared when unit ≠ custom. */
   customUnit: string | null;
+  /** Null when unknown or `restricted`. */
   transportCost: number | null;
+  /** Null when unknown or `restricted`. */
   assemblyCost: number | null;
+  /** Null when unknown or `restricted`. */
   maintenanceCost: number | null;
+  /** Null when unknown or `restricted`. */
   conditions: string | null;
-  /** VAT treatment as recorded; never assumed. */
+  /** VAT treatment as recorded; null = not known, never assumed. */
   vatIncluded: boolean | null;
+  /** True when prices, costs and conditions were withheld for this viewer. */
+  restricted: boolean;
+}
+
+/**
+ * Create: `organizationId`, `name` and a company (`companyId`, or
+ * `companyName` to find or create it) required; `unit` defaults to `unit`.
+ * Update: `version` required; only the fields sent change.
+ */
+export interface OfferInput extends ProvenanceInput {
+  organizationId?: Uuid;
+  companyId?: Uuid;
+  companyName?: string;
+  categoryId?: Uuid | null;
+  name?: string;
+  description?: string | null;
+  price?: number | null;
+  unit?: PriceUnit;
+  customUnit?: string | null;
+  transportCost?: number | null;
+  assemblyCost?: number | null;
+  maintenanceCost?: number | null;
+  conditions?: string | null;
+  vatIncluded?: boolean | null;
+  version?: number;
 }
 
 // ---------------------------------------------------------------- inventories (M4)
@@ -422,6 +566,11 @@ export interface RecentSearch {
   at: IsoInstant;
 }
 
+/** 1–100 characters; the same query (accent/case-insensitive) moves to the top. */
+export interface RecentSearchInput {
+  query: string;
+}
+
 export interface DayReport {
   organizationId: Uuid;
   /** Local day covered, in the organization's time zone. */
@@ -468,6 +617,8 @@ export type ApiErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'VERSION_CONFLICT'
+  /** A record with the same unique name exists; `current` holds it. */
+  | 'DUPLICATE'
   | 'RATE_LIMITED'
   | 'INTERNAL';
 
@@ -477,6 +628,6 @@ export interface ApiErrorBody {
   message: string;
   /** Field-level problems for VALIDATION: field name → Spanish message. */
   fields?: Record<string, string>;
-  /** For VERSION_CONFLICT: the record as it is now on the server. */
+  /** For VERSION_CONFLICT: the record as it is now on the server; for DUPLICATE: the existing record. */
   current?: unknown;
 }

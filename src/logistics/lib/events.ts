@@ -3,13 +3,21 @@
  * what information is still missing. No React, no store.
  */
 import type {
+  Company,
+  Contact,
   DataSource,
   EventStatus,
   LogisticsEvent,
+  Offer,
   Task,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
-import {missingForTask} from '../../../shared/logistics/quality.ts';
+import {
+  missingForCompany,
+  missingForContact,
+  missingForOffer,
+  missingForTask,
+} from '../../../shared/logistics/quality.ts';
 import {recordDays, recordSlot, sortRecords} from './tasks';
 
 /** Server order: date, then startsAt, undated last, then name. */
@@ -88,7 +96,22 @@ export type PendingRow =
       missing: string[];
       event: LogisticsEvent;
     }
-  | {kind: 'task'; id: string; name: string; missing: string[]; task: Task};
+  | {kind: 'task'; id: string; name: string; missing: string[]; task: Task}
+  | {
+      kind: 'contact';
+      id: string;
+      name: string;
+      missing: string[];
+      contact: Contact;
+    }
+  | {
+      kind: 'company';
+      id: string;
+      name: string;
+      missing: string[];
+      company: Company;
+    }
+  | {kind: 'offer'; id: string; name: string; missing: string[]; offer: Offer};
 
 export interface VerificationSummary {
   total: number;
@@ -98,12 +121,28 @@ export interface VerificationSummary {
   incomplete: PendingRow[];
 }
 
-/** Validated share and missing data over events and tasks together. */
+/** People, companies and offers (milestone 3) also count as information. */
+export interface DirectoryRecords {
+  contacts?: Contact[];
+  companies?: Company[];
+  offers?: Offer[];
+}
+
+const withValidation = (missing: string[], v: Verification) =>
+  v === 'validated' ? missing : [...missing, 'validación'];
+
+/**
+ * Validated share and missing data over everything recorded. In «Qué falta»
+ * events and tasks come before the directory: they are what the day depends
+ * on; then the records missing most go first.
+ */
 export function verificationSummary(
   events: LogisticsEvent[],
   tasks: Task[] = [],
+  directory: DirectoryRecords = {},
 ): VerificationSummary {
-  const records = [...events, ...tasks];
+  const {contacts = [], companies = [], offers = []} = directory;
+  const records = [...events, ...tasks, ...contacts, ...companies, ...offers];
   const total = records.length;
   const validated = records.filter(r => r.verification === 'validated').length;
   const rows: PendingRow[] = [
@@ -124,10 +163,38 @@ export function verificationSummary(
       ],
       task,
     })),
+    ...contacts.map((contact): PendingRow => ({
+      kind: 'contact',
+      id: contact.id,
+      name: contact.name,
+      missing: withValidation(missingForContact(contact), contact.verification),
+      contact,
+    })),
+    ...companies.map((company): PendingRow => ({
+      kind: 'company',
+      id: company.id,
+      name: company.name,
+      missing: withValidation(missingForCompany(company), company.verification),
+      company,
+    })),
+    ...offers.map((offer): PendingRow => ({
+      kind: 'offer',
+      id: offer.id,
+      name: offer.company
+        ? `${offer.name} · ${offer.company.name}`
+        : offer.name,
+      missing: withValidation(missingForOffer(offer), offer.verification),
+      offer,
+    })),
   ];
+  const planFirst = (row: PendingRow) =>
+    row.kind === 'event' || row.kind === 'task' ? 0 : 1;
   const incomplete = rows
     .filter(row => row.missing.length > 0)
-    .sort((a, b) => b.missing.length - a.missing.length);
+    .sort(
+      (a, b) =>
+        planFirst(a) - planFirst(b) || b.missing.length - a.missing.length,
+    );
   return {
     total,
     validated,

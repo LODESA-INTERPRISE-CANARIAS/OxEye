@@ -3,15 +3,29 @@
  * hub, lazy-loaded from the main menu. Default export for `React.lazy`.
  */
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import type {LogisticsEvent, Task} from '../../shared/logistics/contracts.ts';
+import type {
+  Company,
+  Contact,
+  LogisticsEvent,
+  Offer,
+  Task,
+} from '../../shared/logistics/contracts.ts';
 import {DEFAULT_TIMEZONE} from '../../shared/logistics/time.ts';
 import '../styles/logistics/index.css';
 import {CalendarScreen} from './calendar/CalendarScreen';
+import {CatalogScreen} from './catalog/CatalogScreen';
+import {OfferSheet, type OfferSheetMode} from './catalog/OfferSheet';
 import {
   ActionsContext,
+  type CompanyPrefill,
+  type ContactPrefill,
   type LogisticsActions,
+  type OfferPrefill,
   type TaskPrefill,
 } from './common/actions';
+import {CompanySheet, type CompanySheetMode} from './contacts/CompanySheet';
+import {ContactSheet, type ContactSheetMode} from './contacts/ContactSheet';
+import {ContactsScreen} from './contacts/ContactsScreen';
 import {EventSheet, type EventSheetMode} from './events/EventSheet';
 import {HoyScreen} from './hoy/HoyScreen';
 import {longDate, todayIn, zoneNote} from './lib/format';
@@ -19,6 +33,8 @@ import {clearRescue, readRescue} from './lib/rescue';
 import {LoginScreen} from './screens/LoginScreen';
 import {PlaceholderScreen} from './screens/PlaceholderScreen';
 import {ServerGate} from './screens/ServerGate';
+import {SearchSheet} from './search/SearchSheet';
+import {VenueSheet} from './search/VenueSheet';
 import {Shell} from './shell/Shell';
 import {
   calendarDayFromHash,
@@ -42,6 +58,24 @@ export interface LogisticsAppProps {
 function spaceIndex(space: Space): number {
   const i = MAIN_SPACES.findIndex(s => s.id === space);
   return i < 0 ? MAIN_SPACES.length : i;
+}
+
+/**
+ * A directory sheet and the opening it belongs to: every opening gets a new
+ * key, so the sheet remounts on top of whatever is open (a person opened from
+ * a company opened from a person) instead of staying underneath.
+ */
+interface Opened<M> {
+  mode: M;
+  seq: number;
+}
+
+/** Whether the user is typing somewhere (then «/» is just a character). */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+  );
 }
 
 function replaceHash(target: string) {
@@ -74,8 +108,47 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   );
   const [timeline, setTimeline] = useState(false);
   const [direction, setDirection] = useState<1 | -1 | 0>(0);
-  const [eventSheet, setEventSheet] = useState<EventSheetMode | null>(null);
-  const [taskSheet, setTaskSheet] = useState<TaskSheetMode | null>(null);
+  // Task and event sheets stack: opening another one (e.g. a task from the
+  // person sheet opened from a task) mounts it on top and keeps any sheet
+  // with unsaved changes underneath; clean ones are simply replaced.
+  const [eventSheets, setEventSheets] = useState<Opened<EventSheetMode>[]>([]);
+  const [taskSheets, setTaskSheets] = useState<Opened<TaskSheetMode>[]>([]);
+  const dirtySheets = useRef(new Set<number>());
+  const markDirty = useCallback((seq: number, dirty: boolean) => {
+    if (dirty) dirtySheets.current.add(seq);
+    else dirtySheets.current.delete(seq);
+  }, []);
+  const [contactSheet, setContactSheet] =
+    useState<Opened<ContactSheetMode> | null>(null);
+  const [companySheet, setCompanySheet] =
+    useState<Opened<CompanySheetMode> | null>(null);
+  const [offerSheet, setOfferSheet] = useState<Opened<OfferSheetMode> | null>(
+    null,
+  );
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [venueId, setVenueId] = useState<string | null>(null);
+  const openSeq = useRef(0);
+  const opened = useCallback(
+    <M,>(mode: M): Opened<M> => ({mode, seq: ++openSeq.current}),
+    [],
+  );
+  /** Puts a new sheet on the stack, dropping the clean ones under it. */
+  const stack = useCallback(
+    <M,>(next: Opened<M>) =>
+      (sheets: Opened<M>[]) => [
+        ...sheets.filter(s => dirtySheets.current.has(s.seq)),
+        next,
+      ],
+    [],
+  );
+  const unstack = useCallback(
+    (seq: number) =>
+      <M,>(sheets: Opened<M>[]) => {
+        dirtySheets.current.delete(seq);
+        return sheets.filter(s => s.seq !== seq);
+      },
+    [],
+  );
   // Open sheets offer a slot for the toasts; the topmost one wins.
   const [toastSlots, setToastSlots] = useState<HTMLElement[]>([]);
   const toastHost = useMemo<ToastHost>(
@@ -103,8 +176,14 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   // session (same person only; anyone else's rescue is discarded).
   useEffect(() => {
     if (phase !== 'ready') {
-      setEventSheet(null);
-      setTaskSheet(null);
+      setEventSheets([]);
+      setTaskSheets([]);
+      dirtySheets.current.clear();
+      setContactSheet(null);
+      setCompanySheet(null);
+      setOfferSheet(null);
+      setSearchOpen(false);
+      setVenueId(null);
       return;
     }
     if (!userId) return;
@@ -116,19 +195,47 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     }
     if (rescued.orgId && rescued.orgId !== orgId) return;
     if (rescued.entity === 'task') {
-      setTaskSheet(
-        rescued.base
-          ? {kind: 'edit', task: rescued.base, rescued: rescued.values}
-          : {kind: 'create', rescued: rescued.values},
+      setTaskSheets([
+        opened<TaskSheetMode>(
+          rescued.base
+            ? {kind: 'edit', task: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      ]);
+    } else if (rescued.entity === 'contact') {
+      setContactSheet(
+        opened<ContactSheetMode>(
+          rescued.base
+            ? {kind: 'edit', contact: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      );
+    } else if (rescued.entity === 'company') {
+      setCompanySheet(
+        opened<CompanySheetMode>(
+          rescued.base
+            ? {kind: 'edit', company: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      );
+    } else if (rescued.entity === 'offer') {
+      setOfferSheet(
+        opened<OfferSheetMode>(
+          rescued.base
+            ? {kind: 'edit', offer: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
       );
     } else {
-      setEventSheet(
-        rescued.base
-          ? {kind: 'edit', event: rescued.base, rescued: rescued.values}
-          : {kind: 'create', rescued: rescued.values},
-      );
+      setEventSheets([
+        opened<EventSheetMode>(
+          rescued.base
+            ? {kind: 'edit', event: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      ]);
     }
-  }, [phase, userId, orgId, canWrite]);
+  }, [phase, userId, orgId, canWrite, opened]);
 
   // Keep «today» right across midnight and time-zone changes.
   useEffect(() => {
@@ -202,18 +309,34 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
 
   const openEvent = useCallback(
     (event: LogisticsEvent) =>
-      setEventSheet(canWrite ? {kind: 'edit', event} : {kind: 'view', event}),
-    [canWrite],
+      setEventSheets(
+        stack(
+          opened<EventSheetMode>(
+            canWrite ? {kind: 'edit', event} : {kind: 'view', event},
+          ),
+        ),
+      ),
+    [canWrite, opened, stack],
   );
-  const addEvent = useCallback(() => setEventSheet({kind: 'create'}), []);
+  const addEvent = useCallback(
+    () => setEventSheets(stack(opened<EventSheetMode>({kind: 'create'}))),
+    [opened, stack],
+  );
   const openTask = useCallback(
     (task: Task) =>
-      setTaskSheet(canWrite ? {kind: 'edit', task} : {kind: 'view', task}),
-    [canWrite],
+      setTaskSheets(
+        stack(
+          opened<TaskSheetMode>(
+            canWrite ? {kind: 'edit', task} : {kind: 'view', task},
+          ),
+        ),
+      ),
+    [canWrite, opened, stack],
   );
   const addTask = useCallback(
-    (prefill?: TaskPrefill) => setTaskSheet({kind: 'create', prefill}),
-    [],
+    (prefill?: TaskPrefill) =>
+      setTaskSheets(stack(opened<TaskSheetMode>({kind: 'create', prefill}))),
+    [opened, stack],
   );
   /** «+ Añadir → Tarea» starts on the calendar day being looked at. */
   const addTaskHere = useCallback(
@@ -232,6 +355,58 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     [goTo],
   );
 
+  // People, companies and offers open on their card (view) for everyone:
+  // they are looked up far more often than edited; «Editar» is on the card.
+  const openContact = useCallback(
+    (contact: Contact) =>
+      setContactSheet(opened<ContactSheetMode>({kind: 'view', contact})),
+    [opened],
+  );
+  const addContact = useCallback(
+    (prefill?: ContactPrefill) =>
+      setContactSheet(opened<ContactSheetMode>({kind: 'create', prefill})),
+    [opened],
+  );
+  const openCompany = useCallback(
+    (company: Company) =>
+      setCompanySheet(opened<CompanySheetMode>({kind: 'view', company})),
+    [opened],
+  );
+  const addCompany = useCallback(
+    (prefill?: CompanyPrefill) =>
+      setCompanySheet(opened<CompanySheetMode>({kind: 'create', prefill})),
+    [opened],
+  );
+  const openOffer = useCallback(
+    (offer: Offer) =>
+      setOfferSheet(opened<OfferSheetMode>({kind: 'view', offer})),
+    [opened],
+  );
+  const addOffer = useCallback(
+    (prefill?: OfferPrefill) =>
+      setOfferSheet(opened<OfferSheetMode>({kind: 'create', prefill})),
+    [opened],
+  );
+  const openVenue = useCallback((id: string) => setVenueId(id), []);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
+
+  // «/» or Ctrl+K (⌘K) opens the search from anywhere in the workspace, but
+  // never over an open sheet or while typing «/» in a field.
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    const onKey = (e: KeyboardEvent) => {
+      const combo =
+        (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k';
+      const slash = e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (!combo && !(slash && !isTyping(e.target))) return;
+      if (rootRef.current?.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [phase]);
+
   const actions = useMemo<LogisticsActions>(
     () => ({
       canWrite,
@@ -242,6 +417,14 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       openTask,
       addTask,
       openDay,
+      openContact,
+      addContact,
+      openCompany,
+      addCompany,
+      openOffer,
+      addOffer,
+      openVenue,
+      openSearch,
     }),
     [
       canWrite,
@@ -252,6 +435,14 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       openTask,
       addTask,
       openDay,
+      openContact,
+      addContact,
+      openCompany,
+      addCompany,
+      openOffer,
+      addOffer,
+      openVenue,
+      openSearch,
     ],
   );
 
@@ -279,6 +470,10 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
         canWrite={canWrite}
         onAddEvent={addEvent}
         onAddTask={addTaskHere}
+        onAddContact={addContact}
+        onAddCompany={addCompany}
+        onAddOffer={addOffer}
+        onSearch={openSearch}
         swipeLocked={timelineActive}
         onExit={onClose}
       >
@@ -296,6 +491,10 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
             onDay={onCalendarDay}
             onTimelineChange={setTimeline}
           />
+        ) : space === 'contactos' ? (
+          <ContactsScreen />
+        ) : space === 'catalogo' ? (
+          <CatalogScreen />
         ) : (
           <PlaceholderScreen space={space} onGoToday={() => goTo('hoy')} />
         )}
@@ -319,26 +518,49 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
           {body}
           {phase === 'ready' && (
             <>
-              {/* Keyed by record (namespaced, they are siblings): opening
-                  another one starts a fresh form. */}
-              <EventSheet
-                key={`event:${
-                  eventSheet?.kind === 'create'
-                    ? 'new'
-                    : (eventSheet?.event.id ?? 'closed')
-                }`}
-                mode={eventSheet}
-                onClose={() => setEventSheet(null)}
+              {/* Keyed by opening (namespaced, they are siblings): every
+                  opening mounts a fresh sheet on top. */}
+              {eventSheets.map(s => (
+                <EventSheet
+                  key={`event:${s.seq}`}
+                  mode={s.mode}
+                  onClose={() => setEventSheets(unstack(s.seq))}
+                  onDirty={d => markDirty(s.seq, d)}
+                />
+              ))}
+              {taskSheets.map(s => (
+                <TaskSheet
+                  key={`task:${s.seq}`}
+                  mode={s.mode}
+                  onClose={() => setTaskSheets(unstack(s.seq))}
+                  onDirty={d => markDirty(s.seq, d)}
+                />
+              ))}
+              <ContactSheet
+                key={`contact:${contactSheet?.seq ?? 'closed'}`}
+                mode={contactSheet?.mode ?? null}
+                onClose={() => setContactSheet(null)}
               />
-              <TaskSheet
-                key={`task:${
-                  taskSheet?.kind === 'create'
-                    ? 'new'
-                    : (taskSheet?.task.id ?? 'closed')
-                }`}
-                mode={taskSheet}
-                onClose={() => setTaskSheet(null)}
+              <CompanySheet
+                key={`company:${companySheet?.seq ?? 'closed'}`}
+                mode={companySheet?.mode ?? null}
+                onClose={() => setCompanySheet(null)}
               />
+              <OfferSheet
+                key={`offer:${offerSheet?.seq ?? 'closed'}`}
+                mode={offerSheet?.mode ?? null}
+                onClose={() => setOfferSheet(null)}
+              />
+              {venueId && (
+                <VenueSheet
+                  key={`venue:${venueId}`}
+                  venueId={venueId}
+                  onClose={() => setVenueId(null)}
+                />
+              )}
+              {searchOpen && (
+                <SearchSheet onClose={() => setSearchOpen(false)} />
+              )}
             </>
           )}
         </ActionsContext.Provider>

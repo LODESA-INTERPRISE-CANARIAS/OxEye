@@ -5,23 +5,36 @@
  *
  * Writes that change the dependency graph of an organization take a
  * transaction-level advisory lock first, so two people linking tasks at the
- * same time cannot build a cycle between them. The lock is always taken
- * before any row lock, which keeps lock order consistent (no deadlocks).
+ * same time cannot build a cycle between them. Writes that link a company or
+ * a contact also take the catalogue lock, after the graph lock. Both are
+ * always taken before any row lock, which keeps lock order consistent (no
+ * deadlocks; see records/locks.ts).
  */
 import type {Db, Queryable} from '../db/db.ts';
 import {toIsoOrNull} from '../db/db.ts';
 import {AppError, notFound, validationError} from '../errors.ts';
 import {appendActivity} from '../activity/service.ts';
-import {findCompany, findOrCreateCompany} from '../companies/service.ts';
+import {
+  COMPANY_NOT_FOUND,
+  findCompany,
+  resolveCompanyRef,
+} from '../companies/service.ts';
+import {
+  CONTACT_NOT_FOUND,
+  findContact,
+  promoteContact,
+} from '../contacts/service.ts';
+import type {ContactRef} from '../contacts/service.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
-import {normalizeName, promoteDemo} from '../records/find-or-create.ts';
-import type {NamedRef} from '../records/find-or-create.ts';
+import {normalizeName} from '../records/find-or-create.ts';
+import {parseIds} from '../records/ids.ts';
+import {lockCatalogue, lockGraph} from '../records/locks.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
 import {resolveSlot, storedToLocal, touchesSlot} from '../records/slot.ts';
 import type {StoredSlot} from '../records/slot.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
-import {changedTaskFields, dependencyProblem, normalizeIds} from './domain.ts';
+import {changedTaskFields, dependencyProblem} from './domain.ts';
 import type {GraphTask, TaskState} from './domain.ts';
 import type {CreateTaskBody, UpdateTaskBody} from './schemas.ts';
 import type {
@@ -38,6 +51,8 @@ interface TaskRow extends MetaRow {
   venue_name: string | null;
   company_id: string | null;
   company_name: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
   title: string;
   kind: TaskKind;
   status: TaskStatus;
@@ -54,6 +69,7 @@ interface TaskRow extends MetaRow {
 const SELECT_TASK = `
   SELECT ${metaColumns('t')}, t.organization_id, t.event_id,
          t.venue_id, v.name AS venue_name, t.company_id, c.name AS company_name,
+         t.contact_id, k.name AS contact_name,
          t.title, t.kind, t.status,
          t.local_date::text AS local_date, t.end_date::text AS end_date,
          t.starts_at, t.ends_at, t.timezone, t.heavy_load, t.notes,
@@ -63,21 +79,11 @@ const SELECT_TASK = `
     FROM tasks t
     LEFT JOIN venues v ON v.id = t.venue_id
     LEFT JOIN companies c ON c.id = t.company_id
+    LEFT JOIN contacts k ON k.id = t.contact_id
     ${authorJoins('t')}`;
-
-/** Namespace of the per-organization dependency-graph lock. */
-const GRAPH_LOCK_CLASS = 727_274_002;
 
 export const EVENT_NOT_FOUND =
   'No encontramos ese evento en esta organización: puede que se haya eliminado.';
-export const COMPANY_NOT_FOUND =
-  'No encontramos esa empresa en esta organización: puede que se haya eliminado.';
-
-function parseIds(value: unknown): string[] {
-  const list =
-    typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
-  return Array.isArray(list) ? normalizeIds(list.map(String)) : [];
-}
 
 function toTask(row: TaskRow): Task {
   return {
@@ -100,8 +106,10 @@ function toTask(row: TaskRow): Task {
       row.company_id && row.company_name
         ? {id: row.company_id, name: row.company_name}
         : null,
-    // Contacts arrive in milestone 3.
-    contact: null,
+    contact:
+      row.contact_id && row.contact_name
+        ? {id: row.contact_id, name: row.contact_name}
+        : null,
     dependsOn: parseIds(row.depends_on),
     heavyLoad: row.heavy_load,
     notes: row.notes,
@@ -125,6 +133,7 @@ function stateOf(row: TaskRow): TaskState {
     eventId: row.event_id,
     venueId: row.venue_id,
     companyId: row.company_id,
+    contactId: row.contact_id,
     ...storedSlot(row),
     timezone: row.timezone,
     dependsOn: parseIds(row.depends_on),
@@ -178,13 +187,6 @@ function staleTask(row: TaskRow): AppError {
   );
 }
 
-async function lockGraph(tx: Queryable, organizationId: string): Promise<void> {
-  await tx.query('SELECT pg_advisory_xact_lock($1::int, hashtext($2))', [
-    GRAPH_LOCK_CLASS,
-    organizationId,
-  ]);
-}
-
 async function loadGraph(
   tx: Queryable,
   organizationId: string,
@@ -233,31 +235,17 @@ function throwIfFields(fields: Record<string, string>): void {
   if (Object.keys(fields).length > 0) throw validationError(fields);
 }
 
-/** Resolves company input to a reference; `undefined` = unchanged. */
-async function resolveCompany(
-  tx: Queryable,
-  input: {companyId?: string | null; companyName?: string | null},
-  args: {organizationId: string; actorId: string; now: Date; isDemo: boolean},
-  current: {id: string | null; name: string | null},
-  byId: NamedRef | null,
-): Promise<NamedRef | null | undefined> {
-  if (byId) {
-    if (byId.isDemo && !args.isDemo) {
-      await promoteDemo(tx, 'companies', byId.id, args.actorId, args.now);
-      return {...byId, isDemo: false};
-    }
-    return byId;
-  }
-  if (input.companyName !== undefined) {
-    const name = normalizeName(input.companyName);
-    if (name === null) return null;
-    if (current.name && current.name.toLowerCase() === name.toLowerCase()) {
-      return undefined;
-    }
-    return findOrCreateCompany(tx, {...args, name});
-  }
-  if (input.companyId === null) return null;
-  return undefined;
+/** True when the input links a company or a contact (catalogue lock needed). */
+function touchesCatalogue(input: {
+  companyId?: string | null;
+  companyName?: string | null;
+  contactId?: string | null;
+}): boolean {
+  return (
+    input.companyId !== undefined ||
+    input.companyName !== undefined ||
+    input.contactId !== undefined
+  );
 }
 
 export async function createTask(
@@ -270,6 +258,7 @@ export async function createTask(
     const org = await requireMembership(tx, actor.id, input.organizationId);
     const dependsOn = input.dependsOn ?? [];
     if (dependsOn.length > 0) await lockGraph(tx, org.id);
+    if (touchesCatalogue(input)) await lockCatalogue(tx, org.id);
 
     const fields: Record<string, string> = {};
     const event = input.eventId
@@ -282,6 +271,10 @@ export async function createTask(
       ? ((await findCompany(tx, org.id, input.companyId)) ?? null)
       : null;
     if (input.companyId && !companyById) fields.companyId = COMPANY_NOT_FOUND;
+    const contact = input.contactId
+      ? await findContact(tx, org.id, input.contactId)
+      : undefined;
+    if (input.contactId && !contact) fields.contactId = CONTACT_NOT_FOUND;
     if (dependsOn.length > 0) {
       const problem = dependencyProblem(
         null,
@@ -303,22 +296,24 @@ export async function createTask(
           now,
         })
       : null;
-    const company = await resolveCompany(
+    const company = await resolveCompanyRef(
       tx,
       input,
       {organizationId: org.id, actorId: actor.id, now, isDemo: false},
       {id: null, name: null},
       companyById,
     );
+    if (contact) await promoteContact(tx, contact, actor.id, now);
 
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO tasks
          (organization_id, event_id, venue_id, company_id, title, kind, status,
           local_date, end_date, starts_at, ends_at, timezone, heavy_load, notes,
-          source, verification, created_by, created_at, updated_by, updated_at)
+          source, verification, created_by, created_at, updated_by, updated_at,
+          contact_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9::date,
                $10::timestamptz, $11::timestamptz, $12, $13, $14, $15, $16,
-               $17, $18::timestamptz, $17, $18::timestamptz)
+               $17, $18::timestamptz, $17, $18::timestamptz, $19)
        RETURNING id`,
       [
         org.id,
@@ -340,6 +335,7 @@ export async function createTask(
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
+        contact?.id ?? null,
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -389,6 +385,7 @@ export async function updateTask(
     );
     const orgId = unlocked.organization_id;
     if (input.dependsOn !== undefined) await lockGraph(tx, orgId);
+    if (touchesCatalogue(input)) await lockCatalogue(tx, orgId);
     const row = await loadTask(tx, id, true);
     if (!row) throw taskNotFound();
     if (row.version !== input.version) throw staleTask(row);
@@ -434,6 +431,16 @@ export async function updateTask(
       ? ((await findCompany(tx, orgId, input.companyId)) ?? null)
       : null;
     if (input.companyId && !companyById) fields.companyId = COMPANY_NOT_FOUND;
+    let contact: ContactRef | undefined;
+    if (input.contactId !== undefined && input.contactId !== before.contactId) {
+      if (input.contactId === null) {
+        after.contactId = null;
+      } else {
+        contact = await findContact(tx, orgId, input.contactId);
+        if (contact) after.contactId = contact.id;
+        else fields.contactId = CONTACT_NOT_FOUND;
+      }
+    }
     if (input.dependsOn !== undefined) {
       const problem =
         input.dependsOn.length > 0
@@ -463,7 +470,7 @@ export async function updateTask(
         after.venueId = venue.id;
       }
     }
-    const company = await resolveCompany(
+    const company = await resolveCompanyRef(
       tx,
       input,
       {organizationId: orgId, actorId: actor.id, now, isDemo: row.is_demo},
@@ -471,6 +478,10 @@ export async function updateTask(
       companyById,
     );
     if (company !== undefined) after.companyId = company?.id ?? null;
+    // A demo person linked from a real task becomes real.
+    if (contact && !row.is_demo) {
+      await promoteContact(tx, contact, actor.id, now);
+    }
 
     const changed = changedTaskFields(before, after);
     if (changed.length === 0) return toTask(row);
@@ -482,7 +493,7 @@ export async function updateTask(
               starts_at = $11::timestamptz, ends_at = $12::timestamptz,
               timezone = $13, heavy_load = $14, notes = $15, source = $16,
               verification = $17, version = version + 1,
-              updated_by = $18, updated_at = $19::timestamptz
+              updated_by = $18, updated_at = $19::timestamptz, contact_id = $20
         WHERE id = $1 AND version = $2
         RETURNING id`,
       [
@@ -505,6 +516,7 @@ export async function updateTask(
         after.verification,
         actor.id,
         now.toISOString(),
+        after.contactId,
       ],
     );
     if (updated.length === 0) {

@@ -60,9 +60,10 @@ test.describe('Gestor logístico · móvil', () => {
   test('«Ir a Hoy» on a placeholder space goes back to Hoy', async ({page}) => {
     await mockApi(page);
     await signIn(page);
-    await page.locator('#lx-tab-catalogo').click();
+    // Catálogo and Contactos are real spaces since milestone 3.
+    await page.locator('#lx-tab-inventarios').click();
     await page
-      .locator('#lx-space-catalogo')
+      .locator('#lx-space-inventarios')
       .getByRole('button', {name: 'Ir a Hoy'})
       .click();
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
