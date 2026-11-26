@@ -147,7 +147,7 @@ Safety conditions carried to M5–M6 (from the M4 audit):
 - Any storage or assembly area on the venue map needs its own plan with the A/B/C, Carpa Amarilla, accessibility and subsoil checks.
 
 ### 5. Seguimiento + Órdenes de trabajo (done)
-The user was away («sigue con tus recomendaciones»); the AI Lead's answers stand and are logged:
+The user was away («sigue con tus recomendaciones»); the AI Lead's answers are logged and the user approved them afterwards (2026-11-26):
 - Hypotheses are stored on the server for the team (note withheld from Invitado). Applied ones stay as a record.
 - «Aplicar al plan» moves everything the propagation moves, in one transaction, and marks the delayed task «Con retraso» (an option in the confirmation).
 - «La jornada» lives in Hoy (no new space).
@@ -210,7 +210,3 @@ Safety conditions carried to M6 (from the M5 audit):
   - la jornada with one hand;
   - «¿Y si…?» → «Aplicar al plan»;
   - a work order saved as PDF from the browser and sent by WhatsApp and e-mail.
-- Review M5 decisions taken while the user was away (log):
-  - hypotheses stored for the team;
-  - «Aplicar» moves the whole chain and marks «Con retraso»;
-  - the work-order fields: by default, members-only, and never.
