@@ -5,7 +5,12 @@
 import type {
   CompanyKind,
   EventStatus,
+  NoteKind,
+  NoteRefType,
   PriceUnit,
+  ResourceAvailability,
+  ResourceCondition,
+  ResourceOwnership,
   TaskKind,
   TaskStatus,
 } from './contracts.ts';
@@ -124,6 +129,147 @@ export function isValidAmount(value: number): boolean {
     Number.isFinite(value) &&
     value >= 0 &&
     value <= MAX_AMOUNT_EUR &&
-    Math.abs(Math.round(value * 100) - value * 100) < 1e-6
+    hasAtMostTwoDecimals(value)
   );
 }
+
+function hasAtMostTwoDecimals(value: number): boolean {
+  return Math.abs(Math.round(value * 100) - value * 100) < 1e-6;
+}
+
+// ---------------------------------------------------------------- inventories and notes (M4)
+
+export const RESOURCE_OWNERSHIPS = [
+  'owned',
+  'contracted',
+] as const satisfies readonly ResourceOwnership[];
+
+export const RESOURCE_OWNERSHIP_LABEL: Record<ResourceOwnership, string> = {
+  owned: 'Propio',
+  contracted: 'Contratado',
+};
+
+/** Display order: best first, unknown last. */
+export const RESOURCE_CONDITIONS = [
+  'good',
+  'fair',
+  'damaged',
+  'unknown',
+] as const satisfies readonly ResourceCondition[];
+
+export const RESOURCE_CONDITION_LABEL: Record<ResourceCondition, string> = {
+  good: 'Buen estado',
+  fair: 'Con desgaste',
+  damaged: 'Con daños',
+  unknown: 'Estado sin revisar',
+};
+
+export const RESOURCE_AVAILABILITIES = [
+  'available',
+  'in_use',
+  'maintenance',
+  'unknown',
+] as const satisfies readonly ResourceAvailability[];
+
+export const RESOURCE_AVAILABILITY_LABEL: Record<
+  ResourceAvailability,
+  string
+> = {
+  available: 'Disponible',
+  in_use: 'En uso',
+  maintenance: 'En reparación',
+  unknown: 'Disponibilidad sin confirmar',
+};
+
+/**
+ * Resource categories every organization starts with, in display order
+ * (the materials named in the product vision). Users add more; built-ins stay.
+ */
+export const BUILT_IN_RESOURCE_CATEGORIES = [
+  'Carpas',
+  'Vallas',
+  'Mesas',
+  'Sillas y bancos',
+  'Escenarios y tarimas',
+  'Vehículos',
+  'Generadores y electricidad',
+  'Sonido e iluminación',
+  'Señalización',
+  'Otros materiales',
+] as const;
+
+/** Default unit of a resource. */
+export const DEFAULT_RESOURCE_UNIT = 'unidades';
+/** Suggestions for the unit field; any other wording is accepted. */
+export const RESOURCE_UNIT_SUGGESTIONS = [
+  'unidades',
+  'm',
+  'm²',
+  'juegos',
+  'palés',
+  'kg',
+  'l',
+] as const;
+
+export const RESOURCE_UNIT_MAX = 30;
+export const DIMENSIONS_MAX = 120;
+export const LOCATION_MAX = 200;
+export const ADDRESS_MAX = 300;
+export const NOTES_MAX = 5000;
+export const NOTE_TEXT_MAX = 5000;
+export const MAX_RESOURCES_PER_TASK = 50;
+/** Highest quantity accepted (a typo would otherwise inflate the inventory). */
+export const MAX_RESOURCE_QUANTITY = 1_000_000;
+
+/** A counted quantity: finite, 0 – MAX_RESOURCE_QUANTITY, at most two decimals. */
+export function isValidQuantity(value: number): boolean {
+  return (
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= MAX_RESOURCE_QUANTITY &&
+    hasAtMostTwoDecimals(value)
+  );
+}
+
+export const NOTE_KINDS = [
+  'note',
+  'incident',
+  'decision',
+  'open_question',
+  'feature_idea',
+] as const satisfies readonly NoteKind[];
+
+export const NOTE_KIND_LABEL: Record<NoteKind, string> = {
+  note: 'Nota',
+  incident: 'Incidencia',
+  decision: 'Decisión',
+  open_question: 'Pregunta abierta',
+  feature_idea: 'Idea para la herramienta',
+};
+
+/** Kinds that can be marked resolved (incident) or answered (question). */
+export const RESOLVABLE_NOTE_KINDS: ReadonlySet<NoteKind> = new Set([
+  'incident',
+  'open_question',
+]);
+
+export const NOTE_REF_TYPES = [
+  'task',
+  'venue',
+  'company',
+  'contact',
+  'offer',
+  'warehouse',
+  'resource',
+] as const satisfies readonly NoteRefType[];
+
+/**
+ * Shown on every «Incidencia» form and sheet. Invariant 3: this tool never
+ * holds Punto Violeta cases or data about people who were attended.
+ */
+export const INCIDENT_SCOPE_NOTE =
+  'Solo incidencias logísticas (un camión que no llega, una valla rota). Aquí no se registran casos de Punto Violeta ni datos de personas atendidas.';
+
+/** Shown on every note form: what not to write in free text. */
+export const NOTE_PRIVACY_HINT =
+  'No anotes datos de salud, datos de personas atendidas ni casos de Punto Violeta. El equipo ve el texto; Invitado, no.';

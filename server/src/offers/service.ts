@@ -15,9 +15,11 @@ import {
   findCompany,
   resolveCompanyRef,
 } from '../companies/service.ts';
+import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
 import {normalizeName} from '../records/find-or-create.ts';
 import {lockCatalogue} from '../records/locks.ts';
+import {unlinkResources} from '../resources/links.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
 import {forViewer} from '../records/redact.ts';
@@ -360,6 +362,17 @@ export async function updateOffer(
 
     const changed = changedFields(before, after, FIELD_NAMES);
     if (changed.length === 0) return toOffer(row, actor);
+    // A resource's offer belongs to the resource's company: resources that
+    // came from this offer keep their company and lose the offer.
+    if (changed.includes('company')) {
+      await unlinkResources(tx, {
+        organizationId: orgId,
+        link: 'offer',
+        ids: [id],
+        actorId: actor.id,
+        now,
+      });
+    }
 
     await tx.query(
       `UPDATE offers
@@ -406,6 +419,11 @@ export async function updateOffer(
   });
 }
 
+/**
+ * Deletes an offer at the given version. Resources that came from it and
+ * notes that pointed at it lose the link: their versions increase and the
+ * changes are logged.
+ */
 export async function deleteOffer(
   db: Db,
   actor: SessionUser,
@@ -420,6 +438,13 @@ export async function deleteOffer(
     const row = await loadOffer(tx, id, true);
     if (!row) throw offerNotFound();
     if (row.version !== version) throw staleOffer(row, actor);
+    const unlink = {ids: [id], actorId: actor.id, now};
+    await unlinkResources(tx, {
+      ...unlink,
+      organizationId: orgId,
+      link: 'offer',
+    });
+    await unlinkNotes(tx, {...unlink, link: 'offer'});
     await tx.query('DELETE FROM offers WHERE id = $1', [id]);
     await appendActivity(tx, {
       organizationId: orgId,

@@ -24,10 +24,16 @@ import type {
   UpdateEventInput,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
-import {EVENT_STATUSES} from '../../../shared/logistics/rules.ts';
+import {
+  EVENT_STATUSES,
+  NOTE_PRIVACY_HINT,
+} from '../../../shared/logistics/rules.ts';
 import {DEFAULT_TIMEZONE} from '../../../shared/logistics/time.ts';
 import {errorMessage, isApiError} from '../api/client';
+import {RecordHistory} from '../common/RecordHistory';
+import {RecordNotes} from '../common/RecordNotes';
 import {TimeWindow} from '../common/TimeWindow';
+import {Value} from '../contacts/DirectoryParts';
 import {
   ConflictNotice,
   DiscardStrip,
@@ -285,15 +291,35 @@ const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
           <dd>{event.source ? SOURCE_LABEL[event.source] : <Pending />}</dd>
         </div>
         <div>
-          <dt>Notas</dt>
-          <dd className="lx-detail__notes">{event.notes || '—'}</dd>
+          <dt>Observaciones</dt>
+          <dd className="lx-detail__notes">
+            <Value value={event.notes} withheld={event.restricted} empty="—" />
+          </dd>
         </div>
       </dl>
       <EventTasks event={event} />
-      <Provenance record={event} id="lx-event-provenance" />
+      <EventRecordParts event={event} />
     </>
   );
 };
+
+/** Notes filed under the event, its history and who registered it. */
+const EventRecordParts: React.FC<{event: LogisticsEvent}> = ({event}) => (
+  <>
+    <RecordNotes
+      target={{type: 'event', id: event.id}}
+      prefill={{eventId: event.id}}
+      idPrefix="lx-event"
+    />
+    <RecordHistory
+      entityType="event"
+      entityId={event.id}
+      version={event.version}
+      idPrefix="lx-event"
+    />
+    <Provenance record={event} id="lx-event-provenance" />
+  </>
+);
 
 interface EventFormProps {
   mode: Exclude<EventSheetMode, {kind: 'view'}>;
@@ -691,20 +717,30 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
           onVerification={v => set('verification', v)}
         />
 
-        <Field id="lx-event-notes" label="Notas" optional error={errors.notes}>
+        <Field
+          id="lx-event-notes"
+          label="Observaciones"
+          optional
+          error={errors.notes}
+          hint={NOTE_PRIVACY_HINT}
+        >
           <Textarea
             id="lx-event-notes"
             name="lx-event-notes"
             rows={3}
             value={values.notes}
             invalid={!!errors.notes}
+            aria-describedby={describedBy('lx-event-notes', {
+              error: errors.notes,
+              hint: true,
+            })}
             placeholder="Quién lo organiza, qué falta por confirmar…"
             onChange={e => set('notes', e.target.value)}
           />
         </Field>
 
         {base && <EventTasks event={base} />}
-        {base && <Provenance record={base} id="lx-event-provenance" />}
+        {base && <EventRecordParts event={base} />}
         {/* Enter in a text field submits. */}
         <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
       </form>

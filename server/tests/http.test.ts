@@ -181,6 +181,20 @@ describe('route surface', () => {
         'GET /api/organizations/:orgId/recent-searches',
         'POST /api/organizations/:orgId/recent-searches',
         'DELETE /api/organizations/:orgId/recent-searches',
+        // Milestone 4: inventories and notes (the history is the activity
+        // route with entityType and entityId).
+        'GET /api/organizations/:orgId/warehouses',
+        'POST /api/warehouses',
+        'PATCH /api/warehouses/:id',
+        'DELETE /api/warehouses/:id',
+        'GET /api/organizations/:orgId/resources',
+        'POST /api/resources',
+        'PATCH /api/resources/:id',
+        'DELETE /api/resources/:id',
+        'GET /api/organizations/:orgId/notes',
+        'POST /api/notes',
+        'PATCH /api/notes/:id',
+        'DELETE /api/notes/:id',
       ].sort(),
     );
   });

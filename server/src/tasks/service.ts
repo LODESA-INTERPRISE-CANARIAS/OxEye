@@ -5,10 +5,14 @@
  *
  * Writes that change the dependency graph of an organization take a
  * transaction-level advisory lock first, so two people linking tasks at the
- * same time cannot build a cycle between them. Writes that link a company or
- * a contact also take the catalogue lock, after the graph lock. Both are
+ * same time cannot build a cycle between them. Writes that link a company, a
+ * contact or resources also take the catalogue lock, after the graph lock, and
+ * so does a delete (it unlinks the notes that point at the task). Both are
  * always taken before any row lock, which keeps lock order consistent (no
  * deadlocks; see records/locks.ts).
+ *
+ * Guests never receive a task's notes (see records/redact.ts). The resources a
+ * task uses never answer its heavy-load question.
  */
 import type {Db, Queryable} from '../db/db.ts';
 import {toIsoOrNull} from '../db/db.ts';
@@ -25,12 +29,16 @@ import {
   promoteContact,
 } from '../contacts/service.ts';
 import type {ContactRef} from '../contacts/service.ts';
+import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
 import {normalizeName} from '../records/find-or-create.ts';
 import {parseIds} from '../records/ids.ts';
 import {lockCatalogue, lockGraph} from '../records/locks.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
+import {forViewer} from '../records/redact.ts';
+import type {Viewer} from '../records/redact.ts';
+import {areOwnResources, RESOURCES_UNKNOWN} from '../resources/links.ts';
 import {resolveSlot, storedToLocal, touchesSlot} from '../records/slot.ts';
 import type {StoredSlot} from '../records/slot.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
@@ -64,6 +72,7 @@ interface TaskRow extends MetaRow {
   heavy_load: boolean | null;
   notes: string | null;
   depends_on: unknown;
+  resource_ids: unknown;
 }
 
 const SELECT_TASK = `
@@ -75,7 +84,10 @@ const SELECT_TASK = `
          t.starts_at, t.ends_at, t.timezone, t.heavy_load, t.notes,
          COALESCE((SELECT jsonb_agg(d.depends_on_id ORDER BY d.depends_on_id)
                      FROM task_dependencies d WHERE d.task_id = t.id),
-                  '[]'::jsonb) AS depends_on
+                  '[]'::jsonb) AS depends_on,
+         COALESCE((SELECT jsonb_agg(tr.resource_id ORDER BY tr.resource_id)
+                     FROM task_resources tr WHERE tr.task_id = t.id),
+                  '[]'::jsonb) AS resource_ids
     FROM tasks t
     LEFT JOIN venues v ON v.id = t.venue_id
     LEFT JOIN companies c ON c.id = t.company_id
@@ -85,35 +97,41 @@ const SELECT_TASK = `
 export const EVENT_NOT_FOUND =
   'No encontramos ese evento en esta organización: puede que se haya eliminado.';
 
-function toTask(row: TaskRow): Task {
-  return {
-    ...toMeta(row),
-    organizationId: row.organization_id,
-    eventId: row.event_id,
-    venue:
-      row.venue_id && row.venue_name
-        ? {id: row.venue_id, name: row.venue_name}
-        : null,
-    title: row.title,
-    kind: row.kind,
-    status: row.status,
-    date: row.local_date,
-    endDate: row.end_date,
-    startsAt: toIsoOrNull(row.starts_at),
-    endsAt: toIsoOrNull(row.ends_at),
-    timezone: row.timezone,
-    company:
-      row.company_id && row.company_name
-        ? {id: row.company_id, name: row.company_name}
-        : null,
-    contact:
-      row.contact_id && row.contact_name
-        ? {id: row.contact_id, name: row.contact_name}
-        : null,
-    dependsOn: parseIds(row.depends_on),
-    heavyLoad: row.heavy_load,
-    notes: row.notes,
-  };
+/** The single row → record mapping; the viewer decides what is withheld. */
+function toTask(row: TaskRow, viewer: Viewer): Task {
+  return forViewer(
+    'task',
+    {
+      ...toMeta(row),
+      organizationId: row.organization_id,
+      eventId: row.event_id,
+      venue:
+        row.venue_id && row.venue_name
+          ? {id: row.venue_id, name: row.venue_name}
+          : null,
+      title: row.title,
+      kind: row.kind,
+      status: row.status,
+      date: row.local_date,
+      endDate: row.end_date,
+      startsAt: toIsoOrNull(row.starts_at),
+      endsAt: toIsoOrNull(row.ends_at),
+      timezone: row.timezone,
+      company:
+        row.company_id && row.company_name
+          ? {id: row.company_id, name: row.company_name}
+          : null,
+      contact:
+        row.contact_id && row.contact_name
+          ? {id: row.contact_id, name: row.contact_name}
+          : null,
+      dependsOn: parseIds(row.depends_on),
+      heavyLoad: row.heavy_load,
+      resourceIds: parseIds(row.resource_ids),
+      notes: row.notes,
+    },
+    viewer,
+  );
 }
 
 function storedSlot(row: TaskRow): StoredSlot {
@@ -138,6 +156,7 @@ function stateOf(row: TaskRow): TaskState {
     timezone: row.timezone,
     dependsOn: parseIds(row.depends_on),
     heavyLoad: row.heavy_load,
+    resourceIds: parseIds(row.resource_ids),
     notes: row.notes,
     source: row.source,
     verification: row.verification,
@@ -151,6 +170,7 @@ function stateOf(row: TaskRow): TaskState {
 export async function listTasks(
   db: Queryable,
   organizationId: string,
+  viewer: Viewer,
   eventId: string | null = null,
 ): Promise<Task[]> {
   const rows = await db.query<TaskRow>(
@@ -160,7 +180,7 @@ export async function listTasks(
                lower(t.title), t.id`,
     [organizationId, eventId],
   );
-  return rows.map(toTask);
+  return rows.map(r => toTask(r, viewer));
 }
 
 async function loadTask(
@@ -179,11 +199,11 @@ function taskNotFound(): AppError {
   return notFound('No encontramos esa tarea: puede que se haya eliminado.');
 }
 
-function staleTask(row: TaskRow): AppError {
+function staleTask(row: TaskRow, viewer: Viewer): AppError {
   return new AppError(
     'VERSION_CONFLICT',
     'Otra persona ha cambiado esta tarea mientras la editabas. Revisa la versión actual antes de guardar tus cambios.',
-    {current: toTask(row)},
+    {current: toTask(row, viewer)},
   );
 }
 
@@ -231,20 +251,39 @@ async function writeDependencies(
   );
 }
 
+async function writeResources(
+  tx: Queryable,
+  taskId: string,
+  resourceIds: string[],
+): Promise<void> {
+  await tx.query('DELETE FROM task_resources WHERE task_id = $1', [taskId]);
+  if (resourceIds.length === 0) return;
+  await tx.query(
+    `INSERT INTO task_resources (task_id, resource_id)
+     SELECT $1::uuid, value::uuid FROM jsonb_array_elements_text($2::jsonb)`,
+    [taskId, JSON.stringify(resourceIds)],
+  );
+}
+
 function throwIfFields(fields: Record<string, string>): void {
   if (Object.keys(fields).length > 0) throw validationError(fields);
 }
 
-/** True when the input links a company or a contact (catalogue lock needed). */
+/**
+ * True when the input links a company, a contact or resources (catalogue
+ * lock needed: those records are deleted under it).
+ */
 function touchesCatalogue(input: {
   companyId?: string | null;
   companyName?: string | null;
   contactId?: string | null;
+  resourceIds?: string[];
 }): boolean {
   return (
     input.companyId !== undefined ||
     input.companyName !== undefined ||
-    input.contactId !== undefined
+    input.contactId !== undefined ||
+    input.resourceIds !== undefined
   );
 }
 
@@ -282,6 +321,10 @@ export async function createTask(
         await loadGraph(tx, org.id),
       );
       if (problem) fields.dependsOn = problem;
+    }
+    const resourceIds = input.resourceIds ?? [];
+    if (!(await areOwnResources(tx, org.id, resourceIds))) {
+      fields.resourceIds = RESOURCES_UNKNOWN;
     }
     if (!resolved.ok) throw validationError({...fields, ...resolved.fields});
     throwIfFields(fields);
@@ -340,6 +383,7 @@ export async function createTask(
     );
     const id = (inserted[0] as {id: string}).id;
     await writeDependencies(tx, id, dependsOn);
+    await writeResources(tx, id, resourceIds);
     await appendActivity(tx, {
       organizationId: org.id,
       userId: actor.id,
@@ -349,7 +393,7 @@ export async function createTask(
       action: 'create',
       at: now,
     });
-    return toTask((await loadTask(tx, id)) as TaskRow);
+    return toTask((await loadTask(tx, id)) as TaskRow, actor);
   });
 }
 
@@ -388,7 +432,7 @@ export async function updateTask(
     if (touchesCatalogue(input)) await lockCatalogue(tx, orgId);
     const row = await loadTask(tx, id, true);
     if (!row) throw taskNotFound();
-    if (row.version !== input.version) throw staleTask(row);
+    if (row.version !== input.version) throw staleTask(row, actor);
 
     const before = stateOf(row);
     const after: TaskState = {...before};
@@ -449,6 +493,13 @@ export async function updateTask(
       if (problem) fields.dependsOn = problem;
       else after.dependsOn = input.dependsOn;
     }
+    if (input.resourceIds !== undefined) {
+      if (await areOwnResources(tx, orgId, input.resourceIds)) {
+        after.resourceIds = input.resourceIds;
+      } else {
+        fields.resourceIds = RESOURCES_UNKNOWN;
+      }
+    }
     throwIfFields(fields);
 
     if (input.venueName !== undefined) {
@@ -484,7 +535,7 @@ export async function updateTask(
     }
 
     const changed = changedTaskFields(before, after);
-    if (changed.length === 0) return toTask(row);
+    if (changed.length === 0) return toTask(row, actor);
 
     const updated = await tx.query<{id: string}>(
       `UPDATE tasks
@@ -521,10 +572,13 @@ export async function updateTask(
     );
     if (updated.length === 0) {
       // Unreachable while the row is locked; kept as a safety net.
-      throw staleTask((await loadTask(tx, id)) as TaskRow);
+      throw staleTask((await loadTask(tx, id)) as TaskRow, actor);
     }
     if (changed.includes('dependsOn')) {
       await writeDependencies(tx, id, after.dependsOn);
+    }
+    if (changed.includes('resourceIds')) {
+      await writeResources(tx, id, after.resourceIds);
     }
     await appendActivity(tx, {
       organizationId: orgId,
@@ -537,14 +591,15 @@ export async function updateTask(
       at: now,
       isDemo: row.is_demo,
     });
-    return toTask((await loadTask(tx, id)) as TaskRow);
+    return toTask((await loadTask(tx, id)) as TaskRow, actor);
   });
 }
 
 /**
  * Deletes a task at the given version. Tasks that depended on it lose that
- * predecessor; their version increases and the change is logged, so anyone
- * editing them sees the conflict instead of silently restoring the link.
+ * predecessor and notes that pointed at it lose the link; their versions
+ * increase and the changes are logged, so anyone editing them sees the
+ * conflict instead of silently restoring the link.
  */
 export async function deleteTask(
   db: Db,
@@ -557,10 +612,12 @@ export async function deleteTask(
   await db.transaction(async tx => {
     const {row: unlocked} = await loadOwnTask(tx, actor, id);
     const orgId = unlocked.organization_id;
+    // Graph lock (its dependants change), then the catalogue lock (its notes).
     await lockGraph(tx, orgId);
+    await lockCatalogue(tx, orgId);
     const row = await loadTask(tx, id, true);
     if (!row) throw taskNotFound();
-    if (row.version !== version) throw staleTask(row);
+    if (row.version !== version) throw staleTask(row, actor);
 
     const dependents = await tx.query<{
       id: string;
@@ -574,6 +631,8 @@ export async function deleteTask(
           FOR UPDATE OF t`,
       [id],
     );
+    await unlinkNotes(tx, {link: 'task', ids: [id], actorId: actor.id, now});
+    // Dependencies and task_resources rows go with the task (ON DELETE CASCADE).
     await tx.query('DELETE FROM tasks WHERE id = $1', [id]);
     for (const dep of dependents) {
       await tx.query(

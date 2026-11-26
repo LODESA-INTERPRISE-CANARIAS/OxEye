@@ -64,10 +64,37 @@
  *          (403 for guests: a shared login keeps its searches on the device)
  *   DELETE /organizations/:orgId/recent-searches  → 204 (clears the current user's)
  *
+ * Milestone 4 (inventories, quick capture, history):
+ *
+ *   GET    /organizations/:orgId/warehouses       → ListResponse<Warehouse> (by name, ignoring case)
+ *   POST   /warehouses         WarehouseInput     → 201 Warehouse (409 DUPLICATE with `current`)
+ *   PATCH  /warehouses/:id     WarehouseInput     → Warehouse (409 VERSION_CONFLICT | DUPLICATE)
+ *   DELETE /warehouses/:id?version=N              → 204 (409); its resources lose the
+ *          warehouse and notes lose the link (versions increase)
+ *   GET    /organizations/:orgId/resources        → ListResponse<Resource> (by name, ignoring case)
+ *   POST   /resources          ResourceInput      → 201 Resource
+ *   PATCH  /resources/:id      ResourceInput      → Resource (409 VERSION_CONFLICT)
+ *   DELETE /resources/:id?version=N               → 204 (409); tasks and notes lose it
+ *          (versions increase)
+ *   GET    /organizations/:orgId/notes            → ListResponse<Note> (newest first)
+ *   POST   /notes              NoteInput          → 201 Note
+ *   PATCH  /notes/:id          NoteInput          → Note (409 VERSION_CONFLICT)
+ *   DELETE /notes/:id?version=N                   → 204 (409)
+ *   GET    /organizations/:orgId/activity?entityType=&entityId=&limit=
+ *          → ListResponse<ActivityEntry>: the history of one record (newest
+ *          first); both parameters or neither (400 otherwise)
+ *   DELETE /categories/:id now also unlinks resources (scope `resource`).
+ *   Deleting a task, company, contact or offer also unlinks notes that point
+ *   at it (versions increase).
+ *
  * Guests (role `guest`, a shared login) never receive contact details,
- * prices or free-text observations of people, companies and offers: the
- * server sends those fields as null and sets `restricted: true`, and the UI
- * shows «Visible para el equipo» instead of «Pendiente de verificar».
+ * prices or free-text observations: the server sends those fields as null and
+ * sets `restricted: true`, and the UI shows «Visible para el equipo» instead
+ * of «Pendiente de verificar». Withheld today: people's phone, e-mail,
+ * description and notes; companies' phone, e-mail and notes; offers' prices,
+ * costs and conditions; events' and tasks' notes (M4); warehouses' address
+ * and notes; resources' location and notes; the text of every note. The
+ * server's `WITHHELD_FROM_GUESTS` is the single list.
  */
 
 export type Uuid = string;
@@ -169,7 +196,10 @@ export interface LogisticsEvent extends RecordMeta {
   endsAt: IsoInstant | null;
   timezone: string;
   status: EventStatus;
+  /** Null for guests (`restricted`). */
   notes: string | null;
+  /** True when the notes were withheld for this viewer (M4). */
+  restricted: boolean;
 }
 
 /**
@@ -210,6 +240,12 @@ export interface ListResponse<T> {
 
 export type ActivityAction = 'create' | 'update' | 'delete';
 
+/**
+ * `entityType` values: event, task, venue, company, contact, offer,
+ * category, warehouse, resource, note (and `demo` for the removal itself).
+ * `entityLabel` is a name, never free text: a note's label is its kind and
+ * what it points at (`noteLabel` in history.ts).
+ */
 export interface ActivityEntry {
   id: string;
   user: UserRef;
@@ -259,7 +295,15 @@ export interface Task extends RecordMeta {
    * must be run in the simulator. `null` = not yet known, never assumed light.
    */
   heavyLoad: boolean | null;
+  /**
+   * Inventory resources this task uses (M4): the same resource in two live
+   * tasks at the same time is a plan warning. Never answers `heavyLoad`.
+   */
+  resourceIds: Uuid[];
+  /** Null for guests (`restricted`). */
   notes: string | null;
+  /** True when the notes were withheld for this viewer (M4). */
+  restricted: boolean;
 }
 
 /**
@@ -294,6 +338,11 @@ export interface TaskInput extends ProvenanceInput {
   contactId?: Uuid | null;
   dependsOn?: Uuid[];
   heavyLoad?: boolean | null;
+  /**
+   * Replaces the whole list (M4): resources of the same organization, at most
+   * MAX_RESOURCES_PER_TASK; unknown or foreign id → 400 `fields.resourceIds`.
+   */
+  resourceIds?: Uuid[];
   notes?: string | null;
   /** Required on update. */
   version?: number;
@@ -483,12 +532,34 @@ export interface OfferInput extends ProvenanceInput {
 
 // ---------------------------------------------------------------- inventories (M4)
 
+/**
+ * A place where the organization keeps material. Name and address only: no
+ * map geometry (a storage area on the venue map needs its own plan, because
+ * it must never block routes A/B/C or accessibility services).
+ */
 export interface Warehouse extends RecordMeta {
   organizationId: Uuid;
   name: string;
+  /** Null when unknown or `restricted`. */
   address: string | null;
+  /** Null for guests (`restricted`). */
   notes: string | null;
   resourceCount: number;
+  /** True when address and notes were withheld for this viewer. */
+  restricted: boolean;
+}
+
+/**
+ * Create: `organizationId` and `name` required. Update: `version` required.
+ * Same name as another warehouse of the organization (any case) → 409
+ * DUPLICATE with `current`.
+ */
+export interface WarehouseInput extends ProvenanceInput {
+  organizationId?: Uuid;
+  name?: string;
+  address?: string | null;
+  notes?: string | null;
+  version?: number;
 }
 
 export type ResourceCondition = 'good' | 'fair' | 'damaged' | 'unknown';
@@ -497,25 +568,74 @@ export type ResourceAvailability =
 /** owned = physical item of the organization; contracted = service from a company. */
 export type ResourceOwnership = 'owned' | 'contracted';
 
+/**
+ * An inventory item. Quantity, unit (even «kg») and dimensions describe what
+ * was observed: they never combine into a load per square metre and never
+ * answer a task's heavy-load question (that is the simulator's X-ray check).
+ */
 export interface Resource extends RecordMeta {
   organizationId: Uuid;
-  warehouse: {id: Uuid; name: string} | null;
-  categoryId: Uuid | null;
   name: string;
   ownership: ResourceOwnership;
-  /** For contracted resources: the offer they come from. */
+  /** Scope `resource`. */
+  categoryId: Uuid | null;
+  /** Where it is kept (owned or contracted). */
+  warehouse: {id: Uuid; name: string} | null;
+  /** Contracted only: who provides it. Always null for owned resources. */
+  company: {id: Uuid; name: string} | null;
+  /** Contracted only: the offer it comes from (an offer of `company`). */
   offerId: Uuid | null;
+  /** Null = not counted yet, never 0. */
   quantity: number | null;
-  /** «unidades», «m», «kg»… */
+  /** «unidades» by default; «m», «m²», «kg», «juegos»… as typed. */
   unit: string;
-  /** Free text dimensions as observed, e.g. «3 × 6 m». */
+  /** Dimensions as observed, e.g. «3 × 6 m». */
   dimensions: string | null;
   condition: ResourceCondition;
   availability: ResourceAvailability;
+  /** Where inside the warehouse («Nave 2, estantería 3»). Null when unknown or `restricted`. */
   location: string | null;
-  /** «aún por evaluar»: quantity/condition not assessed yet. */
+  /** «Aún por evaluar»: quantity and condition not assessed yet. */
   toAssess: boolean;
+  /** Null for guests (`restricted`). */
   notes: string | null;
+  /** Tasks that use it (computed). */
+  taskIds: Uuid[];
+  /** True when location and notes were withheld for this viewer. */
+  restricted: boolean;
+}
+
+/**
+ * Create: `organizationId` and `name` required; `ownership` defaults to
+ * `owned`, `unit` to «unidades», condition and availability to `unknown`.
+ * Update: `version` required; only the fields sent change.
+ * `warehouseId` wins over `warehouseName` (find-or-create by name).
+ * `companyId` wins over `companyName` (find-or-create, kind `supplier`).
+ * Company and offer are for contracted resources: sending them with
+ * `ownership: owned` is a 400, and changing a resource to owned clears them.
+ * An offer must belong to the resource's company; an offer without a company
+ * sets the company to the offer's. `quantity` is 0 – MAX_RESOURCE_QUANTITY
+ * with at most two decimals, or null.
+ */
+export interface ResourceInput extends ProvenanceInput {
+  organizationId?: Uuid;
+  name?: string;
+  ownership?: ResourceOwnership;
+  categoryId?: Uuid | null;
+  warehouseId?: Uuid | null;
+  warehouseName?: string | null;
+  companyId?: Uuid | null;
+  companyName?: string | null;
+  offerId?: Uuid | null;
+  quantity?: number | null;
+  unit?: string;
+  dimensions?: string | null;
+  condition?: ResourceCondition;
+  availability?: ResourceAvailability;
+  location?: string | null;
+  toAssess?: boolean;
+  notes?: string | null;
+  version?: number;
 }
 
 // ---------------------------------------------------------------- notes, search, report (M4–M6)
@@ -523,18 +643,50 @@ export interface Resource extends RecordMeta {
 export type NoteKind =
   'note' | 'incident' | 'decision' | 'open_question' | 'feature_idea';
 
+/** Records a note can point at (besides its event). */
+export type NoteRefType =
+  | 'task'
+  | 'venue'
+  | 'company'
+  | 'contact'
+  | 'offer'
+  | 'warehouse'
+  | 'resource';
+
 /**
  * Operational notes. An «incident» here is a logistics incident (late truck,
- * missing fence); Punto Violeta cases are never recorded in this tool.
+ * missing fence); Punto Violeta cases and data about people who were attended
+ * are never recorded in this tool. The text is never searched, never quoted
+ * in labels (activity, search, links) and never exported without a safety
+ * review.
  */
 export interface Note extends RecordMeta {
   organizationId: Uuid;
   kind: NoteKind;
-  text: string;
-  eventId: Uuid | null;
-  /** Optional link to any record. */
-  ref: {type: SearchEntityType; id: Uuid; label: string} | null;
+  /** Null for guests (`restricted`). */
+  text: string | null;
+  event: {id: Uuid; name: string} | null;
+  /** Optional link to one record; `label` is that record's name, never note text. */
+  ref: {type: NoteRefType; id: Uuid; label: string} | null;
+  /** Incidents and open questions: resolved / answered. */
   resolved: boolean;
+  /** True when the text was withheld for this viewer. */
+  restricted: boolean;
+}
+
+/**
+ * Create: `organizationId`, `kind` and `text` (1–NOTE_TEXT_MAX) required.
+ * Update: `version` required. `ref` = {type, id} of a record of the same
+ * organization (unknown → 400 `fields.ref`); `eventId` likewise.
+ */
+export interface NoteInput extends ProvenanceInput {
+  organizationId?: Uuid;
+  kind?: NoteKind;
+  text?: string;
+  eventId?: Uuid | null;
+  ref?: {type: NoteRefType; id: Uuid} | null;
+  resolved?: boolean;
+  version?: number;
 }
 
 export type SearchEntityType =

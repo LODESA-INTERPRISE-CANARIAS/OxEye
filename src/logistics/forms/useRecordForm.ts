@@ -17,7 +17,8 @@ import {clearRescue, saveRescue, type RescuedForm} from '../lib/rescue';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {useAlertFocus} from './FormParts';
 
-export type DirectoryEntity = 'contact' | 'company' | 'offer';
+export type DirectoryEntity =
+  'contact' | 'company' | 'offer' | 'warehouse' | 'resource' | 'note';
 
 export type FormErrors<V> = Partial<Record<keyof V | 'form', string>>;
 

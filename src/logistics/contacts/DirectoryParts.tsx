@@ -62,10 +62,13 @@ export function useGone(live: unknown, loaded: boolean): boolean {
 }
 
 /** The record was deleted (by someone else) while its sheet was open. */
-export const GoneNotice: React.FC<{what: string}> = ({what}) => (
+export const GoneNotice: React.FC<{what: string; masculine?: boolean}> = ({
+  what,
+  masculine = false,
+}) => (
   <p className="lx-notice lx-notice--error" role="status" id="lx-record-gone">
     <Icon name="trash" size={16} />
-    {what} ya no existe: alguien la ha borrado. Lo que ves es la última copia
-    que llegó.
+    {what} ya no existe: alguien {masculine ? 'lo' : 'la'} ha borrado. Lo que
+    ves es la última copia que llegó.
   </p>
 );

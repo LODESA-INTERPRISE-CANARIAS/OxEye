@@ -30,6 +30,8 @@ import type {
 import {missingForOffer} from '../../../shared/logistics/quality.ts';
 import {CUSTOM_UNIT_MAX, PRICE_UNITS} from '../../../shared/logistics/rules.ts';
 import {useActions, type OfferPrefill} from '../common/actions';
+import {RecordHistory} from '../common/RecordHistory';
+import {RecordNotes} from '../common/RecordNotes';
 import {
   GoneNotice,
   MissingHint,
@@ -437,6 +439,18 @@ const OfferView: React.FC<{
           onShow={onShow}
         />
 
+        <RecordNotes
+          target={{type: 'offer', id: offer.id}}
+          prefill={{ref: {type: 'offer', id: offer.id, label: offer.name}}}
+          idPrefix="lx-offer"
+          canAdd={!gone}
+        />
+        <RecordHistory
+          entityType="offer"
+          entityId={offer.id}
+          version={offer.version}
+          idPrefix="lx-offer"
+        />
         <Provenance record={offer} id="lx-offer-provenance" />
       </div>
     </Sheet>
@@ -959,6 +973,7 @@ const OfferForm: React.FC<{
           value={values.categoryId ? [values.categoryId] : []}
           onChange={ids => change('categoryId', ids[0] ?? '')}
           error={errors.categoryId}
+          lockedIds={base?.categoryId ? [base.categoryId] : undefined}
           help="Sirve para filtrar el catálogo y para comparar ofertas parecidas."
         />
 

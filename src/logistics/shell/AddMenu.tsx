@@ -1,6 +1,7 @@
 /**
- * «+ Añadir» with a choice of what to add (Evento, Tarea, Persona, Empresa o
- * entidad, Oferta). Opens on click or
+ * «+ Añadir» with a choice of what to add, in groups (quick capture on site
+ * first: Incidencia, Nota, Recurso, Persona; then planning, as smaller
+ * tiles: Tarea, Evento, Empresa o entidad, Oferta). Opens on click or
  * Enter, closes on Escape or a tap elsewhere, sits above everything. Arrow
  * keys move between options; focus goes back to the button before a sheet
  * opens, so closing the sheet returns there.
@@ -25,6 +26,32 @@ export interface AddOption {
   description: string;
   icon: IconName;
   onSelect: () => void;
+  /** Heading of the group it belongs to (consecutive options share one). */
+  group?: string;
+  /** A smaller tile without the description (shown as a tooltip). */
+  compact?: boolean;
+}
+
+interface OptionGroup {
+  label: string | null;
+  compact: boolean;
+  options: AddOption[];
+}
+
+/** Consecutive options with the same `group`, in order. */
+function groupOptions(options: AddOption[]): OptionGroup[] {
+  const groups: OptionGroup[] = [];
+  for (const o of options) {
+    const last = groups[groups.length - 1];
+    const label = o.group ?? null;
+    if (last && last.label === label) {
+      last.options.push(o);
+      last.compact &&= !!o.compact;
+    } else {
+      groups.push({label, compact: !!o.compact, options: [o]});
+    }
+  }
+  return groups;
 }
 
 type Placement = 'below' | 'above';
@@ -45,15 +72,18 @@ function placeMenu(
 ): void {
   const r = button.getBoundingClientRect();
   const vw = window.innerWidth;
-  const width = Math.min(300, vw - 24);
+  const vh = window.innerHeight;
+  const width = Math.min(320, vw - 24);
   menu.style.width = `${width}px`;
   menu.style.left = `${Math.max(12, Math.min(vw - width - 12, r.right - width))}px`;
   if (placement === 'above') {
     menu.style.top = '';
-    menu.style.bottom = `${window.innerHeight - r.top + 8}px`;
+    menu.style.bottom = `${vh - r.top + 8}px`;
+    menu.style.maxHeight = `${Math.max(200, r.top - 20)}px`;
   } else {
     menu.style.bottom = '';
     menu.style.top = `${r.bottom + 8}px`;
+    menu.style.maxHeight = `${Math.max(200, vh - r.bottom - 20)}px`;
   }
 }
 
@@ -190,27 +220,44 @@ export const AddMenu: React.FC<{
         className={`lx-addmenu${native ? '' : ' lx-addmenu--fallback'}`}
         onKeyDown={onKeyDown}
       >
-        <p className="lx-addmenu__title" aria-hidden="true">
-          Añadir
-        </p>
-        {options.map(o => (
-          <button
-            key={o.id}
-            type="button"
-            role="menuitem"
-            id={`${id}-${o.id}`}
-            className="lx-addmenu__item"
-            onClick={() => choose(o)}
-          >
-            <span className="lx-addmenu__icon" aria-hidden="true">
-              <Icon name={o.icon} size={22} />
-            </span>
-            <span className="lx-addmenu__text">
-              <strong>{o.label}</strong>
-              <span>{o.description}</span>
-            </span>
-          </button>
-        ))}
+        {groupOptions(options).map((g, gi) => {
+          const labelId = `${menuId}-g${gi}`;
+          const items = g.options.map(o => (
+            <button
+              key={o.id}
+              type="button"
+              role="menuitem"
+              id={`${id}-${o.id}`}
+              className={`lx-addmenu__item${o.compact ? ' lx-addmenu__item--compact' : ''}`}
+              title={o.compact ? o.description : undefined}
+              onClick={() => choose(o)}
+            >
+              <span className="lx-addmenu__icon" aria-hidden="true">
+                <Icon name={o.icon} size={o.compact ? 19 : 22} />
+              </span>
+              <span className="lx-addmenu__text">
+                <strong>{o.label}</strong>
+                <span className={o.compact ? 'lx-visually-hidden' : undefined}>
+                  {o.description}
+                </span>
+              </span>
+            </button>
+          ));
+          return (
+            <div
+              key={labelId}
+              role="group"
+              aria-labelledby={g.label ? labelId : undefined}
+              aria-label={g.label ? undefined : 'Añadir'}
+              className={`lx-addmenu__group${g.compact ? ' lx-addmenu__group--compact' : ''}`}
+            >
+              <p className="lx-addmenu__title" id={labelId}>
+                {g.label ?? 'Añadir'}
+              </p>
+              <div className="lx-addmenu__items">{items}</div>
+            </div>
+          );
+        })}
       </div>
     </>
   );

@@ -1,7 +1,7 @@
 import {expect, test, type Page, type Route} from '@playwright/test';
 
 /**
- * Visual review harness for the Logistics Manager (milestones 1–3), written by
+ * Visual review harness for the Logistics Manager (milestones 1–4), written by
  * the UI engineer to look at the screens while building them. It mocks the
  * API with page.route, so no server is needed, and only takes screenshots:
  * behavioural assertions belong to the QA suite.
@@ -513,8 +513,217 @@ const RECENT = [
   },
 ];
 
+// ---- milestone 4: warehouses, resources and notes (fictitious data only)
+const RESOURCE_CATEGORY_NAMES = [
+  'Carpas',
+  'Vallas',
+  'Mesas',
+  'Sillas y bancos',
+  'Escenarios y tarimas',
+  'Vehículos',
+  'Generadores y electricidad',
+  'Sonido e iluminación',
+  'Señalización',
+  'Otros materiales',
+];
+const rcat = (name: string) => `r${cat(name)}`;
+const RESOURCE_CATEGORIES = RESOURCE_CATEGORY_NAMES.map(name => ({
+  id: rcat(name),
+  organizationId: ORG,
+  scope: 'resource',
+  name,
+  builtIn: true,
+}));
+
+const NORTE = {id: 'w1', name: 'Almacén Demo Norte'};
+const SUR = {id: 'w2', name: 'Almacén Demo Sur'};
+const ALQUILERES = {id: 'c7', name: 'Alquileres Demo'};
+
+const WAREHOUSES = [
+  {
+    ...NORTE,
+    ...meta({verification: 'validated'}),
+    address: 'Calle Ficticia Demo, 1',
+    notes: 'La llave la tiene el conserje.',
+    resourceCount: 3,
+    restricted: false,
+  },
+  {
+    ...SUR,
+    ...meta(),
+    address: null,
+    notes: null,
+    resourceCount: 1,
+    restricted: false,
+  },
+];
+
+function resource(
+  id: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    ...meta(),
+    name,
+    ownership: 'owned',
+    categoryId: null,
+    warehouse: null,
+    company: null,
+    offerId: null,
+    quantity: null,
+    unit: 'unidades',
+    dimensions: null,
+    condition: 'unknown',
+    availability: 'unknown',
+    location: null,
+    toAssess: false,
+    notes: null,
+    taskIds: [],
+    restricted: false,
+    ...extra,
+  };
+}
+
+const RESOURCES = [
+  resource('r1', 'Carpa 3 × 6 Demo', {
+    categoryId: rcat('Carpas'),
+    warehouse: NORTE,
+    quantity: 4,
+    dimensions: '3 × 6 m',
+    condition: 'good',
+    availability: 'available',
+    location: 'Nave 2, estantería 3',
+    notes: 'Falta una piqueta.',
+    verification: 'validated',
+    source: 'observed',
+    taskIds: ['t1'],
+  }),
+  resource('r2', 'Vallas Demo', {
+    categoryId: rcat('Vallas'),
+    warehouse: NORTE,
+    quantity: 200,
+    condition: 'fair',
+    availability: 'available',
+  }),
+  resource('r7', 'Tarima modular Demo', {
+    categoryId: rcat('Escenarios y tarimas'),
+    warehouse: NORTE,
+    quantity: 12,
+    unit: 'juegos',
+    dimensions: '1 × 2 m',
+    condition: 'damaged',
+    availability: 'maintenance',
+  }),
+  resource('r3', 'Mesas plegables Demo', {
+    categoryId: rcat('Mesas'),
+    warehouse: SUR,
+    quantity: 40,
+    toAssess: true,
+  }),
+  resource('r4', 'Furgoneta Demo', {
+    categoryId: rcat('Vehículos'),
+    quantity: 1,
+    condition: 'good',
+    availability: 'available',
+  }),
+  resource('r5', 'Aseos portátiles Demo', {
+    ownership: 'contracted',
+    company: ALQUILERES,
+    quantity: 6,
+  }),
+  resource('r6', 'Generador Demo', {
+    ownership: 'contracted',
+    categoryId: rcat('Generadores y electricidad'),
+  }),
+];
+
+function note(
+  id: string,
+  kind: string,
+  text: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    ...meta(),
+    kind,
+    text,
+    event: null,
+    ref: null,
+    resolved: false,
+    restricted: false,
+    ...extra,
+  };
+}
+
+const NOTES = [
+  note('n1', 'incident', 'La furgoneta no arranca; buscamos otra.', {
+    createdAt: at(addDays(today, -1), '16:00'),
+    createdBy: dailos,
+    event: {id: 'e1', name: 'Navidad en la Plaza del Cristo'},
+    ref: {type: 'resource', id: 'r4', label: 'Furgoneta Demo'},
+  }),
+  note('n2', 'open_question', '¿Quién abre el almacén el sábado?', {
+    createdAt: at(addDays(today, -2), '12:00'),
+    ref: {type: 'warehouse', id: 'w1', label: NORTE.name},
+  }),
+  note('n3', 'note', 'Revisar las lonas antes de cargar.', {
+    createdAt: at(today, '09:00'),
+    ref: {type: 'resource', id: 'r1', label: 'Carpa 3 × 6 Demo'},
+  }),
+  note('n4', 'decision', 'Las vallas salen a las 12 desde el almacén norte.', {
+    createdAt: at(today, '10:00'),
+    createdBy: dailos,
+    event: {id: 'e1', name: 'Navidad en la Plaza del Cristo'},
+  }),
+];
+
+const HISTORY = [
+  {
+    id: 'h2',
+    user: dailos,
+    entityType: 'resource',
+    entityId: 'r1',
+    entityLabel: 'Carpa 3 × 6 Demo',
+    action: 'update',
+    changedFields: ['quantity', 'condition'],
+    at: new Date(Date.now() - 40 * 60_000).toISOString(),
+  },
+  {
+    id: 'h1',
+    user: elvis,
+    entityType: 'resource',
+    entityId: 'r1',
+    entityLabel: 'Carpa 3 × 6 Demo',
+    action: 'create',
+    changedFields: [],
+    at: new Date(Date.now() - 26 * 3600_000).toISOString(),
+  },
+];
+
 /** What a guest receives: same records, details withheld (server redact). */
 const asGuest = {
+  event: (e: Record<string, unknown>) => ({
+    ...e,
+    notes: null,
+    restricted: true,
+  }),
+  task: (t: Record<string, unknown>) => ({...t, notes: null, restricted: true}),
+  warehouse: (w: Record<string, unknown>) => ({
+    ...w,
+    address: null,
+    notes: null,
+    restricted: true,
+  }),
+  resource: (r: Record<string, unknown>) => ({
+    ...r,
+    location: null,
+    notes: null,
+    restricted: true,
+  }),
+  note: (n: Record<string, unknown>) => ({...n, text: null, restricted: true}),
   company: (c: Record<string, unknown>) => ({
     ...c,
     phone: null,
@@ -572,6 +781,8 @@ interface MockOptions {
   conflict?: boolean;
   /** false: no people, companies or offers yet. */
   directory?: boolean;
+  /** false: no warehouses, resources or notes yet (milestone 4). */
+  inventory?: boolean;
 }
 
 async function mockApi(page: Page, opts: MockOptions = {}) {
@@ -622,13 +833,41 @@ async function mockApi(page: Page, opts: MockOptions = {}) {
         });
       }
       if (path === '/me') return json(route, {user, organizations: orgs});
+      const guest = role === 'guest';
       if (path.endsWith('/events') && method === 'GET') {
-        return json(route, {items: opts.events ?? EVENTS});
+        const items = (opts.events ?? EVENTS) as Record<string, unknown>[];
+        return json(route, {items: guest ? items.map(asGuest.event) : items});
       }
       if (path.endsWith('/tasks') && method === 'GET') {
-        return json(route, {items: opts.tasks ?? TASKS});
+        const items = ((opts.tasks ?? TASKS) as Record<string, unknown>[]).map(
+          t => ({resourceIds: [], ...t}),
+        );
+        return json(route, {items: guest ? items.map(asGuest.task) : items});
       }
-      const guest = role === 'guest';
+      const noStock = opts.inventory === false;
+      if (path.endsWith('/warehouses') && method === 'GET') {
+        return json(route, {
+          items: noStock
+            ? []
+            : guest
+              ? WAREHOUSES.map(asGuest.warehouse)
+              : WAREHOUSES,
+        });
+      }
+      if (path.endsWith('/resources') && method === 'GET') {
+        return json(route, {
+          items: noStock
+            ? []
+            : guest
+              ? RESOURCES.map(asGuest.resource)
+              : RESOURCES,
+        });
+      }
+      if (path.endsWith('/notes') && method === 'GET') {
+        return json(route, {
+          items: noStock ? [] : guest ? NOTES.map(asGuest.note) : NOTES,
+        });
+      }
       const none = opts.directory === false;
       if (path.endsWith('/companies') && method === 'GET') {
         return json(route, {
@@ -636,7 +875,7 @@ async function mockApi(page: Page, opts: MockOptions = {}) {
         });
       }
       if (path.endsWith('/categories') && method === 'GET') {
-        return json(route, {items: CATEGORIES});
+        return json(route, {items: [...CATEGORIES, ...RESOURCE_CATEGORIES]});
       }
       if (path.endsWith('/contacts') && method === 'GET') {
         return json(route, {
@@ -659,6 +898,12 @@ async function mockApi(page: Page, opts: MockOptions = {}) {
         });
       }
       if (path.endsWith('/activity')) {
+        const entityId = url.searchParams.get('entityId');
+        if (entityId) {
+          return json(route, {
+            items: HISTORY.filter(h => h.entityId === entityId),
+          });
+        }
         return json(route, {items: opts.events?.length === 0 ? [] : ACTIVITY});
       }
       if (path.startsWith('/events/') && method === 'PATCH' && opts.conflict) {
@@ -903,8 +1148,9 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize(PHONE);
     await mockApi(page);
     await signIn(page);
-    await page.locator('#lx-tab-inventarios').click();
-    await expect(page.locator('#lx-space-inventarios')).toBeVisible();
+    // Inventarios is real since milestone 4; «Cierre de jornada» remains.
+    await goToHash(page, '#logistica/cierre');
+    await expect(page.locator('#lx-space-cierre')).toBeVisible();
     await capture(page, 'placeholder-phone');
   });
 });
@@ -1090,6 +1336,149 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.locator('[data-offer-id="o1"]').click();
     await expect(page.locator('#lx-offer-sheet')).toBeVisible();
     await capture(page, 'guest-offer-sheet');
+  });
+});
+
+test.describe('Gestor logístico · inventarios y captura rápida', () => {
+  test('inventarios: propios, contratados and empty (desktop and phone)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({width: 1440, height: 1000});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/inventarios');
+    await expect(page.locator('[data-resource-id="r1"]')).toBeVisible();
+    await capture(page, 'inventory-owned-desktop');
+    await page.locator('#lx-inventory-tab-contracted').click();
+    await expect(page.locator('[data-resource-id="r5"]')).toBeVisible();
+    await capture(page, 'inventory-contracted-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-inventory-tab-owned').click();
+    await capture(page, 'inventory-owned-phone');
+    await page.locator('#lx-inventory-tab-contracted').click();
+    await capture(page, 'inventory-contracted-phone');
+  });
+
+  test('inventarios empty phone', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page, {inventory: false});
+    await signIn(page);
+    await page.locator('#lx-tab-inventarios').click();
+    await page.locator('#lx-inventory-tab-owned').click();
+    await expect(page.locator('#lx-inventory-empty')).toBeVisible();
+    await capture(page, 'inventory-empty-phone');
+  });
+
+  test('resource sheet view and form, warehouse sheet', async ({page}) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await mockApi(page);
+    await signIn(page);
+    await goToHash(page, '#logistica/inventarios');
+    await page.locator('#lx-inventory-tab-owned').click();
+    await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
+    await expect(page.locator('#lx-resource-sheet')).toBeVisible();
+    await capture(page, 'resource-sheet-desktop');
+    await page.locator('#lx-resource-history-toggle').click();
+    await expect(
+      page.locator('#lx-resource-history .lx-history__item'),
+    ).toHaveCount(2);
+    await page.locator('#lx-resource-history').scrollIntoViewIfNeeded();
+    await capture(page, 'resource-sheet-history');
+    await page.locator('#lx-resource-edit').click();
+    await expect(page.locator('#lx-resource-form')).toBeVisible();
+    await capture(page, 'resource-form-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-resource-quantity').scrollIntoViewIfNeeded();
+    await capture(page, 'resource-form-phone');
+    await page.locator('#lx-resource-unit').fill('kg');
+    await expect(page.locator('#lx-resource-load-note')).toBeVisible();
+    await page.locator('#lx-resource-load-note').scrollIntoViewIfNeeded();
+    await capture(page, 'resource-form-loadnote-phone');
+    await page.locator('#lx-resource-cancel').click();
+    await page.locator('#lx-resource-discard-confirm').click();
+    await page.setViewportSize({width: 1280, height: 900});
+    await page.keyboard.press('Escape');
+    await page.locator('[data-warehouse-id="w1"] .lx-whgroup__open').click();
+    await expect(page.locator('#lx-warehouse-sheet')).toBeVisible();
+    await capture(page, 'warehouse-sheet-desktop');
+    await page.setViewportSize(PHONE);
+    await capture(page, 'warehouse-sheet-phone');
+  });
+
+  test('incident form, filled Hoy notes card and grouped add menu', async ({
+    page,
+  }) => {
+    await page.setViewportSize({width: 1440, height: 1000});
+    await mockApi(page);
+    await signIn(page);
+    await expect(page.locator('#lx-hoy-notes [data-note-id]')).toHaveCount(4);
+    await page.locator('#lx-hoy-notes').scrollIntoViewIfNeeded();
+    await capture(page, 'hoy-notes-desktop');
+    await page.locator('#lx-add').click();
+    await expect(page.locator('#lx-add-incident')).toBeFocused();
+    await capture(page, 'add-menu-grouped-desktop');
+    await page.locator('#lx-add-incident').click();
+    await expect(page.locator('#lx-note-scope')).toBeVisible();
+    await capture(page, 'incident-form-desktop');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-hoy-notes').scrollIntoViewIfNeeded();
+    await capture(page, 'hoy-notes-phone');
+    await page.locator('#lx-fab').click();
+    await expect(page.locator('#lx-fab-incident')).toBeFocused();
+    await capture(page, 'add-menu-grouped-phone');
+    await page.locator('#lx-fab-incident').click();
+    await expect(page.locator('#lx-note-scope')).toBeVisible();
+    await capture(page, 'incident-form-phone');
+  });
+
+  test('note sheet and inventory as the guest', async ({page}) => {
+    await page.setViewportSize(PHONE);
+    await mockApi(page, {role: 'guest'});
+    await signIn(page, 'Invitado');
+    await page
+      .locator('#lx-hoy-notes [data-note-id="n1"] .lx-noteitem__open')
+      .click();
+    await expect(page.locator('#lx-note-sheet')).toBeVisible();
+    await capture(page, 'guest-note-sheet');
+    await page.keyboard.press('Escape');
+    await page.locator('#lx-tab-inventarios').click();
+    await page.locator('#lx-inventory-tab-owned').click();
+    await capture(page, 'guest-inventory-phone');
+    await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
+    await expect(page.locator('#lx-resource-sheet')).toBeVisible();
+    await capture(page, 'guest-resource-sheet');
+  });
+
+  test('task form with resources and a resource conflict in Avisos', async ({
+    page,
+  }) => {
+    await page.setViewportSize({width: 1440, height: 1000});
+    // The only van in two overlapping tasks (t1 08:00–13:00, t2 12:00–15:00).
+    const tasks = TASKS.map(t =>
+      t.id === 't1' || t.id === 't2' ? {...t, resourceIds: ['r4']} : t,
+    );
+    await mockApi(page, {tasks});
+    await signIn(page);
+    const conflict = page.locator(
+      '#lx-warnings [data-warning="resource_overlap"]',
+    );
+    await expect(conflict).toBeVisible();
+    await page.locator('#lx-warnings').scrollIntoViewIfNeeded();
+    await capture(page, 'resource-conflict-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-warnings').scrollIntoViewIfNeeded();
+    await capture(page, 'resource-conflict-phone');
+    await page.setViewportSize({width: 1280, height: 900});
+    await goToHash(page, `#logistica/calendario/${today}`);
+    await scrollTimelineTo(page, 7);
+    await page.locator('#lx-timeline [data-task-id="t1"]').click();
+    await expect(page.locator('#lx-task-resources')).toBeVisible();
+    await page.locator('#lx-task-resources').scrollIntoViewIfNeeded();
+    await capture(page, 'task-resources-desktop');
+    await page.setViewportSize(PHONE);
+    await page.locator('#lx-task-resources').scrollIntoViewIfNeeded();
+    await capture(page, 'task-resources-phone');
   });
 });
 

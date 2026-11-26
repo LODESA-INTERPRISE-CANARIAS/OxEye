@@ -23,10 +23,13 @@ import {registerDemoRoutes} from './demo/routes.ts';
 import {registerEventRoutes} from './events/routes.ts';
 import type {AppEnv, Deps} from './http/env.ts';
 import {errorResponse, handleError, notFoundResponse} from './http/errors.ts';
+import {registerNoteRoutes} from './notes/routes.ts';
 import {registerOfferRoutes} from './offers/routes.ts';
+import {registerResourceRoutes} from './resources/routes.ts';
 import {registerSearchRoutes} from './searches/routes.ts';
 import {registerTaskRoutes} from './tasks/routes.ts';
 import {registerVenueRoutes} from './venues/routes.ts';
+import {registerWarehouseRoutes} from './warehouses/routes.ts';
 import type {HealthResponse} from '../../shared/logistics/contracts.ts';
 
 export interface AppOptions {
@@ -131,6 +134,9 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   registerCategoryRoutes(api, deps, auth);
   registerContactRoutes(api, deps, auth);
   registerOfferRoutes(api, deps, auth);
+  registerWarehouseRoutes(api, deps, auth);
+  registerResourceRoutes(api, deps, auth);
+  registerNoteRoutes(api, deps, auth);
   registerSearchRoutes(api, deps, auth);
   registerActivityRoutes(api, deps, auth);
   registerDemoRoutes(api, deps, auth);

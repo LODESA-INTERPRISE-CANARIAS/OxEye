@@ -69,6 +69,7 @@ describe('local database without Docker (pglite:)', () => {
       '0002_tasks.sql',
       '0003_demo_removed.sql',
       '0004_contacts_catalogue.sql',
+      '0005_inventories.sql',
     ]);
     const seeded = await seed(db, {passwordFor: n => `pw-${n}-1234`});
     expect(seeded.organizationCreated).toBe(false);
@@ -85,9 +86,13 @@ describe('local database without Docker (pglite:)', () => {
     // Milestone 3's demo contacts and offers arrive in the same run.
     expect(seeded.demoContactsCreated).toBeGreaterThan(0);
     expect(seeded.demoOffersCreated).toBeGreaterThan(0);
+    // And milestone 4's inventory and notes.
+    expect(seeded.demoResourcesCreated).toBeGreaterThan(0);
+    expect(seeded.demoNotesCreated).toBeGreaterThan(0);
     const again = await seed(db, {passwordFor: n => n});
     expect(again.demoTasksCreated).toBe(0);
     expect(again.demoContactsCreated + again.demoOffersCreated).toBe(0);
+    expect(again.demoResourcesCreated + again.demoNotesCreated).toBe(0);
     await db.close();
   }, 60_000);
 

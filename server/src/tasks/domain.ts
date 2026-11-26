@@ -43,6 +43,8 @@ export interface TaskState {
   /** Sorted ids. */
   dependsOn: Uuid[];
   heavyLoad: boolean | null;
+  /** Sorted ids. */
+  resourceIds: Uuid[];
   notes: string | null;
   source: DataSource | null;
   verification: Verification;
@@ -64,6 +66,7 @@ const FIELD_NAMES: readonly (readonly [keyof TaskState, string])[] = [
   ['timezone', 'timezone'],
   ['dependsOn', 'dependsOn'],
   ['heavyLoad', 'heavyLoad'],
+  ['resourceIds', 'resourceIds'],
   ['notes', 'notes'],
   ['source', 'source'],
   ['verification', 'verification'],

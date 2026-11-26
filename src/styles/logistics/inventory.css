@@ -1,0 +1,898 @@
+/**
+ * Milestone 4: Inventarios (warehouse and company groups, resource rows,
+ * quantity and state chips), resource and warehouse sheets, notes and
+ * incidents (lists, the note sheet, the incident scope), the record history,
+ * the reference picker, the Hoy notes card, the grouped «+ Añadir» menu, the
+ * task resources picker and category management.
+ *
+ * Colours come only from the palette tokens, so every palette (Bendy's
+ * deeper cyan included) applies. Targets stay at 44 px.
+ */
+
+/* ============================================================ inventory screen */
+.lx .lx-inventory__segrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lx .lx-inventory__segrow .lx-segtabs {
+  min-width: 0;
+}
+
+/* A warehouse (or company) and what it holds. */
+.lx .lx-whgroup {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lx .lx-whgroup__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lx .lx-whgroup__head > .lx-whgroup__icon,
+.lx .lx-whgroup__open .lx-whgroup__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+}
+
+.lx .lx-whgroup--loose .lx-whgroup__icon {
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+}
+
+.lx .lx-whgroup__open {
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 8px 6px 4px;
+  border-radius: var(--lx-radius);
+  text-align: left;
+}
+
+.lx .lx-whgroup__titles {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+/* Inline flow: the count and the Demo mark follow the last word of the name
+   instead of dropping to a line of their own on a phone. */
+.lx .lx-whgroup__title {
+  display: block;
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 21px;
+  line-height: 1.2;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-whgroup__title .lx-count,
+.lx .lx-whgroup__title .lx-dirrow__demo {
+  font-family: var(--lx-font);
+  margin-left: 8px;
+  vertical-align: 0.2em;
+  white-space: nowrap;
+}
+
+.lx .lx-whgroup__sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--lx-muted);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-whgroup__sub > .lx-icon {
+  flex-shrink: 0;
+}
+
+.lx .lx-whgroup__add {
+  flex-shrink: 0;
+}
+
+.lx .lx-whgroup__empty {
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1px dashed var(--lx-line-strong);
+  font-size: 14px;
+}
+
+/* ============================================================ resource rows */
+.lx .lx-reslist {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lx .lx-resrow {
+  min-width: 0;
+}
+
+.lx .lx-resrow__main {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  --lx-btn-border-hover: var(--lx-line-strong);
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--lx-radius);
+  text-align: left;
+}
+
+.lx .lx-resrow__text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-resrow__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-weight: 600;
+  color: var(--lx-heading);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-resrow__sub {
+  font-size: 13px;
+  color: var(--lx-muted);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-resrow__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-resrow__tasks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--lx-ink);
+}
+
+.lx .lx-resrow__qty {
+  flex-shrink: 0;
+  max-width: 45%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The quantity reads first on the right: a little larger than state chips. */
+.lx .lx-qtychip {
+  font-size: 13px;
+  white-space: normal;
+  text-align: right;
+}
+
+.lx .lx-statechip {
+  font-weight: 600;
+}
+
+/* ============================================================ resource sheet */
+.lx .lx-resfacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lx .lx-resfacts__item {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-resfacts__item .lx-chip {
+  white-space: normal;
+}
+
+.lx .lx-resfacts__label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-form__group-title .lx-help {
+  margin-left: 8px;
+}
+
+.lx .lx-unitchips {
+  margin-top: -2px;
+}
+
+.lx .lx-unitchips .lx-suggest__chip[aria-pressed='true'] {
+  --lx-btn-bg: var(--lx-accent);
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-strong);
+  --lx-btn-border-hover: var(--lx-accent-strong);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-resource__assess {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lx .lx-warehouse__sub {
+  margin-top: 6px;
+}
+
+/* ============================================================ notes */
+.lx .lx-recnotes__open {
+  padding: 1px 9px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-danger-soft);
+  color: var(--lx-heading);
+  font-family: var(--lx-font);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.lx .lx-notelist {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* One note: the whole card opens it (stretched button), the excerpt sits
+   next to the button, readable in order but never part of its name. */
+.lx .lx-noteitem {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 14px 12px 12px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  border-left: 4px solid var(--lx-line-strong);
+  background: var(--lx-surface);
+}
+
+.lx .lx-noteitem--incident {
+  border-left-color: var(--lx-danger);
+}
+
+.lx .lx-noteitem--open_question {
+  border-left-color: var(--lx-accent);
+}
+
+.lx .lx-noteitem--decision {
+  border-left-color: var(--lx-accent-strong);
+}
+
+.lx .lx-noteitem:hover {
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-noteitem__open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 10px;
+  min-height: 32px;
+  text-align: left;
+}
+
+.lx .lx-noteitem__open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.lx .lx-noteitem__open:focus-visible {
+  outline: none;
+}
+
+.lx .lx-noteitem:has(.lx-noteitem__open:focus-visible) {
+  outline: 3px solid var(--lx-ring);
+  outline-offset: 2px;
+}
+
+.lx .lx-noteitem__icon {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--lx-surface-2);
+  color: var(--lx-heading);
+}
+
+.lx .lx-noteitem--incident .lx-noteitem__icon {
+  background: var(--lx-danger-soft);
+}
+
+.lx .lx-noteitem__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+  color: var(--lx-heading);
+}
+
+.lx .lx-noteitem__head strong {
+  font-weight: 600;
+}
+
+/* Always: kind and status on the first line, what it is about below. */
+.lx .lx-noteitem__head .lx-notestatus {
+  order: 1;
+}
+
+.lx .lx-noteitem__about {
+  order: 2;
+  flex-basis: 100%;
+  font-size: 13.5px;
+  color: var(--lx-ink);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-noteitem__meta {
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-noteitem__text {
+  margin: 0;
+  padding-left: 42px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--lx-ink);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-notestatus {
+  padding: 0 8px;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid var(--lx-line-strong);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-muted);
+}
+
+.lx .lx-notestatus--open {
+  border-color: var(--lx-danger);
+  color: var(--lx-heading);
+}
+
+/* The note itself, in its sheet. */
+.lx .lx-notetext {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  border-left: 4px solid var(--lx-line-strong);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-notetext--incident {
+  border-left-color: var(--lx-danger);
+}
+
+.lx .lx-notetext--open_question {
+  border-left-color: var(--lx-accent);
+}
+
+.lx .lx-notetext__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+}
+
+.lx .lx-notetext p {
+  margin: 0;
+  align-self: center;
+}
+
+.lx .lx-notetext__body {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--lx-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* What an «Incidencia» is for (invariant 3): in plain sight, not a footnote. */
+.lx .lx-scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-danger);
+  background: var(--lx-danger-soft);
+  color: var(--lx-heading);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.lx .lx-scope > .lx-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--lx-danger);
+}
+
+.lx .lx-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lx .lx-refview {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-refview > .lx-icon {
+  color: var(--lx-muted);
+}
+
+/* ============================================================ reference picker */
+.lx .lx-refpick {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lx .lx-refpick__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-accent);
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-refpick__label {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-refpick__hits {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.lx .lx-refpick__none {
+  padding: 8px 4px;
+  font-size: 14px;
+}
+
+/* ============================================================ history */
+.lx .lx-history {
+  gap: 8px;
+}
+
+.lx .lx-history__heading {
+  margin: 0;
+}
+
+.lx .lx-history__toggle {
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 10px;
+  width: 100%;
+  min-height: var(--lx-target);
+  padding: 4px 8px 4px 0;
+  border-radius: var(--lx-radius-sm);
+  text-align: left;
+}
+
+.lx .lx-history__title {
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 19px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-history__hint {
+  grid-row: 2;
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-history__chev {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  color: var(--lx-muted);
+  transition: transform 0.18s ease;
+}
+
+.lx .lx-history__toggle[aria-expanded='true'] .lx-history__chev {
+  transform: rotate(180deg);
+}
+
+.lx .lx-history__body {
+  display: grid;
+  gap: 10px;
+}
+
+.lx .lx-history__body[hidden] {
+  display: none;
+}
+
+.lx .lx-history__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-history__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lx-target);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--lx-line);
+}
+
+.lx .lx-history__item:last-child {
+  border-bottom: 0;
+}
+
+.lx .lx-history__text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--lx-ink);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-history__time {
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  min-height: var(--lx-target);
+  padding: 0 8px;
+  border-radius: var(--lx-radius-sm);
+  font-size: 12.5px;
+  color: var(--lx-muted);
+  white-space: nowrap;
+}
+
+/* ============================================================ Hoy: notes */
+.lx .lx-hoynotes {
+  display: grid;
+  gap: 14px;
+}
+
+.lx .lx-hoynotes__group {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-hoynotes__group .lx-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The side column is narrow: keep the title on one line and the two capture
+   buttons side by side, moving the pair under the title when they do not fit. */
+.lx .lx-hoynotes-card .lx-card__head {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.lx .lx-hoynotes-card .lx-card__titles {
+  flex: 1 0 auto;
+}
+
+.lx .lx-hoynotes-card .lx-card__title {
+  white-space: nowrap;
+}
+
+.lx .lx-hoynotes-card .lx-card__actions {
+  margin: -6px -8px 0 auto;
+}
+
+.lx .lx-hoynotes__actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+/* ============================================================ «+ Añadir» groups */
+.lx .lx-addmenu {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lx .lx-addmenu__group + .lx-addmenu__group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-addmenu__items {
+  display: grid;
+}
+
+.lx .lx-addmenu__group--compact .lx-addmenu__items {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.lx .lx-addmenu__item--compact {
+  min-height: 48px;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.lx .lx-addmenu__item--compact .lx-addmenu__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-addmenu__item--compact .lx-addmenu__text strong {
+  font-size: 14.5px;
+  line-height: 1.2;
+}
+
+/* ============================================================ task resources */
+.lx .lx-taskres__count {
+  font-size: 13px;
+}
+
+.lx .lx-taskres__list {
+  max-height: 320px;
+}
+
+.lx .lx-taskres__block {
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-taskres__block + .lx-taskres__block {
+  margin-top: 6px;
+}
+
+.lx .lx-taskres__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-taskres__group {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-taskres__group > li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+}
+
+.lx .lx-taskres__group input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--lx-accent);
+}
+
+.lx .lx-taskres__group label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lx-target);
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.lx .lx-taskres__text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.lx .lx-taskres__qty {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.lx .lx-taskres__none {
+  padding: 8px;
+}
+
+/* ============================================================ categories */
+.lx .lx-catmanage {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-catmanage__intro {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.lx .lx-catmanage__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-catmanage__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  padding: 2px 4px 2px 12px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+}
+
+.lx .lx-catmanage__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-catmanage__locked {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--lx-muted);
+}
+
+.lx .lx-catmanage__confirm {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.lx .lx-catmanage__confirm p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-catmanage__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ============================================================ phone */
+@media (max-width: 899px) {
+  /* Phones add resources from the floating «Añadir»; a new warehouse has
+     no other entry point there, so its button stays. */
+  .lx .lx-inventory .lx-directory__tools .lx-inventory__addwh {
+    display: inline-flex;
+  }
+
+  .lx .lx-inventory__segrow .lx-segtabs {
+    flex: 1;
+  }
+
+  .lx .lx-whgroup__title {
+    font-size: 19px;
+  }
+
+  .lx .lx-whgroup__add .lx-btn__label {
+    display: none;
+  }
+
+  .lx .lx-resfacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lx .lx-resfacts__item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 8px 12px;
+  }
+
+  .lx .lx-resrow__main {
+    padding-left: 12px;
+    gap: 10px;
+  }
+
+  .lx .lx-resrow__main > .lx-dirrow__chev {
+    display: none;
+  }
+
+  .lx .lx-noteitem__text {
+    padding-left: 0;
+  }
+}

@@ -1,6 +1,7 @@
 /**
- * Universal search: one field for people, companies, offers, events, tasks
- * and places, with suggestions while typing (shared `universalSearch` over
+ * Universal search: one field for people, companies, offers, events, tasks,
+ * places, warehouses and resources (never notes), with suggestions while
+ * typing (shared `universalSearch` over
  * the loaded lists, so it is instant and works on a weak signal), type and
  * category filters, and the five recent searches when the field is empty.
  *
@@ -20,6 +21,7 @@ import {
 import {useActions} from '../common/actions';
 import {relativeTime} from '../lib/format';
 import {serviceCategories} from '../lib/directory';
+import {resourceCategories} from '../lib/inventory';
 import {TASK_KIND_ICON} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
@@ -39,6 +41,8 @@ const TYPES: {type: SearchEntityType; label: string}[] = [
   {type: 'event', label: 'Eventos'},
   {type: 'task', label: 'Tareas'},
   {type: 'venue', label: 'Lugares'},
+  {type: 'warehouse', label: 'Almacenes'},
+  {type: 'resource', label: 'Recursos'},
 ];
 
 const TYPE_ICON: Partial<Record<SearchEntityType, IconName>> = {
@@ -48,7 +52,13 @@ const TYPE_ICON: Partial<Record<SearchEntityType, IconName>> = {
   event: 'calendar',
   task: 'task',
   venue: 'pin',
+  warehouse: 'warehouse',
+  resource: 'inventory',
 };
+
+/** Types a category filter applies to, by category scope. */
+const SERVICE_TYPES: (SearchEntityType | null)[] = [null, 'company', 'offer'];
+const RESOURCE_TYPES: (SearchEntityType | null)[] = [null, 'resource'];
 
 export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
   const events = useLogisticsStore(s => s.events);
@@ -57,9 +67,12 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
   const companies = useLogisticsStore(s => s.companies);
   const contacts = useLogisticsStore(s => s.contacts);
   const offers = useLogisticsStore(s => s.offers);
+  const warehouses = useLogisticsStore(s => s.warehouses);
+  const resources = useLogisticsStore(s => s.resources);
   const categories = useLogisticsStore(s => s.categories);
   // Searching runs over the loaded lists: until they are all in, «nada
-  // coincide» could be false, so say that they are still loading.
+  // coincide» could be false, so say that they are still loading. Notes are
+  // never searched.
   const listsState = useLogisticsStore(s => {
     const states = [
       s.contactsState,
@@ -67,6 +80,8 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
       s.offersState,
       s.eventsState,
       s.tasksState,
+      s.warehousesState,
+      s.resourcesState,
     ];
     if (states.some(x => x === 'loading' || x === 'idle')) return 'loading';
     return states.includes('error') ? 'partial' : 'ready';
@@ -94,9 +109,20 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
   }, [loadRecent]);
 
   const service = useMemo(() => serviceCategories(categories), [categories]);
-  const categoryApplies =
-    type === null || type === 'company' || type === 'offer';
-  const effectiveCategory = categoryApplies ? categoryId : null;
+  const resourceCats = useMemo(
+    () => resourceCategories(categories),
+    [categories],
+  );
+  const serviceApplies = SERVICE_TYPES.includes(type);
+  const resourceApplies = RESOURCE_TYPES.includes(type);
+  const categoryApplies = serviceApplies || resourceApplies;
+  // A category of the other scope (chosen before switching type) is ignored.
+  const chosenScope = categories.find(c => c.id === categoryId)?.scope;
+  const effectiveCategory =
+    (chosenScope === 'service' && serviceApplies) ||
+    (chosenScope === 'resource' && resourceApplies)
+      ? categoryId
+      : null;
   const q = query.trim();
   const filtering = !!type || !!effectiveCategory;
 
@@ -105,7 +131,17 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
       q || filtering
         ? universalSearch(
             q,
-            {events, tasks, venues, companies, contacts, offers, categories},
+            {
+              events,
+              tasks,
+              venues,
+              companies,
+              contacts,
+              offers,
+              warehouses,
+              resources,
+              categories,
+            },
             {
               types: type ? [type] : undefined,
               categoryId: effectiveCategory,
@@ -124,6 +160,8 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
       companies,
       contacts,
       offers,
+      warehouses,
+      resources,
       categories,
     ],
   );
@@ -183,6 +221,16 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
         case 'venue':
           actions.openVenue(hit.id);
           break;
+        case 'warehouse': {
+          const w = warehouses.find(x => x.id === hit.id);
+          if (w) actions.openWarehouse(w);
+          break;
+        }
+        case 'resource': {
+          const r = resources.find(x => x.id === hit.id);
+          if (r) actions.openResource(r);
+          break;
+        }
         default:
           break;
       }
@@ -243,8 +291,8 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
           data-autofocus
           value={query}
           onValue={setQuery}
-          label="Buscar personas, empresas, ofertas, eventos, tareas y lugares"
-          placeholder="Nombre, empresa, lugar, categoría…"
+          label="Buscar personas, empresas, ofertas, eventos, tareas, lugares, almacenes y recursos"
+          placeholder="Nombre, empresa, lugar, almacén, categoría…"
           role="combobox"
           aria-expanded={hits.length > 0}
           aria-controls={hits.length > 0 ? 'lx-search-results' : undefined}
@@ -279,22 +327,45 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
             </button>
           ))}
         </div>
-        {categoryApplies && service.length > 0 && (
+        {categoryApplies && service.length + resourceCats.length > 0 && (
           <div className="lx-searchsheet__cat">
             <label htmlFor="lx-search-category" className="lx-field__label">
               Categoría
             </label>
             <Select
               id="lx-search-category"
-              value={categoryId ?? ''}
+              value={effectiveCategory ?? ''}
               onChange={e => setCategoryId(e.target.value || null)}
             >
               <option value="">Todas las categorías</option>
-              {service.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {serviceApplies && resourceApplies ? (
+                <>
+                  {service.length > 0 && (
+                    <optgroup label="Empresas y ofertas">
+                      {service.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {resourceCats.length > 0 && (
+                    <optgroup label="Inventario">
+                      {resourceCats.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              ) : (
+                (serviceApplies ? service : resourceCats).map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))
+              )}
             </Select>
           </div>
         )}
@@ -348,8 +419,9 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
               </ul>
             ) : (
               <p className="lx-muted lx-recent__empty">
-                Busca personas, empresas, ofertas, eventos, tareas y lugares.
-                Tus cinco últimas búsquedas aparecerán aquí.
+                Busca personas, empresas, ofertas, eventos, tareas, lugares,
+                almacenes y recursos. Tus cinco últimas búsquedas aparecerán
+                aquí.
               </p>
             )}
           </section>
@@ -398,7 +470,8 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
         ) : listsState === 'loading' ? (
           <div id="lx-search-loading">
             <p className="lx-muted" role="status">
-              Cargando personas, empresas, ofertas, eventos y tareas…
+              Cargando personas, empresas, ofertas, eventos, tareas e
+              inventario…
             </p>
             <SkeletonRows rows={3} label="Cargando resultados" />
           </div>
@@ -436,6 +509,17 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
                   }}
                 >
                   Añadir empresa «{q}»
+                </Button>
+                <Button
+                  size="sm"
+                  icon="inventory"
+                  id="lx-search-add-resource"
+                  onClick={() => {
+                    onClose();
+                    window.setTimeout(() => actions.addResource({name: q}), 0);
+                  }}
+                >
+                  Añadir recurso «{q}»
                 </Button>
               </div>
             )}

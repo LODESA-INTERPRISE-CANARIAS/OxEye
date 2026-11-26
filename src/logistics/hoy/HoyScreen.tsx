@@ -1,11 +1,12 @@
 /**
  * «Hoy»: today's events and tasks (now / next first), today's warnings,
- * upcoming events, how much information is verified, the month at a glance
- * and recent activity.
+ * open incidents and today's notes, upcoming events, how much information
+ * is verified, the month at a glance and recent activity.
  */
 import React, {useMemo} from 'react';
 import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
 import {useActions} from '../common/actions';
+import {useMediaQuery} from '../common/useMediaQuery';
 import {usePlan} from '../common/usePlan';
 import {EventCard} from '../events/EventCard';
 import {groupForToday} from '../lib/events';
@@ -16,6 +17,7 @@ import {Button, EmptyState, LoadError} from '../ui';
 import {ActivityCard} from './ActivityCard';
 import {DemoNotice, type DemoCounts} from './DemoNotice';
 import {MiniCalendar} from './MiniCalendar';
+import {NotesCard} from './NotesCard';
 import {TodayTasks} from './TodayTasks';
 import {VerifiedCard} from './VerifiedCard';
 import {WarningsCard} from './WarningsCard';
@@ -74,6 +76,8 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
   const hasOrg = useLogisticsStore(s => !!s.orgId);
   const {addTask, openDay} = useActions();
   const plan = usePlan();
+  // Same breakpoint as the two-column grid in screens.css.
+  const wide = useMediaQuery('(min-width: 1240px)');
 
   const {todayEvents, upcoming, undated} = useMemo(
     () => groupForToday(events, today),
@@ -94,18 +98,25 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
   const contacts = useLogisticsStore(s => s.contacts);
   const companies = useLogisticsStore(s => s.companies);
   const offers = useLogisticsStore(s => s.offers);
+  const warehouses = useLogisticsStore(s => s.warehouses);
+  const resources = useLogisticsStore(s => s.resources);
+  const notes = useLogisticsStore(s => s.notes);
   // Every kind the demo seed creates, so the notice (and the only way to
   // remove them) stays while any removable demo record is left.
   const demo = useMemo<DemoCounts>(() => {
     const count = (list: {isDemo: boolean}[]) =>
       list.filter(r => r.isDemo).length;
-    // As on the server: a demo company still used by a real task, person or
-    // offer is kept, so it is not counted (the notice would never go away).
+    // As on the server: a demo company or warehouse still used by a real
+    // record is kept, so it is not counted (the notice would never go away).
     const usedByReal = new Set<string>();
-    for (const r of [...tasks, ...contacts]) {
+    for (const r of [...tasks, ...contacts, ...resources]) {
       if (!r.isDemo && r.company) usedByReal.add(r.company.id);
     }
     for (const o of offers) if (!o.isDemo) usedByReal.add(o.company.id);
+    for (const r of resources) {
+      if (!r.isDemo && r.warehouse) usedByReal.add(r.warehouse.id);
+    }
+    for (const n of notes) if (!n.isDemo && n.ref) usedByReal.add(n.ref.id);
     return {
       events: count(events),
       tasks: count(tasks),
@@ -113,8 +124,21 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
       companies: companies.filter(c => c.isDemo && !usedByReal.has(c.id))
         .length,
       offers: count(offers),
+      warehouses: warehouses.filter(w => w.isDemo && !usedByReal.has(w.id))
+        .length,
+      resources: count(resources),
+      notes: count(notes),
     };
-  }, [events, tasks, contacts, companies, offers]);
+  }, [
+    events,
+    tasks,
+    contacts,
+    companies,
+    offers,
+    warehouses,
+    resources,
+    notes,
+  ]);
   const demoCount = Object.values(demo).reduce((a, b) => a + b, 0);
   const loading =
     (state === 'loading' || state === 'idle') && events.length === 0;
@@ -218,6 +242,10 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
             <WarningsCard plan={plan} />
           )}
 
+          {/* Below the wide layout, right after the day: on site it is the
+              first thing to check and to write. */}
+          {!wide && <NotesCard />}
+
           {!loading && !failed && (
             <Section id="lx-upcoming" title="Próximos" count={upcoming.length}>
               {upcoming.length ? (
@@ -274,6 +302,7 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
         </div>
 
         <div className="lx-hoy__side">
+          {wide && <NotesCard />}
           <MiniCalendar today={today} plan={plan} onOpenEvent={onOpenEvent} />
           <ActivityCard timeZone={timeZone} />
         </div>

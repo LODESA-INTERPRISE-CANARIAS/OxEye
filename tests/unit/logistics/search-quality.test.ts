@@ -134,8 +134,11 @@ describe('logistics quality', () => {
         warehouse: {id: 'w', name: 'Almacén'},
         condition: 'good',
         toAssess: true,
+        ownership: 'owned',
+        company: null,
+        categoryId: 'c',
       }),
-    ).toEqual(['cantidad']);
+    ).toEqual(['cantidad', 'estado']);
   });
 
   it('computes the verified percentage', () => {

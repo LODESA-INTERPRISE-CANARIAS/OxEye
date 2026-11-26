@@ -9,14 +9,18 @@ import type {
   EventStatus,
   LogisticsEvent,
   Offer,
+  Resource,
   Task,
   Verification,
+  Warehouse,
 } from '../../../shared/logistics/contracts.ts';
 import {
   missingForCompany,
   missingForContact,
   missingForOffer,
+  missingForResource,
   missingForTask,
+  missingForWarehouse,
 } from '../../../shared/logistics/quality.ts';
 import {recordDays, recordSlot, sortRecords} from './tasks';
 
@@ -111,7 +115,21 @@ export type PendingRow =
       missing: string[];
       company: Company;
     }
-  | {kind: 'offer'; id: string; name: string; missing: string[]; offer: Offer};
+  | {kind: 'offer'; id: string; name: string; missing: string[]; offer: Offer}
+  | {
+      kind: 'warehouse';
+      id: string;
+      name: string;
+      missing: string[];
+      warehouse: Warehouse;
+    }
+  | {
+      kind: 'resource';
+      id: string;
+      name: string;
+      missing: string[];
+      resource: Resource;
+    };
 
 export interface VerificationSummary {
   total: number;
@@ -121,11 +139,17 @@ export interface VerificationSummary {
   incomplete: PendingRow[];
 }
 
-/** People, companies and offers (milestone 3) also count as information. */
+/**
+ * People, companies and offers (milestone 3), warehouses and resources
+ * (milestone 4) also count as information. Notes do not: they are remarks,
+ * not data to verify.
+ */
 export interface DirectoryRecords {
   contacts?: Contact[];
   companies?: Company[];
   offers?: Offer[];
+  warehouses?: Warehouse[];
+  resources?: Resource[];
 }
 
 const withValidation = (missing: string[], v: Verification) =>
@@ -141,8 +165,22 @@ export function verificationSummary(
   tasks: Task[] = [],
   directory: DirectoryRecords = {},
 ): VerificationSummary {
-  const {contacts = [], companies = [], offers = []} = directory;
-  const records = [...events, ...tasks, ...contacts, ...companies, ...offers];
+  const {
+    contacts = [],
+    companies = [],
+    offers = [],
+    warehouses = [],
+    resources = [],
+  } = directory;
+  const records = [
+    ...events,
+    ...tasks,
+    ...contacts,
+    ...companies,
+    ...offers,
+    ...warehouses,
+    ...resources,
+  ];
   const total = records.length;
   const validated = records.filter(r => r.verification === 'validated').length;
   const rows: PendingRow[] = [
@@ -185,6 +223,28 @@ export function verificationSummary(
         : offer.name,
       missing: withValidation(missingForOffer(offer), offer.verification),
       offer,
+    })),
+    ...warehouses.map((warehouse): PendingRow => ({
+      kind: 'warehouse',
+      id: warehouse.id,
+      name: warehouse.name,
+      missing: withValidation(
+        missingForWarehouse(warehouse),
+        warehouse.verification,
+      ),
+      warehouse,
+    })),
+    ...resources.map((resource): PendingRow => ({
+      kind: 'resource',
+      id: resource.id,
+      name: resource.warehouse
+        ? `${resource.name} · ${resource.warehouse.name}`
+        : resource.name,
+      missing: withValidation(
+        missingForResource(resource),
+        resource.verification,
+      ),
+      resource,
     })),
   ];
   const planFirst = (row: PendingRow) =>

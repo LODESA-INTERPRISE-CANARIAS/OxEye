@@ -17,14 +17,11 @@ export function registerTaskRoutes(
   auth: MiddlewareHandler<AppEnv>,
 ): void {
   api.get('/organizations/:orgId/tasks', auth, async c => {
-    const org = await requireMembership(
-      deps.db,
-      c.get('user').id,
-      c.req.param('orgId'),
-    );
+    const user = c.get('user');
+    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
     const eventId = parseEventIdParam(c.req.query('eventId'));
     const body: ListResponse<Task> = {
-      items: await listTasks(deps.db, org.id, eventId),
+      items: await listTasks(deps.db, org.id, user, eventId),
     };
     return c.json(body);
   });

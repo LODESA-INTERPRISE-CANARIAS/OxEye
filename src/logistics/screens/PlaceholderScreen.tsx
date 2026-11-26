@@ -10,18 +10,10 @@ import {Button, Card, Icon, type IconName} from '../ui';
 /** Spaces still to come (the built ones have their own screens). */
 export type PendingSpace = Exclude<
   Space,
-  'hoy' | 'calendario' | 'contactos' | 'catalogo'
+  'hoy' | 'calendario' | 'contactos' | 'catalogo' | 'inventarios'
 >;
 
 const COPY: Record<PendingSpace, {icon: IconName; lines: string[]}> = {
-  inventarios: {
-    icon: 'inventory',
-    lines: [
-      'Almacenes con su ubicación y los materiales que guardan.',
-      'Cantidades, medidas, estado y disponibilidad, aunque solo se sepa una parte.',
-      'Recursos propios separados de los servicios contratados.',
-    ],
-  },
   cierre: {
     icon: 'dayClose',
     lines: [

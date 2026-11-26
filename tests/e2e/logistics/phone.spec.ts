@@ -55,15 +55,26 @@ test.describe('Gestor logístico · móvil', () => {
     await expect(page).toHaveURL(/#logistica\/inventarios$/);
     await page.reload();
     await expect(page.locator('#lx-space-inventarios')).toBeVisible();
+    // Milestone 4: Inventarios is a real space, not the placeholder.
+    await expect(
+      page.locator('#lx-space-inventarios').getByRole('tab', {name: /Propios/}),
+    ).toBeVisible();
   });
 
   test('«Ir a Hoy» on a placeholder space goes back to Hoy', async ({page}) => {
     await mockApi(page);
     await signIn(page);
-    // Catálogo and Contactos are real spaces since milestone 3.
-    await page.locator('#lx-tab-inventarios').click();
+    // Catálogo and Contactos are real spaces since milestone 3, Inventarios
+    // since milestone 4: «Cierre de jornada» (from the account sheet) is
+    // the remaining placeholder.
+    await page.locator('#lx-account-button').click();
     await page
-      .locator('#lx-space-inventarios')
+      .locator('#lx-account-sheet')
+      .getByRole('button', {name: 'Cierre de jornada'})
+      .click();
+    await expect(page).toHaveURL(/#logistica\/cierre$/);
+    await page
+      .locator('#lx-space-cierre')
       .getByRole('button', {name: 'Ir a Hoy'})
       .click();
     await expect(page.locator('#lx-space-hoy')).toBeVisible();

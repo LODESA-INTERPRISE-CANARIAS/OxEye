@@ -28,6 +28,13 @@ import type {TaskState} from '../src/tasks/domain.ts';
 import {normalizeName} from '../src/venues/service.ts';
 import {resolveUnit, toAmount} from '../src/offers/domain.ts';
 import {forViewer, WITHHELD_FROM_GUESTS} from '../src/records/redact.ts';
+import {
+  OFFER_OF_OTHER_COMPANY,
+  OWNED_WITHOUT_COMPANY,
+  OWNED_WITHOUT_OFFER,
+  ownershipProblems,
+  resolveOffer,
+} from '../src/resources/domain.ts';
 
 const TZ = 'Atlantic/Canary';
 
@@ -268,6 +275,7 @@ describe('tasks domain · dependencies', () => {
       timezone: TZ,
       dependsOn: ['a'],
       heavyLoad: null,
+      resourceIds: [],
       notes: null,
       source: null,
       verification: 'draft',
@@ -573,5 +581,94 @@ describe('small helpers', () => {
     expect(normalizeName('  Plaza   del  Cristo ')).toBe('Plaza del Cristo');
     expect(normalizeName('   ')).toBeNull();
     expect(normalizeName(null)).toBeNull();
+  });
+});
+
+describe('resources domain · ownership and offers', () => {
+  it('owned material never takes a company or an offer; clearing them is fine', () => {
+    expect(
+      ownershipProblems('owned', {
+        companyId: 'c',
+        companyName: 'Prueba SL',
+        offerId: 'o',
+      }),
+    ).toEqual({
+      companyId: OWNED_WITHOUT_COMPANY,
+      companyName: OWNED_WITHOUT_COMPANY,
+      offerId: OWNED_WITHOUT_OFFER,
+    });
+    expect(
+      ownershipProblems('owned', {companyId: null, offerId: null}),
+    ).toEqual({});
+    expect(
+      ownershipProblems('contracted', {companyId: 'c', offerId: 'o'}),
+    ).toEqual({});
+  });
+
+  it('keeps an offer only while it belongs to the resource’s company', () => {
+    const before = {companyId: 'a', offerId: 'oa'};
+    // Unchanged company keeps the offer; another company drops it.
+    expect(
+      resolveOffer({
+        before,
+        companyId: 'a',
+        companyGiven: false,
+        offer: undefined,
+      }),
+    ).toEqual({ok: true, companyId: 'a', offerId: 'oa'});
+    expect(
+      resolveOffer({
+        before,
+        companyId: 'b',
+        companyGiven: true,
+        offer: undefined,
+      }),
+    ).toEqual({ok: true, companyId: 'b', offerId: null});
+    expect(
+      resolveOffer({
+        before,
+        companyId: null,
+        companyGiven: true,
+        offer: undefined,
+      }),
+    ).toEqual({ok: true, companyId: null, offerId: null});
+    // Cleared on request.
+    expect(
+      resolveOffer({before, companyId: 'a', companyGiven: false, offer: null}),
+    ).toEqual({ok: true, companyId: 'a', offerId: null});
+    // An offer of the named company, or of the current one.
+    expect(
+      resolveOffer({
+        before,
+        companyId: 'b',
+        companyGiven: true,
+        offer: {id: 'ob', companyId: 'b'},
+      }),
+    ).toEqual({ok: true, companyId: 'b', offerId: 'ob'});
+    expect(
+      resolveOffer({
+        before,
+        companyId: 'a',
+        companyGiven: false,
+        offer: {id: 'ob', companyId: 'b'},
+      }),
+    ).toEqual({ok: false, message: OFFER_OF_OTHER_COMPANY});
+    expect(
+      resolveOffer({
+        before,
+        companyId: null,
+        companyGiven: true,
+        offer: {id: 'ob', companyId: 'b'},
+      }),
+    ).toEqual({ok: false, message: OFFER_OF_OTHER_COMPANY});
+    // No company yet: the offer brings its own.
+    expect(
+      resolveOffer({
+        before: {companyId: null, offerId: null},
+        companyId: null,
+        companyGiven: false,
+        offer: {id: 'ob', companyId: 'b'},
+      }),
+    ).toEqual({ok: true, companyId: 'b', offerId: 'ob'});
   });
 });

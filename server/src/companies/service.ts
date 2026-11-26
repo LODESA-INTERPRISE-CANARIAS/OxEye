@@ -14,6 +14,7 @@ import {
   categoryOrder,
   CATEGORIES_UNKNOWN,
 } from '../categories/service.ts';
+import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
 import {
   findOrCreateByName,
@@ -28,6 +29,7 @@ import type {MetaRow} from '../records/meta.ts';
 import {forViewer} from '../records/redact.ts';
 import type {Viewer} from '../records/redact.ts';
 import {changedFields} from '../records/slot.ts';
+import {unlinkResources} from '../resources/links.ts';
 import type {CreateCompanyBody, UpdateCompanyBody} from './schemas.ts';
 import type {
   Company,
@@ -469,9 +471,11 @@ export async function updateCompany(
 }
 
 /**
- * Deletes a company at the given version, with its offers. Its contacts and
- * tasks stay without a company: their version increases and the change is
- * logged, so a stale edit cannot restore the link silently.
+ * Deletes a company at the given version, with its offers. Its contacts,
+ * tasks and resources stay without a company (resources also lose an offer
+ * of it) and notes lose the link to the company or its offers: their version
+ * increases and the change is logged, so a stale edit cannot restore the link
+ * silently.
  */
 export async function deleteCompany(
   db: Db,
@@ -491,6 +495,28 @@ export async function deleteCompany(
     if (row.version !== version) throw staleCompany(row, actor);
 
     const at = now.toISOString();
+    // Resources and notes first: they point at the company and its offers.
+    const offerIds = (
+      await tx.query<{id: string}>(
+        'SELECT id FROM offers WHERE company_id = $1 ORDER BY id',
+        [id],
+      )
+    ).map(o => o.id);
+    const unlink = {actorId: actor.id, now};
+    await unlinkResources(tx, {
+      ...unlink,
+      organizationId: orgId,
+      link: 'company',
+      ids: [id],
+    });
+    await unlinkResources(tx, {
+      ...unlink,
+      organizationId: orgId,
+      link: 'offer',
+      ids: offerIds,
+    });
+    await unlinkNotes(tx, {...unlink, link: 'company', ids: [id]});
+    await unlinkNotes(tx, {...unlink, link: 'offer', ids: offerIds});
     const contacts = await tx.query<{
       id: string;
       name: string;

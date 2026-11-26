@@ -1,19 +1,20 @@
 /**
- * Find-or-create by name for small named records (venues, companies): the
- * quick capture types a name, and the same name (any letter case) always
- * resolves to the same record of the organization.
+ * Find-or-create by name for small named records (venues, companies,
+ * warehouses): the quick capture types a name, and the same name (any letter
+ * case) always resolves to the same record of the organization.
  */
 import type {Queryable} from '../db/db.ts';
 import {appendActivity} from '../activity/service.ts';
 
 /** Tables with `organization_id`, `name`, record meta and a unique (organization_id, lower(name)) index. */
-type NamedTable = 'venues' | 'companies';
+type NamedTable = 'venues' | 'companies' | 'warehouses';
 /** Demo records real data can start using (and so make real). */
 type PromotableTable = NamedTable | 'contacts';
 
 const ENTITY_TYPE: Record<PromotableTable, string> = {
   venues: 'venue',
   companies: 'company',
+  warehouses: 'warehouse',
   contacts: 'contact',
 };
 

@@ -26,13 +26,19 @@ import type {
   Contact,
   DataSource,
   LogisticsEvent,
+  Resource,
   Task,
   TaskInput,
   TaskKind,
   TaskStatus,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
-import {TASK_KINDS, TASK_STATUSES} from '../../../shared/logistics/rules.ts';
+import {quantityLabel} from '../../../shared/logistics/inventory.ts';
+import {
+  NOTE_PRIVACY_HINT,
+  TASK_KINDS,
+  TASK_STATUSES,
+} from '../../../shared/logistics/rules.ts';
 import {findCycle} from '../../../shared/logistics/schedule.ts';
 import {
   DEFAULT_TIMEZONE,
@@ -41,6 +47,8 @@ import {
 } from '../../../shared/logistics/time.ts';
 import {errorMessage, isApiError} from '../api/client';
 import type {TaskPrefill} from '../common/actions';
+import {RecordHistory} from '../common/RecordHistory';
+import {RecordNotes} from '../common/RecordNotes';
 import {HeavyLoadValue, KindLabel, TaskStatusChip} from '../common/TaskChips';
 import {TimeWindow, windowText} from '../common/TimeWindow';
 import {
@@ -85,7 +93,10 @@ import {
 } from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {TaskContactField} from './TaskContactField';
+import {TaskResourcesField} from './TaskResourcesField';
+import {Value} from '../contacts/DirectoryParts';
 import {ReachOut} from '../contacts/ReachOut';
+import {LoadNoteTip} from '../inventory/ResourceParts';
 import {useActions} from '../common/actions';
 import {
   Button,
@@ -122,6 +133,8 @@ interface FormValues extends SlotValues {
   status: TaskStatus;
   heavy: Heavy;
   dependsOn: string[];
+  /** Inventory resources the task counts on. */
+  resourceIds: string[];
   notes: string;
   source: DataSource | null;
   verification: Verification;
@@ -142,6 +155,7 @@ const EMPTY: FormValues = {
   status: 'planned',
   heavy: 'unknown',
   dependsOn: [],
+  resourceIds: [],
   notes: '',
   source: null,
   verification: 'draft',
@@ -169,6 +183,7 @@ function valuesFromTask(task: Task): FormValues {
     status: task.status,
     heavy: toHeavy(task.heavyLoad),
     dependsOn: [...task.dependsOn],
+    resourceIds: [...(task.resourceIds ?? [])],
     notes: task.notes ?? '',
     source: task.source,
     verification: task.verification,
@@ -190,6 +205,7 @@ function valuesFromPrefill(
     date: prefill.date ?? (event ? (recordDate(event) ?? '') : ''),
     companyName: prefill.companyName ?? '',
     contactId: prefill.contactId ?? '',
+    resourceIds: prefill.resourceIds ? [...prefill.resourceIds] : [],
   };
 }
 
@@ -227,6 +243,12 @@ function valuesFromRescue(
     raw.dependsOn.every(d => typeof d === 'string')
   ) {
     out.dependsOn = raw.dependsOn as string[];
+  }
+  if (
+    Array.isArray(raw.resourceIds) &&
+    raw.resourceIds.every(d => typeof d === 'string')
+  ) {
+    out.resourceIds = raw.resourceIds as string[];
   }
   out.kind = oneOf<TaskKind>(raw.kind, TASK_KINDS) ?? fallback.kind;
   out.status = oneOf<TaskStatus>(raw.status, TASK_STATUSES) ?? fallback.status;
@@ -285,6 +307,7 @@ const SERVER_FIELD: Record<string, keyof FormValues> = {
   status: 'status',
   heavyLoad: 'heavy',
   dependsOn: 'dependsOn',
+  resourceIds: 'resourceIds',
   notes: 'notes',
   source: 'source',
   verification: 'verification',
@@ -480,13 +503,30 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
           <dd>{task.source ? SOURCE_LABEL[task.source] : <Pending />}</dd>
         </div>
         <div>
-          <dt>Notas</dt>
-          <dd className="lx-detail__notes">{task.notes || '—'}</dd>
+          <dt>Observaciones</dt>
+          <dd className="lx-detail__notes">
+            <Value value={task.notes} withheld={task.restricted} empty="—" />
+          </dd>
         </div>
       </dl>
+      <TaskResourcesView ids={task.resourceIds ?? []} />
       {warnings.length > 0 && (
         <TaskWarnings warnings={warnings} selfId={task.id} />
       )}
+      <RecordNotes
+        target={{type: 'task', id: task.id}}
+        prefill={{
+          eventId: task.eventId,
+          ref: {type: 'task', id: task.id, label: task.title},
+        }}
+        idPrefix="lx-task"
+      />
+      <RecordHistory
+        entityType="task"
+        entityId={task.id}
+        version={task.version}
+        idPrefix="lx-task"
+      />
       <Provenance record={task} id="lx-task-provenance" />
     </Sheet>
   );
@@ -521,6 +561,57 @@ const TaskContactView: React.FC<{contact: {id: string; name: string}}> = ({
         }}
       />
     </div>
+  );
+};
+
+/** The resources a task counts on, each opening its card. */
+const TaskResourcesView: React.FC<{ids: string[]}> = ({ids}) => {
+  const all = useLogisticsStore(s => s.resources);
+  const {openResource} = useActions();
+  const list = ids
+    .map(id => all.find(r => r.id === id))
+    .filter((r): r is Resource => !!r);
+  if (!ids.length) return null;
+  return (
+    <section
+      className="lx-subsection"
+      id="lx-task-resources-view"
+      aria-labelledby="lx-task-resources-title"
+    >
+      <h3 className="lx-subsection__title" id="lx-task-resources-title">
+        Recursos
+        <span className="lx-count lx-num">{ids.length}</span>
+        <LoadNoteTip label="recursos y carga" />
+      </h3>
+      <ul className="lx-linklist">
+        {list.map(r => (
+          <li key={r.id}>
+            <button
+              type="button"
+              className="lx-linkrow"
+              onClick={() => openResource(r)}
+            >
+              <Icon
+                name={r.ownership === 'owned' ? 'warehouse' : 'building'}
+                size={18}
+              />
+              <span className="lx-linkrow__title">{r.name}</span>
+              <span className="lx-linkrow__meta lx-num">
+                {quantityLabel(r)}
+              </span>
+              <Icon name="chevronRight" size={16} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {list.length < ids.length && (
+        <p className="lx-muted">
+          {ids.length - list.length === 1
+            ? '1 recurso aún no cargado o borrado.'
+            : `${ids.length - list.length} recursos aún no cargados o borrados.`}
+        </p>
+      )}
+    </section>
   );
 };
 
@@ -559,6 +650,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
   const tasks = useLogisticsStore(s => s.tasks);
   const tasksReady = useLogisticsStore(s => s.tasksState === 'ready');
   const events = useLogisticsStore(s => s.events);
+  const resources = useLogisticsStore(s => s.resources);
+  const resourcesReady = useLogisticsStore(s => s.resourcesState === 'ready');
   const userId = useLogisticsStore(s => s.session?.user.id ?? null);
   const orgId = useLogisticsStore(s => s.orgId);
   const orgZone = useLogisticsStore(
@@ -589,8 +682,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
   const alertRef = useAlertFocus(conflict ?? errors.form);
 
   const dirty = (Object.keys(values) as (keyof FormValues)[]).some(k =>
-    k === 'dependsOn'
-      ? !sameList(values.dependsOn, initial.dependsOn)
+    k === 'dependsOn' || k === 'resourceIds'
+      ? !sameList(values[k], initial[k])
       : values[k] !== initial[k],
   );
 
@@ -698,6 +791,13 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     : [];
   const liveDeps = (list: string[]) =>
     knownIds ? list.filter(id => knownIds.has(id)) : list;
+  // Same for resources deleted from the inventory meanwhile.
+  const knownResources = useMemo(
+    () => (resourcesReady ? new Set(resources.map(r => r.id)) : null),
+    [resources, resourcesReady],
+  );
+  const liveResources = (list: string[]) =>
+    knownResources ? list.filter(id => knownResources.has(id)) : list;
 
   const warnings = useMemo(() => {
     const draft: PlanTask = {
@@ -717,8 +817,9 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       endsAt: draftInstants.endsAt,
       dependsOn: values.dependsOn,
       heavyLoad: fromHeavy(values.heavy),
+      resourceIds: values.resourceIds,
     };
-    return planWarnings([...others, draft], events).filter(w =>
+    return planWarnings([...others, draft], events, resources).filter(w =>
       w.taskIds.includes(selfId),
     );
   }, [
@@ -728,6 +829,7 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     zone,
     others,
     events,
+    resources,
     venues,
     companies,
     selfId,
@@ -835,6 +937,10 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     ...(v.contactId ? {contactId: v.contactId} : {}),
     ...slotInput(v),
     dependsOn: liveDeps(v.dependsOn),
+    // Only sent when chosen, so a task without resources reads as before.
+    ...(liveResources(v.resourceIds).length
+      ? {resourceIds: liveResources(v.resourceIds)}
+      : {}),
     heavyLoad: showsHeavyLoad(v) ? fromHeavy(v.heavy) : null,
     notes: nullIfEmpty(v.notes),
     source: v.source,
@@ -896,6 +1002,9 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       if (slotChanged(values, initial)) Object.assign(patch, slotInput(values));
       if (!sameList(full.dependsOn ?? [], initial.dependsOn)) {
         patch.dependsOn = full.dependsOn;
+      }
+      if (!sameList(values.resourceIds, initial.resourceIds)) {
+        patch.resourceIds = liveResources(values.resourceIds);
       }
       if (values.heavy !== initial.heavy) {
         patch.heavyLoad = fromHeavy(values.heavy);
@@ -1285,6 +1394,12 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
           help="Prevista: está en el plan. Confirmada: la ha confirmado quien la hace. En curso: se está haciendo. Hecha: terminada. Con retraso: va tarde. Cancelada: no se hará."
         />
 
+        <TaskResourcesField
+          value={values.resourceIds}
+          onChange={ids => set('resourceIds', ids)}
+          error={errors.resourceIds}
+        />
+
         {loadBearing && (
           <div className="lx-heavyq">
             <Segmented<Heavy>
@@ -1432,19 +1547,47 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
           onVerification={v => set('verification', v)}
         />
 
-        <Field id="lx-task-notes" label="Notas" optional error={errors.notes}>
+        <Field
+          id="lx-task-notes"
+          label="Observaciones"
+          optional
+          error={errors.notes}
+          hint={NOTE_PRIVACY_HINT}
+        >
           <Textarea
             id="lx-task-notes"
             name="lx-task-notes"
             rows={3}
             value={values.notes}
             invalid={!!errors.notes}
+            aria-describedby={describedBy('lx-task-notes', {
+              error: errors.notes,
+              hint: true,
+            })}
             placeholder="Material, accesos, quién abre…"
             onChange={e => set('notes', e.target.value)}
           />
         </Field>
 
-        {base && <Provenance record={base} id="lx-task-provenance" />}
+        {base && (
+          <>
+            <RecordNotes
+              target={{type: 'task', id: base.id}}
+              prefill={{
+                eventId: base.eventId,
+                ref: {type: 'task', id: base.id, label: base.title},
+              }}
+              idPrefix="lx-task"
+            />
+            <RecordHistory
+              entityType="task"
+              entityId={base.id}
+              version={base.version}
+              idPrefix="lx-task"
+            />
+            <Provenance record={base} id="lx-task-provenance" />
+          </>
+        )}
         <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
       </form>
     </Sheet>

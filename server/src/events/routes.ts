@@ -15,13 +15,10 @@ export function registerEventRoutes(
   auth: MiddlewareHandler<AppEnv>,
 ): void {
   api.get('/organizations/:orgId/events', auth, async c => {
-    const org = await requireMembership(
-      deps.db,
-      c.get('user').id,
-      c.req.param('orgId'),
-    );
+    const user = c.get('user');
+    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
     const body: ListResponse<LogisticsEvent> = {
-      items: await listEvents(deps.db, org.id),
+      items: await listEvents(deps.db, org.id, user),
     };
     return c.json(body);
   });

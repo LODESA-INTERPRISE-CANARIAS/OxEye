@@ -12,6 +12,7 @@ import type {
   Resource,
   Task,
   Verification,
+  Warehouse,
 } from './contracts.ts';
 
 /** Spanish labels of the missing pieces, in display order. */
@@ -80,18 +81,38 @@ export function missingForOffer(
   return out;
 }
 
+/**
+ * Owned material needs a warehouse; a contracted service needs its company
+ * (it may never sit in a warehouse). «Aún por evaluar» keeps quantity and
+ * condition pending even when a provisional figure was typed.
+ */
 export function missingForResource(
   r: Pick<
     Resource,
-    'quantity' | 'dimensions' | 'warehouse' | 'condition' | 'toAssess'
+    | 'quantity'
+    | 'dimensions'
+    | 'warehouse'
+    | 'condition'
+    | 'toAssess'
+    | 'ownership'
+    | 'company'
+    | 'categoryId'
   >,
 ): string[] {
   const out: string[] = [];
   if (r.quantity === null || r.toAssess) out.push('cantidad');
+  if (r.condition === 'unknown' || r.toAssess) out.push('estado');
+  if (r.ownership === 'owned' && !r.warehouse) out.push('almacén');
+  if (r.ownership === 'contracted' && !r.company) out.push('empresa');
   if (!r.dimensions) out.push('dimensiones');
-  if (!r.warehouse) out.push('ubicación');
-  if (r.condition === 'unknown') out.push('estado');
+  if (!r.categoryId) out.push('categoría');
   return out;
+}
+
+export function missingForWarehouse(
+  w: Pick<Warehouse, 'address'> & Partial<Pick<Warehouse, 'restricted'>>,
+): string[] {
+  return !w.restricted && !w.address ? ['dirección'] : [];
 }
 
 /** Percentage (0–100, rounded) of records with verification = validated. Empty → 0. */

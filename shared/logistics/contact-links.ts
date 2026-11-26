@@ -19,7 +19,15 @@ export interface PhoneInfo {
   international: string | null;
   /** A human warning when the number looks incomplete or the country is unknown. */
   warning: string | null;
+  /** Machine-readable cause of `warning` (null when there is none). */
+  reason: PhoneWarningReason | null;
 }
+
+export type PhoneWarningReason =
+  | 'two_numbers'
+  | 'missing_34'
+  | 'incomplete'
+  | 'unknown_country';
 
 const SPANISH_NATIONAL = /^[6789]\d{8}$/;
 /** Short public numbers: 112, 010, 016, 091, 092… */
@@ -31,43 +39,59 @@ export function phoneInfo(raw: string): PhoneInfo | null {
   let digits = display.replace(/\D/g, '');
   if (!digits) return null;
   let international: string | null = null;
-  let warning: string | null = null;
+  let reason: PhoneWarningReason | null = null;
 
   if (
     display.includes('/') ||
     (!plus && !digits.startsWith('00') && digits.length > 12)
   ) {
     // «922 00 00 00 / 600 00 00 00»: two numbers in one field.
-    warning = 'Parece que hay dos números en el mismo campo: deja solo uno.';
+    reason = 'two_numbers';
   } else if (plus || digits.startsWith('00')) {
     if (!plus) digits = digits.slice(2);
     international = digits;
     if (SPANISH_NATIONAL.test(digits)) {
       // «+600 000 000»: the + is there but the 34 is missing (+60 is another country).
-      warning = '¿Falta el 34? Un número español con «+» empieza por +34.';
+      reason = 'missing_34';
     } else if (digits.startsWith('34') && digits.length !== 11) {
-      warning =
-        'El número parece incompleto: un número español tiene 9 cifras.';
+      reason = 'incomplete';
     } else if (digits.length < 8 || digits.length > 15) {
-      warning = 'El número parece incompleto.';
+      reason = 'incomplete';
     }
   } else if (SPANISH_NATIONAL.test(digits)) {
     international = `34${digits}`;
   } else if (SHORT_NUMBER.test(digits)) {
     // A short public number: dialable, not a WhatsApp account.
   } else if (digits.length < 9) {
-    warning = 'El número parece incompleto: un número español tiene 9 cifras.';
+    reason = 'incomplete';
   } else {
-    warning =
-      'No sabemos el prefijo del país; WhatsApp necesita el número con prefijo (+…).';
+    reason = 'unknown_country';
   }
 
+  const spanishDigits =
+    !plus && !digits.startsWith('00') ? true : digits.startsWith('34');
   return {
     display,
     dial: international ? `+${international}` : digits,
     international,
-    warning,
+    warning: reason ? warningText(reason, spanishDigits) : null,
+    reason,
   };
+}
+
+function warningText(reason: PhoneWarningReason, spanish: boolean): string {
+  switch (reason) {
+    case 'two_numbers':
+      return 'Parece que hay dos números en el mismo campo: deja solo uno.';
+    case 'missing_34':
+      return '¿Falta el 34? Un número español con «+» empieza por +34.';
+    case 'incomplete':
+      return spanish
+        ? 'El número parece incompleto: un número español tiene 9 cifras.'
+        : 'El número parece incompleto.';
+    case 'unknown_country':
+      return 'No sabemos el prefijo del país; WhatsApp necesita el número con prefijo (+…).';
+  }
 }
 
 export function telHref(info: PhoneInfo): string {

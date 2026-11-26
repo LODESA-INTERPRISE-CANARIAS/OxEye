@@ -14,16 +14,23 @@ import type {
   Contact,
   ContactInput,
   CreateEventInput,
+  CategoryScope,
   LogisticsEvent,
+  Note,
+  NoteInput,
   Offer,
   OfferInput,
   Organization,
   RecentSearch,
+  Resource,
+  ResourceInput,
   SessionUser,
   Task,
   TaskInput,
   UpdateEventInput,
   Venue,
+  Warehouse,
+  WarehouseInput,
 } from '../../../shared/logistics/contracts.ts';
 import {RECENT_SEARCHES_KEPT} from '../../../shared/logistics/rules.ts';
 import {normalize} from '../../../shared/logistics/search.ts';
@@ -34,8 +41,10 @@ import {
   resolveApiBaseUrl,
 } from '../api/client';
 import {api} from '../api/endpoints';
+import {clearRescue} from '../lib/rescue';
 import {sortCompanies, sortContacts, sortOffers} from '../lib/directory';
 import {sortEvents} from '../lib/events';
+import {sortNotes, sortResources, sortWarehouses} from '../lib/inventory';
 import {sortTasks} from '../lib/tasks';
 
 export type Phase =
@@ -210,6 +219,17 @@ export interface LogisticsState {
   offers: Offer[];
   offersState: LoadState;
   offersError: string | null;
+  // Milestone 4: inventories and notes.
+  warehouses: Warehouse[];
+  warehousesState: LoadState;
+  warehousesError: string | null;
+  resources: Resource[];
+  resourcesState: LoadState;
+  resourcesError: string | null;
+  /** Newest first. For guests every `text` is null (`restricted`). */
+  notes: Note[];
+  notesState: LoadState;
+  notesError: string | null;
   /** The current user's five recent searches, newest first. */
   recentSearches: RecentSearch[];
   recentState: LoadState;
@@ -241,8 +261,13 @@ export interface LogisticsState {
   /** Puts a server copy of a task in the list (e.g. after a conflict). */
   upsertTask: (task: Task) => void;
 
-  /** Finds or creates a service category by name (any case). */
-  createCategory: (name: string) => Promise<Category>;
+  /** Finds or creates a category by name (any case); `service` by default. */
+  createCategory: (name: string, scope?: CategoryScope) => Promise<Category>;
+  /**
+   * Deletes a custom category: companies, offers and resources lose it
+   * (their versions increase).
+   */
+  deleteCategory: (category: Category) => Promise<void>;
   createCompany: (
     input: Omit<CompanyInput, 'organizationId' | 'version'>,
   ) => Promise<Company>;
@@ -264,6 +289,35 @@ export interface LogisticsState {
   updateOffer: (id: string, input: OfferInput) => Promise<Offer>;
   deleteOffer: (offer: Offer) => Promise<void>;
   upsertOffer: (offer: Offer) => void;
+
+  // Milestone 4.
+  createWarehouse: (
+    input: Omit<WarehouseInput, 'organizationId' | 'version'>,
+  ) => Promise<Warehouse>;
+  /** `input.version` is required. 409 VERSION_CONFLICT or DUPLICATE. */
+  updateWarehouse: (id: string, input: WarehouseInput) => Promise<Warehouse>;
+  /** Its resources lose the warehouse; notes lose the link. */
+  deleteWarehouse: (warehouse: Warehouse) => Promise<void>;
+  upsertWarehouse: (warehouse: Warehouse) => void;
+  createResource: (
+    input: Omit<ResourceInput, 'organizationId' | 'version'>,
+  ) => Promise<Resource>;
+  updateResource: (id: string, input: ResourceInput) => Promise<Resource>;
+  /** Tasks and notes lose it. */
+  deleteResource: (resource: Resource) => Promise<void>;
+  upsertResource: (resource: Resource) => void;
+  createNote: (
+    input: Omit<NoteInput, 'organizationId' | 'version'>,
+  ) => Promise<Note>;
+  updateNote: (id: string, input: NoteInput) => Promise<Note>;
+  deleteNote: (note: Note) => Promise<void>;
+  upsertNote: (note: Note) => void;
+  /** The history of one record, newest first (not kept in the store). */
+  loadHistory: (
+    entityType: string,
+    entityId: string,
+    limit?: number,
+  ) => Promise<ActivityEntry[]>;
 
   /** Loads the recent searches (server for members, device for guests). */
   loadRecentSearches: () => Promise<void>;
@@ -293,6 +347,10 @@ let companyEpoch = 0;
 let contactEpoch = 0;
 let offerEpoch = 0;
 let categoryEpoch = 0;
+/** Same as `writeEpoch`, for inventories and notes (milestone 4). */
+let warehouseEpoch = 0;
+let resourceEpoch = 0;
+let noteEpoch = 0;
 
 /**
  * Same content. Versions alone are not enough: a renamed venue or company
@@ -362,6 +420,31 @@ export function mergeServerOffers(local: Offer[], server: Offer[]): Offer[] {
   return mergeByVersion(local, server, sortOffers);
 }
 
+export function mergeServerWarehouses(
+  local: Warehouse[],
+  server: Warehouse[],
+): Warehouse[] {
+  return mergeByVersion(local, server, sortWarehouses);
+}
+
+export function mergeServerResources(
+  local: Resource[],
+  server: Resource[],
+): Resource[] {
+  return mergeByVersion(local, server, sortResources);
+}
+
+export function mergeServerNotes(local: Note[], server: Note[]): Note[] {
+  return mergeByVersion(local, server, sortNotes);
+}
+
+/** Removes the link of every note that pointed at a deleted record. */
+function unlinkNotes(notes: Note[], type: string, id: string): Note[] {
+  return notes.map(n =>
+    n.ref?.type === type && n.ref.id === id ? {...n, ref: null} : n,
+  );
+}
+
 /** The server list, or the local one when it holds exactly the same. */
 function keepIfSame<T>(local: T[], server: T[]): T[] {
   return local.length === server.length &&
@@ -389,6 +472,9 @@ const EMPTY_RECORDS = {
   categories: [],
   contacts: [],
   offers: [],
+  warehouses: [],
+  resources: [],
+  notes: [],
   recentSearches: [],
   activity: [],
 } satisfies Partial<LogisticsState>;
@@ -399,6 +485,9 @@ const IDLE_STATES = {
   companiesState: 'idle',
   contactsState: 'idle',
   offersState: 'idle',
+  warehousesState: 'idle',
+  resourcesState: 'idle',
+  notesState: 'idle',
   recentState: 'idle',
   activityState: 'idle',
 } satisfies Partial<LogisticsState>;
@@ -449,14 +538,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
    * by someone else since the last refresh). Keep it, so «Abrir la existente»
    * opens a live record, and bring the rest up to date quietly.
    */
-  const keepDuplicate = (err: unknown) => {
+  const keepDuplicate = (err: unknown, kind: 'company' | 'warehouse') => {
     if (
       isApiError(err) &&
       err.code === 'DUPLICATE' &&
       err.current &&
       typeof err.current === 'object'
     ) {
-      get().upsertCompany(err.current as Company);
+      if (kind === 'company') get().upsertCompany(err.current as Company);
+      else get().upsertWarehouse(err.current as Warehouse);
       void get()
         .refresh({silent: true})
         .catch(() => undefined);
@@ -488,6 +578,15 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     offers: [],
     offersState: 'idle',
     offersError: null,
+    warehouses: [],
+    warehousesState: 'idle',
+    warehousesError: null,
+    resources: [],
+    resourcesState: 'idle',
+    resourcesError: null,
+    notes: [],
+    notesState: 'idle',
+    notesError: null,
     recentSearches: [],
     recentState: 'idle',
     activity: [],
@@ -584,6 +683,10 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       if (get().session?.user.role !== 'member') {
         for (const org of get().organizations) writeDeviceRecent(org.id, []);
       }
+      // An explicit logout drops the unsaved-form rescue too: logins such as
+      // «Equipo» are shared, and a rescued note must not be offered to the
+      // next person. (Session expiry keeps it: that is what it is for.)
+      clearRescue();
       writeStoredSession(null);
       set({
         phase: 'login',
@@ -623,6 +726,12 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
           contactsError: null,
           offersState: 'loading',
           offersError: null,
+          warehousesState: 'loading',
+          warehousesError: null,
+          resourcesState: 'loading',
+          resourcesError: null,
+          notesState: 'loading',
+          notesError: null,
         });
       }
       const epoch = writeEpoch;
@@ -631,6 +740,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       const ctEpoch = contactEpoch;
       const ofEpoch = offerEpoch;
       const caEpoch = categoryEpoch;
+      const whEpoch = warehouseEpoch;
+      const reEpoch = resourceEpoch;
+      const noEpoch = noteEpoch;
       const [
         events,
         activity,
@@ -640,6 +752,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         categories,
         contacts,
         offers,
+        warehouses,
+        resources,
+        notes,
       ] = await Promise.allSettled([
         authed(token => api.events(token, orgId)),
         authed(token => api.activity(token, orgId, 20)),
@@ -649,6 +764,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         authed(token => api.categories(token, orgId)),
         authed(token => api.contacts(token, orgId)),
         authed(token => api.offers(token, orgId)),
+        authed(token => api.warehouses(token, orgId)),
+        authed(token => api.resources(token, orgId)),
+        authed(token => api.notes(token, orgId)),
       ]);
       // The organization may have changed while loading.
       if (get().orgId !== orgId || get().phase !== 'ready') return;
@@ -725,6 +843,43 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       }
       if (categories.status === 'fulfilled' && caEpoch === categoryEpoch) {
         patch.categories = keepIfSame(get().categories, categories.value.items);
+      }
+      // Inventories and notes (milestone 4): same rules again.
+      if (warehouses.status === 'fulfilled' && whEpoch !== warehouseEpoch) {
+        // A warehouse write's own refresh brings the fresh list.
+      } else if (warehouses.status === 'fulfilled') {
+        patch.warehouses = mergeServerWarehouses(
+          get().warehouses,
+          warehouses.value.items,
+        );
+        patch.warehousesState = 'ready';
+        patch.warehousesError = null;
+      } else if (!silent || get().warehousesState !== 'ready') {
+        patch.warehousesState = 'error';
+        patch.warehousesError = errorMessage(warehouses.reason);
+      }
+      if (resources.status === 'fulfilled' && reEpoch !== resourceEpoch) {
+        // Same as above.
+      } else if (resources.status === 'fulfilled') {
+        patch.resources = mergeServerResources(
+          get().resources,
+          resources.value.items,
+        );
+        patch.resourcesState = 'ready';
+        patch.resourcesError = null;
+      } else if (!silent || get().resourcesState !== 'ready') {
+        patch.resourcesState = 'error';
+        patch.resourcesError = errorMessage(resources.reason);
+      }
+      if (notes.status === 'fulfilled' && noEpoch !== noteEpoch) {
+        // Same as above.
+      } else if (notes.status === 'fulfilled') {
+        patch.notes = mergeServerNotes(get().notes, notes.value.items);
+        patch.notesState = 'ready';
+        patch.notesError = null;
+      } else if (!silent || get().notesState !== 'ready') {
+        patch.notesState = 'error';
+        patch.notesError = errorMessage(notes.reason);
       }
       set(patch);
     },
@@ -818,10 +973,16 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
       taskEpoch++;
+      resourceEpoch++;
+      noteEpoch++;
       // Dependents lose the link on the server (their version increases);
-      // mirror it until the refresh brings their new copies.
+      // mirror it until the refresh brings their new copies. Resources stop
+      // listing it and notes that pointed at it lose the link.
       const hadDependents = get().tasks.some(t =>
         t.dependsOn.includes(task.id),
+      );
+      const linkedNote = get().notes.some(
+        n => n.ref?.type === 'task' && n.ref.id === task.id,
       );
       set({
         tasks: get()
@@ -831,13 +992,21 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
               ? {...t, dependsOn: t.dependsOn.filter(d => d !== task.id)}
               : t,
           ),
+        resources: get().resources.map(r =>
+          r.taskIds.includes(task.id)
+            ? {...r, taskIds: r.taskIds.filter(id => id !== task.id)}
+            : r,
+        ),
+        notes: linkedNote
+          ? unlinkNotes(get().notes, 'task', task.id)
+          : get().notes,
       });
       const refreshed = get().refresh({silent: true});
       // With dependents, wait for their new versions before the caller moves
       // on: editing one with the old version would be rejected as a conflict
       // with our own change.
       // The delete itself succeeded either way.
-      if (hadDependents) await refreshed.catch(() => undefined);
+      if (hadDependents || linkedNote) await refreshed.catch(() => undefined);
     },
 
     upsertTask: task => {
@@ -850,13 +1019,13 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
 
     // ---------------------------------------------------- directory (M3)
 
-    createCategory: async name => {
+    createCategory: async (name, scope = 'service') => {
       const orgId = get().orgId;
       if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
       const category = await authed(token =>
         api.createCategory(token, {
           organizationId: orgId,
-          scope: 'service',
+          scope,
           name,
         }),
       );
@@ -867,6 +1036,40 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       }
       void get().refresh({silent: true});
       return category;
+    },
+
+    deleteCategory: async category => {
+      try {
+        await authed(token => api.deleteCategory(token, category.id));
+      } catch (err) {
+        // Already gone: the outcome is the same.
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      categoryEpoch++;
+      companyEpoch++;
+      offerEpoch++;
+      resourceEpoch++;
+      const id = category.id;
+      // Mirror the server until the refresh brings the new versions.
+      set({
+        categories: get().categories.filter(c => c.id !== id),
+        companies: get().companies.map(c =>
+          c.categoryIds.includes(id)
+            ? {...c, categoryIds: c.categoryIds.filter(x => x !== id)}
+            : c,
+        ),
+        offers: get().offers.map(o =>
+          o.categoryId === id ? {...o, categoryId: null} : o,
+        ),
+        resources: get().resources.map(r =>
+          r.categoryId === id ? {...r, categoryId: null} : r,
+        ),
+      });
+      // Editing one of them right after with the old version would be
+      // rejected as a conflict with our own change.
+      await get()
+        .refresh({silent: true})
+        .catch(() => undefined);
     },
 
     createCompany: async input => {
@@ -880,7 +1083,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         void get().refresh({silent: true});
         return created;
       } catch (err) {
-        keepDuplicate(err);
+        keepDuplicate(err, 'company');
         throw err;
       }
     },
@@ -897,7 +1100,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       } catch (err) {
         const current = conflictCopy<Company>(err);
         if (current) get().upsertCompany(current);
-        keepDuplicate(err);
+        keepDuplicate(err, 'company');
         throw err;
       }
     },
@@ -919,10 +1122,25 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       offerEpoch++;
       contactEpoch++;
       taskEpoch++;
+      resourceEpoch++;
+      noteEpoch++;
       // Mirror the server until the refresh brings the new versions: its
-      // offers are deleted, its people and tasks lose the company.
+      // offers are deleted, its people, tasks and resources lose the company
+      // (resources also an offer of it), notes about it or its offers lose
+      // the link.
       const id = company.id;
+      const goneOffers = new Set(
+        get()
+          .offers.filter(o => o.company.id === id)
+          .map(o => o.id),
+      );
       set({
+        notes: get().notes.map(n =>
+          (n.ref?.type === 'company' && n.ref.id === id) ||
+          (n.ref?.type === 'offer' && goneOffers.has(n.ref.id))
+            ? {...n, ref: null}
+            : n,
+        ),
         companies: get().companies.filter(c => c.id !== id),
         offers: get().offers.filter(o => o.company.id !== id),
         contacts: get().contacts.map(c =>
@@ -930,6 +1148,19 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         ),
         tasks: get().tasks.map(t =>
           t.company?.id === id ? {...t, company: null} : t,
+        ),
+        resources: get().resources.map(r =>
+          r.company?.id === id ||
+          (r.offerId !== null && goneOffers.has(r.offerId))
+            ? {
+                ...r,
+                company: r.company?.id === id ? null : r.company,
+                offerId:
+                  r.offerId !== null && goneOffers.has(r.offerId)
+                    ? null
+                    : r.offerId,
+              }
+            : r,
         ),
       });
       // Wait for the new versions: editing a person right after with the
@@ -988,8 +1219,10 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       contactEpoch++;
       companyEpoch++;
       taskEpoch++;
+      noteEpoch++;
       const id = contact.id;
       set({
+        notes: unlinkNotes(get().notes, 'contact', id),
         contacts: get().contacts.filter(c => c.id !== id),
         companies: get().companies.map(c =>
           c.id === contact.company?.id || c.mainContactId === id
@@ -1057,7 +1290,13 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       }
       offerEpoch++;
       companyEpoch++;
+      resourceEpoch++;
+      noteEpoch++;
       set({
+        notes: unlinkNotes(get().notes, 'offer', offer.id),
+        resources: get().resources.map(r =>
+          r.offerId === offer.id ? {...r, offerId: null} : r,
+        ),
         offers: get().offers.filter(o => o.id !== offer.id),
         companies: get().companies.map(c =>
           c.id === offer.company.id
@@ -1075,6 +1314,205 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       offerEpoch++;
       const next = upsertInto(get().offers, offer, sortOffers);
       if (next) set({offers: next, offersState: 'ready'});
+    },
+
+    // ---------------------------------------------------- inventories (M4)
+
+    createWarehouse: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      try {
+        const created = await authed(token =>
+          api.createWarehouse(token, {...input, organizationId: orgId}),
+        );
+        get().upsertWarehouse(created);
+        void get().refresh({silent: true});
+        return created;
+      } catch (err) {
+        keepDuplicate(err, 'warehouse');
+        throw err;
+      }
+    },
+
+    updateWarehouse: async (id, input) => {
+      try {
+        const updated = await authed(token =>
+          api.updateWarehouse(token, id, input),
+        );
+        get().upsertWarehouse(updated);
+        // Resources embed the warehouse name.
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        const current = conflictCopy<Warehouse>(err);
+        if (current) get().upsertWarehouse(current);
+        keepDuplicate(err, 'warehouse');
+        throw err;
+      }
+    },
+
+    deleteWarehouse: async warehouse => {
+      try {
+        await authed(token =>
+          api.deleteWarehouse(token, warehouse.id, warehouse.version),
+        );
+      } catch (err) {
+        const current = conflictCopy<Warehouse>(err);
+        if (current) {
+          get().upsertWarehouse(current);
+          throw err;
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      warehouseEpoch++;
+      resourceEpoch++;
+      noteEpoch++;
+      const id = warehouse.id;
+      // Its resources stay, without a warehouse; notes lose the link.
+      set({
+        warehouses: get().warehouses.filter(w => w.id !== id),
+        resources: get().resources.map(r =>
+          r.warehouse?.id === id ? {...r, warehouse: null} : r,
+        ),
+        notes: unlinkNotes(get().notes, 'warehouse', id),
+      });
+      await get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    },
+
+    upsertWarehouse: warehouse => {
+      warehouseEpoch++;
+      const next = upsertInto(get().warehouses, warehouse, sortWarehouses);
+      if (next) set({warehouses: next, warehousesState: 'ready'});
+    },
+
+    createResource: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const created = await authed(token =>
+        api.createResource(token, {...input, organizationId: orgId}),
+      );
+      get().upsertResource(created);
+      // A warehouse or company may have been created by name.
+      void get().refresh({silent: true});
+      return created;
+    },
+
+    updateResource: async (id, input) => {
+      try {
+        const updated = await authed(token =>
+          api.updateResource(token, id, input),
+        );
+        get().upsertResource(updated);
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        const current = conflictCopy<Resource>(err);
+        if (current) get().upsertResource(current);
+        throw err;
+      }
+    },
+
+    deleteResource: async resource => {
+      try {
+        await authed(token =>
+          api.deleteResource(token, resource.id, resource.version),
+        );
+      } catch (err) {
+        const current = conflictCopy<Resource>(err);
+        if (current) {
+          get().upsertResource(current);
+          throw err;
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      resourceEpoch++;
+      warehouseEpoch++;
+      taskEpoch++;
+      noteEpoch++;
+      const id = resource.id;
+      set({
+        resources: get().resources.filter(r => r.id !== id),
+        warehouses: get().warehouses.map(w =>
+          w.id === resource.warehouse?.id
+            ? {...w, resourceCount: Math.max(0, w.resourceCount - 1)}
+            : w,
+        ),
+        tasks: get().tasks.map(t =>
+          t.resourceIds.includes(id)
+            ? {...t, resourceIds: t.resourceIds.filter(x => x !== id)}
+            : t,
+        ),
+        notes: unlinkNotes(get().notes, 'resource', id),
+      });
+      // The tasks' new versions must be in before anyone edits them.
+      await get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    },
+
+    upsertResource: resource => {
+      resourceEpoch++;
+      const next = upsertInto(get().resources, resource, sortResources);
+      if (next) set({resources: next, resourcesState: 'ready'});
+    },
+
+    createNote: async input => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const created = await authed(token =>
+        api.createNote(token, {...input, organizationId: orgId}),
+      );
+      get().upsertNote(created);
+      void get().refresh({silent: true});
+      return created;
+    },
+
+    updateNote: async (id, input) => {
+      try {
+        const updated = await authed(token => api.updateNote(token, id, input));
+        get().upsertNote(updated);
+        void get().refresh({silent: true});
+        return updated;
+      } catch (err) {
+        const current = conflictCopy<Note>(err);
+        if (current) get().upsertNote(current);
+        throw err;
+      }
+    },
+
+    deleteNote: async note => {
+      try {
+        await authed(token => api.deleteNote(token, note.id, note.version));
+      } catch (err) {
+        const current = conflictCopy<Note>(err);
+        if (current) {
+          get().upsertNote(current);
+          throw err;
+        }
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      noteEpoch++;
+      set({notes: get().notes.filter(n => n.id !== note.id)});
+      void get()
+        .refresh({silent: true})
+        .catch(() => undefined);
+    },
+
+    upsertNote: note => {
+      noteEpoch++;
+      const next = upsertInto(get().notes, note, sortNotes);
+      if (next) set({notes: next, notesState: 'ready'});
+    },
+
+    loadHistory: async (entityType, entityId, limit = 50) => {
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      const res = await authed(token =>
+        api.history(token, orgId, entityType, entityId, limit),
+      );
+      return res.items;
     },
 
     // ---------------------------------------------------- recent searches
@@ -1147,6 +1585,9 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       companyEpoch++;
       contactEpoch++;
       offerEpoch++;
+      warehouseEpoch++;
+      resourceEpoch++;
+      noteEpoch++;
       await get().refresh({silent: true});
       return res?.removed ?? 0;
     },

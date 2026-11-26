@@ -9,13 +9,17 @@ import {
   pendingMigrations,
   readMigrations,
 } from '../src/db/migrate.ts';
-import {BUILT_IN_SERVICE_CATEGORIES} from '../../shared/logistics/rules.ts';
+import {
+  BUILT_IN_RESOURCE_CATEGORIES,
+  BUILT_IN_SERVICE_CATEGORIES,
+} from '../../shared/logistics/rules.ts';
 
 const ALL_MIGRATIONS = [
   '0001_init.sql',
   '0002_tasks.sql',
   '0003_demo_removed.sql',
   '0004_contacts_catalogue.sql',
+  '0005_inventories.sql',
 ];
 
 const tempDirs: string[] = [];
@@ -51,16 +55,20 @@ describe('migrations', () => {
       'contact_events',
       'contacts',
       'events',
+      'notes',
       'offers',
       'organization_members',
       'organizations',
       'recent_searches',
+      'resources',
       'schema_migrations',
       'sessions',
       'task_dependencies',
+      'task_resources',
       'tasks',
       'users',
       'venues',
+      'warehouses',
     ]);
 
     const second = await migrate(db);
@@ -283,6 +291,165 @@ describe('migrations', () => {
     ];
     for (const sql of bad) await expect(db.query(sql)).rejects.toThrow();
     await db.close();
+  });
+
+  it('0005 applies on top of a milestone-3 database with data, gives every organization the built-in resource categories and enforces the inventory rules', async () => {
+    const [m1, m2, m3, m4, m5] = readMigrations();
+    const dir = tempMigrations({
+      [m1!.file]: m1!.sql,
+      [m2!.file]: m2!.sql,
+      [m3!.file]: m3!.sql,
+      [m4!.file]: m4!.sql,
+    });
+    const db = await createPgliteDb();
+    expect((await migrate(db, {dir})).applied).toHaveLength(4);
+
+    const [user] = await db.query<{id: string}>(
+      `INSERT INTO users (display_name, role, password_hash)
+       VALUES ('Ana', 'member', 'x') RETURNING id`,
+    );
+    const u = user!.id;
+    const orgIds: string[] = [];
+    for (const name of ['Org A', 'Org B']) {
+      orgIds.push(
+        (
+          await db.query<{id: string}>(
+            'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
+            [name],
+          )
+        )[0]!.id,
+      );
+    }
+    const [orgA, orgB] = orgIds as [string, string];
+    // Milestone-3 data: a company with an offer, a task, an event, and in
+    // Org B a custom resource category that has a built-in's name.
+    const [company] = await db.query<{id: string}>(
+      `INSERT INTO companies (organization_id, name, created_by, updated_by)
+       VALUES ($1, 'Carpas Prueba', $2, $2) RETURNING id`,
+      [orgA, u],
+    );
+    const [offer] = await db.query<{id: string}>(
+      `INSERT INTO offers (organization_id, company_id, name, created_by, updated_by)
+       VALUES ($1, $2, 'Carpa 5 × 5', $3, $3) RETURNING id`,
+      [orgA, company!.id, u],
+    );
+    const [task] = await db.query<{id: string}>(
+      `INSERT INTO tasks (organization_id, title, heavy_load, created_by, updated_by)
+       VALUES ($1, 'Montaje Prueba', NULL, $2, $2) RETURNING id`,
+      [orgA, u],
+    );
+    const [event] = await db.query<{id: string}>(
+      `INSERT INTO events (organization_id, name, created_by, updated_by)
+       VALUES ($1, 'Evento Prueba', $2, $2) RETURNING id`,
+      [orgA, u],
+    );
+    await db.query(
+      `INSERT INTO categories (organization_id, scope, name, created_by)
+       VALUES ($1, 'resource', 'carpas', $2)`,
+      [orgB, u],
+    );
+
+    writeFileSync(join(dir, m5!.file), m5!.sql);
+    expect((await migrate(db, {dir})).applied).toEqual([
+      '0005_inventories.sql',
+    ]);
+
+    // The SQL copy of the built-in list matches the shared constant, in order.
+    const resourceCategories = (orgId: string) =>
+      db.query<{name: string; position: number | null; built_in: boolean}>(
+        `SELECT name, position, built_in FROM categories
+          WHERE organization_id = $1 AND scope = 'resource'
+          ORDER BY position NULLS LAST, name`,
+        [orgId],
+      );
+    const a = await resourceCategories(orgA);
+    expect(a.map(r => r.name)).toEqual([...BUILT_IN_RESOURCE_CATEGORIES]);
+    expect(a.map(r => r.position)).toEqual(
+      BUILT_IN_RESOURCE_CATEGORIES.map((_, i) => i + 1),
+    );
+    // Org B keeps its own «carpas»; the other built-ins arrive.
+    const b = await resourceCategories(orgB);
+    expect(b.filter(r => r.built_in).map(r => r.name)).toEqual(
+      BUILT_IN_RESOURCE_CATEGORIES.filter(n => n !== 'Carpas'),
+    );
+    expect(b.filter(r => !r.built_in).map(r => r.name)).toEqual(['carpas']);
+    // Existing rows are untouched.
+    const [t] = await db.query<{version: number; heavy_load: boolean | null}>(
+      'SELECT version, heavy_load FROM tasks',
+    );
+    expect(t).toEqual({version: 1, heavy_load: null});
+
+    // A valid inventory and its links.
+    const [warehouse] = await db.query<{id: string}>(
+      `INSERT INTO warehouses (organization_id, name, created_by, updated_by)
+       VALUES ($1, 'Nave Prueba', $2, $2) RETURNING id`,
+      [orgA, u],
+    );
+    const [contracted] = await db.query<{
+      id: string;
+      unit: string;
+      condition: string;
+      availability: string;
+      to_assess: boolean;
+      quantity: string | null;
+    }>(
+      `INSERT INTO resources (organization_id, name, ownership, company_id, offer_id,
+                              warehouse_id, created_by, updated_by)
+       VALUES ($1, 'Carpa Prueba', 'contracted', $2, $3, $4, $5, $5)
+       RETURNING id, unit, condition, availability, to_assess, quantity::text AS quantity`,
+      [orgA, company!.id, offer!.id, warehouse!.id, u],
+    );
+    // Defaults: «unidades», unknown condition and availability, not counted.
+    expect(contracted).toMatchObject({
+      unit: 'unidades',
+      condition: 'unknown',
+      availability: 'unknown',
+      to_assess: false,
+      quantity: null,
+    });
+    await db.query(
+      'INSERT INTO task_resources (task_id, resource_id) VALUES ($1, $2)',
+      [task!.id, contracted!.id],
+    );
+    await db.query(
+      `INSERT INTO notes (organization_id, kind, text, event_id, task_id, created_by, updated_by)
+       VALUES ($1, 'incident', 'Texto Prueba', $2, $3, $4, $4)`,
+      [orgA, event!.id, task!.id, u],
+    );
+
+    const bad = [
+      // Owned material never has a company or an offer.
+      `INSERT INTO resources (organization_id, name, company_id, created_by, updated_by)
+       VALUES ('${orgA}', 'x', '${company!.id}', '${u}', '${u}')`,
+      `UPDATE resources SET ownership = 'owned' WHERE id = '${contracted!.id}'`,
+      `INSERT INTO resources (organization_id, name, quantity, created_by, updated_by)
+       VALUES ('${orgA}', 'x', -1, '${u}', '${u}')`,
+      `INSERT INTO resources (organization_id, name, quantity, created_by, updated_by)
+       VALUES ('${orgA}', 'x', 1000000.01, '${u}', '${u}')`,
+      `INSERT INTO resources (organization_id, name, unit, created_by, updated_by)
+       VALUES ('${orgA}', 'x', ' ', '${u}', '${u}')`,
+      `INSERT INTO resources (organization_id, name, condition, created_by, updated_by)
+       VALUES ('${orgA}', 'x', 'broken', '${u}', '${u}')`,
+      `INSERT INTO warehouses (organization_id, name, created_by, updated_by)
+       VALUES ('${orgA}', 'NAVE PRUEBA', '${u}', '${u}')`,
+      // A note points at one record at most, has text and a known kind.
+      `INSERT INTO notes (organization_id, kind, text, task_id, company_id, created_by, updated_by)
+       VALUES ('${orgA}', 'note', 'x', '${task!.id}', '${company!.id}', '${u}', '${u}')`,
+      `INSERT INTO notes (organization_id, kind, text, created_by, updated_by)
+       VALUES ('${orgA}', 'note', '   ', '${u}', '${u}')`,
+      `INSERT INTO notes (organization_id, kind, text, created_by, updated_by)
+       VALUES ('${orgA}', 'gossip', 'x', '${u}', '${u}')`,
+      // Deleting what resources and notes point at without unlinking fails.
+      `DELETE FROM offers WHERE id = '${offer!.id}'`,
+      `DELETE FROM warehouses WHERE id = '${warehouse!.id}'`,
+      `DELETE FROM tasks WHERE id = '${task!.id}'`,
+    ];
+    for (const sql of bad) await expect(db.query(sql)).rejects.toThrow();
+    await db.close();
+  });
+
+  it('every migration file is LF only (checksums hash raw bytes)', () => {
+    for (const m of readMigrations()) expect(m.sql).not.toContain('\r');
   });
 
   it('uses only timestamptz for instants (no naive timestamps)', async () => {

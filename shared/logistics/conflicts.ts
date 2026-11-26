@@ -9,7 +9,13 @@
  * figure is the simulator's indicative review threshold and is only quoted
  * here, never computed.
  */
-import type {LogisticsEvent, Task, Uuid} from './contracts.ts';
+import type {LogisticsEvent, Resource, Task, Uuid} from './contracts.ts';
+import {formatQuantity, unitFor} from './inventory.ts';
+import {
+  DEFAULT_RESOURCE_UNIT,
+  RESOURCE_AVAILABILITY_LABEL,
+  RESOURCE_CONDITION_LABEL,
+} from './rules.ts';
 import {findOverlaps, type ScheduleItem} from './schedule.ts';
 import {occupiedDates, utcToLocal} from './time.ts';
 
@@ -19,7 +25,11 @@ export type WarningKind =
   | 'dependency_order'
   | 'heavy_load'
   | 'heavy_load_unknown'
-  | 'route_window';
+  | 'route_window'
+  /** The same inventory resource in two live tasks at the same time (M4). */
+  | 'resource_overlap'
+  /** A live task uses a resource recorded as damaged or under repair (M4). */
+  | 'resource_unavailable';
 
 /** `conflict`: two things cannot both happen as planned. `reminder`: check it. */
 export type WarningSeverity = 'conflict' | 'reminder';
@@ -51,7 +61,15 @@ export type PlanTask = Pick<
   | 'dependsOn'
   | 'heavyLoad'
 > &
-  Partial<Pick<Task, 'date' | 'endDate' | 'timezone'>>;
+  Partial<Pick<Task, 'date' | 'endDate' | 'timezone' | 'resourceIds'>>;
+/**
+ * What the warnings need from a resource. Quantity only decides whether two
+ * tasks can share it; weight, unit and dimensions never feed a load check.
+ */
+export type PlanResource = Pick<
+  Resource,
+  'id' | 'name' | 'quantity' | 'unit' | 'condition' | 'availability'
+>;
 export type PlanEvent = Pick<
   LogisticsEvent,
   'id' | 'name' | 'startsAt' | 'endsAt' | 'status'
@@ -81,6 +99,12 @@ export const SUBSOIL_THRESHOLD_NOTE =
 export const SUBSOIL_REMINDER = `Revisa el subsuelo en el simulador (análisis de rayos X). ${SUBSOIL_THRESHOLD_NOTE}`;
 export const ROUTES_REMINDER =
   'Comprueba en el simulador que no corta las rutas de emergencia A (acceso de vehículos), B (sanitarios a pie) y C (evacuación en camilla) ni el acceso a la Carpa Amarilla y a los servicios de accesibilidad.';
+/**
+ * Shown next to a resource's quantity, unit and dimensions. They describe
+ * what was observed; the subsoil question belongs to the simulator.
+ */
+export const RESOURCE_LOAD_NOTE =
+  'El peso, la cantidad y las medidas son datos de inventario: no calculan la carga sobre el suelo. Si algo pesado va a la vía pública, marca «Carga pesada» en su tarea y revisa el subsuelo en el simulador (análisis de rayos X).';
 const UNTIMED_PREFIX = 'Falta la hora, pero es el mismo día. ';
 
 const ms = (iso: string | null) => (iso ? Date.parse(iso) : NaN);
@@ -119,10 +143,81 @@ function toItems(
 export function planWarnings(
   tasks: PlanTask[],
   events: PlanEvent[] = [],
+  resources: PlanResource[] = [],
 ): PlanWarning[] {
   const live = tasks.filter(isLive);
   const byId = new Map(tasks.map(t => [t.id, t]));
   const out: PlanWarning[] = [];
+
+  // Same resource, same time. One item per (task, resource); a resource that
+  // is the only one of its kind cannot be in two places (conflict); with
+  // more than one, or not counted yet, the team checks there are enough.
+  const resourcesById = new Map(resources.map(r => [r.id, r]));
+  const perResource: ScheduleItem[] = live.flatMap(t =>
+    (t.resourceIds ?? [])
+      .filter(id => resourcesById.has(id))
+      .map(id => ({
+        id: t.id,
+        label: t.title,
+        startsAt: t.startsAt,
+        endsAt: t.endsAt,
+        lane: id,
+        dependsOn: [],
+      })),
+  );
+  for (const o of findOverlaps(perResource)) {
+    const a = byId.get(o.a)!;
+    const b = byId.get(o.b)!;
+    const r = resourcesById.get(o.lane)!;
+    // Only a count in units says «just one»: 1 kg or 1 m² may be shared.
+    const single = r.quantity === 1 && r.unit.trim() === DEFAULT_RESOURCE_UNIT;
+    const none = r.quantity === 0;
+    const stock =
+      r.quantity === null
+        ? 'Aún no consta cuántos hay.'
+        : `Constan ${formatQuantity(r.quantity)} ${unitFor(r.quantity, r.unit)}.`;
+    const overlap = `${quote(a)} y ${quote(b)} se solapan ${minutesLabel(o.minutes)}`;
+    out.push({
+      key: `resource:${o.lane}:${o.a}:${o.b}`,
+      kind: 'resource_overlap',
+      severity: single || none ? 'conflict' : 'reminder',
+      taskIds: [o.a, o.b],
+      minutes: o.minutes,
+      title:
+        single || none
+          ? `«${r.name}» está en dos tareas a la vez`
+          : `Dos tareas usan «${r.name}» a la vez`,
+      detail: single
+        ? `${overlap} y solo hay uno.`
+        : none
+          ? `${overlap} y en el inventario consta que no hay ninguno.`
+          : `${overlap}. ${stock} Comprueba que hay suficientes para las dos.`,
+    });
+  }
+
+  // A live task counting on something damaged or under repair.
+  for (const t of live) {
+    for (const id of t.resourceIds ?? []) {
+      const r = resourcesById.get(id);
+      if (!r) continue;
+      const why =
+        r.availability === 'maintenance'
+          ? RESOURCE_AVAILABILITY_LABEL.maintenance
+          : r.condition === 'damaged'
+            ? RESOURCE_CONDITION_LABEL.damaged
+            : null;
+      if (!why) continue;
+      out.push({
+        key: `resource-state:${id}:${t.id}`,
+        kind: 'resource_unavailable',
+        severity: 'reminder',
+        taskIds: [t.id],
+        minutes: null,
+        title: `«${r.name}»: ${why.toLowerCase()}`,
+        detail: `${quote(t)} cuenta con este recurso. Confirma que estará listo o busca otro.`,
+      });
+    }
+  }
 
   // Same venue, same time.
   for (const o of findOverlaps(toItems(live, t => t.venue?.id ?? null))) {

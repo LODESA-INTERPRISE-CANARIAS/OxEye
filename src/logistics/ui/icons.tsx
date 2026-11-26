@@ -57,7 +57,13 @@ export type IconName =
   | 'tag'
   | 'building'
   | 'offer'
-  | 'scale';
+  | 'scale'
+  | 'warehouse'
+  | 'note'
+  | 'decision'
+  | 'question'
+  | 'idea'
+  | 'history';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   today: (
@@ -329,6 +335,46 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M12 4v16M7 20h10M5 7h14" />
       <path d="m5 7-2.5 6a3 3 0 0 0 5 0Zm14 0-2.5 6a3 3 0 0 0 5 0Z" />
+    </>
+  ),
+  // A shed with a roller door: where material is kept.
+  warehouse: (
+    <>
+      <path d="M3 20.5V9.5L12 4l9 5.5v11" />
+      <path d="M6.5 20.5v-8h11v8M6.5 15h11M6.5 17.8h11" />
+    </>
+  ),
+  // A sheet with a folded corner.
+  note: (
+    <>
+      <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5V15l-5 5.5H6.5A1.5 1.5 0 0 1 5 19Z" />
+      <path d="M19 15h-3.5a1.5 1.5 0 0 0-1.5 1.5v4M8.5 8h7M8.5 11.5h5" />
+    </>
+  ),
+  // A signpost: a direction was chosen.
+  decision: (
+    <>
+      <path d="M12 21v-9M12 6V3" />
+      <path d="M5 6h12l2.5 3L17 12H5Z" />
+    </>
+  ),
+  question: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8h.01" />
+    </>
+  ),
+  idea: (
+    <>
+      <path d="M9 17.5h6M10 20.5h4" />
+      <path d="M12 3.5a5.5 5.5 0 0 0-3.2 10c.5.4.7 1 .7 1.6v.4h5v-.4c0-.6.3-1.2.8-1.6A5.5 5.5 0 0 0 12 3.5Z" />
+    </>
+  ),
+  // A clock with an arrow running back: what happened before.
+  history: (
+    <>
+      <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" />
+      <path d="M4 4v4.5h4.5M12 8v4.2l3 1.8" />
     </>
   ),
 };

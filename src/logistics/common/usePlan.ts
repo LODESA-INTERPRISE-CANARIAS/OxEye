@@ -1,7 +1,7 @@
 /**
  * The organization's plan as the screens need it: warnings computed once per
- * change of tasks or events (shared `planWarnings`), indexed by task and by
- * local day.
+ * change of tasks, events or resources (shared `planWarnings`), indexed by
+ * task and by local day.
  */
 import {
   planWarnings,
@@ -10,6 +10,7 @@ import {
 } from '../../../shared/logistics/conflicts.ts';
 import type {
   LogisticsEvent,
+  Resource,
   Task,
 } from '../../../shared/logistics/contracts.ts';
 import {buildDayIndex, type DayBucket} from '../lib/calendar';
@@ -23,8 +24,12 @@ export interface Plan {
 }
 
 /** Builds the plan; pure, exported for tests. */
-export function buildPlan(tasks: Task[], events: LogisticsEvent[]): Plan {
-  const warnings = planWarnings(tasks, events);
+export function buildPlan(
+  tasks: Task[],
+  events: LogisticsEvent[],
+  resources: Resource[] = [],
+): Plan {
+  const warnings = planWarnings(tasks, events, resources);
   return {
     warnings,
     byTask: warningsByTask(warnings),
@@ -35,17 +40,32 @@ export function buildPlan(tasks: Task[], events: LogisticsEvent[]): Plan {
 
 /**
  * One plan for the whole window, shared by every consumer: it is rebuilt only
- * when the task or event list changes identity (the store keeps identities
- * when a refresh brings nothing new), never once per component.
+ * when the task, event or resource list changes identity (the store keeps
+ * identities when a refresh brings nothing new), never once per component.
  */
-let cache: {tasks: Task[]; events: LogisticsEvent[]; plan: Plan} | null = null;
+let cache: {
+  tasks: Task[];
+  events: LogisticsEvent[];
+  resources: Resource[];
+  plan: Plan;
+} | null = null;
 
-function selectPlan(s: {tasks: Task[]; events: LogisticsEvent[]}): Plan {
-  if (!cache || cache.tasks !== s.tasks || cache.events !== s.events) {
+function selectPlan(s: {
+  tasks: Task[];
+  events: LogisticsEvent[];
+  resources: Resource[];
+}): Plan {
+  if (
+    !cache ||
+    cache.tasks !== s.tasks ||
+    cache.events !== s.events ||
+    cache.resources !== s.resources
+  ) {
     cache = {
       tasks: s.tasks,
       events: s.events,
-      plan: buildPlan(s.tasks, s.events),
+      resources: s.resources,
+      plan: buildPlan(s.tasks, s.events, s.resources),
     };
   }
   return cache.plan;

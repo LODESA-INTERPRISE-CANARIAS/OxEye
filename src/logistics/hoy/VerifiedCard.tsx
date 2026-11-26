@@ -1,6 +1,7 @@
 /**
  * «Información verificada»: share of the recorded information (events, tasks,
- * people, companies and offers) validated against its source, plus an
+ * people, companies, offers, warehouses and resources) validated against its
+ * source, plus an
  * actionable list of what is still missing.
  */
 import React, {useMemo} from 'react';
@@ -22,6 +23,8 @@ const NOUN: Record<PendingRow['kind'], string> = {
   contact: 'la persona',
   company: 'la empresa o entidad',
   offer: 'la oferta',
+  warehouse: 'el almacén',
+  resource: 'el recurso',
 };
 
 function rowIcon(row: PendingRow): IconName {
@@ -36,6 +39,10 @@ function rowIcon(row: PendingRow): IconName {
       return 'building';
     case 'offer':
       return 'offer';
+    case 'warehouse':
+      return 'warehouse';
+    case 'resource':
+      return 'inventory';
   }
 }
 
@@ -45,14 +52,36 @@ export const VerifiedCard: React.FC<{
   canWrite: boolean;
   onOpenEvent: (event: LogisticsEvent) => void;
 }> = ({events, tasks, canWrite, onOpenEvent}) => {
-  const {openTask, openContact, openCompany, openOffer} = useActions();
+  const {
+    openTask,
+    openContact,
+    openCompany,
+    openOffer,
+    openWarehouse,
+    openResource,
+  } = useActions();
   const contacts = useLogisticsStore(s => s.contacts);
   const companies = useLogisticsStore(s => s.companies);
   const offers = useLogisticsStore(s => s.offers);
+  const warehouses = useLogisticsStore(s => s.warehouses);
+  const resources = useLogisticsStore(s => s.resources);
   const summary = useMemo(
-    () => verificationSummary(events, tasks, {contacts, companies, offers}),
-    [events, tasks, contacts, companies, offers],
+    () =>
+      verificationSummary(events, tasks, {
+        contacts,
+        companies,
+        offers,
+        warehouses,
+        resources,
+      }),
+    [events, tasks, contacts, companies, offers, warehouses, resources],
   );
+  const directoryCount =
+    contacts.length +
+    companies.length +
+    offers.length +
+    warehouses.length +
+    resources.length;
   const pending = summary.total - summary.validated;
   const rows = summary.incomplete.slice(0, MAX_ROWS);
   const more = summary.incomplete.length - rows.length;
@@ -69,6 +98,10 @@ export const VerifiedCard: React.FC<{
         return openCompany(row.company);
       case 'offer':
         return openOffer(row.offer);
+      case 'warehouse':
+        return openWarehouse(row.warehouse);
+      case 'resource':
+        return openResource(row.resource);
     }
   };
 
@@ -79,10 +112,11 @@ export const VerifiedCard: React.FC<{
       className="lx-verified"
       actions={
         <HelpTip label="información verificada">
-          Porcentaje de lo registrado (eventos, tareas, personas, empresas y
-          ofertas) marcado como «Validado», es decir, comprobado con su fuente.
-          Lo demás es borrador o está por verificar. Es una ayuda para saber qué
-          falta, no una certificación.
+          Porcentaje de lo registrado (eventos, tareas, personas, empresas,
+          ofertas, almacenes y recursos) marcado como «Validado», es decir,
+          comprobado con su fuente. Las notas no cuentan. Lo demás es borrador o
+          está por verificar. Es una ayuda para saber qué falta, no una
+          certificación.
         </HelpTip>
       }
     >
@@ -98,9 +132,7 @@ export const VerifiedCard: React.FC<{
               value={summary.percent}
               caption="validado"
               label={`${summary.percent} % de ${
-                contacts.length + companies.length + offers.length
-                  ? 'los registros'
-                  : 'los eventos y tareas'
+                directoryCount ? 'los registros' : 'los eventos y tareas'
               } validados`}
             />
             <dl className="lx-verified__legend">

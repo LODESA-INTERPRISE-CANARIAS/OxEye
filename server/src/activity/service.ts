@@ -59,20 +59,41 @@ interface ActivityRow {
 export const ACTIVITY_DEFAULT_LIMIT = 20;
 export const ACTIVITY_MAX_LIMIT = 100;
 
-/** Newest first. */
+/** Record types whose history can be asked for (`entityType` of the log). */
+export const HISTORY_ENTITY_TYPES = [
+  'event',
+  'task',
+  'venue',
+  'company',
+  'contact',
+  'offer',
+  'category',
+  'warehouse',
+  'resource',
+  'note',
+] as const;
+
+export type HistoryEntityType = (typeof HISTORY_ENTITY_TYPES)[number];
+
+/**
+ * Newest first: the organization's recent activity, or the history of one
+ * record when `entity` is given.
+ */
 export async function listActivity(
   db: Queryable,
   organizationId: string,
   limit = ACTIVITY_DEFAULT_LIMIT,
+  entity: {type: HistoryEntityType; id: string} | null = null,
 ): Promise<ActivityEntry[]> {
   const rows = await db.query<ActivityRow>(
     `SELECT a.id, a.user_id, u.display_name, a.entity_type, a.entity_id,
             a.entity_label, a.action, a.changed_fields, a.at
        FROM activity_log a JOIN users u ON u.id = a.user_id
       WHERE a.organization_id = $1
+        AND ($3::text IS NULL OR (a.entity_type = $3 AND a.entity_id = $4::uuid))
       ORDER BY a.at DESC, a.seq DESC
       LIMIT $2`,
-    [organizationId, limit],
+    [organizationId, limit, entity?.type ?? null, entity?.id ?? null],
   );
   return rows.map(r => ({
     id: r.id,

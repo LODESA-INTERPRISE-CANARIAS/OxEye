@@ -9,11 +9,13 @@ import type {Task} from '../../../shared/logistics/contracts.ts';
 import {Icon, type IconName} from '../ui';
 
 export const WARNINGS_HELP =
-  'Avisos calculados a partir del plan: dos tareas en el mismo lugar a la vez, una empresa en dos sitios, una tarea que empieza antes de que termine aquella de la que depende, cargas pesadas que piden revisar el subsuelo y vehículos que se mueven durante el evento. Son una ayuda para revisar; no certifican nada.';
+  'Avisos calculados a partir del plan: dos tareas en el mismo lugar a la vez, una empresa en dos sitios, el mismo recurso en dos tareas a la vez, una tarea que cuenta con material dañado o en reparación, una tarea que empieza antes de que termine aquella de la que depende, cargas pesadas que piden revisar el subsuelo y vehículos que se mueven durante el evento. Son una ayuda para revisar; no certifican nada.';
 
 const ICON: Record<PlanWarning['kind'], IconName> = {
   venue_overlap: 'alert',
   company_overlap: 'alert',
+  resource_overlap: 'inventory',
+  resource_unavailable: 'alert',
   dependency_order: 'link',
   heavy_load: 'weight',
   heavy_load_unknown: 'weight',

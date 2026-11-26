@@ -8,9 +8,15 @@ import type {
   Contact,
   LocalDate,
   LogisticsEvent,
+  Note,
+  NoteKind,
+  NoteRefType,
   Offer,
+  Resource,
+  ResourceOwnership,
   Task,
   Uuid,
+  Warehouse,
 } from '../../../shared/logistics/contracts.ts';
 
 /** Values a new task starts with, from where it was added. */
@@ -20,6 +26,28 @@ export interface TaskPrefill {
   venueName?: string | null;
   companyName?: string | null;
   contactId?: Uuid | null;
+  /** Resources it uses (e.g. «Añadir tarea» from a resource). */
+  resourceIds?: Uuid[];
+}
+
+/** Values a new resource starts with (e.g. «Añadir recurso aquí»). */
+export interface ResourcePrefill {
+  name?: string;
+  ownership?: ResourceOwnership;
+  warehouseName?: string | null;
+  companyName?: string | null;
+  categoryId?: Uuid | null;
+}
+
+export interface WarehousePrefill {
+  name?: string;
+}
+
+/** A note starts linked to where it was added from. */
+export interface NotePrefill {
+  kind?: NoteKind;
+  eventId?: Uuid | null;
+  ref?: {type: NoteRefType; id: Uuid; label: string} | null;
 }
 
 /** Values a new person starts with (e.g. from a company or a search). */
@@ -59,6 +87,13 @@ export interface LogisticsActions {
   /** A small card with a venue's events and tasks. */
   openVenue: (venueId: Uuid) => void;
   openSearch: () => void;
+  // Milestone 4: inventories and notes.
+  openWarehouse: (warehouse: Warehouse) => void;
+  addWarehouse: (prefill?: WarehousePrefill) => void;
+  openResource: (resource: Resource) => void;
+  addResource: (prefill?: ResourcePrefill) => void;
+  openNote: (note: Note) => void;
+  addNote: (prefill?: NotePrefill) => void;
 }
 
 export const ActionsContext = createContext<LogisticsActions | null>(null);

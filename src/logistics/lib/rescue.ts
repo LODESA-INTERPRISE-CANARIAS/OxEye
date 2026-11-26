@@ -12,8 +12,11 @@ import type {
   Company,
   Contact,
   LogisticsEvent,
+  Note,
   Offer,
+  Resource,
   Task,
+  Warehouse,
 } from '../../../shared/logistics/contracts.ts';
 
 const RESCUE_KEY = 'oxeye.logistics.rescue.v1';
@@ -35,10 +38,22 @@ export type RescuedForm<V = Record<string, unknown>> =
   | (RescueBase<V> & {entity: 'task'; base: Task | null})
   | (RescueBase<V> & {entity: 'contact'; base: Contact | null})
   | (RescueBase<V> & {entity: 'company'; base: Company | null})
-  | (RescueBase<V> & {entity: 'offer'; base: Offer | null});
+  | (RescueBase<V> & {entity: 'offer'; base: Offer | null})
+  | (RescueBase<V> & {entity: 'warehouse'; base: Warehouse | null})
+  | (RescueBase<V> & {entity: 'resource'; base: Resource | null})
+  | (RescueBase<V> & {entity: 'note'; base: Note | null});
 
-type DirectoryEntity = 'contact' | 'company' | 'offer';
-const DIRECTORY: readonly string[] = ['contact', 'company', 'offer'];
+/** Records whose forms use `forms/useRecordForm.ts`. */
+type DirectoryEntity =
+  'contact' | 'company' | 'offer' | 'warehouse' | 'resource' | 'note';
+const DIRECTORY: readonly string[] = [
+  'contact',
+  'company',
+  'offer',
+  'warehouse',
+  'resource',
+  'note',
+];
 
 export function saveRescue(rescue: RescuedForm<unknown>): void {
   try {

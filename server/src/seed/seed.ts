@@ -1,7 +1,8 @@
 /**
  * Pilot seed: the organization with its built-in categories, the five pilot
  * users and one fictitious demo event with its demo tasks, companies,
- * contacts and offers. Idempotent: running it again creates only what is missing and keeps
+ * contacts, offers, warehouse, resources and notes. Idempotent: running it
+ * again creates only what is missing and keeps
  * existing passwords unless `resetPasswords` is set. Passwords are generated
  * here and returned once; they are never stored in clear or committed.
  */
@@ -12,15 +13,24 @@ import {generatePassword, hashPassword} from '../auth/password.ts';
 import {deleteUserSessions} from '../auth/sessions.ts';
 import {ensureBuiltInCategories} from '../categories/service.ts';
 import {findOrCreateCompany} from '../companies/service.ts';
+import {labelOf} from '../notes/refs.ts';
+import {findOrCreateByName} from '../records/find-or-create.ts';
 import {lockCatalogue, lockGraph} from '../records/locks.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
-import {BUILT_IN_SERVICE_CATEGORIES} from '../../../shared/logistics/rules.ts';
+import {
+  BUILT_IN_RESOURCE_CATEGORIES,
+  BUILT_IN_SERVICE_CATEGORIES,
+} from '../../../shared/logistics/rules.ts';
 import {slotToInstants} from '../../../shared/logistics/time.ts';
 import type {
   CompanyKind,
   DataSource,
+  NoteKind,
   Organization,
   PriceUnit,
+  ResourceAvailability,
+  ResourceCondition,
+  ResourceOwnership,
   Role,
   TaskKind,
   TaskStatus,
@@ -328,6 +338,135 @@ export const DEMO_OFFERS: DemoOffer[] = [
   },
 ];
 
+/** Fictitious warehouse of the demo (milestone 4): no real address. */
+export const DEMO_WAREHOUSE = {
+  name: 'Almacén Demo',
+  address: 'Calle Ficticia Demo, 1 (dirección de demostración)',
+  notes: 'Almacén ficticio de demostración.',
+};
+
+export interface DemoResource {
+  name: string;
+  ownership: ResourceOwnership;
+  /** Built-in resource category, by name. */
+  category: (typeof BUILT_IN_RESOURCE_CATEGORIES)[number];
+  /** In the demo warehouse (owned material). */
+  inWarehouse: boolean;
+  /** Contracted only: the demo supplier that provides it. */
+  companyName: string | null;
+  quantity: number | null;
+  unit: string;
+  dimensions: string | null;
+  condition: ResourceCondition;
+  availability: ResourceAvailability;
+  location: string | null;
+  toAssess: boolean;
+  /** Titles of the demo tasks that use it. */
+  taskTitles: string[];
+}
+
+/**
+ * Demo inventory (milestone 4): owned material in the demo warehouse, one item
+ * still to be assessed, a single van used by two demo tasks at the same time
+ * (so the plan shows a resource conflict) and a service contracted from the
+ * demo supplier. Descriptive figures only: no «kg» unit, nothing that could
+ * read as a load or answer a heavy-load question.
+ */
+export const DEMO_RESOURCES: DemoResource[] = [
+  {
+    name: 'Carpa 3×6 Demo',
+    ownership: 'owned',
+    category: 'Carpas',
+    inWarehouse: true,
+    companyName: null,
+    quantity: 4,
+    unit: 'unidades',
+    dimensions: '3 × 6 m',
+    condition: 'good',
+    availability: 'available',
+    location: 'Nave Demo, estantería 1',
+    toAssess: false,
+    taskTitles: [],
+  },
+  {
+    name: 'Vallas Demo',
+    ownership: 'owned',
+    category: 'Vallas',
+    inWarehouse: true,
+    companyName: null,
+    quantity: 200,
+    unit: 'unidades',
+    dimensions: null,
+    condition: 'unknown',
+    availability: 'unknown',
+    location: null,
+    toAssess: true,
+    taskTitles: [],
+  },
+  {
+    // The two tasks overlap (10:00–10:45 inside 09:00–12:00) and there is
+    // only one van: the plan shows a resource conflict.
+    name: 'Furgoneta Demo',
+    ownership: 'owned',
+    category: 'Vehículos',
+    inWarehouse: true,
+    companyName: null,
+    quantity: 1,
+    unit: 'unidades',
+    dimensions: null,
+    condition: 'good',
+    availability: 'available',
+    location: null,
+    toAssess: false,
+    taskTitles: ['Traslado del generador', 'Montaje del escenario'],
+  },
+  {
+    name: 'Aseos portátiles Demo',
+    ownership: 'contracted',
+    category: 'Otros materiales',
+    inWarehouse: false,
+    companyName: DEMO_COMPANY,
+    quantity: 2,
+    unit: 'unidades',
+    dimensions: null,
+    condition: 'unknown',
+    availability: 'unknown',
+    location: null,
+    toAssess: false,
+    taskTitles: [],
+  },
+];
+
+export interface DemoNote {
+  kind: NoteKind;
+  text: string;
+  /** Title of the demo task it points at; null = the demo event only. */
+  taskTitle: string | null;
+  resolved: boolean;
+}
+
+/** One incident, one decision and one open question; fictitious text only. */
+export const DEMO_NOTES: DemoNote[] = [
+  {
+    kind: 'incident',
+    text: 'Dato ficticio. Faltan diez vallas en la entrega; el proveedor las trae mañana a primera hora.',
+    taskTitle: 'Entrega de vallas',
+    resolved: false,
+  },
+  {
+    kind: 'decision',
+    text: 'Dato ficticio. Se montan las carpas antes de la prueba de sonido.',
+    taskTitle: null,
+    resolved: false,
+  },
+  {
+    kind: 'open_question',
+    text: 'Dato ficticio. ¿Hace falta una segunda toma eléctrica para el escenario?',
+    taskTitle: 'Montaje del escenario',
+    resolved: false,
+  },
+];
+
 export interface SeededUser {
   displayName: string;
   role: Role;
@@ -346,6 +485,9 @@ export interface SeedResult {
   /** Demo contacts and offers created in this run (0 when they already existed). */
   demoContactsCreated: number;
   demoOffersCreated: number;
+  /** Demo resources and notes created in this run (0 when they already existed). */
+  demoResourcesCreated: number;
+  demoNotesCreated: number;
   /**
    * When the organization removed its demo data (ISO instant); the seed then
    * leaves the demo alone. Null when the demo was never removed.
@@ -488,6 +630,8 @@ export async function seed(
         demoTasksCreated: 0,
         demoContactsCreated: 0,
         demoOffersCreated: 0,
+        demoResourcesCreated: 0,
+        demoNotesCreated: 0,
         demoRemovedAt: toIso(demoRemovedAt),
       };
     }
@@ -602,6 +746,32 @@ export async function seed(
       });
     }
 
+    // Added in milestone 4, in the same way: once, while the demo event is
+    // there, also on a database seeded in milestone 3.
+    const hasDemoInventory = await tx.query(
+      `SELECT 1 FROM warehouses WHERE organization_id = $1 AND is_demo
+       UNION ALL
+       SELECT 1 FROM resources WHERE organization_id = $1 AND is_demo
+       UNION ALL
+       SELECT 1 FROM notes WHERE organization_id = $1 AND is_demo
+       UNION ALL
+       SELECT 1 FROM activity_log
+        WHERE organization_id = $1
+          AND entity_type IN ('warehouse', 'resource', 'note') AND is_demo
+       LIMIT 1`,
+      [org.id],
+    );
+    let inventory = {resources: 0, notes: 0};
+    if (demoEventId && hasDemoInventory.length === 0) {
+      inventory = await seedDemoInventory(tx, {
+        organization: org,
+        eventId: demoEventId,
+        actorId: systemId,
+        now,
+        tasksJustCreated: demoTasksCreated > 0,
+      });
+    }
+
     return {
       organization: org,
       organizationCreated,
@@ -610,9 +780,194 @@ export async function seed(
       demoTasksCreated,
       demoContactsCreated: catalogue.contacts,
       demoOffersCreated: catalogue.offers,
+      demoResourcesCreated: inventory.resources,
+      demoNotesCreated: inventory.notes,
       demoRemovedAt: null,
     };
   });
+}
+
+/**
+ * Creates the demo warehouse, resources and notes, each with its activity
+ * row, and links the demo van to two overlapping demo tasks. A demo task that
+ * existed before this run gets a new version and an activity entry; a demo
+ * task deleted by the team is simply skipped. A company or warehouse with a
+ * demo name that is now real is used but left untouched.
+ */
+async function seedDemoInventory(
+  tx: Queryable,
+  args: {
+    organization: Organization;
+    eventId: string;
+    actorId: string;
+    now: Date;
+    /** The demo tasks were created in this run (no version bump needed). */
+    tasksJustCreated: boolean;
+  },
+): Promise<{resources: number; notes: number}> {
+  const {organization: org, actorId, now} = args;
+  const at = now.toISOString();
+  const log = (
+    entityType: string,
+    entityId: string,
+    entityLabel: string,
+    action: 'create' | 'update',
+    changedFields?: string[],
+  ) =>
+    appendActivity(tx, {
+      organizationId: org.id,
+      userId: actorId,
+      entityType,
+      entityId,
+      entityLabel,
+      action,
+      changedFields,
+      at: now,
+      isDemo: true,
+    });
+
+  const categoryId = new Map(
+    (
+      await tx.query<{id: string; name: string}>(
+        `SELECT id, name FROM categories
+          WHERE organization_id = $1 AND scope = 'resource' AND built_in`,
+        [org.id],
+      )
+    ).map(c => [c.name, c.id]),
+  );
+  const taskId = new Map(
+    (
+      await tx.query<{id: string; title: string}>(
+        `SELECT DISTINCT ON (title) id, title FROM tasks
+          WHERE organization_id = $1 AND is_demo
+          ORDER BY title, created_at, id`,
+        [org.id],
+      )
+    ).map(t => [t.title, t.id]),
+  );
+
+  // Find-or-create logs the creation; it reuses a warehouse of that name.
+  const warehouse = await findOrCreateByName(tx, 'warehouses', {
+    organizationId: org.id,
+    name: DEMO_WAREHOUSE.name,
+    actorId,
+    now,
+    isDemo: true,
+  });
+  if (warehouse.isDemo) {
+    await tx.query(
+      `UPDATE warehouses SET address = $2, notes = $3
+        WHERE id = $1 AND address IS NULL AND notes IS NULL`,
+      [warehouse.id, DEMO_WAREHOUSE.address, DEMO_WAREHOUSE.notes],
+    );
+  }
+
+  const linkedTasks = new Set<string>();
+  for (const r of DEMO_RESOURCES) {
+    const company = r.companyName
+      ? await findOrCreateCompany(tx, {
+          organizationId: org.id,
+          name: r.companyName,
+          actorId,
+          now,
+          isDemo: true,
+        })
+      : null;
+    const id = (
+      (
+        await tx.query<{id: string}>(
+          `INSERT INTO resources
+             (organization_id, name, ownership, category_id, warehouse_id,
+              company_id, quantity, unit, dimensions, condition, availability,
+              location, to_assess, notes, verification, is_demo,
+              created_by, created_at, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, $9, $10, $11, $12,
+                   $13, $14, 'draft', true, $15, $16::timestamptz, $15,
+                   $16::timestamptz)
+           RETURNING id`,
+          [
+            org.id,
+            r.name,
+            r.ownership,
+            categoryId.get(r.category) ?? null,
+            r.inWarehouse ? warehouse.id : null,
+            company?.id ?? null,
+            r.quantity,
+            r.unit,
+            r.dimensions,
+            r.condition,
+            r.availability,
+            r.location,
+            r.toAssess,
+            'Recurso ficticio de demostración.',
+            actorId,
+            at,
+          ],
+        )
+      )[0] as {id: string}
+    ).id;
+    await log('resource', id, r.name, 'create');
+    for (const title of r.taskTitles) {
+      const task = taskId.get(title);
+      if (!task) continue;
+      await tx.query(
+        'INSERT INTO task_resources (task_id, resource_id) VALUES ($1, $2)',
+        [task, id],
+      );
+      linkedTasks.add(task);
+    }
+  }
+  // Demo tasks that existed before this run changed: new version, logged.
+  if (!args.tasksJustCreated) {
+    for (const [title, id] of [...taskId].sort(([, a], [, b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    )) {
+      if (!linkedTasks.has(id)) continue;
+      await tx.query(
+        `UPDATE tasks
+            SET version = version + 1, updated_by = $2, updated_at = $3::timestamptz
+          WHERE id = $1`,
+        [id, actorId, at],
+      );
+      await log('task', id, title, 'update', ['resourceIds']);
+    }
+  }
+
+  const eventName =
+    (
+      await tx.query<{name: string}>('SELECT name FROM events WHERE id = $1', [
+        args.eventId,
+      ])
+    )[0]?.name ?? null;
+  for (const n of DEMO_NOTES) {
+    const task = n.taskTitle ? (taskId.get(n.taskTitle) ?? null) : null;
+    const id = (
+      (
+        await tx.query<{id: string}>(
+          `INSERT INTO notes
+             (organization_id, kind, text, event_id, task_id, resolved,
+              verification, is_demo, created_by, created_at, updated_by,
+              updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'draft', true, $7, $8::timestamptz,
+                   $7, $8::timestamptz)
+           RETURNING id`,
+          [org.id, n.kind, n.text, args.eventId, task, n.resolved, actorId, at],
+        )
+      )[0] as {id: string}
+    ).id;
+    // Labelled by kind and what it points at, never by its text.
+    await log(
+      'note',
+      id,
+      labelOf({
+        kind: n.kind,
+        note_event_name: eventName,
+        note_ref_label: task ? n.taskTitle : null,
+      }),
+      'create',
+    );
+  }
+  return {resources: DEMO_RESOURCES.length, notes: DEMO_NOTES.length};
 }
 
 /**

@@ -1,7 +1,10 @@
 import {beforeAll, describe, expect, it} from 'vitest';
 import {createHarness, json} from './helpers.ts';
 import type {Harness} from './helpers.ts';
-import {BUILT_IN_SERVICE_CATEGORIES} from '../../shared/logistics/rules.ts';
+import {
+  BUILT_IN_RESOURCE_CATEGORIES,
+  BUILT_IN_SERVICE_CATEGORIES,
+} from '../../shared/logistics/rules.ts';
 import type {
   ActivityEntry,
   ApiErrorBody,
@@ -114,13 +117,20 @@ describe('categories', () => {
     const builtIns = all.slice(0, BUILT_IN_SERVICE_CATEGORIES.length);
     expect(builtIns.map(c => c.name)).toEqual([...BUILT_IN_SERVICE_CATEGORIES]);
     expect(builtIns.every(c => c.builtIn && c.scope === 'service')).toBe(true);
-    expect(
-      all.slice(BUILT_IN_SERVICE_CATEGORIES.length).map(c => [c.name, c.scope]),
-    ).toEqual([
+    expect(all.filter(c => !c.builtIn).map(c => [c.name, c.scope])).toEqual([
       ['agua', 'service'],
       ['Zumos', 'service'],
       ['Mobiliario', 'resource'],
     ]);
+    // Order: service built-ins, custom service, resource built-ins (M4),
+    // custom resource.
+    const resourceBuiltIns = all.filter(
+      c => c.builtIn && c.scope === 'resource',
+    );
+    expect(resourceBuiltIns.map(c => c.name)).toEqual([
+      ...BUILT_IN_RESOURCE_CATEGORIES,
+    ]);
+    expect(all.map(c => c.name).slice(-1)).toEqual(['Mobiliario']);
     expect(all[0]).toEqual({
       id: expect.any(String),
       organizationId: h.org.id,

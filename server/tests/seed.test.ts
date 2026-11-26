@@ -5,12 +5,17 @@ import {describe, expect, it} from 'vitest';
 import {createApp} from '../src/app.ts';
 import {migrate, readMigrations} from '../src/db/migrate.ts';
 import {createPgliteDb} from '../src/db/pglite.ts';
-import {BUILT_IN_SERVICE_CATEGORIES} from '../../shared/logistics/rules.ts';
+import {
+  BUILT_IN_RESOURCE_CATEGORIES,
+  BUILT_IN_SERVICE_CATEGORIES,
+} from '../../shared/logistics/rules.ts';
 import {
   DEMO_COMPANIES,
   DEMO_CONTACTS,
   DEMO_EVENT,
+  DEMO_NOTES,
   DEMO_OFFERS,
+  DEMO_RESOURCES,
   DEMO_TASKS,
   PILOT_ORGANIZATION,
   PILOT_USERS,
@@ -34,13 +39,17 @@ async function demoCounts(db: Queryable) {
     tasks: number;
     activity: number;
     catalogue: number;
+    inventory: number;
   }>(
     `SELECT (SELECT count(*)::int FROM events WHERE is_demo) AS events,
             (SELECT count(*)::int FROM tasks WHERE is_demo) AS tasks,
             (SELECT count(*)::int FROM activity_log WHERE is_demo) AS activity,
             (SELECT count(*)::int FROM contacts WHERE is_demo)
               + (SELECT count(*)::int FROM offers WHERE is_demo)
-              + (SELECT count(*)::int FROM companies WHERE is_demo) AS catalogue`,
+              + (SELECT count(*)::int FROM companies WHERE is_demo) AS catalogue,
+            (SELECT count(*)::int FROM warehouses WHERE is_demo)
+              + (SELECT count(*)::int FROM resources WHERE is_demo)
+              + (SELECT count(*)::int FROM notes WHERE is_demo) AS inventory`,
   );
   return rows[0];
 }
@@ -88,6 +97,26 @@ describe('seed', () => {
     expect(first.demoContactsCreated).toBe(DEMO_CONTACTS.length);
     expect(first.demoOffersCreated).toBe(DEMO_OFFERS.length);
     expect(second.demoContactsCreated + second.demoOffersCreated).toBe(0);
+    expect(first.demoResourcesCreated).toBe(DEMO_RESOURCES.length);
+    expect(first.demoNotesCreated).toBe(DEMO_NOTES.length);
+    expect(second.demoResourcesCreated + second.demoNotesCreated).toBe(0);
+    const [inventory] = await db.query<{
+      warehouses: number;
+      resources: number;
+      notes: number;
+      links: number;
+    }>(
+      `SELECT (SELECT count(*)::int FROM warehouses) AS warehouses,
+              (SELECT count(*)::int FROM resources) AS resources,
+              (SELECT count(*)::int FROM notes) AS notes,
+              (SELECT count(*)::int FROM task_resources) AS links`,
+    );
+    expect(inventory).toEqual({
+      warehouses: 1,
+      resources: DEMO_RESOURCES.length,
+      notes: DEMO_NOTES.length,
+      links: 2,
+    });
 
     const counts = await db.query<{
       orgs: number;
@@ -199,6 +228,7 @@ describe('seed', () => {
       tasks: 0,
       activity: 0,
       catalogue: 0,
+      inventory: 0,
     });
     await h.db.close();
   });
@@ -219,6 +249,7 @@ describe('seed', () => {
       tasks: 0,
       activity: 0,
       catalogue: 0,
+      inventory: 0,
     });
 
     // A second removal keeps the first date.
@@ -296,13 +327,15 @@ describe('seed', () => {
 
     expect((await migrate(db)).applied).toEqual([
       '0004_contacts_catalogue.sql',
+      '0005_inventories.sql',
     ]);
     const first = await seed(db, {passwordFor});
     expect(first.demoTasksCreated).toBe(0);
     expect(first.demoContactsCreated).toBe(DEMO_CONTACTS.length);
     expect(first.demoOffersCreated).toBe(DEMO_OFFERS.length);
 
-    // The existing demo company and task changed: new version, logged.
+    // The existing demo company and task changed: new version, logged. The
+    // task changed twice: its contact (M3) and the demo van it uses (M4).
     const [co] = await db.query<{version: number; main: string | null}>(
       'SELECT version, main_contact_id AS main FROM companies WHERE id = $1',
       [company!.id],
@@ -318,7 +351,8 @@ describe('seed', () => {
          FROM tasks t JOIN contacts k ON k.id = t.contact_id WHERE t.id = $1`,
       [stage!.id],
     );
-    expect(task).toEqual({version: 2, contact: 'Ana Demo', heavy_load: true});
+    // Linking a resource never answers the heavy-load question.
+    expect(task).toEqual({version: 3, contact: 'Ana Demo', heavy_load: true});
     const log = await db.query<{type: string; fields: string[]}>(
       `SELECT entity_type AS type, changed_fields AS fields FROM activity_log
         WHERE action = 'update' ORDER BY seq`,
@@ -326,6 +360,7 @@ describe('seed', () => {
     expect(log).toEqual([
       {type: 'task', fields: ['contact']},
       {type: 'company', fields: ['categoryIds', 'mainContactId']},
+      {type: 'task', fields: ['resourceIds']},
     ]);
 
     const again = await seed(db, {passwordFor});
@@ -341,15 +376,142 @@ describe('seed', () => {
     await db.close();
   });
 
+  it('adds the demo inventory and notes, once, to a database seeded in milestone 3', async () => {
+    // Milestone-3 state: 0001–0004 applied; the demo event, its tasks, the
+    // demo company and a demo person, as db:seed left them.
+    const dir = mkdtempSync(join(tmpdir(), 'oxeye-m3-'));
+    for (const m of readMigrations().slice(0, 4)) {
+      writeFileSync(join(dir, m.file), m.sql);
+    }
+    const db = await createPgliteDb();
+    expect((await migrate(db, {dir})).applied).toHaveLength(4);
+    rmSync(dir, {recursive: true, force: true});
+    const [org] = await db.query<{id: string}>(
+      'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
+      [PILOT_ORGANIZATION.name],
+    );
+    const [system] = await db.query<{id: string}>(
+      `INSERT INTO users (display_name, role, password_hash, is_active)
+       VALUES ('Sistema', 'guest', NULL, false) RETURNING id`,
+    );
+    const [event] = await db.query<{id: string}>(
+      `INSERT INTO events (organization_id, name, local_date, is_demo, created_by, updated_by)
+       VALUES ($1, $2, '2026-12-02', true, $3, $3) RETURNING id`,
+      [org!.id, DEMO_EVENT.name, system!.id],
+    );
+    const [company] = await db.query<{id: string}>(
+      `INSERT INTO companies (organization_id, name, is_demo, created_by, updated_by)
+       VALUES ($1, 'Escenarios Demo', true, $2, $2) RETURNING id`,
+      [org!.id, system!.id],
+    );
+    for (const t of DEMO_TASKS) {
+      await db.query(
+        `INSERT INTO tasks (organization_id, event_id, title, heavy_load, is_demo,
+                            created_by, updated_by)
+         VALUES ($1, $2, $3, $4, true, $5, $5)`,
+        [org!.id, event!.id, t.title, t.heavyLoad, system!.id],
+      );
+    }
+    await db.query(
+      `INSERT INTO contacts (organization_id, company_id, name, is_demo, created_by, updated_by)
+       VALUES ($1, $2, 'Ana Demo', true, $3, $3)`,
+      [org!.id, company!.id, system!.id],
+    );
+
+    expect((await migrate(db)).applied).toEqual(['0005_inventories.sql']);
+    const first = await seed(db, {passwordFor});
+    expect(first.demoTasksCreated).toBe(0);
+    expect(first.demoContactsCreated + first.demoOffersCreated).toBe(0);
+    expect(first.demoResourcesCreated).toBe(DEMO_RESOURCES.length);
+    expect(first.demoNotesCreated).toBe(DEMO_NOTES.length);
+
+    // The two tasks the van serves changed: new version, logged. No heavy-load
+    // answer changed, and no resource carries a weight.
+    const tasks = await db.query<{
+      title: string;
+      version: number;
+      heavy_load: boolean | null;
+      resources: number;
+    }>(
+      `SELECT t.title, t.version, t.heavy_load,
+              (SELECT count(*)::int FROM task_resources tr WHERE tr.task_id = t.id) AS resources
+         FROM tasks t ORDER BY t.title`,
+    );
+    for (const t of tasks) {
+      const linked = [
+        'Montaje del escenario',
+        'Traslado del generador',
+      ].includes(t.title);
+      expect(t, t.title).toEqual({
+        title: t.title,
+        version: linked ? 2 : 1,
+        heavy_load: DEMO_TASKS.find(d => d.title === t.title)!.heavyLoad,
+        resources: linked ? 1 : 0,
+      });
+    }
+    const log = await db.query<{type: string; label: string; fields: string[]}>(
+      `SELECT entity_type AS type, entity_label AS label, changed_fields AS fields
+         FROM activity_log WHERE action = 'update' ORDER BY seq`,
+    );
+    expect(log.map(l => [l.type, l.fields])).toEqual([
+      ['task', ['resourceIds']],
+      ['task', ['resourceIds']],
+    ]);
+    // Notes are logged by kind and what they point at, never by their text.
+    const noteLabels = await db.query<{label: string}>(
+      `SELECT entity_label AS label FROM activity_log
+        WHERE entity_type = 'note' ORDER BY seq`,
+    );
+    expect(noteLabels.map(n => n.label)).toEqual([
+      'Incidencia · Entrega de vallas',
+      `Decisión · ${DEMO_EVENT.name}`,
+      'Pregunta abierta · Montaje del escenario',
+    ]);
+    const units = await db.query<{unit: string}>(
+      'SELECT DISTINCT unit FROM resources',
+    );
+    expect(units.map(u => u.unit)).toEqual(['unidades']);
+    // The contracted resource uses the existing demo supplier, not a copy.
+    const [{n: companies} = {n: 0}] = await db.query<{n: number}>(
+      'SELECT count(*)::int AS n FROM companies',
+    );
+    expect(companies).toBe(1);
+
+    const again = await seed(db, {passwordFor});
+    expect(again.demoResourcesCreated + again.demoNotesCreated).toBe(0);
+    const [counts] = await db.query<{
+      warehouses: number;
+      resources: number;
+      notes: number;
+    }>(
+      `SELECT (SELECT count(*)::int FROM warehouses) AS warehouses,
+              (SELECT count(*)::int FROM resources) AS resources,
+              (SELECT count(*)::int FROM notes) AS notes`,
+    );
+    expect(counts).toEqual({
+      warehouses: 1,
+      resources: DEMO_RESOURCES.length,
+      notes: DEMO_NOTES.length,
+    });
+    await db.close();
+  });
+
   it('gives a new organization the built-in categories and never duplicates them', async () => {
     const db = await createPgliteDb();
     await migrate(db);
     await seed(db, {passwordFor});
     await seed(db, {passwordFor});
-    const rows = await db.query<{name: string}>(
-      'SELECT name FROM categories WHERE built_in ORDER BY position',
-    );
-    expect(rows.map(r => r.name)).toEqual([...BUILT_IN_SERVICE_CATEGORIES]);
+    const builtIns = async (scope: string) =>
+      (
+        await db.query<{name: string}>(
+          'SELECT name FROM categories WHERE built_in AND scope = $1 ORDER BY position',
+          [scope],
+        )
+      ).map(r => r.name);
+    expect(await builtIns('service')).toEqual([...BUILT_IN_SERVICE_CATEGORIES]);
+    expect(await builtIns('resource')).toEqual([
+      ...BUILT_IN_RESOURCE_CATEGORIES,
+    ]);
     await db.close();
   });
 

@@ -50,7 +50,7 @@ export function formatDial(info: PhoneInfo): string {
  * two numbers) is the phone's own warning; a short service number has none.
  */
 function whatsappBlock(info: PhoneInfo): {short: string; long: string} {
-  if (!info.international && info.warning?.includes('prefijo')) {
+  if (info.reason === 'unknown_country') {
     return {
       short: 'Falta el prefijo',
       long: 'necesita el número con el prefijo del país (por ejemplo +34).',

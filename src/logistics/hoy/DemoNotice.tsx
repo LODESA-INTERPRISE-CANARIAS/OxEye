@@ -14,6 +14,9 @@ export interface DemoCounts {
   contacts: number;
   companies: number;
   offers: number;
+  warehouses: number;
+  resources: number;
+  notes: number;
 }
 
 const KIND_WORDS: Record<keyof DemoCounts, [string, string]> = {
@@ -22,6 +25,9 @@ const KIND_WORDS: Record<keyof DemoCounts, [string, string]> = {
   contacts: ['persona', 'personas'],
   companies: ['empresa o entidad', 'empresas o entidades'],
   offers: ['oferta', 'ofertas'],
+  warehouses: ['almacén', 'almacenes'],
+  resources: ['recurso', 'recursos'],
+  notes: ['nota', 'notas'],
 };
 
 /** «2 eventos, 3 personas y 5 ofertas». */

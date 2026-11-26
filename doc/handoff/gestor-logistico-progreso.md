@@ -1,4 +1,4 @@
-# Handoff: gestor-logistico (2026-11-26, after milestone 3)
+# Handoff: gestor-logistico (2026-11-26, after milestone 4)
 
 For a new session. Read it with:
 - the plan `doc/specs/2026-11-25-gestor-logistico.md` (frozen; approved for autonomous work through milestones 1–6);
@@ -13,7 +13,7 @@ This file is the map; the log is the detail.
 | 1 Base, acceso y Hoy | Done | `82c1d04`, plus `7222c7d` (local DB without Docker) |
 | 2 Tareas + Calendario | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · tareas y Calendario` |
 | 3 Contactos + Catálogo | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · contactos y catálogo` |
-| 4 Inventarios + Captura rápida | To do | |
+| 4 Inventarios + Captura rápida | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · inventarios, notas y captura rápida` |
 | 5 Seguimiento + Órdenes de trabajo | To do | |
 | 6 Sin cobertura + Cierre de jornada | To do | |
 
@@ -21,9 +21,9 @@ Branch: `feat/gestor-logistico`, published by the user.
 - Never push, merge or touch `main`.
 - Don't merge until the external server exists. Otherwise the public site would show a module with no server.
 
-To update their local database after milestone 3, the user stops the API and runs:
-- `npm --prefix server run db:migrate`, which applies 0004 (and 0002–0003 if still missing);
-- `npm --prefix server run db:seed`, which adds the built-in categories and, unless the demo was removed, the demo people, companies and offers.
+To update their local database after milestone 4, the user stops the API and runs:
+- `npm --prefix server run db:migrate`, which applies 0005 (and any earlier one still missing);
+- `npm --prefix server run db:seed`, which, unless the demo was removed, adds «Almacén Demo», 4 demo resources and 3 demo notes. Running it again creates nothing new.
 
 ## Architecture
 
@@ -39,13 +39,18 @@ The contract and pure logic, used by both the server and the UI. Imports use `.t
 - `quality.ts` (withheld fields are never «missing»), `rules.ts` (kinds, statuses, 366-day span; M3: company kinds, price units, 15 built-in service categories, limits, phone/e-mail/amount validators).
 - `search.ts`: ranking, `universalSearch` (client-side over loaded lists; never notes, conditions or quoted free text), `namesLookAlike`/`findLookAlikes` («¿Es la misma que…?»).
 - `catalogue.ts`: unit labels, `costLines` (never a total), `pendingExtras`, `compareOffer` (same category + unit + known tax treatment; the rest `otherTax` / `unpriced`).
-- `contact-links.ts`: `phoneInfo` (+34 for Spanish numbers, short numbers, warnings), `tel:`/`wa.me`/`mailto:` (no WhatsApp when the number has a warning), share text with chosen fields only.
+- `contact-links.ts`: `phoneInfo` (+34 for Spanish numbers, short numbers, warnings with a `reason` code), `tel:`/`wa.me`/`mailto:` (no WhatsApp when the number has a warning), share text with chosen fields only.
+- `inventory.ts` (M4): `parseQuantity` («1.000» thousands, «0.500» = 0,5), `formatQuantity`, `quantityLabel` («≈ 40 unidades · por evaluar», «1 unidad»), `unitFor`.
+- `history.ts` (M4): `FIELD_LABEL` (field names → Spanish), `describeChange` (names, never values), `noteLabel` (kind + what it is about; never the text, never a person's name).
+- `conflicts.ts` M4 additions: `resource_overlap` (conflict when one *unit* or none in stock, otherwise a reminder stating the stock), `resource_unavailable` (damaged / under repair), `RESOURCE_LOAD_NOTE` (inventory figures never compute a load on the ground).
 
 ### `server/`
 Node 26 runs TypeScript directly. Stack: Hono, zod, postgres.js. PGlite runs the tests and the local mode without Docker (`DATABASE_URL=pglite:./pgdata/pglite`).
-- Migrations 0001–0004. They are append-only and checksummed.
-- Guests never receive phones, e-mails, observations, prices, costs or conditions: one path, `records/redact.ts` (`forViewer`, `WITHHELD_FROM_GUESTS`); records carry `restricted`. New free-text fields must be added there.
-- Advisory locks in `records/locks.ts`: graph lock (task dependencies), then catalogue lock (categories, companies, contacts, offers), then rows. Keep that order.
+- Migrations 0001–0005. They are append-only and checksummed.
+- Guests never receive phones, e-mails, observations, prices, costs or conditions: one path, `records/redact.ts` (`forViewer`, `WITHHELD_FROM_GUESTS`); records carry `restricted`. Since M4 also event and task notes, warehouse address and notes, resource location and notes, and note text. New free-text fields must be added there, with a marker in `server/tests/redaction.test.ts` and in the E2E mock's mirror.
+- Advisory locks in `records/locks.ts`: graph lock (task dependencies, multi-task writes, resource and task deletes), then catalogue lock (categories, companies, contacts, offers, and since M4 warehouses, resources and notes), then rows. Keep that order.
+- M4 links from resources and notes have no ON DELETE action: every delete path unlinks first (version, author, activity). A new delete path must call `unlinkResources` / `unlinkNotes` or it fails loudly.
+- History: `GET /organizations/:orgId/activity?entityType=&entityId=`.
 - Company names are unique per organization (409 `DUPLICATE` with `current`); contacts may share a name.
 - Optimistic concurrency with `version`; a stale write gets 409 with `current`.
 - Guests are read-only.
@@ -60,14 +65,15 @@ A lazy module opened from `GameMenu.tsx`.
 - Deep links: `#logistica`, `#logistica/<space>`, `#logistica/calendario/YYYY-MM-DD`.
 - Store: write epochs, a version-aware merge that keeps object identity, and the unsaved-form rescue (`lib/rescue.ts`).
 - Plan: `common/usePlan.ts` is a cached selector.
-- Screens: `hoy/`, `calendar/`, `events/`, `tasks/TaskSheet.tsx` (+ `TaskContactField.tsx`), `contacts/` (Personas / Empresas y entidades, reach-out confirmation, share), `catalog/` (offers, comparison, category picker), `search/` (universal search, venue sheet), `shell/AddMenu.tsx` (with a fallback where the Popover API is missing). Inventarios and Cierre de jornada are still placeholders.
+- Screens: `hoy/` (+ `NotesCard.tsx`), `calendar/`, `events/`, `tasks/TaskSheet.tsx` (+ `TaskContactField.tsx`, `TaskResourcesField.tsx`), `contacts/` (Personas / Empresas y entidades, reach-out confirmation, share), `catalog/` (offers, comparison, category picker with «Gestionar»), `inventory/` (Inventarios: Propios / Contratados, resource and warehouse sheets), `notes/` (note sheet, `RefPicker`), `common/RecordNotes.tsx` and `common/RecordHistory.tsx` (in every record sheet), `search/` (universal search, venue sheet), `shell/AddMenu.tsx` (grouped «Captura rápida» / «Planificación», with a fallback where the Popover API is missing). Cierre de jornada is still a placeholder.
+- Resource and note slots in `LogisticsApp.tsx` remember the card they replaced (`add*` stacks on top; `open*` replaces).
 - Sheets stack by sequence key; a sheet with unsaved changes is never replaced silently. New record forms use `forms/useRecordForm.ts` (dirty guard, 409, rescue, `leaveFor`, `startNext`).
 - Styles live in `src/styles/logistics/`, scoped to `.lx`, and work in six palettes. Bendy uses a deeper cyan accent for contrast.
 
 ### Tests
 - `tests/unit/logistics/` for the shared logic and the calendar layout.
 - `server/tests/` on PGlite.
-- `tests/e2e/logistics/`: a stateful `mock-api.ts` (its guest-withheld lists mirror `WITHHELD_FROM_GUESTS` by hand), `plan-fixtures.ts` with a fixed clock, `directory-fixtures.ts` (fictitious people and `trapOutgoing()` for links), behavioural specs, and the `ui-review.spec.ts` screenshot harness (writes to `test-results/visual/logistics-*`).
+- `tests/e2e/logistics/`: a stateful `mock-api.ts` (its guest-withheld `WITHHELD` map mirrors `WITHHELD_FROM_GUESTS` by hand; `failHistory` / `holdHistory()` for history states), `plan-fixtures.ts` with a fixed clock, `directory-fixtures.ts` (fictitious people and `trapOutgoing()` for links), `inventory-fixtures.ts` (M4), behavioural specs (M4: `inventory`, `resources-in-tasks`, `notes`, `inventory-privacy`), and the `ui-review.spec.ts` screenshot harness (writes to `test-results/visual/logistics-*`).
 - Fictitious data only: names with «Demo» / «Prueba», phones `+34 000 000 0XX`, e-mails `@example.com`. Real La Laguna venue names are fine without contact details.
 
 ## Product decisions (user-approved)
@@ -91,26 +97,31 @@ Pattern for each milestone:
 User decisions: guests see names, companies, roles and offers but never phones, e-mails, observations, prices, costs or conditions; one list «Empresas y entidades» with a kind (proveedor, organismo público, asociación, otra). Tax wording is «Impuestos (IGIC/IVA)»; the API field stays `vatIncluded`. Detail in the log.
 
 Carried to later milestones (from the M3 audit and review):
-- A `reason` code on `PhoneInfo` (the UI currently detects «missing prefix» by the warning text).
-- No UI yet to delete a custom category (the route exists).
-- Before the external server: migration checksums hash raw bytes and `.gitattributes` has `* text=auto`; check out with LF there, or add a careful checksum step. Do not change it against the user's existing local database.
-- `refresh` fetches 8 lists every 60 s; consider `?since=` or ETags before M6.
+- ~~A `reason` code on `PhoneInfo`~~ and ~~UI to delete a custom category~~: done in M4.
+- Before the external server: migration checksums hash raw bytes and `.gitattributes` has `* text=auto`; check out with LF there, or add a careful checksum step. Do not change it against the user's existing local database. (`server/.gitattributes` pins `migrations/*.sql` to LF; a server test checks every migration file is LF.)
+- `refresh` now fetches 11 lists every 60 s; consider `?since=` or ETags before M6.
 
-### 4. Inventarios + Captura rápida
-- **First, decided by the user on 2026-11-26:** Invitado no longer receives task and event `notes`. Add them to `WITHHELD_FROM_GUESTS`, send `restricted` on `Task` and `LogisticsEvent` (contract), map events and tasks through `forViewer` (lists, single records, 409 `current`), show «Visible para el equipo» in the event and task sheets, and test it per route and in the guest E2E.
-- **Warehouses:** name and address, no geometry.
-- **Resources:** quantity, unit, dimensions, condition, availability, «aún por evaluar». Owned and contracted are kept apart.
-- **«+ Añadir»** offers Evento, Contacto, Empresa, Recurso, Oferta, Tarea, Incidencia and Nota.
-- **History** is visible on each record.
-- **Resource overlaps** go into `planWarnings`.
-- **Safety:**
-  - the «Incidencia» copy says Punto Violeta cases and attended-person data are not recorded here;
-  - labels never contain note text;
-  - no export of notes without a safety review;
-  - new free-text fields (Nota and any other) are withheld from guests through `WITHHELD_FROM_GUESTS`, not a copy;
-  - search never matches or quotes note bodies;
-  - a resource's «kg», quantity and dimensions never combine into a load per area and never answer `heavyLoad`: send the user to the simulator's X-ray check;
-  - deleting a resource-scope category must unlink resources.
+### 4. Inventarios + Captura rápida (done)
+The user answered «adelante con tus recomendaciones» (they were away). Decisions in the log:
+- Invitado no longer receives event and task notes, and does not receive warehouse address, resource location, any notes or note text («Visible para el equipo»). It sees names, category, quantity, unit, dimensions, condition, availability, ownership and supplier.
+- A task lists the resources it uses; the same resource in two overlapping live tasks is a conflict when there is one unit or none, otherwise a reminder with the recorded stock. No per-assignment quantities.
+- «+ Añadir» grouped: «Captura rápida» (Incidencia, Nota, Recurso, Persona) then «Planificación» (Tarea, Evento, Empresa, Oferta).
+- The free-text field of tasks and events is labelled «Observaciones»; «Notas» are the linked notes.
+- Notes are never searched, exported or shared; outside the note itself they are labelled by `noteLabel` only.
+
+Carried from M4 (audit, review, QA):
+- Not run against PostgreSQL in Docker: migration 0005 and the new locks were tested on PGlite only.
+- E2E gaps: logout clearing the form rescue; `NOTE_PRIVACY_HINT` on event/task «Observaciones»; the Popover fallback.
+- Optional server cleanup: a shared helper for `throwIfFields` and find-or-create (copied in tasks, resources, warehouses).
+- Phone: a long warehouse name pushes its count badge to a second line (natural wrap); the «+ Añadir» FAB overlaps list rows while scrolling (as everywhere).
+- Idea for later: a «hide text» toggle for the Hoy notes card when projecting in a meeting; reservations by time slot and stock shortage; photos on resources and notes.
+
+Safety conditions carried to M5–M6 (from the M4 audit):
+- Work orders and the day close are built from `forViewer` records, never from raw rows. They never include note text, observations, warehouse address or resource location by default, and never for guests.
+- `DayReport` notes go through `forViewer('note', …)` and need a safety review before any PDF; default to `noteLabel` + status, text only when a member explicitly includes it.
+- «Subsuelo revisado en el simulador» is a declared mark only: never inferred from inventory figures, never quoting or computing the threshold, never claiming compliance. A hypothesis never changes `heavyLoad`.
+- The M6 Dexie cache and outbox apply the same withholding and clear on logout (notes, observations, addresses, locations, the rescue slot).
+- Any storage or assembly area on the venue map needs its own plan with the A/B/C, Carpa Amarilla, accessibility and subsoil checks.
 
 ### 5. Seguimiento + Órdenes de trabajo
 - **Now / next / late view** with quick status actions.
@@ -143,3 +154,4 @@ Carried to later milestones (from the M3 audit and review):
 - Try «+ Añadir» on a real iPhone with iOS 16 (the Popover fallback), and add an E2E test that removes `showPopover`.
 - Note: the shared member login «Equipo» shows its server-side recent searches to everyone who uses it.
 - Try calling, WhatsApp, e-mail and «Compartir» on a real phone (only checked with mocks).
+- Try the M4 quick capture on a real phone: «+ Añadir» → Incidencia / Nota / Recurso in under 30 seconds, and the Inventarios lists while walking a warehouse.

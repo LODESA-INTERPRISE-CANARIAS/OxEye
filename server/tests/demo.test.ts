@@ -3,7 +3,9 @@ import {clearDemo} from '../src/demo/service.ts';
 import {
   DEMO_COMPANIES,
   DEMO_CONTACTS,
+  DEMO_NOTES,
   DEMO_OFFERS,
+  DEMO_RESOURCES,
   DEMO_TASKS,
 } from '../src/seed/seed.ts';
 import {createHarness, json} from './helpers.ts';
@@ -15,6 +17,7 @@ import type {
   ListResponse,
   LogisticsEvent,
   Offer,
+  Resource,
   Task,
   Venue,
 } from '../../shared/logistics/contracts.ts';
@@ -38,14 +41,17 @@ describe('demo data', () => {
       token,
     });
     expect(res.status).toBe(200);
-    // Demo tasks, offers, contacts, the event, two venues and the companies.
+    // Demo tasks, offers, contacts, the event, two venues, the companies, the
+    // warehouse, the resources and the notes.
     expect(await json(res)).toEqual({
       removed:
         DEMO_TASKS.length +
         DEMO_OFFERS.length +
         DEMO_CONTACTS.length +
         DEMO_COMPANIES.length +
-        3,
+        DEMO_RESOURCES.length +
+        DEMO_NOTES.length +
+        4,
     });
 
     const tasks = await json<ListResponse<Task>>(
@@ -111,15 +117,18 @@ describe('demo data', () => {
       actorId: null,
       now: h.clock.now(),
     });
-    // Everything demo except the venue: tasks, offers, contacts, event,
-    // warehouse and companies.
+    // Everything demo except the venue: tasks, offers, contacts, the event,
+    // the «Almacén municipal» venue, companies, the warehouse, resources and
+    // notes.
     expect(result).toEqual({
       removed:
         DEMO_TASKS.length +
         DEMO_OFFERS.length +
         DEMO_CONTACTS.length +
         DEMO_COMPANIES.length +
-        2,
+        DEMO_RESOURCES.length +
+        DEMO_NOTES.length +
+        3,
     });
     const left = await h.db.query(
       "SELECT 1 FROM venues WHERE name = 'Plaza del Cristo'",
@@ -266,6 +275,17 @@ describe('demo data', () => {
     expect(offers.some(o => /kg/i.test(`${o.customUnit} ${o.name}`))).toBe(
       false,
     );
+    // Inventory figures are descriptive: no weight anywhere in the demo
+    // resources, and linking the demo van to two tasks did not touch their
+    // heavy-load answers (checked right below).
+    const resources = await get<Resource>('resources');
+    expect(resources).toHaveLength(DEMO_RESOURCES.length);
+    expect(
+      resources.some(r =>
+        /kg|kilo|t\/m|carga/i.test(`${r.unit} ${r.name} ${r.dimensions}`),
+      ),
+    ).toBe(false);
+    expect(tasks.some(t => t.resourceIds.length > 0)).toBe(true);
     expect(
       Object.fromEntries(
         tasks.filter(t => t.isDemo).map(t => [t.title, t.heavyLoad]),

@@ -1,9 +1,18 @@
 import {expect, type Page, type Route} from '@playwright/test';
+import {noteLabel} from '../../../shared/logistics/history.ts';
+import {
+  BUILT_IN_RESOURCE_CATEGORIES,
+  MAX_RESOURCES_PER_TASK,
+  NOTE_KINDS,
+  NOTE_TEXT_MAX,
+  isValidQuantity,
+} from '../../../shared/logistics/rules.ts';
+import type {NoteKind} from '../../../shared/logistics/contracts.ts';
 import {slotToInstants, utcToLocal} from '../../../shared/logistics/time.ts';
 
 /**
  * Stateful in-memory mock of the Logistics Manager API for behavioural E2E
- * tests (milestones 1 to 3). It follows the route table and error bodies of
+ * tests (milestones 1 to 4). It follows the route table and error bodies of
  * `shared/logistics/contracts.ts` and `server/src`, keeps events, tasks,
  * venues and companies so refetches after a write see the change, and
  * records every request so tests can assert what the UI actually sent.
@@ -15,6 +24,17 @@ import {slotToInstants, utcToLocal} from '../../../shared/logistics/time.ts';
  * VALIDATION `fields.dependsOn`); PATCH and DELETE check `version` (409
  * VERSION_CONFLICT with `current`); DELETE needs `?version=` and removes the
  * task from its dependents' `dependsOn`, bumping their version.
+ *
+ * Milestone 4 rules mirrored from `server/src/{warehouses,resources,notes}`:
+ * warehouse names are unique (409 DUPLICATE with `current`); a resource
+ * finds or creates its warehouse (and, when contracted, its company) by
+ * name, owned material never has a company or an offer, an offer must be of
+ * the resource's company; `taskIds` and `resourceCount` are computed; notes
+ * need a kind and a text and point at an event and/or one record. Deleting a
+ * warehouse, resource, task, company, contact, offer or category unlinks
+ * what pointed at it, bumping versions. Writes to warehouses, resources and
+ * notes append to the activity log (a note's label is `noteLabel`, never its
+ * text), and `/activity?entityType=&entityId=` returns one record's history.
  *
  * Only `/api/*` is intercepted: Vite module URLs such as
  * `/src/logistics/api/client.ts` must reach the dev server.
@@ -88,6 +108,7 @@ export function makeEvent(
     timezone: TZ,
     status: 'planned',
     notes: null,
+    restricted: false,
     source: null,
     verification: 'draft',
     isDemo: false,
@@ -167,7 +188,9 @@ export function makeTask(
     contact: null,
     dependsOn: [],
     heavyLoad: null,
+    resourceIds: [],
     notes: null,
+    restricted: false,
     source: null,
     verification: 'draft',
     isDemo: false,
@@ -235,14 +258,124 @@ export const BUILT_IN_CATEGORIES = [
   'Otros servicios',
 ];
 
+/** Stable id of a built-in resource category (M4): `rcat-` + name. */
+export const resourceCategoryId = (name: string) => `r${categoryId(name)}`;
+
+/** The built-in service categories, then the resource ones (M4), as seeded. */
 export function makeCategories(): Json[] {
-  return BUILT_IN_CATEGORIES.map(name => ({
-    id: categoryId(name),
+  return [
+    ...BUILT_IN_CATEGORIES.map(name => ({
+      id: categoryId(name),
+      organizationId: ORG,
+      scope: 'service',
+      name,
+      builtIn: true,
+    })),
+    ...BUILT_IN_RESOURCE_CATEGORIES.map(name => ({
+      id: resourceCategoryId(name),
+      organizationId: ORG,
+      scope: 'resource',
+      name,
+      builtIn: true,
+    })),
+  ];
+}
+
+const meta = (extra: Json = {}): Json => {
+  const created = new Date(Date.now() - 3 * 3600_000).toISOString();
+  return {
+    version: 1,
     organizationId: ORG,
-    scope: 'service',
+    source: null,
+    verification: 'draft',
+    isDemo: false,
+    createdBy: elvis,
+    createdAt: created,
+    updatedBy: elvis,
+    updatedAt: created,
+    ...extra,
+  };
+};
+
+/** A contract-shaped warehouse (milestone 4); `resourceCount` is computed. */
+export function makeWarehouse(
+  id: string,
+  name: string,
+  extra: Json = {},
+): Json {
+  return {
+    id,
     name,
-    builtIn: true,
-  }));
+    address: null,
+    notes: null,
+    resourceCount: 0,
+    restricted: false,
+    ...meta(extra),
+  };
+}
+
+/** A contract-shaped inventory resource (milestone 4); `taskIds` is computed. */
+export function makeResource(id: string, name: string, extra: Json = {}): Json {
+  return {
+    id,
+    name,
+    ownership: 'owned',
+    categoryId: null,
+    warehouse: null,
+    company: null,
+    offerId: null,
+    quantity: null,
+    unit: 'unidades',
+    dimensions: null,
+    condition: 'unknown',
+    availability: 'unknown',
+    location: null,
+    toAssess: false,
+    notes: null,
+    taskIds: [],
+    restricted: false,
+    ...meta(extra),
+  };
+}
+
+/** A contract-shaped note (milestone 4). Fictitious text only. */
+export function makeNote(
+  id: string,
+  kind: NoteKind,
+  text: string,
+  extra: Json = {},
+): Json {
+  return {
+    id,
+    kind,
+    text,
+    event: null,
+    ref: null,
+    resolved: false,
+    restricted: false,
+    ...meta(extra),
+  };
+}
+
+/** A contract-shaped activity entry, for seeding a record's history. */
+export function makeActivity(
+  id: string,
+  entity: {type: string; id: string; label: string},
+  action: 'create' | 'update' | 'delete',
+  at: string,
+  extra: Json = {},
+): Json {
+  return {
+    id,
+    user: elvis,
+    entityType: entity.type,
+    entityId: entity.id,
+    entityLabel: entity.label,
+    action,
+    changedFields: [],
+    at,
+    ...extra,
+  };
 }
 
 /** A contract-shaped person (milestone 3). Fictitious data only. */
@@ -330,6 +463,17 @@ export interface MockOptions {
   offers?: Json[];
   /** Recent searches of the signed-in member, newest first. */
   recentSearches?: {query: string; at: string}[];
+  /** Milestone 4. */
+  warehouses?: Json[];
+  resources?: Json[];
+  notes?: Json[];
+  /** Activity log entries (any order; served newest first). */
+  activity?: Json[];
+  /**
+   * Fixed time for milestone 4 writes (`createdAt`, activity `at`), to match
+   * a page whose clock is fixed (plan-fixtures.ts `NOW`).
+   */
+  now?: string;
 }
 
 export interface MockApi {
@@ -348,6 +492,17 @@ export interface MockApi {
   contacts: Json[];
   offers: Json[];
   recentSearches: {query: string; at: string}[];
+  warehouses: Json[];
+  resources: Json[];
+  notes: Json[];
+  activity: Json[];
+  /** History requests (`entityType` + `entityId`) that fail with a 500 next. */
+  failHistory: number;
+  /**
+   * Holds every history request until the returned function is called, so a
+   * spec can see the loading state without depending on timing.
+   */
+  holdHistory: () => () => void;
   requests: RecordedRequest[];
   /** Requests matching a method and a path (string or pattern). */
   calls: (method: string, path: string | RegExp) => RecordedRequest[];
@@ -355,9 +510,15 @@ export interface MockApi {
   editOnServer: (id: string, patch: Json, by?: typeof dailos) => Json;
   /** Simulates another person saving a task: bumps its version. */
   editTaskOnServer: (id: string, patch: Json, by?: typeof dailos) => Json;
-  /** Milestone 3: another person saving a company, person or offer. */
+  /** Milestones 3–4: another person saving a directory or inventory record. */
   editDirectoryOnServer: (
-    list: 'companies' | 'contacts' | 'offers',
+    list:
+      | 'companies'
+      | 'contacts'
+      | 'offers'
+      | 'warehouses'
+      | 'resources'
+      | 'notes',
     id: string,
     patch: Json,
     by?: typeof dailos,
@@ -431,6 +592,9 @@ export async function mockApi(
   let currentUser: {id: string; displayName: string; role: string} | null =
     null;
   let seq = 0;
+  let historyGate: Promise<void> | null = null;
+  /** Time of milestone 4 writes: the page's fixed clock when a spec sets it. */
+  const clock = () => opts.now ?? new Date().toISOString();
 
   const state: MockApi = {
     health: opts.health ?? 'ok',
@@ -444,6 +608,21 @@ export async function mockApi(
     contacts: opts.contacts ?? [],
     offers: opts.offers ?? [],
     recentSearches: opts.recentSearches ?? [],
+    warehouses: opts.warehouses ?? [],
+    resources: opts.resources ?? [],
+    notes: opts.notes ?? [],
+    activity: opts.activity ?? [],
+    failHistory: 0,
+    holdHistory: () => {
+      let release = () => {};
+      historyGate = new Promise<void>(resolve => {
+        release = () => {
+          historyGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
     requests: [],
     calls: (method, path) =>
       state.requests.filter(
@@ -534,6 +713,88 @@ export async function mockApi(
   // contact details, prices or free-text observations. The field lists below
   // are a hand-written copy of `WITHHELD_FROM_GUESTS` in that file (the mock
   // cannot import server code): keep them in step when it changes.
+  // Milestone 4: event and task notes, warehouse address and notes, resource
+  // location and notes, and the text of every note.
+  const WITHHELD = {
+    event: ['notes'],
+    task: ['notes'],
+    warehouse: ['address', 'notes'],
+    resource: ['location', 'notes'],
+    note: ['text'],
+  } as const;
+  const redact = (
+    kind: keyof typeof WITHHELD,
+    record: Json,
+    role: string,
+  ): Json => {
+    if (!isGuest(role)) return {...record, restricted: false};
+    const out: Json = {...record, restricted: true};
+    for (const k of WITHHELD[kind]) out[k] = null;
+    return out;
+  };
+  const viewEvent = (e: Json, role: string) => redact('event', e, role);
+  const viewTask = (t: Json, role: string) =>
+    redact('task', {...t, resourceIds: t.resourceIds ?? []}, role);
+  const viewWarehouse = (w: Json, role: string) =>
+    redact(
+      'warehouse',
+      {
+        ...w,
+        resourceCount: state.resources.filter(
+          r => (r.warehouse as Json | null)?.id === w.id,
+        ).length,
+      },
+      role,
+    );
+  const viewResource = (r: Json, role: string) =>
+    redact(
+      'resource',
+      {
+        ...r,
+        taskIds: state.tasks
+          .filter(t =>
+            ((t.resourceIds as string[]) ?? []).includes(r.id as string),
+          )
+          .map(t => t.id as string)
+          .sort(),
+      },
+      role,
+    );
+  /** What a note points at, with the record's current name. */
+  const refRecord = (type: string, id: string): Json | undefined => {
+    const lists: Record<string, Json[]> = {
+      task: state.tasks,
+      venue: state.venues as unknown as Json[],
+      company: state.companies,
+      contact: state.contacts,
+      offer: state.offers,
+      warehouse: state.warehouses,
+      resource: state.resources,
+    };
+    return lists[type]?.find(x => x.id === id);
+  };
+  const viewNote = (n: Json, role: string) => {
+    const ref = n.ref as {type: string; id: string; label: string} | null;
+    const target = ref ? refRecord(ref.type, ref.id) : undefined;
+    const ev = n.event as {id: string} | null;
+    const event = ev ? state.events.find(e => e.id === ev.id) : undefined;
+    return redact(
+      'note',
+      {
+        ...n,
+        ref: ref
+          ? {
+              ...ref,
+              label: (target?.title ?? target?.name ?? ref.label) as string,
+            }
+          : null,
+        event: ev
+          ? {id: ev.id, name: event?.name ?? (n.event as Json).name}
+          : null,
+      },
+      role,
+    );
+  };
   const viewCompany = (c: Json, role: string): Json => {
     const counted = {
       ...c,
@@ -643,6 +904,56 @@ export async function mockApi(
     return fields;
   };
 
+  // ---- milestone 4 helpers: activity log and unlinking
+  const log = (
+    by: Json,
+    entity: {type: string; id: string; label: string},
+    action: 'create' | 'update' | 'delete',
+    changedFields: string[] = [],
+  ) => {
+    state.activity.push({
+      id: `a-new-${++seq}`,
+      user: by,
+      entityType: entity.type,
+      entityId: entity.id,
+      entityLabel: entity.label,
+      action,
+      changedFields,
+      at: clock(),
+    });
+  };
+  /** Notes pointing at a deleted record lose the link (new version). */
+  const unlinkNotes = (type: string, id: string, by: Json) => {
+    for (const n of state.notes) {
+      const r = n.ref as {type: string; id: string} | null;
+      if (r?.type === type && r.id === id) {
+        n.ref = null;
+        bump(n, by);
+      }
+    }
+  };
+  /** Resources that used a deleted record lose it (new version). */
+  const unlinkResources = (
+    link: 'warehouse' | 'company' | 'offer' | 'category',
+    id: string,
+    by: Json,
+  ) => {
+    for (const r of state.resources) {
+      const hit =
+        link === 'offer'
+          ? r.offerId === id
+          : link === 'category'
+            ? r.categoryId === id
+            : (r[link] as Json | null)?.id === id;
+      if (!hit) continue;
+      if (link === 'offer') r.offerId = null;
+      else if (link === 'category') r.categoryId = null;
+      else r[link] = null;
+      if (link === 'company') r.offerId = null;
+      bump(r, by);
+    }
+  };
+
   const directoryRoute = async (
     route: Route,
     ctx: {
@@ -679,6 +990,31 @@ export async function mockApi(
       };
       state.categories.push(created);
       return json(route, created, 201);
+    }
+    const categoryMatch = /^\/categories\/([^/]+)$/.exec(path);
+    if (categoryMatch && method === 'DELETE') {
+      const category = state.categories.find(c => c.id === categoryMatch[1]);
+      if (!category) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (category.builtIn) {
+        return validation(route, {
+          id: 'Las categorías que trae OxEye no se pueden borrar.',
+        });
+      }
+      const id = category.id as string;
+      state.categories = state.categories.filter(c => c !== category);
+      for (const c of state.companies) {
+        const ids = c.categoryIds as string[];
+        if (!ids.includes(id)) continue;
+        c.categoryIds = ids.filter(x => x !== id);
+        bump(c, ref);
+      }
+      for (const o of state.offers) {
+        if (o.categoryId !== id) continue;
+        o.categoryId = null;
+        bump(o, ref);
+      }
+      unlinkResources('category', id, ref);
+      return route.fulfill({status: 204, body: ''});
     }
 
     // recent searches (members only)
@@ -795,9 +1131,16 @@ export async function mockApi(
         );
         if (bad) return bad;
         state.companies = state.companies.filter(c => c !== company);
+        for (const o of state.offers) {
+          if ((o.company as Json).id !== company.id) continue;
+          unlinkResources('offer', o.id as string, ref);
+          unlinkNotes('offer', o.id as string, ref);
+        }
         state.offers = state.offers.filter(
           o => (o.company as Json).id !== company.id,
         );
+        unlinkResources('company', company.id as string, ref);
+        unlinkNotes('company', company.id as string, ref);
         for (const list of [state.contacts, state.tasks]) {
           for (const r of list) {
             if ((r.company as Json | null)?.id === company.id) {
@@ -880,6 +1223,7 @@ export async function mockApi(
         );
         if (bad) return bad;
         state.contacts = state.contacts.filter(c => c !== contact);
+        unlinkNotes('contact', contact.id as string, ref);
         for (const t of state.tasks) {
           if ((t.contact as Json | null)?.id === contact.id) {
             t.contact = null;
@@ -980,6 +1324,500 @@ export async function mockApi(
         );
         if (bad) return bad;
         state.offers = state.offers.filter(o => o !== offer);
+        unlinkResources('offer', offer.id as string, ref);
+        unlinkNotes('offer', offer.id as string, ref);
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+    return null;
+  };
+
+  // ---- milestone 4: warehouses, resources, notes
+  const versionOf = (
+    route: Route,
+    record: Json,
+    version: unknown,
+    current: Json,
+    message: string,
+  ) => {
+    if (typeof version !== 'number' || Number.isNaN(version)) {
+      return validation(route, {
+        version:
+          'Falta la versión del registro: recarga y vuelve a intentarlo.',
+      });
+    }
+    if (version !== record.version) {
+      return json(route, {code: 'VERSION_CONFLICT', message, current}, 409);
+    }
+    return null;
+  };
+  const RESOURCE_CONFLICT =
+    'Otra persona ha cambiado este recurso mientras lo editabas. Revisa la versión actual antes de guardar tus cambios.';
+  const WAREHOUSE_CONFLICT =
+    'Otra persona ha cambiado este almacén mientras lo editabas. Revisa la versión actual antes de guardar tus cambios.';
+  const NOTE_CONFLICT =
+    'Otra persona ha cambiado esta nota mientras la editabas. Revisa la versión actual antes de guardar tus cambios.';
+  const OWNED_WITHOUT_COMPANY =
+    'Un recurso propio no tiene empresa: márcalo como contratado para indicar quién lo presta.';
+  const OWNED_WITHOUT_OFFER =
+    'Un recurso propio no viene de una oferta: márcalo como contratado para vincularla.';
+  const OFFER_OF_OTHER_COMPANY =
+    'Esa oferta es de otra empresa: elige una oferta de la empresa del recurso o cambia antes la empresa.';
+  const duplicateWarehouse = (route: Route, dup: Json, role: string) =>
+    json(
+      route,
+      {
+        code: 'DUPLICATE',
+        message: `Ya existe el almacén «${dup.name}».`,
+        current: viewWarehouse(dup, role),
+      },
+      409,
+    );
+  /** Find-or-create by name (warehouseId wins), as resolveWarehouseRef. */
+  const warehouseFrom = (input: Json, by: Json): Json | null | undefined => {
+    if (typeof input.warehouseId === 'string') {
+      return state.warehouses.find(w => w.id === input.warehouseId) ?? null;
+    }
+    if (input.warehouseId === null && input.warehouseName === undefined) {
+      return null;
+    }
+    if (input.warehouseName === undefined) return undefined;
+    const n = text(input.warehouseName);
+    if (!n) return null;
+    let w = state.warehouses.find(
+      x => nameKey(x.name as string) === nameKey(n),
+    );
+    if (!w) {
+      w = makeWarehouse(`w-new-${++seq}`, n, {
+        createdBy: by,
+        updatedBy: by,
+        createdAt: clock(),
+        updatedAt: clock(),
+      });
+      state.warehouses.push(w);
+      log(by, {type: 'warehouse', id: w.id as string, label: n}, 'create');
+    }
+    return w;
+  };
+  const quantityProblem = (v: unknown) =>
+    v === undefined ||
+    v === null ||
+    (typeof v === 'number' && isValidQuantity(v))
+      ? null
+      : 'Cantidad no válida: de 0 a 1.000.000, con dos decimales como mucho.';
+  /** Applies a resource input to `r` (create or update); returns field errors. */
+  const applyResource = (
+    r: Json,
+    input: Json,
+    by: Json,
+  ): Record<string, string> => {
+    const fields: Record<string, string> = {};
+    const ownership = (input.ownership ?? r.ownership) as string;
+    if (ownership === 'owned') {
+      if (input.companyId) fields.companyId = OWNED_WITHOUT_COMPANY;
+      if (input.companyName) fields.companyName = OWNED_WITHOUT_COMPANY;
+      if (input.offerId) fields.offerId = OWNED_WITHOUT_OFFER;
+    }
+    if ('name' in input && !text(input.name)) {
+      fields.name = 'El nombre es obligatorio.';
+    }
+    const q = quantityProblem(input.quantity);
+    if (q) fields.quantity = q;
+    if (typeof input.categoryId === 'string') {
+      const c = state.categories.find(x => x.id === input.categoryId);
+      if (!c || c.scope !== 'resource') {
+        fields.categoryId =
+          'Esa categoría ya no existe o no es de recursos de esta organización.';
+      }
+    }
+    const offer =
+      typeof input.offerId === 'string'
+        ? state.offers.find(o => o.id === input.offerId)
+        : undefined;
+    if (ownership === 'contracted' && typeof input.offerId === 'string') {
+      if (!offer) {
+        fields.offerId =
+          'No encontramos esa oferta en esta organización: puede que se haya eliminado.';
+      }
+    }
+    if (Object.keys(fields).length) return fields;
+
+    if ('name' in input) r.name = text(input.name);
+    r.ownership = ownership;
+    if ('quantity' in input) r.quantity = input.quantity ?? null;
+    if ('unit' in input) r.unit = text(input.unit) ?? 'unidades';
+    for (const k of ['dimensions', 'location', 'notes']) {
+      if (k in input) r[k] = text(input[k]);
+    }
+    for (const k of [
+      'categoryId',
+      'condition',
+      'availability',
+      'toAssess',
+      ...PROVENANCE,
+    ]) {
+      if (k in input) r[k] = input[k];
+    }
+    const w = warehouseFrom(input, by);
+    if (w !== undefined) r.warehouse = refOf(w);
+    if (ownership === 'owned') {
+      r.company = null;
+      r.offerId = null;
+      return {};
+    }
+    const companyGiven = 'companyId' in input || 'companyName' in input;
+    const before = (r.company as Json | null)?.id ?? null;
+    if (companyGiven) {
+      r.company =
+        input.companyId === null && !text(input.companyName)
+          ? null
+          : refOf(companyFrom(input));
+    }
+    const companyId = (r.company as Json | null)?.id ?? null;
+    if (input.offerId === undefined) {
+      if (companyId === null || companyId !== before) r.offerId = null;
+    } else if (input.offerId === null) {
+      r.offerId = null;
+    } else if (offer) {
+      const offerCompany = (offer.company as Json).id;
+      if (companyGiven || companyId !== null) {
+        if (offerCompany !== companyId) {
+          return {offerId: OFFER_OF_OTHER_COMPANY};
+        }
+      } else {
+        r.company = {...(offer.company as Json)};
+      }
+      r.offerId = offer.id;
+    }
+    return {};
+  };
+  /** Contract field names of an input, for the activity log. */
+  const changedOf = (input: Json) => [
+    ...new Set(
+      Object.keys(input)
+        .filter(k => k !== 'version' && k !== 'organizationId')
+        .map(k =>
+          k === 'warehouseName' || k === 'warehouseId'
+            ? 'warehouse'
+            : k === 'companyName' || k === 'companyId'
+              ? 'company'
+              : k === 'eventId'
+                ? 'event'
+                : k,
+        ),
+    ),
+  ];
+  const noteRefProblem = (input: Json): Record<string, string> => {
+    const fields: Record<string, string> = {};
+    if (typeof input.eventId === 'string') {
+      if (!state.events.some(e => e.id === input.eventId)) {
+        fields.eventId =
+          'No encontramos ese evento en esta organización: puede que se haya eliminado.';
+      }
+    }
+    const r = input.ref as {type?: string; id?: string} | null | undefined;
+    if (r && (!r.type || !r.id || !refRecord(r.type, r.id))) {
+      fields.ref =
+        'No encontramos ese registro en esta organización: puede que se haya eliminado.';
+    }
+    return fields;
+  };
+  const applyNoteLinks = (n: Json, input: Json) => {
+    if ('eventId' in input) {
+      const e = state.events.find(x => x.id === input.eventId);
+      n.event = e ? {id: e.id, name: e.name} : null;
+    }
+    if ('ref' in input) {
+      const r = input.ref as {type: string; id: string} | null;
+      const target = r ? refRecord(r.type, r.id) : undefined;
+      n.ref =
+        r && target
+          ? {
+              type: r.type,
+              id: r.id,
+              label: (target.title ?? target.name) as string,
+            }
+          : null;
+    }
+  };
+  const noteEntity = (n: Json) => ({
+    type: 'note',
+    id: n.id as string,
+    label: noteLabel(viewNote(n, 'member') as never),
+  });
+
+  const inventoryRoute = async (
+    route: Route,
+    ctx: {
+      path: string;
+      method: string;
+      body: unknown;
+      url: URL;
+      user: {id: string; displayName: string; role: string};
+      ref: Json;
+    },
+  ): Promise<void | null> => {
+    const {path, method, url, user, ref} = ctx;
+    const input = (ctx.body ?? {}) as Json;
+    const now = clock;
+    const role = user.role;
+    const deleteVersion = () => Number(url.searchParams.get('version') ?? NaN);
+
+    // warehouses
+    if (path === `/organizations/${ORG}/warehouses` && method === 'GET') {
+      return json(route, {
+        items: byName(state.warehouses).map(w => viewWarehouse(w, role)),
+      });
+    }
+    if (path === '/warehouses' && method === 'POST') {
+      const n = text(input.name);
+      if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
+      const dup = state.warehouses.find(
+        w => nameKey(w.name as string) === nameKey(n),
+      );
+      if (dup) return duplicateWarehouse(route, dup, role);
+      const created = makeWarehouse(`w-new-${++seq}`, n, {
+        address: text(input.address),
+        notes: text(input.notes),
+        source: input.source ?? null,
+        verification: input.verification ?? 'draft',
+        createdBy: ref,
+        updatedBy: ref,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      state.warehouses.push(created);
+      log(
+        ref,
+        {type: 'warehouse', id: created.id as string, label: n},
+        'create',
+      );
+      return json(route, viewWarehouse(created, role), 201);
+    }
+    const warehouseMatch = /^\/warehouses\/([^/]+)$/.exec(path);
+    if (warehouseMatch) {
+      const w = state.warehouses.find(x => x.id === warehouseMatch[1]);
+      if (!w) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (method === 'PATCH') {
+        const bad = versionOf(
+          route,
+          w,
+          input.version,
+          viewWarehouse(w, role),
+          WAREHOUSE_CONFLICT,
+        );
+        if (bad) return bad;
+        if ('name' in input) {
+          const n = text(input.name);
+          if (!n) return validation(route, {name: 'El nombre es obligatorio.'});
+          const dup = state.warehouses.find(
+            x => x !== w && nameKey(x.name as string) === nameKey(n),
+          );
+          if (dup) return duplicateWarehouse(route, dup, role);
+          w.name = n;
+          for (const r of state.resources) {
+            if ((r.warehouse as Json | null)?.id === w.id) {
+              r.warehouse = {id: w.id, name: n};
+            }
+          }
+        }
+        for (const k of ['address', 'notes']) {
+          if (k in input) w[k] = text(input[k]);
+        }
+        for (const k of PROVENANCE) if (k in input) w[k] = input[k];
+        bump(w, ref);
+        log(
+          ref,
+          {type: 'warehouse', id: w.id as string, label: w.name as string},
+          'update',
+          changedOf(input),
+        );
+        return json(route, viewWarehouse(w, role));
+      }
+      if (method === 'DELETE') {
+        const bad = versionOf(
+          route,
+          w,
+          deleteVersion(),
+          viewWarehouse(w, role),
+          WAREHOUSE_CONFLICT,
+        );
+        if (bad) return bad;
+        state.warehouses = state.warehouses.filter(x => x !== w);
+        unlinkResources('warehouse', w.id as string, ref);
+        unlinkNotes('warehouse', w.id as string, ref);
+        log(
+          ref,
+          {type: 'warehouse', id: w.id as string, label: w.name as string},
+          'delete',
+        );
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+
+    // resources
+    if (path === `/organizations/${ORG}/resources` && method === 'GET') {
+      return json(route, {
+        items: byName(state.resources).map(r => viewResource(r, role)),
+      });
+    }
+    if (path === '/resources' && method === 'POST') {
+      if (!text(input.name)) {
+        return validation(route, {name: 'El nombre es obligatorio.'});
+      }
+      const created = makeResource(`r-new-${++seq}`, text(input.name)!, {
+        createdBy: ref,
+        updatedBy: ref,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      const fields = applyResource(
+        created,
+        {ownership: 'owned', ...input},
+        ref,
+      );
+      if (Object.keys(fields).length) return validation(route, fields);
+      state.resources.push(created);
+      log(
+        ref,
+        {
+          type: 'resource',
+          id: created.id as string,
+          label: created.name as string,
+        },
+        'create',
+      );
+      return json(route, viewResource(created, role), 201);
+    }
+    const resourceMatch = /^\/resources\/([^/]+)$/.exec(path);
+    if (resourceMatch) {
+      const r = state.resources.find(x => x.id === resourceMatch[1]);
+      if (!r) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (method === 'PATCH') {
+        const bad = versionOf(
+          route,
+          r,
+          input.version,
+          viewResource(r, role),
+          RESOURCE_CONFLICT,
+        );
+        if (bad) return bad;
+        // Validate on a copy, so a 400 changes nothing.
+        const draft = structuredClone(r);
+        const fields = applyResource(draft, input, ref);
+        if (Object.keys(fields).length) return validation(route, fields);
+        Object.assign(r, draft);
+        bump(r, ref);
+        log(
+          ref,
+          {type: 'resource', id: r.id as string, label: r.name as string},
+          'update',
+          changedOf(input),
+        );
+        return json(route, viewResource(r, role));
+      }
+      if (method === 'DELETE') {
+        const bad = versionOf(
+          route,
+          r,
+          deleteVersion(),
+          viewResource(r, role),
+          RESOURCE_CONFLICT,
+        );
+        if (bad) return bad;
+        state.resources = state.resources.filter(x => x !== r);
+        for (const t of state.tasks) {
+          const ids = (t.resourceIds as string[]) ?? [];
+          if (!ids.includes(r.id as string)) continue;
+          t.resourceIds = ids.filter(x => x !== r.id);
+          bump(t, ref);
+        }
+        unlinkNotes('resource', r.id as string, ref);
+        log(
+          ref,
+          {type: 'resource', id: r.id as string, label: r.name as string},
+          'delete',
+        );
+        return route.fulfill({status: 204, body: ''});
+      }
+    }
+
+    // notes
+    if (path === `/organizations/${ORG}/notes` && method === 'GET') {
+      const items = [...state.notes]
+        .sort(
+          (a, b) =>
+            Date.parse(b.createdAt as string) -
+              Date.parse(a.createdAt as string) ||
+            String(a.id).localeCompare(String(b.id)),
+        )
+        .map(n => viewNote(n, role));
+      return json(route, {items});
+    }
+    if (path === '/notes' && method === 'POST') {
+      const fields = noteRefProblem(input);
+      if (!NOTE_KINDS.includes(input.kind as NoteKind)) {
+        fields.kind = 'Indica qué es: nota, incidencia, decisión…';
+      }
+      const t = typeof input.text === 'string' ? input.text.trim() : '';
+      if (!t || t.length > NOTE_TEXT_MAX) fields.text = 'Escribe el texto.';
+      if (Object.keys(fields).length) return validation(route, fields);
+      const created = makeNote(`n-new-${++seq}`, input.kind as NoteKind, t, {
+        resolved: input.resolved === true,
+        source: input.source ?? null,
+        verification: input.verification ?? 'draft',
+        createdBy: ref,
+        updatedBy: ref,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      applyNoteLinks(created, input);
+      state.notes.push(created);
+      log(ref, noteEntity(created), 'create');
+      return json(route, viewNote(created, role), 201);
+    }
+    const noteMatch = /^\/notes\/([^/]+)$/.exec(path);
+    if (noteMatch) {
+      const n = state.notes.find(x => x.id === noteMatch[1]);
+      if (!n) return error(route, 404, 'NOT_FOUND', 'No encontrado');
+      if (method === 'PATCH') {
+        const bad = versionOf(
+          route,
+          n,
+          input.version,
+          viewNote(n, role),
+          NOTE_CONFLICT,
+        );
+        if (bad) return bad;
+        const fields = noteRefProblem(input);
+        if ('kind' in input && !NOTE_KINDS.includes(input.kind as NoteKind)) {
+          fields.kind = 'Indica qué es: nota, incidencia, decisión…';
+        }
+        if ('text' in input) {
+          const t = typeof input.text === 'string' ? input.text.trim() : '';
+          if (!t || t.length > NOTE_TEXT_MAX) fields.text = 'Escribe el texto.';
+        }
+        if (Object.keys(fields).length) return validation(route, fields);
+        if ('text' in input) n.text = (input.text as string).trim();
+        for (const k of ['kind', 'resolved', ...PROVENANCE]) {
+          if (k in input) n[k] = input[k];
+        }
+        applyNoteLinks(n, input);
+        bump(n, ref);
+        log(ref, noteEntity(n), 'update', changedOf(input));
+        return json(route, viewNote(n, role));
+      }
+      if (method === 'DELETE') {
+        const bad = versionOf(
+          route,
+          n,
+          deleteVersion(),
+          viewNote(n, role),
+          NOTE_CONFLICT,
+        );
+        if (bad) return bad;
+        state.notes = state.notes.filter(x => x !== n);
+        log(ref, noteEntity(n), 'delete');
         return route.fulfill({status: 204, body: ''});
       }
     }
@@ -1127,13 +1965,54 @@ export async function mockApi(
       }
       if (path === '/me') return json(route, {user, organizations: orgs});
       if (path === `/organizations/${ORG}/events` && method === 'GET') {
-        return json(route, {items: state.events});
+        return json(route, {
+          items: state.events.map(e => viewEvent(e, user.role)),
+        });
       }
       if (path === `/organizations/${ORG}/venues`) {
         return json(route, {items: state.venues});
       }
       if (path === `/organizations/${ORG}/activity`) {
-        return json(route, {items: []});
+        // Same contract as server/src/activity/routes.ts: the organization's
+        // recent activity, or one record's history (both parameters or
+        // neither), newest first.
+        const entityType = url.searchParams.get('entityType') || null;
+        const entityId = url.searchParams.get('entityId') || null;
+        if (!entityType !== !entityId) {
+          return validation(route, {
+            [entityType ? 'entityId' : 'entityType']:
+              'Para ver el historial de un registro indica su tipo y su identificador.',
+          });
+        }
+        const limit = Number(url.searchParams.get('limit') || 20);
+        if (entityType) {
+          if (state.failHistory > 0) {
+            state.failHistory--;
+            return error(
+              route,
+              500,
+              'INTERNAL',
+              'Error interno del servidor. Inténtalo de nuevo.',
+            );
+          }
+          if (historyGate) await historyGate;
+        }
+        // Newest first; entries with the same time, last logged first.
+        const items = state.activity
+          .map((a, i) => ({a, i}))
+          .filter(
+            ({a}) =>
+              !entityType ||
+              (a.entityType === entityType && a.entityId === entityId),
+          )
+          .sort(
+            (x, y) =>
+              Date.parse(y.a.at as string) - Date.parse(x.a.at as string) ||
+              y.i - x.i,
+          )
+          .map(({a}) => a)
+          .slice(0, limit);
+        return json(route, {items});
       }
       if (path === `/organizations/${ORG}/demo` && method === 'DELETE') {
         // Same contract as server/src/demo/service.ts: demo tasks, offers,
@@ -1172,19 +2051,69 @@ export async function mockApi(
           c.mainContactId = null;
           bump(c, by);
         }
+        // Milestone 4: real tasks lose demo resources; real notes lose links
+        // to demo records (and a demo event).
+        const demoResources = ids(state.resources);
+        for (const t of state.tasks) {
+          const res = (t.resourceIds as string[]) ?? [];
+          if (t.isDemo || !res.some(r => demoResources.has(r))) continue;
+          t.resourceIds = res.filter(r => !demoResources.has(r));
+          bump(t, by);
+        }
+        for (const n of state.notes) {
+          if (n.isDemo) continue;
+          const r = n.ref as {type: string; id: string} | null;
+          const target = r ? refRecord(r.type, r.id) : undefined;
+          // Venues, companies and warehouses that real notes use are kept.
+          const lostRef =
+            !!target?.isDemo &&
+            !['warehouse', 'venue', 'company'].includes(r!.type);
+          const lostEvent = demoEvents.has(
+            (n.event as Json | null)?.id as string,
+          );
+          if (!lostRef && !lostEvent) continue;
+          if (lostRef) n.ref = null;
+          if (lostEvent) n.event = null;
+          bump(n, by);
+        }
         const before =
           state.tasks.length +
           state.offers.length +
           state.contacts.length +
           state.events.length +
-          state.companies.length;
+          state.companies.length +
+          state.notes.length +
+          state.resources.length +
+          state.warehouses.length;
+        state.notes = state.notes.filter(n => !n.isDemo);
+        state.resources = state.resources.filter(r => !r.isDemo);
+        state.warehouses = state.warehouses.filter(
+          w =>
+            !w.isDemo ||
+            state.resources.some(
+              r => (r.warehouse as Json | null)?.id === w.id,
+            ) ||
+            state.notes.some(
+              n =>
+                (n.ref as Json | null)?.type === 'warehouse' &&
+                (n.ref as Json).id === w.id,
+            ),
+        );
         state.tasks = state.tasks.filter(t => !t.isDemo);
         state.offers = state.offers.filter(o => !o.isDemo);
         state.contacts = state.contacts.filter(c => !c.isDemo);
         state.events = state.events.filter(e => !e.isDemo);
         const usedCompany = (id: unknown) =>
-          [...state.tasks, ...state.contacts, ...state.offers].some(
-            r => (r.company as Json | null)?.id === id,
+          [
+            ...state.tasks,
+            ...state.contacts,
+            ...state.offers,
+            ...state.resources,
+          ].some(r => (r.company as Json | null)?.id === id) ||
+          state.notes.some(
+            n =>
+              (n.ref as Json | null)?.type === 'company' &&
+              (n.ref as Json).id === id,
           );
         state.companies = state.companies.filter(
           c => !c.isDemo || usedCompany(c.id),
@@ -1194,7 +2123,10 @@ export async function mockApi(
           state.offers.length +
           state.contacts.length +
           state.events.length +
-          state.companies.length;
+          state.companies.length +
+          state.notes.length +
+          state.resources.length +
+          state.warehouses.length;
         return json(route, {removed: before - after});
       }
       if (path === '/events' && method === 'POST') {
@@ -1247,7 +2179,7 @@ export async function mockApi(
             {
               code: 'VERSION_CONFLICT',
               message: 'Otra persona ha cambiado este evento.',
-              current: event,
+              current: viewEvent(event, user.role),
             },
             409,
           );
@@ -1283,16 +2215,17 @@ export async function mockApi(
           updatedBy: {id: user.id, displayName: user.displayName},
           updatedAt: new Date().toISOString(),
         });
-        return json(route, event);
+        return json(route, viewEvent(event, user.role));
       }
 
       // ---- milestone 2: tasks and companies
       if (path === `/organizations/${ORG}/tasks` && method === 'GET') {
         const eventId = url.searchParams.get('eventId');
         return json(route, {
-          items: eventId
+          items: (eventId
             ? state.tasks.filter(t => t.eventId === eventId)
-            : state.tasks,
+            : state.tasks
+          ).map(t => viewTask(t, user.role)),
         });
       }
       if (path === `/organizations/${ORG}/companies` && method === 'GET') {
@@ -1310,6 +2243,26 @@ export async function mockApi(
         ref,
       });
       if (m3 !== null) return m3;
+      const m4 = await inventoryRoute(route, {
+        path,
+        method,
+        body,
+        url,
+        user,
+        ref,
+      });
+      if (m4 !== null) return m4;
+      /** Same check as server/src/resources/links.ts (`areOwnResources`). */
+      const resourceIdsProblem = (ids: unknown): string | null => {
+        if (ids === undefined) return null;
+        if (!Array.isArray(ids)) return 'Lista de recursos no válida.';
+        if (ids.length > MAX_RESOURCES_PER_TASK) {
+          return `Como mucho ${MAX_RESOURCES_PER_TASK} recursos por tarea.`;
+        }
+        return ids.every(id => state.resources.some(r => r.id === id))
+          ? null
+          : 'Alguno de los recursos ya no existe o no es de esta organización.';
+      };
       if (path === '/tasks' && method === 'POST') {
         const input = (body ?? {}) as Json;
         const slot = {
@@ -1323,6 +2276,8 @@ export async function mockApi(
         const dependsOn = (input.dependsOn as string[] | undefined) ?? [];
         const depProblem = dependencyProblem(null, dependsOn);
         if (depProblem) fields.dependsOn = depProblem;
+        const resProblem = resourceIdsProblem(input.resourceIds);
+        if (resProblem) fields.resourceIds = resProblem;
         if (Object.keys(fields).length) return validation(route, fields);
         const now = new Date().toISOString();
         const created = makeTask(
@@ -1343,6 +2298,7 @@ export async function mockApi(
             status: input.status ?? 'planned',
             dependsOn,
             heavyLoad: input.heavyLoad ?? null,
+            resourceIds: [...new Set((input.resourceIds as string[]) ?? [])],
             notes: text(input.notes),
             source: input.source ?? null,
             verification: input.verification ?? 'draft',
@@ -1353,7 +2309,7 @@ export async function mockApi(
           },
         );
         state.tasks.push(created);
-        return json(route, created, 201);
+        return json(route, viewTask(created, user.role), 201);
       }
       const taskMatch = /^\/tasks\/([^/]+)$/.exec(path);
       const task = taskMatch
@@ -1389,8 +2345,13 @@ export async function mockApi(
           );
           if (problem) fields.dependsOn = problem;
         }
+        const resProblem = resourceIdsProblem(input.resourceIds);
+        if (resProblem) fields.resourceIds = resProblem;
         if (Object.keys(fields).length) return validation(route, fields);
 
+        if (Array.isArray(input.resourceIds)) {
+          task.resourceIds = [...new Set(input.resourceIds as string[])];
+        }
         for (const k of [
           'title',
           'kind',
@@ -1427,7 +2388,7 @@ export async function mockApi(
           updatedBy: ref,
           updatedAt: new Date().toISOString(),
         });
-        return json(route, task);
+        return json(route, viewTask(task, user.role));
       }
       if (task && method === 'DELETE') {
         const raw = url.searchParams.get('version');
@@ -1436,6 +2397,7 @@ export async function mockApi(
         }
         if (Number(raw) !== task.version) return taskConflict(route, task);
         state.tasks = state.tasks.filter(t => t !== task);
+        unlinkNotes('task', task.id as string, ref);
         for (const t of state.tasks) {
           const deps = t.dependsOn as string[];
           if (!deps.includes(task.id as string)) continue;

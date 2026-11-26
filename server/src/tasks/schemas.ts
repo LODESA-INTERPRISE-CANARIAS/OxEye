@@ -14,6 +14,7 @@ import {
   uuid,
 } from '../http/validate.ts';
 import {
+  idList,
   NAME_MAX,
   NOTES_MAX,
   parseVersionParam as parseRecordVersion,
@@ -21,6 +22,7 @@ import {
   verification,
   versionField,
 } from '../records/schemas.ts';
+import {MAX_RESOURCES_PER_TASK} from '../../../shared/logistics/rules.ts';
 import {
   MAX_DEPENDENCIES,
   normalizeIds,
@@ -68,6 +70,10 @@ const common = {
   contactId: optionalUuid,
   dependsOn,
   heavyLoad,
+  resourceIds: idList(MAX_RESOURCES_PER_TASK, {
+    list: 'recursos',
+    invalid: 'Alguno de los recursos no es válido.',
+  }),
   notes: optionalText(NOTES_MAX),
   source,
   verification,

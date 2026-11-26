@@ -12,7 +12,11 @@ import {isUuid, requireMembership} from '../organizations/service.ts';
 import {normalizeName} from '../records/find-or-create.ts';
 import {byId} from '../records/ids.ts';
 import {lockCatalogue} from '../records/locks.ts';
-import {BUILT_IN_SERVICE_CATEGORIES} from '../../../shared/logistics/rules.ts';
+import {unlinkResources} from '../resources/links.ts';
+import {
+  BUILT_IN_RESOURCE_CATEGORIES,
+  BUILT_IN_SERVICE_CATEGORIES,
+} from '../../../shared/logistics/rules.ts';
 import type {CreateCategoryBody} from './schemas.ts';
 import type {
   Category,
@@ -62,39 +66,56 @@ export async function listCategories(
 }
 
 /**
- * Gives the organization the built-in service categories it lacks, in the
- * shared order. Idempotent; a custom category with a built-in's name stays.
+ * Gives the organization the built-in service and resource categories it
+ * lacks, in the shared order. Idempotent; a custom category with a
+ * built-in's name stays.
  */
 export async function ensureBuiltInCategories(
   tx: Queryable,
   organizationId: string,
 ): Promise<void> {
-  await tx.query(
-    `INSERT INTO categories (organization_id, scope, name, built_in, position)
-     SELECT $1::uuid, 'service', b.name, true, b.position::int
-       FROM jsonb_array_elements_text($2::jsonb) WITH ORDINALITY AS b (name, position)
-     ON CONFLICT (organization_id, scope, (lower(name))) DO NOTHING`,
-    [organizationId, JSON.stringify(BUILT_IN_SERVICE_CATEGORIES)],
+  const builtIns: [CategoryScope, readonly string[]][] = [
+    ['service', BUILT_IN_SERVICE_CATEGORIES],
+    ['resource', BUILT_IN_RESOURCE_CATEGORIES],
+  ];
+  for (const [scope, names] of builtIns) {
+    await tx.query(
+      `INSERT INTO categories (organization_id, scope, name, built_in, position)
+       SELECT $1::uuid, $2, b.name, true, b.position::int
+         FROM jsonb_array_elements_text($3::jsonb) WITH ORDINALITY AS b (name, position)
+       ON CONFLICT (organization_id, scope, (lower(name))) DO NOTHING`,
+      [organizationId, scope, JSON.stringify(names)],
+    );
+  }
+}
+
+/** True when every id is a category of the organization in that scope. */
+export async function areCategoriesOfScope(
+  tx: Queryable,
+  organizationId: string,
+  scope: CategoryScope,
+  ids: readonly string[],
+): Promise<boolean> {
+  if (ids.length === 0) return true;
+  const rows = await tx.query<{n: number}>(
+    `SELECT count(*)::int AS n FROM categories
+      WHERE organization_id = $1 AND scope = $2
+        AND id IN (SELECT value::uuid FROM jsonb_array_elements_text($3::jsonb))`,
+    [organizationId, scope, JSON.stringify(ids)],
   );
+  return rows[0]?.n === ids.length;
 }
 
 /**
  * True when every id is a service category of the organization (companies
  * and offers use service categories only).
  */
-export async function areServiceCategories(
+export function areServiceCategories(
   tx: Queryable,
   organizationId: string,
   ids: readonly string[],
 ): Promise<boolean> {
-  if (ids.length === 0) return true;
-  const rows = await tx.query<{n: number}>(
-    `SELECT count(*)::int AS n FROM categories
-      WHERE organization_id = $1 AND scope = 'service'
-        AND id IN (SELECT value::uuid FROM jsonb_array_elements_text($2::jsonb))`,
-    [organizationId, JSON.stringify(ids)],
-  );
-  return rows[0]?.n === ids.length;
+  return areCategoriesOfScope(tx, organizationId, 'service', ids);
 }
 
 export const CATEGORIES_UNKNOWN =
@@ -150,10 +171,10 @@ function categoryNotFound(): AppError {
 }
 
 /**
- * Deletes a custom category. Companies and offers that used it lose it: their
- * version increases and the change is logged, so a stale edit cannot put the
- * category back silently. Categories carry no version: they are only created
- * and deleted.
+ * Deletes a custom category. Companies, offers and resources that used it
+ * lose it: their version increases and the change is logged, so a stale edit
+ * cannot put the category back silently. Categories carry no version: they
+ * are only created and deleted.
  */
 export async function deleteCategory(
   db: Db,
@@ -182,9 +203,11 @@ export async function deleteCategory(
     )[0];
     if (!row) throw categoryNotFound();
     if (row.built_in) {
+      const where =
+        row.scope === 'resource' ? 'cada recurso' : 'cada empresa u oferta';
       throw new AppError(
         'VALIDATION',
-        `«${row.name}» es una categoría de serie y no se puede borrar. Puedes quitarla de cada empresa u oferta.`,
+        `«${row.name}» es una categoría de serie y no se puede borrar. Puedes quitarla de ${where}.`,
       );
     }
 
@@ -209,6 +232,13 @@ export async function deleteCategory(
         RETURNING id, name, is_demo`,
       [id, actor.id, at],
     );
+    await unlinkResources(tx, {
+      organizationId: orgId,
+      link: 'category',
+      ids: [id],
+      actorId: actor.id,
+      now,
+    });
     // company_categories rows go with the category (ON DELETE CASCADE).
     await tx.query('DELETE FROM categories WHERE id = $1', [id]);
 

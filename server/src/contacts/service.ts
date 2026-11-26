@@ -18,6 +18,7 @@ import {
   resolveCompanyRef,
   unlinkTasks,
 } from '../companies/service.ts';
+import {unlinkNotes} from '../notes/refs.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
 import {promoteDemo} from '../records/find-or-create.ts';
 import {byId, parseIds} from '../records/ids.ts';
@@ -480,9 +481,9 @@ export async function updateContact(
 }
 
 /**
- * Deletes a contact at the given version. Tasks lose it as their contact and
- * a company that had it as main contact loses it; their versions increase and
- * the changes are logged.
+ * Deletes a contact at the given version. Tasks lose it as their contact, a
+ * company that had it as main contact loses it and notes lose the link; their
+ * versions increase and the changes are logged.
  */
 export async function deleteContact(
   db: Db,
@@ -507,6 +508,7 @@ export async function deleteContact(
       actorId: actor.id,
       now,
     });
+    await unlinkNotes(tx, {link: 'contact', ids: [id], actorId: actor.id, now});
     const tasks = await unlinkTasks(tx, 'contact_id', id, actor.id, now);
     for (const t of tasks) {
       await appendActivity(tx, {

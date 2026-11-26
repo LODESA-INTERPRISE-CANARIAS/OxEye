@@ -55,7 +55,8 @@ test.describe('Gestor logístico · menú «Añadir»', () => {
       page.getByRole('menu', {name: 'Qué quieres añadir'}),
     ).toBeVisible();
     await expect(add).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('#lx-add-event')).toBeFocused();
+    // Milestone 4: quick capture first, so «Incidencia» takes the focus.
+    await expect(page.locator('#lx-add-incident')).toBeFocused();
     await page.locator('#lx-add-event').click();
     await expect(page.locator('#lx-event-form')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -79,39 +80,59 @@ test.describe('Gestor logístico · menú «Añadir»', () => {
     await mockApi(page, planData());
     await signIn(page);
     const add = page.locator('#lx-add');
-    const event = page.locator('#lx-add-event');
+    // Milestone 4: «Captura rápida» (Incidencia, Nota, Recurso, Persona),
+    // then «Planificación» (Tarea, Evento, Empresa o entidad, Oferta).
+    const incident = page.locator('#lx-add-incident');
+    const note = page.locator('#lx-add-note');
     const task = page.locator('#lx-add-task');
-    // Milestone 3: Evento, Tarea, Persona, Empresa o entidad, Oferta.
     const offer = page.locator('#lx-add-offer');
     await add.focus();
     await page.keyboard.press('Enter');
-    await expect(event).toBeFocused();
+    await expect(incident).toBeFocused();
+    const menu = page.getByRole('menu', {name: 'Qué quieres añadir'});
+    await expect(menu.getByRole('menuitem')).toHaveCount(8);
+    expect(
+      await menu
+        .getByRole('menuitem')
+        .evaluateAll(els => els.map(el => el.id.replace('lx-add-', ''))),
+    ).toEqual([
+      'incident',
+      'note',
+      'resource',
+      'contact',
+      'task',
+      'event',
+      'company',
+      'offer',
+    ]);
     await expect(
-      page
-        .getByRole('menu', {name: 'Qué quieres añadir'})
-        .getByRole('menuitem'),
-    ).toHaveCount(5);
+      menu.getByRole('group', {name: 'Captura rápida'}).getByRole('menuitem'),
+    ).toHaveCount(4);
+    await expect(
+      menu.getByRole('group', {name: 'Planificación'}).getByRole('menuitem'),
+    ).toHaveCount(4);
     await page.keyboard.press('ArrowDown');
-    await expect(task).toBeFocused();
+    await expect(note).toBeFocused();
     await page.keyboard.press('ArrowUp');
-    await expect(event).toBeFocused();
+    await expect(incident).toBeFocused();
     // Arrows wrap at both ends.
     await page.keyboard.press('ArrowUp');
     await expect(offer).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(event).toBeFocused();
+    await expect(incident).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(task).toBeHidden();
     await expect(add).toBeFocused();
     await expect(add).toHaveAttribute('aria-expanded', 'false');
 
     await page.keyboard.press('Enter');
-    await expect(event).toBeFocused();
+    await expect(incident).toBeFocused();
     await page.keyboard.press('End');
     await expect(offer).toBeFocused();
     await page.keyboard.press('Home');
-    await expect(event).toBeFocused();
-    await page.keyboard.press('ArrowDown');
+    await expect(incident).toBeFocused();
+    // Down through the quick-capture group into «Planificación».
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
     await expect(task).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.locator('#lx-task-form')).toBeVisible();
@@ -126,8 +147,10 @@ test.describe('Gestor logístico · menú «Añadir»', () => {
     await signIn(page);
     const fab = page.locator('#lx-fab');
     await fab.click();
-    await expect(page.locator('#lx-fab-event')).toBeFocused();
+    // Milestone 4: quick capture first; the planning tiles still fit.
+    await expect(page.locator('#lx-fab-incident')).toBeFocused();
     await expect(page.locator('#lx-fab-task')).toBeInViewport();
+    await expect(page.locator('#lx-fab-offer')).toBeInViewport();
     await page.keyboard.press('Escape');
     await expect(page.locator('#lx-fab-task')).toBeHidden();
     await expect(fab).toBeFocused();

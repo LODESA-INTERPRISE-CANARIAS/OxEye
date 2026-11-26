@@ -3,6 +3,7 @@
  */
 import React from 'react';
 import type {ActivityEntry} from '../../../shared/logistics/contracts.ts';
+import {FIELD_LABEL} from '../../../shared/logistics/history.ts';
 import {initials, relativeTime} from '../lib/format';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Card, EmptyState, LoadError, SkeletonRows} from '../ui';
@@ -26,53 +27,38 @@ const ACTION: Record<ActivityEntry['action'], string> = {
   delete: 'ha borrado',
 };
 
-const FIELD: Record<string, string> = {
-  name: 'nombre',
-  venue: 'lugar',
-  venueId: 'lugar',
-  venueName: 'lugar',
-  startsAt: 'horario',
-  endsAt: 'horario',
-  date: 'horario',
-  startTime: 'horario',
-  endTime: 'horario',
-  status: 'estado',
-  notes: 'notas',
-  source: 'origen',
-  verification: 'verificación',
-  // Tasks (milestone 2).
-  title: 'título',
-  kind: 'tipo',
-  endDate: 'horario',
-  heavyLoad: 'carga pesada',
-  dependsOn: 'dependencias',
-  contact: 'persona de contacto',
-  contactId: 'persona de contacto',
-  // People, companies and offers (milestone 3).
-  role: 'cargo',
-  phone: 'teléfono',
-  email: 'correo',
-  description: 'descripción',
-  company: 'empresa',
-  companyId: 'empresa',
-  companyName: 'empresa',
-  eventIds: 'eventos',
-  categoryIds: 'categorías',
-  website: 'web',
-  mainContactId: 'persona responsable',
-  price: 'precio',
-  unit: 'unidad',
-  customUnit: 'unidad',
-  transportCost: 'transporte',
-  assemblyCost: 'montaje',
-  maintenanceCost: 'mantenimiento',
-  vatIncluded: 'impuestos (IGIC/IVA)',
-  conditions: 'condiciones',
-  categoryId: 'categoría',
+/** In a one-line summary, any change of dates or hours reads «horario». */
+const SCHEDULE = new Set([
+  'date',
+  'endDate',
+  'startsAt',
+  'endsAt',
+  'startTime',
+  'endTime',
+]);
+
+/** Older entries may name the reference by its id or name column. */
+const ALIAS: Record<string, string> = {
+  venueId: 'venue',
+  venueName: 'venue',
+  contactId: 'contact',
+  companyId: 'company',
+  companyName: 'company',
+  warehouseId: 'warehouse',
+  warehouseName: 'warehouse',
 };
 
+function fieldName(field: string): string | undefined {
+  if (SCHEDULE.has(field)) return 'horario';
+  return FIELD_LABEL[ALIAS[field] ?? field];
+}
+
 function changedText(fields: string[]): string | null {
-  const names = [...new Set(fields.map(f => FIELD[f] ?? f))];
+  // Field names only, never values, from the shared labels (the same ones
+  // as the record history); an unknown name is left out.
+  const names = [
+    ...new Set(fields.map(fieldName).filter((x): x is string => !!x)),
+  ];
   if (!names.length) return null;
   if (names.length === 1) return names[0];
   return `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;

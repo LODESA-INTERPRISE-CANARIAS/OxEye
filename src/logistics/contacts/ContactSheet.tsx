@@ -30,6 +30,8 @@ import {
   ROLE_MAX,
 } from '../../../shared/logistics/rules.ts';
 import {useActions, type ContactPrefill} from '../common/actions';
+import {RecordHistory} from '../common/RecordHistory';
+import {RecordNotes} from '../common/RecordNotes';
 import {TaskRow} from '../common/TaskRow';
 import {usePlan} from '../common/usePlan';
 import {DemoChip, VerificationChip} from '../events/EventChips';
@@ -417,6 +419,20 @@ const ContactView: React.FC<{
           </section>
         )}
 
+        <RecordNotes
+          target={{type: 'contact', id: contact.id}}
+          prefill={{
+            ref: {type: 'contact', id: contact.id, label: contact.name},
+          }}
+          idPrefix="lx-contact"
+          canAdd={!gone}
+        />
+        <RecordHistory
+          entityType="contact"
+          entityId={contact.id}
+          version={contact.version}
+          idPrefix="lx-contact"
+        />
         <Provenance record={contact} id="lx-contact-provenance" />
       </div>
       {sharing && (

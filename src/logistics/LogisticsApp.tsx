@@ -7,8 +7,11 @@ import type {
   Company,
   Contact,
   LogisticsEvent,
+  Note,
   Offer,
+  Resource,
   Task,
+  Warehouse,
 } from '../../shared/logistics/contracts.ts';
 import {DEFAULT_TIMEZONE} from '../../shared/logistics/time.ts';
 import '../styles/logistics/index.css';
@@ -20,21 +23,32 @@ import {
   type CompanyPrefill,
   type ContactPrefill,
   type LogisticsActions,
+  type NotePrefill,
   type OfferPrefill,
+  type ResourcePrefill,
   type TaskPrefill,
+  type WarehousePrefill,
 } from './common/actions';
 import {CompanySheet, type CompanySheetMode} from './contacts/CompanySheet';
 import {ContactSheet, type ContactSheetMode} from './contacts/ContactSheet';
 import {ContactsScreen} from './contacts/ContactsScreen';
 import {EventSheet, type EventSheetMode} from './events/EventSheet';
 import {HoyScreen} from './hoy/HoyScreen';
+import {InventoryScreen} from './inventory/InventoryScreen';
+import {ResourceSheet, type ResourceSheetMode} from './inventory/ResourceSheet';
+import {
+  WarehouseSheet,
+  type WarehouseSheetMode,
+} from './inventory/WarehouseSheet';
 import {longDate, todayIn, zoneNote} from './lib/format';
 import {clearRescue, readRescue} from './lib/rescue';
+import {NoteSheet, type NoteSheetMode} from './notes/NoteSheet';
 import {LoginScreen} from './screens/LoginScreen';
 import {PlaceholderScreen} from './screens/PlaceholderScreen';
 import {ServerGate} from './screens/ServerGate';
 import {SearchSheet} from './search/SearchSheet';
 import {VenueSheet} from './search/VenueSheet';
+import type {AddOption} from './shell/AddMenu';
 import {Shell} from './shell/Shell';
 import {
   calendarDayFromHash,
@@ -69,6 +83,24 @@ interface Opened<M> {
   mode: M;
   seq: number;
 }
+
+/**
+ * A one-sheet slot that remembers the card a new sheet replaced, e.g. a
+ * resource card under the warehouse whose «Añadir recurso aquí» opened a
+ * new resource form in the same slot: closing the form brings it back.
+ */
+interface Slot<M> extends Opened<M> {
+  under?: Slot<M> | null;
+}
+
+/** Opens `next` in the slot, keeping what was there to come back to. */
+const over =
+  <M,>(next: Opened<M>) =>
+  (current: Slot<M> | null): Slot<M> => ({...next, under: current});
+
+/** Closes the top sheet of the slot, back to the one it replaced. */
+const back = <M,>(current: Slot<M> | null): Slot<M> | null =>
+  current?.under ?? null;
 
 /** Whether the user is typing somewhere (then «/» is just a character). */
 function isTyping(target: EventTarget | null): boolean {
@@ -125,6 +157,11 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const [offerSheet, setOfferSheet] = useState<Opened<OfferSheetMode> | null>(
     null,
   );
+  const [warehouseSheet, setWarehouseSheet] =
+    useState<Opened<WarehouseSheetMode> | null>(null);
+  const [resourceSheet, setResourceSheet] =
+    useState<Slot<ResourceSheetMode> | null>(null);
+  const [noteSheet, setNoteSheet] = useState<Slot<NoteSheetMode> | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [venueId, setVenueId] = useState<string | null>(null);
   const openSeq = useRef(0);
@@ -182,6 +219,9 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       setContactSheet(null);
       setCompanySheet(null);
       setOfferSheet(null);
+      setWarehouseSheet(null);
+      setResourceSheet(null);
+      setNoteSheet(null);
       setSearchOpen(false);
       setVenueId(null);
       return;
@@ -223,6 +263,30 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
         opened<OfferSheetMode>(
           rescued.base
             ? {kind: 'edit', offer: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      );
+    } else if (rescued.entity === 'warehouse') {
+      setWarehouseSheet(
+        opened<WarehouseSheetMode>(
+          rescued.base
+            ? {kind: 'edit', warehouse: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      );
+    } else if (rescued.entity === 'resource') {
+      setResourceSheet(
+        opened<ResourceSheetMode>(
+          rescued.base
+            ? {kind: 'edit', resource: rescued.base, rescued: rescued.values}
+            : {kind: 'create', rescued: rescued.values},
+        ),
+      );
+    } else if (rescued.entity === 'note') {
+      setNoteSheet(
+        opened<NoteSheetMode>(
+          rescued.base
+            ? {kind: 'edit', note: rescued.base, rescued: rescued.values}
             : {kind: 'create', rescued: rescued.values},
         ),
       );
@@ -389,6 +453,126 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   );
   const openVenue = useCallback((id: string) => setVenueId(id), []);
   const openSearch = useCallback(() => setSearchOpen(true), []);
+  // Warehouses, resources and notes also open on their card (view).
+  const openWarehouse = useCallback(
+    (warehouse: Warehouse) =>
+      setWarehouseSheet(opened<WarehouseSheetMode>({kind: 'view', warehouse})),
+    [opened],
+  );
+  const addWarehouse = useCallback(
+    (prefill?: WarehousePrefill) =>
+      setWarehouseSheet(opened<WarehouseSheetMode>({kind: 'create', prefill})),
+    [opened],
+  );
+  const openResource = useCallback(
+    (resource: Resource) =>
+      setResourceSheet(opened<ResourceSheetMode>({kind: 'view', resource})),
+    [opened],
+  );
+  // Adding one from inside another sheet (a warehouse's «Añadir recurso
+  // aquí», a record's «Añadir nota») may land on a slot already showing a
+  // card further down: it comes back when the new sheet closes.
+  const addResource = useCallback(
+    (prefill?: ResourcePrefill) =>
+      setResourceSheet(
+        over(opened<ResourceSheetMode>({kind: 'create', prefill})),
+      ),
+    [opened],
+  );
+  const openNote = useCallback(
+    (note: Note) => setNoteSheet(opened<NoteSheetMode>({kind: 'view', note})),
+    [opened],
+  );
+  const addNote = useCallback(
+    (prefill?: NotePrefill) =>
+      setNoteSheet(over(opened<NoteSheetMode>({kind: 'create', prefill}))),
+    [opened],
+  );
+
+  // «+ Añadir»: what is captured on site first (large targets), then the
+  // planning records as smaller tiles. Ids of the M2/M3 options are kept.
+  const addOptions = useMemo<AddOption[]>(
+    () => [
+      {
+        id: 'incident',
+        group: 'Captura rápida',
+        label: 'Incidencia',
+        description:
+          'Algo ha salido mal en la logística: un camión que no llega, una valla rota.',
+        icon: 'alert',
+        onSelect: () => addNote({kind: 'incident'}),
+      },
+      {
+        id: 'note',
+        group: 'Captura rápida',
+        label: 'Nota',
+        description: 'Un apunte, una decisión o una pregunta pendiente.',
+        icon: 'note',
+        onSelect: () => addNote({kind: 'note'}),
+      },
+      {
+        id: 'resource',
+        group: 'Captura rápida',
+        label: 'Recurso',
+        description: 'Material de un almacén o un servicio contratado.',
+        icon: 'inventory',
+        onSelect: () => addResource(),
+      },
+      {
+        id: 'contact',
+        group: 'Captura rápida',
+        label: 'Persona',
+        description: 'Alguien a quien llamar: basta con el nombre.',
+        icon: 'user',
+        onSelect: () => addContact(),
+      },
+      {
+        id: 'task',
+        group: 'Planificación',
+        compact: true,
+        label: 'Tarea',
+        description: 'Montaje, entrega, transporte… con empresa y hora.',
+        icon: 'task',
+        onSelect: addTaskHere,
+      },
+      {
+        id: 'event',
+        group: 'Planificación',
+        compact: true,
+        label: 'Evento',
+        description: 'Lo que se celebra: fecha, lugar y horario.',
+        icon: 'calendar',
+        onSelect: addEvent,
+      },
+      {
+        id: 'company',
+        group: 'Planificación',
+        compact: true,
+        label: 'Empresa o entidad',
+        description: 'Proveedor, área municipal, asociación…',
+        icon: 'building',
+        onSelect: () => addCompany(),
+      },
+      {
+        id: 'offer',
+        group: 'Planificación',
+        compact: true,
+        label: 'Oferta',
+        description: 'Lo que ofrece un proveedor y a qué precio.',
+        icon: 'offer',
+        onSelect: () => addOffer(),
+      },
+    ],
+    [
+      addNote,
+      addResource,
+      addContact,
+      addTaskHere,
+      addEvent,
+      addCompany,
+      addOffer,
+    ],
+  );
 
   // «/» or Ctrl+K (⌘K) opens the search from anywhere in the workspace, but
   // never over an open sheet or while typing «/» in a field.
@@ -425,6 +609,12 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       addOffer,
       openVenue,
       openSearch,
+      openWarehouse,
+      addWarehouse,
+      openResource,
+      addResource,
+      openNote,
+      addNote,
     }),
     [
       canWrite,
@@ -443,6 +633,12 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       addOffer,
       openVenue,
       openSearch,
+      openWarehouse,
+      addWarehouse,
+      openResource,
+      addResource,
+      openNote,
+      addNote,
     ],
   );
 
@@ -468,11 +664,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
           </>
         }
         canWrite={canWrite}
-        onAddEvent={addEvent}
-        onAddTask={addTaskHere}
-        onAddContact={addContact}
-        onAddCompany={addCompany}
-        onAddOffer={addOffer}
+        addOptions={addOptions}
         onSearch={openSearch}
         swipeLocked={timelineActive}
         onExit={onClose}
@@ -495,6 +687,8 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
           <ContactsScreen />
         ) : space === 'catalogo' ? (
           <CatalogScreen />
+        ) : space === 'inventarios' ? (
+          <InventoryScreen />
         ) : (
           <PlaceholderScreen space={space} onGoToday={() => goTo('hoy')} />
         )}
@@ -550,6 +744,21 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
                 key={`offer:${offerSheet?.seq ?? 'closed'}`}
                 mode={offerSheet?.mode ?? null}
                 onClose={() => setOfferSheet(null)}
+              />
+              <WarehouseSheet
+                key={`warehouse:${warehouseSheet?.seq ?? 'closed'}`}
+                mode={warehouseSheet?.mode ?? null}
+                onClose={() => setWarehouseSheet(null)}
+              />
+              <ResourceSheet
+                key={`resource:${resourceSheet?.seq ?? 'closed'}`}
+                mode={resourceSheet?.mode ?? null}
+                onClose={() => setResourceSheet(back)}
+              />
+              <NoteSheet
+                key={`note:${noteSheet?.seq ?? 'closed'}`}
+                mode={noteSheet?.mode ?? null}
+                onClose={() => setNoteSheet(back)}
               />
               {venueId && (
                 <VenueSheet

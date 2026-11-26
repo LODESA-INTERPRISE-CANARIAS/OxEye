@@ -1,9 +1,12 @@
 /**
  * A place found by the universal search: its address and what happens there
- * (events and tasks), so «¿qué hay en la Plaza del Cristo?» has an answer.
+ * (events and tasks), so «¿qué hay en la Plaza del Cristo?» has an answer,
+ * plus the notes about it and its history.
  */
 import React, {useMemo} from 'react';
 import {useActions} from '../common/actions';
+import {RecordHistory} from '../common/RecordHistory';
+import {RecordNotes} from '../common/RecordNotes';
 import {TaskRow} from '../common/TaskRow';
 import {usePlan} from '../common/usePlan';
 import {sortEvents} from '../lib/events';
@@ -103,6 +106,20 @@ export const VenueSheet: React.FC<{venueId: string; onClose: () => void}> = ({
             <p className="lx-muted">Ninguna tarea en este lugar.</p>
           )}
         </section>
+        {venue && (
+          <>
+            <RecordNotes
+              target={{type: 'venue', id: venue.id}}
+              prefill={{ref: {type: 'venue', id: venue.id, label: venue.name}}}
+              idPrefix="lx-venue"
+            />
+            <RecordHistory
+              entityType="venue"
+              entityId={venue.id}
+              idPrefix="lx-venue"
+            />
+          </>
+        )}
       </div>
     </Sheet>
   );

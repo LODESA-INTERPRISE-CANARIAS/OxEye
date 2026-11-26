@@ -1,6 +1,7 @@
 /**
  * `npm --prefix server run db:seed [-- --reset-passwords]`: creates the pilot
- * organization, users and demo event and tasks (never again once the demo was
+ * organization, users, built-in categories and the demo (event, tasks,
+ * directory, catalogue, inventory and notes; never again once the demo was
  * removed). New passwords are printed once.
  */
 import {pendingMigrations} from '../db/migrate.ts';
@@ -69,5 +70,10 @@ await runCli(async db => {
     result.demoContactsCreated + result.demoOffersCreated > 0
       ? `Contactos y catálogo de demostración creados: ${result.demoContactsCreated} personas y ${result.demoOffersCreated} ofertas (empresas y entidades ficticias, teléfonos +34 000 000 00X).`
       : 'Contactos y catálogo de demostración: ya existían o no hay evento de demostración; no se ha tocado nada.',
+  );
+  console.log(
+    result.demoResourcesCreated + result.demoNotesCreated > 0
+      ? `Inventario y notas de demostración creados: «Almacén Demo», ${result.demoResourcesCreated} recursos y ${result.demoNotesCreated} notas (una incidencia, una decisión y una pregunta abierta).`
+      : 'Inventario y notas de demostración: ya existían o no hay evento de demostración; no se ha tocado nada.',
   );
 });

@@ -1,7 +1,7 @@
 /**
  * Events: list, create (only the name is required) and edit with optimistic
  * concurrency. Every write appends to the activity log in the same
- * transaction.
+ * transaction. Guests never receive an event's notes (see records/redact.ts).
  */
 import type {Db, Queryable} from '../db/db.ts';
 import {toIsoOrNull} from '../db/db.ts';
@@ -10,6 +10,8 @@ import {appendActivity} from '../activity/service.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
+import {forViewer} from '../records/redact.ts';
+import type {Viewer} from '../records/redact.ts';
 import {findOrCreateVenue, normalizeName} from '../venues/service.ts';
 import {
   changedEventFields,
@@ -47,23 +49,28 @@ const SELECT_EVENT = `
     LEFT JOIN venues v ON v.id = e.venue_id
     ${authorJoins('e')}`;
 
-function toEvent(row: EventRow): LogisticsEvent {
-  return {
-    ...toMeta(row),
-    organizationId: row.organization_id,
-    name: row.name,
-    venue:
-      row.venue_id && row.venue_name
-        ? {id: row.venue_id, name: row.venue_name}
-        : null,
-    date: row.local_date,
-    endDate: row.end_date,
-    startsAt: toIsoOrNull(row.starts_at),
-    endsAt: toIsoOrNull(row.ends_at),
-    timezone: row.timezone,
-    status: row.status,
-    notes: row.notes,
-  };
+/** The single row → record mapping; the viewer decides what is withheld. */
+function toEvent(row: EventRow, viewer: Viewer): LogisticsEvent {
+  return forViewer(
+    'event',
+    {
+      ...toMeta(row),
+      organizationId: row.organization_id,
+      name: row.name,
+      venue:
+        row.venue_id && row.venue_name
+          ? {id: row.venue_id, name: row.venue_name}
+          : null,
+      date: row.local_date,
+      endDate: row.end_date,
+      startsAt: toIsoOrNull(row.starts_at),
+      endsAt: toIsoOrNull(row.ends_at),
+      timezone: row.timezone,
+      status: row.status,
+      notes: row.notes,
+    },
+    viewer,
+  );
 }
 
 function storedSlot(row: EventRow): StoredSlot {
@@ -91,6 +98,7 @@ function stateOf(row: EventRow): EventState {
 export async function listEvents(
   db: Queryable,
   organizationId: string,
+  viewer: Viewer,
 ): Promise<LogisticsEvent[]> {
   const rows = await db.query<EventRow>(
     `${SELECT_EVENT}
@@ -99,7 +107,7 @@ export async function listEvents(
                lower(e.name), e.id`,
     [organizationId],
   );
-  return rows.map(toEvent);
+  return rows.map(r => toEvent(r, viewer));
 }
 
 async function loadEvent(
@@ -175,7 +183,7 @@ export async function createEvent(
       action: 'create',
       at: now,
     });
-    return toEvent((await loadEvent(tx, id)) as EventRow);
+    return toEvent((await loadEvent(tx, id)) as EventRow, actor);
   });
 }
 
@@ -199,7 +207,7 @@ export async function updateEvent(
       throw new AppError(
         'VERSION_CONFLICT',
         'Otra persona ha cambiado este evento mientras lo editabas. Revisa la versión actual antes de guardar tus cambios.',
-        {current: toEvent(row)},
+        {current: toEvent(row, actor)},
       );
     }
 
@@ -242,7 +250,7 @@ export async function updateEvent(
     }
 
     const changed = changedEventFields(before, after);
-    if (changed.length === 0) return toEvent(row);
+    if (changed.length === 0) return toEvent(row, actor);
 
     const updated = await tx.query<{id: string}>(
       `UPDATE events
@@ -274,7 +282,7 @@ export async function updateEvent(
       throw new AppError(
         'VERSION_CONFLICT',
         'Otra persona ha cambiado este evento mientras lo editabas.',
-        {current: toEvent((await loadEvent(tx, id)) as EventRow)},
+        {current: toEvent((await loadEvent(tx, id)) as EventRow, actor)},
       );
     }
     await appendActivity(tx, {
@@ -288,6 +296,6 @@ export async function updateEvent(
       at: now,
       isDemo: row.is_demo,
     });
-    return toEvent((await loadEvent(tx, id)) as EventRow);
+    return toEvent((await loadEvent(tx, id)) as EventRow, actor);
   });
 }

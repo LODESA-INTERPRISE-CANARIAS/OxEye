@@ -17,14 +17,20 @@ import type {
   LoginUserOption,
   LogisticsEvent,
   MeResponse,
+  Note,
+  NoteInput,
   Offer,
   OfferInput,
   RecentSearch,
   RecentSearchInput,
+  Resource,
+  ResourceInput,
   Task,
   TaskInput,
   UpdateEventInput,
   Venue,
+  Warehouse,
+  WarehouseInput,
 } from '../../../shared/logistics/contracts.ts';
 import {apiRequest} from './client';
 
@@ -111,6 +117,9 @@ export const api = {
   createCategory: (token: string, body: CategoryInput) =>
     apiRequest<Category>('POST', '/categories', {token, body}),
 
+  deleteCategory: (token: string, id: string) =>
+    apiRequest<void>('DELETE', `/categories/${enc(id)}`, {token}),
+
   contacts: (token: string, orgId: string) =>
     apiRequest<ListResponse<Contact>>(
       'GET',
@@ -172,6 +181,77 @@ export const api = {
       `/organizations/${enc(orgId)}/activity?limit=${limit}`,
       {token},
     ),
+
+  // ---- milestone 4: inventories, notes and the history of one record
+  /** History of one record, newest first. */
+  history: (
+    token: string,
+    orgId: string,
+    entityType: string,
+    entityId: string,
+    limit = 50,
+  ) =>
+    apiRequest<ListResponse<ActivityEntry>>(
+      'GET',
+      `/organizations/${enc(orgId)}/activity?entityType=${enc(
+        entityType,
+      )}&entityId=${enc(entityId)}&limit=${limit}`,
+      {token},
+    ),
+
+  warehouses: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Warehouse>>(
+      'GET',
+      `/organizations/${enc(orgId)}/warehouses`,
+      {token},
+    ),
+
+  createWarehouse: (token: string, body: WarehouseInput) =>
+    apiRequest<Warehouse>('POST', '/warehouses', {token, body}),
+
+  updateWarehouse: (token: string, id: string, body: WarehouseInput) =>
+    apiRequest<Warehouse>('PATCH', `/warehouses/${enc(id)}`, {token, body}),
+
+  deleteWarehouse: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/warehouses/${enc(id)}?version=${version}`, {
+      token,
+    }),
+
+  resources: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Resource>>(
+      'GET',
+      `/organizations/${enc(orgId)}/resources`,
+      {token},
+    ),
+
+  createResource: (token: string, body: ResourceInput) =>
+    apiRequest<Resource>('POST', '/resources', {token, body}),
+
+  updateResource: (token: string, id: string, body: ResourceInput) =>
+    apiRequest<Resource>('PATCH', `/resources/${enc(id)}`, {token, body}),
+
+  deleteResource: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/resources/${enc(id)}?version=${version}`, {
+      token,
+    }),
+
+  notes: (token: string, orgId: string) =>
+    apiRequest<ListResponse<Note>>(
+      'GET',
+      `/organizations/${enc(orgId)}/notes`,
+      {token},
+    ),
+
+  createNote: (token: string, body: NoteInput) =>
+    apiRequest<Note>('POST', '/notes', {token, body}),
+
+  updateNote: (token: string, id: string, body: NoteInput) =>
+    apiRequest<Note>('PATCH', `/notes/${enc(id)}`, {token, body}),
+
+  deleteNote: (token: string, id: string, version: number) =>
+    apiRequest<void>('DELETE', `/notes/${enc(id)}?version=${version}`, {
+      token,
+    }),
 
   removeDemo: (token: string, orgId: string) =>
     apiRequest<{removed: number}>(

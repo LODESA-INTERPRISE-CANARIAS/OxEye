@@ -12,8 +12,8 @@ import React, {useMemo, useState} from 'react';
 import type {Company} from '../../../shared/logistics/contracts.ts';
 import {COMPANY_KIND_LABEL} from '../../../shared/logistics/rules.ts';
 import {findLookAlikes, rank} from '../../../shared/logistics/search.ts';
-import {companyByName} from '../lib/directory';
-import {Button, Field, Icon, Input, describedBy} from '../ui';
+import {nameKey} from '../lib/tasks';
+import {Button, Field, Icon, Input, describedBy, type IconName} from '../ui';
 
 export const LookAlike = <T extends {id: string; name: string}>({
   id,
@@ -24,6 +24,7 @@ export const LookAlike = <T extends {id: string; name: string}>({
   describe,
   onOpen,
   openLabel = 'Abrir',
+  dismissLabel = 'No, es otra',
 }: {
   id: string;
   name: string;
@@ -35,6 +36,8 @@ export const LookAlike = <T extends {id: string; name: string}>({
   describe?: (candidate: T) => string | null;
   onOpen: (candidate: T) => void;
   openLabel?: string;
+  /** «No, es otra» / «No, es otro». */
+  dismissLabel?: string;
 }) => {
   const [dismissed, setDismissed] = useState<string[]>([]);
   const matches = useMemo(
@@ -76,7 +79,7 @@ export const LookAlike = <T extends {id: string; name: string}>({
                   id={`${id}-dismiss-${c.id}`}
                   onClick={() => setDismissed(d => [...d, c.id])}
                 >
-                  No, es otra
+                  {dismissLabel}
                 </Button>
               </div>
             </div>
@@ -84,6 +87,136 @@ export const LookAlike = <T extends {id: string; name: string}>({
         })}
       </div>
     </div>
+  );
+};
+
+/**
+ * Type a name to link an existing record or create one by name (the server
+ * finds or creates case-insensitively): tappable suggestions, look-alikes,
+ * and a line saying which of the two will happen. Used for companies and,
+ * since milestone 4, warehouses.
+ */
+export const FindOrCreateField = <T extends {id: string; name: string}>({
+  id,
+  label,
+  value,
+  onChange,
+  items,
+  error,
+  optional,
+  placeholder,
+  icon,
+  describe,
+  createText,
+  suggestLabel,
+  hint,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (name: string) => void;
+  items: T[];
+  error?: string;
+  optional?: boolean;
+  placeholder?: string;
+  icon: IconName;
+  /** Context after «Se enlazará con «X»» (kind of company…). */
+  describe?: (item: T) => string | null;
+  /** «Se creará «X» como …». */
+  createText: (typed: string) => React.ReactNode;
+  /** Accessible name of the suggestions. */
+  suggestLabel: string;
+  hint?: React.ReactNode;
+}) => {
+  const [focused, setFocused] = useState(false);
+  const typed = value.trim();
+  const exact = useMemo(() => {
+    const key = nameKey(value);
+    return key ? (items.find(x => nameKey(x.name) === key) ?? null) : null;
+  }, [items, value]);
+  const suggestions = useMemo(
+    () =>
+      typed && !exact
+        ? rank(typed, items, c => [c.name], 4).map(r => r.item)
+        : [],
+    [typed, exact, items],
+  );
+  const lookAlikes = useMemo(
+    () =>
+      typed.length >= 3 && !exact
+        ? findLookAlikes(typed, items).filter(c => !suggestions.includes(c))
+        : [],
+    [typed, exact, items, suggestions],
+  );
+  const options = [...suggestions, ...lookAlikes].slice(0, 4);
+  const statusId = `${id}-status`;
+  const context = exact ? describe?.(exact) : null;
+
+  return (
+    <Field id={id} label={label} optional={optional} error={error} hint={hint}>
+      <Input
+        id={id}
+        name={id}
+        value={value}
+        invalid={!!error}
+        aria-describedby={
+          [describedBy(id, {error, hint}), typed ? statusId : '']
+            .filter(Boolean)
+            .join(' ') || undefined
+        }
+        placeholder={placeholder}
+        autoComplete="off"
+        autoCapitalize="words"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={e => onChange(e.target.value)}
+      />
+      {typed && (
+        <p
+          className={`lx-namestatus${exact ? ' lx-namestatus--known' : ''}`}
+          id={statusId}
+        >
+          {exact ? (
+            <>
+              <Icon name="check" size={15} />
+              Se enlazará con «{exact.name}»{context ? ` · ${context}` : ''}
+            </>
+          ) : (
+            <>
+              <Icon name="plus" size={15} />
+              {createText(typed)}
+            </>
+          )}
+        </p>
+      )}
+      {options.length > 0 && (focused || lookAlikes.length > 0) && (
+        <div
+          className="lx-suggest"
+          role="group"
+          aria-label={suggestLabel}
+          id={`${id}-suggestions`}
+        >
+          <span className="lx-suggest__label">
+            {lookAlikes.length && !suggestions.length
+              ? '¿Es alguna de estas?'
+              : 'Ya registradas:'}
+          </span>
+          {options.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              className="lx-suggest__chip"
+              // Keep the input's focus state while tapping a suggestion.
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => onChange(c.name)}
+            >
+              <Icon name={icon} size={15} />
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </Field>
   );
 };
 
@@ -105,93 +238,24 @@ export const CompanyField: React.FC<{
   error,
   optional,
   placeholder = 'Carpas Demo',
-}) => {
-  const [focused, setFocused] = useState(false);
-  const exact = companyByName(companies, value);
-  const typed = value.trim();
-  const suggestions = useMemo(
-    () =>
-      typed && !exact
-        ? rank(typed, companies, c => [c.name], 4).map(r => r.item)
-        : [],
-    [typed, exact, companies],
-  );
-  const lookAlikes = useMemo(
-    () =>
-      typed.length >= 3 && !exact
-        ? findLookAlikes(typed, companies).filter(c => !suggestions.includes(c))
-        : [],
-    [typed, exact, companies, suggestions],
-  );
-  const options = [...suggestions, ...lookAlikes].slice(0, 4);
-  const statusId = `${id}-status`;
-
-  return (
-    <Field id={id} label={label} optional={optional} error={error}>
-      <Input
-        id={id}
-        name={id}
-        value={value}
-        invalid={!!error}
-        aria-describedby={
-          [describedBy(id, {error}), typed ? statusId : '']
-            .filter(Boolean)
-            .join(' ') || undefined
-        }
-        placeholder={placeholder}
-        autoComplete="off"
-        autoCapitalize="words"
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onChange={e => onChange(e.target.value)}
-      />
-      {typed && (
-        <p
-          className={`lx-namestatus${exact ? ' lx-namestatus--known' : ''}`}
-          id={statusId}
-        >
-          {exact ? (
-            <>
-              <Icon name="check" size={15} />
-              Se enlazará con «{exact.name}» ·{' '}
-              {COMPANY_KIND_LABEL[exact.kind].toLocaleLowerCase('es-ES')}
-            </>
-          ) : (
-            <>
-              <Icon name="plus" size={15} />
-              Se creará «{typed}» como empresa o entidad nueva; podrás
-              completarla después.
-            </>
-          )}
-        </p>
-      )}
-      {options.length > 0 && (focused || lookAlikes.length > 0) && (
-        <div
-          className="lx-suggest"
-          role="group"
-          aria-label="Empresas parecidas ya registradas"
-          id={`${id}-suggestions`}
-        >
-          <span className="lx-suggest__label">
-            {lookAlikes.length && !suggestions.length
-              ? '¿Es alguna de estas?'
-              : 'Ya registradas:'}
-          </span>
-          {options.map(c => (
-            <button
-              key={c.id}
-              type="button"
-              className="lx-suggest__chip"
-              // Keep the input's focus state while tapping a suggestion.
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => onChange(c.name)}
-            >
-              <Icon name="building" size={15} />
-              {c.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </Field>
-  );
-};
+}) => (
+  <FindOrCreateField<Company>
+    id={id}
+    label={label}
+    value={value}
+    onChange={onChange}
+    items={companies}
+    error={error}
+    optional={optional}
+    placeholder={placeholder}
+    icon="building"
+    describe={c => COMPANY_KIND_LABEL[c.kind].toLocaleLowerCase('es-ES')}
+    createText={typed => (
+      <>
+        Se creará «{typed}» como empresa o entidad nueva; podrás completarla
+        después.
+      </>
+    )}
+    suggestLabel="Empresas parecidas ya registradas"
+  />
+);

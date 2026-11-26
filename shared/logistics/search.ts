@@ -11,11 +11,13 @@ import type {
   Offer,
   SearchEntityType,
   SearchHit,
+  Resource,
   Task,
   Uuid,
   Venue,
+  Warehouse,
 } from './contracts.ts';
-import {COMPANY_KIND_LABEL} from './rules.ts';
+import {COMPANY_KIND_LABEL, RESOURCE_OWNERSHIP_LABEL} from './rules.ts';
 
 /** Lower-case, strip accents and collapse whitespace: «Plaza del Cristo» → «plaza del cristo». */
 export function normalize(text: string): string {
@@ -192,14 +194,21 @@ export interface SearchSources {
     Offer,
     'id' | 'name' | 'company' | 'categoryId' | 'description'
   >[];
-  /** Names for matching and subtitles of companies and offers. */
+  /** Names, never address (withheld from guests) or notes. */
+  warehouses?: Pick<Warehouse, 'id' | 'name'>[];
+  /** Name, category, warehouse and company; never location or notes. */
+  resources?: Pick<
+    Resource,
+    'id' | 'name' | 'ownership' | 'categoryId' | 'warehouse' | 'company'
+  >[];
+  /** Names for matching and subtitles of companies, offers and resources. */
   categories?: Pick<Category, 'id' | 'name'>[];
 }
 
 export interface SearchOptions {
   /** Only these types (all when empty or missing). */
   types?: SearchEntityType[];
-  /** Only companies and offers in this category. */
+  /** Only companies, offers and resources in this category. */
   categoryId?: Uuid | null;
   limit?: number;
 }
@@ -327,6 +336,30 @@ export function universalSearch(
       categoryIds: [],
     });
   }
+  for (const w of sources.warehouses ?? []) {
+    candidates.push({
+      type: 'warehouse',
+      id: w.id,
+      title: w.name,
+      subtitle: null,
+      fields: [w.name],
+      categoryIds: [],
+    });
+  }
+  for (const r of sources.resources ?? []) {
+    const cat = r.categoryId ? categoryName.get(r.categoryId) : null;
+    const where =
+      r.ownership === 'contracted' ? r.company?.name : r.warehouse?.name;
+    candidates.push({
+      type: 'resource',
+      id: r.id,
+      title: r.name,
+      subtitle: join([RESOURCE_OWNERSHIP_LABEL[r.ownership], where, cat]),
+      fields: [r.name, cat, r.warehouse?.name, r.company?.name],
+      categoryIds: r.categoryId ? [r.categoryId] : [],
+    });
+  }
+  // Notes are never searched: their text is free and may be sensitive.
 
   const types = opts.types?.length ? new Set(opts.types) : null;
   const filtered = candidates.filter(

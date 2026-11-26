@@ -1,13 +1,21 @@
 /**
- * Service categories as tappable chips: several for a company, one for an
- * offer. «+ Nueva categoría» adds one for the whole organization (an existing
- * name, in any case, comes back as that category instead of a duplicate).
+ * Categories as tappable chips: several for a company, one for an offer or a
+ * resource. `scope` picks the list (service = companies and offers, resource
+ * = inventory). «+ Nueva categoría» adds one for the whole organization (an
+ * existing name, in any case, comes back as that category instead of a
+ * duplicate). «Gestionar» lists the organization's own categories with a
+ * delete that first says which records lose it; built-ins stay.
  */
-import React, {useRef, useState} from 'react';
-import type {Category} from '../../../shared/logistics/contracts.ts';
+import React, {useMemo, useRef, useState} from 'react';
+import type {
+  Category,
+  CategoryScope,
+} from '../../../shared/logistics/contracts.ts';
 import {CATEGORY_NAME_MAX} from '../../../shared/logistics/rules.ts';
 import {errorMessage} from '../api/client';
 import {serviceCategories} from '../lib/directory';
+import {plural} from '../lib/format';
+import {resourceCategories} from '../lib/inventory';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, HelpTip, Icon, Input} from '../ui';
 
@@ -19,11 +27,35 @@ export const CategoryPicker: React.FC<{
   onChange: (ids: string[]) => void;
   help?: React.ReactNode;
   error?: string;
-}> = ({idPrefix, legend, multiple, value, onChange, help, error}) => {
+  /** Which categories: companies and offers (default) or inventory. */
+  scope?: CategoryScope;
+  /**
+   * Categories the saved record being edited holds. Deleting one would
+   * change that record on the server (new version) and its own save would
+   * then be rejected as a conflict, so «Gestionar» does not offer it.
+   */
+  lockedIds?: readonly string[];
+}> = ({
+  idPrefix,
+  legend,
+  multiple,
+  value,
+  onChange,
+  help,
+  error,
+  scope = 'service',
+  lockedIds = [],
+}) => {
   const all = useLogisticsStore(s => s.categories);
   const createCategory = useLogisticsStore(s => s.createCategory);
-  const categories = serviceCategories(all);
+  const categories = useMemo(
+    () =>
+      scope === 'resource' ? resourceCategories(all) : serviceCategories(all),
+    [all, scope],
+  );
+  const custom = categories.filter(c => !c.builtIn);
   const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -52,7 +84,7 @@ export const CategoryPicker: React.FC<{
     setBusy(true);
     setProblem(null);
     try {
-      const created = await createCategory(clean);
+      const created = await createCategory(clean, scope);
       onChange(
         multiple
           ? [...value.filter(id => id !== created.id), created.id]
@@ -108,10 +140,24 @@ export const CategoryPicker: React.FC<{
             id={`${idPrefix}-cat-new`}
             onClick={() => {
               setAdding(true);
+              setManaging(false);
               window.setTimeout(() => inputRef.current?.focus(), 0);
             }}
           >
             Nueva categoría
+          </Button>
+        )}
+        {custom.length > 0 && !adding && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={managing ? 'close' : 'edit'}
+            id={`${idPrefix}-cat-manage`}
+            aria-expanded={managing}
+            aria-controls={`${idPrefix}-cat-managed`}
+            onClick={() => setManaging(m => !m)}
+          >
+            {managing ? 'Terminar' : 'Gestionar'}
           </Button>
         )}
       </div>
@@ -128,7 +174,9 @@ export const CategoryPicker: React.FC<{
             id={`${idPrefix}-cat-name`}
             value={name}
             maxLength={CATEGORY_NAME_MAX + 10}
-            placeholder="Aseos portátiles"
+            placeholder={
+              scope === 'resource' ? 'Material de limpieza' : 'Aseos portátiles'
+            }
             autoComplete="off"
             invalid={!!problem}
             aria-describedby={problem ? `${idPrefix}-cat-problem` : undefined}
@@ -175,11 +223,166 @@ export const CategoryPicker: React.FC<{
           )}
         </div>
       )}
+      {managing && custom.length > 0 && (
+        <ManageCategories
+          idPrefix={idPrefix}
+          custom={custom}
+          lockedIds={lockedIds}
+          onDeleted={c => {
+            if (value.includes(c.id)) onChange(value.filter(x => x !== c.id));
+          }}
+        />
+      )}
       {error && (
-        <p className="lx-field__error" role="alert">
+        <p
+          className="lx-field__error"
+          role="alert"
+          id={`${idPrefix}-categories-error`}
+        >
           {error}
         </p>
       )}
     </fieldset>
+  );
+};
+
+/** The organization's own categories, each with a confirmed delete. */
+const ManageCategories: React.FC<{
+  idPrefix: string;
+  custom: Category[];
+  lockedIds: readonly string[];
+  onDeleted: (category: Category) => void;
+}> = ({idPrefix, custom, lockedIds, onDeleted}) => {
+  const companies = useLogisticsStore(s => s.companies);
+  const offers = useLogisticsStore(s => s.offers);
+  const resources = useLogisticsStore(s => s.resources);
+  const deleteCategory = useLogisticsStore(s => s.deleteCategory);
+  const toast = useLogisticsStore(s => s.toast);
+  const [asking, setAsking] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const losers = (c: Category): string => {
+    const parts: string[] = [];
+    const co = companies.filter(x => x.categoryIds.includes(c.id)).length;
+    const of = offers.filter(x => x.categoryId === c.id).length;
+    const re = resources.filter(x => x.categoryId === c.id).length;
+    if (co) parts.push(plural(co, 'empresa o entidad', 'empresas o entidades'));
+    if (of) parts.push(plural(of, 'oferta', 'ofertas'));
+    if (re) parts.push(plural(re, 'recurso', 'recursos'));
+    if (!parts.length) return 'Ningún registro la usa.';
+    const list =
+      parts.length > 1
+        ? `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`
+        : parts[0];
+    return `La perderán ${list}; no se borra nada más.`;
+  };
+
+  const remove = async (c: Category) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await deleteCategory(c);
+      onDeleted(c);
+      setAsking(null);
+      toast(`Categoría borrada: ${c.name}`, 'success');
+    } catch (err) {
+      setProblem(`No se ha borrado. ${errorMessage(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="lx-catmanage" id={`${idPrefix}-cat-managed`}>
+      <p className="lx-muted lx-catmanage__intro">
+        Categorías añadidas por vuestra organización. Las que trae OxEye no se
+        pueden borrar.
+      </p>
+      <ul className="lx-catmanage__list">
+        {custom.map(c => (
+          <li key={c.id} className="lx-catmanage__row">
+            {asking === c.id ? (
+              <div
+                className="lx-catmanage__confirm"
+                role="group"
+                aria-labelledby={`${idPrefix}-cat-ask-${c.id}`}
+              >
+                <p id={`${idPrefix}-cat-ask-${c.id}`}>
+                  <strong>¿Borrar «{c.name}»?</strong> {losers(c)}
+                </p>
+                <div className="lx-catmanage__actions">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    id={`${idPrefix}-cat-keep-${c.id}`}
+                    disabled={busy}
+                    onClick={() => setAsking(null)}
+                  >
+                    No borrar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon="trash"
+                    busy={busy}
+                    id={`${idPrefix}-cat-confirm-${c.id}`}
+                    onClick={() => void remove(c)}
+                  >
+                    Borrar categoría
+                  </Button>
+                </div>
+              </div>
+            ) : lockedIds.includes(c.id) ? (
+              <>
+                <span className="lx-catmanage__name">
+                  {c.name}
+                  <span
+                    className="lx-catmanage__locked"
+                    id={`${idPrefix}-cat-locked-${c.id}`}
+                  >
+                    Quítala de esta ficha y guarda antes de borrarla.
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="trash"
+                  id={`${idPrefix}-cat-delete-${c.id}`}
+                  aria-label={`Borrar la categoría ${c.name}`}
+                  aria-describedby={`${idPrefix}-cat-locked-${c.id}`}
+                  disabled
+                >
+                  Borrar
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className="lx-catmanage__name">{c.name}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="trash"
+                  className="lx-btn--danger-text"
+                  id={`${idPrefix}-cat-delete-${c.id}`}
+                  aria-label={`Borrar la categoría ${c.name}`}
+                  onClick={() => {
+                    setAsking(c.id);
+                    setProblem(null);
+                  }}
+                >
+                  Borrar
+                </Button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {problem && (
+        <p className="lx-field__error" role="alert">
+          {problem}
+        </p>
+      )}
+    </div>
   );
 };

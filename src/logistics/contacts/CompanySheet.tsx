@@ -33,6 +33,8 @@ import {
 import {priceLabel} from '../../../shared/logistics/catalogue.ts';
 import {CategoryPicker} from '../catalog/CategoryPicker';
 import {useActions, type CompanyPrefill} from '../common/actions';
+import {RecordHistory} from '../common/RecordHistory';
+import {RecordNotes} from '../common/RecordNotes';
 import {TaskRow} from '../common/TaskRow';
 import {usePlan} from '../common/usePlan';
 import {DemoChip, VerificationChip} from '../events/EventChips';
@@ -571,6 +573,20 @@ const CompanyView: React.FC<{
           )}
         </section>
 
+        <RecordNotes
+          target={{type: 'company', id: company.id}}
+          prefill={{
+            ref: {type: 'company', id: company.id, label: company.name},
+          }}
+          idPrefix="lx-company"
+          canAdd={!gone}
+        />
+        <RecordHistory
+          entityType="company"
+          entityId={company.id}
+          version={company.version}
+          idPrefix="lx-company"
+        />
         <Provenance record={company} id="lx-company-provenance" />
       </div>
     </Sheet>
@@ -909,6 +925,7 @@ const CompanyForm: React.FC<{
           value={values.categoryIds}
           onChange={ids => change('categoryIds', ids)}
           error={errors.categoryIds}
+          lockedIds={base?.categoryIds}
           help="Qué tipo de servicios ofrece. Sirven para filtrar el catálogo y la búsqueda. Puedes añadir categorías nuevas para toda la organización."
         />
 
