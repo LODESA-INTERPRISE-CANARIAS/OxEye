@@ -73,6 +73,55 @@ Después arranca la web con `npm run dev` y abre `http://localhost:5173/#logisti
 
 El móvil solo habla con Vite, que reenvía `/api` a `http://localhost:8787`; no hace falta tocar CORS. Si no carga, permite Node.js en el cortafuegos de Windows para redes privadas.
 
+## Probar con el equipo desde fuera
+
+Para que alguien del equipo pruebe el Gestor desde su móvil u ordenador, esté donde esté, mientras la API y la web corren en tu PC. Usa un túnel rápido de Cloudflare: una dirección `https://….trycloudflare.com` con HTTPS que llega a tu PC sin abrir puertos en el router. **Solo para pruebas**: no tiene garantía de disponibilidad y no sustituye al servidor externo.
+
+Por el túnel solo pasa la web; la API sigue escuchando únicamente en tu PC y la web le reenvía `/api` por dentro. La web se compila en modo producción, así que también se puede probar el modo sin cobertura (necesita HTTPS, que pone el túnel).
+
+**Una vez**
+
+1. Instala la herramienta del túnel (es un programa de tu PC, no una dependencia del proyecto) y abre una terminal nueva:
+   ```
+   winget install --id Cloudflare.cloudflared
+   ```
+2. La base de datos lista como en «Sin Docker» o «Primera puesta en marcha» (migrate y seed hechos).
+3. Recomendado: `HOST=127.0.0.1` en `server/.env`, para que la API no sea accesible desde la red aunque la arranques a mano.
+
+**Cada vez**
+
+```
+npm run equipo
+```
+
+Arranca la API (o usa la que ya esté en marcha), compila la web, la sirve en `http://127.0.0.1:4173` y abre el túnel. Cuando está listo muestra un recuadro con la dirección para el equipo, ya con `#logistica`. Ábrela tú primero en el móvil con datos móviles (sin Wi-Fi) e inicia sesión; después mándala. **Ctrl+C** lo para todo.
+
+| Por partes (para ver qué falla), cada uno en su terminal | Comando                |
+| -------------------------------------------------------- | ---------------------- |
+| API                                                      | `npm run equipo:api`   |
+| Web compilada en `http://127.0.0.1:4173`                 | `npm run equipo:web`   |
+| Túnel (muestra la dirección en el registro)              | `npm run equipo:tunel` |
+
+**A tener en cuenta**
+
+- Tu PC tiene que estar encendido, sin suspenderse y con la terminal abierta.
+- La dirección cambia cada vez que arrancas: hay que reenviarla.
+- Si cambias el código, para y vuelve a lanzar `npm run equipo` (compila de nuevo).
+- Cada persona entra con su usuario y la contraseña que generó `db:seed`.
+- La API ve todas las peticiones como si vinieran de tu PC, así que el límite de intentos de acceso es compartido: si alguien falla varias veces la contraseña, el bloqueo temporal afecta a todos.
+- Los datos viajan cifrados, pero pasan por Cloudflare. Para la jornada real, el servidor externo.
+
+**Problemas**
+
+| Qué ves                                        | Qué hacer                                                                                                            |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| «No encuentro cloudflared»                     | Instálalo con `winget` (arriba) y abre una terminal nueva.                                                           |
+| «La API no responde»                           | Revisa `server/.env` (`DATABASE_URL`) y que la base de datos esté arrancada (o la carpeta de PGlite).                |
+| «El puerto 4173 ya está ocupado»               | Cierra la otra ventana con `npm run preview` o `equipo:web`.                                                         |
+| La dirección abre, pero dice «Blocked request» | El túnel no reescribe el host: usa `npm run equipo` o `equipo:tunel`, no el comando a mano sin `--http-host-header`. |
+| Entra la web, pero no se puede iniciar sesión  | La API se ha parado: mira las líneas `[api]`.                                                                        |
+| La dirección no responde nada                  | Espera unos segundos tras el recuadro; si sigue, Ctrl+C y vuelve a lanzar.                                           |
+
 ## Paso al servidor externo
 
 Se usa la misma imagen y otro `.env`:

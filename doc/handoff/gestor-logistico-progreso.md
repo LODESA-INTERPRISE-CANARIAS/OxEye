@@ -222,6 +222,9 @@ Carried from M6 (review, audit, QA, visual):
 - Visual nits: a long chip label («Sin conexión · N cambios pendientes») wraps the header actions at 1280 px; the day close repeats the date (shell header and «Informe del día») on phone; the M5 «La jornada» badge is tight on phone; headless Chromium shows the native date input in US order.
 - Ideas for later: a close covering an event's whole assembly (several days); conflict-free merges for independent fields without asking; background sync when the tab is closed (needs Background Sync, not in iOS Safari).
 
+## Testing with the team from this PC
+`npm run equipo` (branch `chore/acceso-equipo-tunel`) starts the API on loopback, a production build on `127.0.0.1:4173` and a Cloudflare quick tunnel, and prints the `https://….trycloudflare.com/#logistica` address. Pieces: `equipo:api`, `equipo:web`, `equipo:tunel`. Guide: `server/README.md` «Probar con el equipo desde fuera». Testing only; not for the Elvis demo.
+
 ## Pending with the user
 - Choose the external server. Then update the ADR and the deployment settings: `TRUST_PROXY`, `API_BIND`, `NODE_ENV=production`, `CORS_ORIGINS` and a real password.
 - Install the protected fix in `.claude/skills/oxeye-invariants/SKILL.md`, line 57: the anchor `src/db/schema.ts` becomes `src/db/repository.ts`.
