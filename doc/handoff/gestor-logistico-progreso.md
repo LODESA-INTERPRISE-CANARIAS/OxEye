@@ -97,6 +97,7 @@ Carried to later milestones (from the M3 audit and review):
 - `refresh` fetches 8 lists every 60 s; consider `?since=` or ETags before M6.
 
 ### 4. Inventarios + Captura rápida
+- **First, decided by the user on 2026-11-26:** Invitado no longer receives task and event `notes`. Add them to `WITHHELD_FROM_GUESTS`, send `restricted` on `Task` and `LogisticsEvent` (contract), map events and tasks through `forViewer` (lists, single records, 409 `current`), show «Visible para el equipo» in the event and task sheets, and test it per route and in the guest E2E.
 - **Warehouses:** name and address, no geometry.
 - **Resources:** quantity, unit, dimensions, condition, availability, «aún por evaluar». Owned and contracted are kept apart.
 - **«+ Añadir»** offers Evento, Contacto, Empresa, Recurso, Oferta, Tarea, Incidencia and Nota.
@@ -140,6 +141,5 @@ Carried to later milestones (from the M3 audit and review):
 - Decide whether the first names in `server/src/seed/seed.ts` stay in the public repository.
 - Decide whether same-venue overlaps should be softened per venue.
 - Try «+ Añadir» on a real iPhone with iOS 16 (the Popover fallback), and add an E2E test that removes `showPopover`.
-- Decide whether task and event notes (visible to guests since M1) should also be withheld from Invitado, like contact observations.
 - Note: the shared member login «Equipo» shows its server-side recent searches to everyone who uses it.
 - Try calling, WhatsApp, e-mail and «Compartir» on a real phone (only checked with mocks).
