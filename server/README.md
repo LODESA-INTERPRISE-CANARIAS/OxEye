@@ -7,9 +7,25 @@ El simulador de OxEye no depende de este servidor: la web publicada sigue funcio
 ## Requisitos
 
 - Node.js 26 (ejecuta TypeScript directamente; no hay paso de compilación).
-- Docker Desktop (o Docker Engine con Compose v2) para PostgreSQL 17.
+- Docker Desktop (o Docker Engine con Compose v2) para PostgreSQL 17. **Opcional en el portátil**: sin Docker se puede usar la base local embebida (siguiente apartado).
 
-## Primera puesta en marcha
+## Sin Docker: base local embebida
+
+Para probar en un portátil sin Docker. Es PostgreSQL de verdad (PGlite), pero dentro del propio proceso y guardado en `server/pgdata/pglite` (no se sube a Git). Solo para desarrollo: el servidor lo rechaza con `NODE_ENV=production`.
+
+1. En `server/.env`, cambia la línea `DATABASE_URL` por `DATABASE_URL=pglite:./pgdata/pglite`.
+2. Desde la raíz del repositorio:
+
+```sh
+npm --prefix server install                 # dependencias del servidor
+npm --prefix server run db:migrate          # crea las tablas
+npm --prefix server run db:seed             # organización, 5 usuarios y evento demo
+npm --prefix server run dev                 # API en http://localhost:8787
+```
+
+No hace falta `db:up`. La base local solo admite un proceso a la vez: para la API (Ctrl+C) antes de lanzar `db:migrate`, `db:seed` o `db:clear-demo`; si no, el comando lo avisa. Al arrancar, la API aplica sola las migraciones pendientes. Para empezar de cero, para la API y borra la carpeta `server/pgdata`.
+
+## Primera puesta en marcha (con Docker)
 
 Desde la raíz del repositorio:
 

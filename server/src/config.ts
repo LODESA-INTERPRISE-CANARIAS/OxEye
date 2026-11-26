@@ -60,8 +60,9 @@ const envSchema = z.object({
   DATABASE_URL: z
     .string({error: 'DATABASE_URL es obligatoria'})
     .trim()
-    .regex(/^postgres(ql)?:\/\//, {
-      error: 'DATABASE_URL debe empezar por postgres:// o postgresql://',
+    .regex(/^(postgres(ql)?:\/\/|pglite:)/, {
+      error:
+        'DATABASE_URL debe empezar por postgres://, postgresql:// o pglite: (base local sin Docker)',
     }),
   HOST: z.string().trim().min(1).optional(),
   PORT: z.coerce
@@ -105,6 +106,11 @@ export function loadConfig(
   }
   const e = parsed.data;
   const nodeEnv: NodeEnv = e.NODE_ENV ?? 'development';
+  if (nodeEnv === 'production' && e.DATABASE_URL.startsWith('pglite:')) {
+    throw new ConfigError(
+      'Configuración no válida: la base local pglite: es solo para desarrollo; en producción usa PostgreSQL (postgres://…).',
+    );
+  }
   const corsOrigins =
     e.CORS_ORIGINS !== undefined
       ? parseOrigins(e.CORS_ORIGINS)

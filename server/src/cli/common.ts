@@ -5,17 +5,21 @@
  */
 import {ConfigError, loadConfig} from '../config.ts';
 import type {Db} from '../db/db.ts';
-import {createPostgresDb} from '../db/postgres.ts';
 import {MigrationError} from '../db/migrate.ts';
+import {DbLockedError, openDb} from '../db/open.ts';
 
 export async function runCli(task: (db: Db) => Promise<void>): Promise<void> {
   let db: Db | undefined;
   try {
     const config = loadConfig();
-    db = createPostgresDb(config.databaseUrl, {max: 2});
+    db = await openDb(config.databaseUrl, {max: 2});
     await task(db);
   } catch (err) {
-    if (err instanceof ConfigError || err instanceof MigrationError) {
+    if (
+      err instanceof ConfigError ||
+      err instanceof MigrationError ||
+      err instanceof DbLockedError
+    ) {
       console.error(err.message);
     } else {
       const e = err instanceof Error ? err : new Error(String(err));

@@ -8,7 +8,7 @@ import type {Context} from 'hono';
 import {createApp} from './app.ts';
 import {ConfigError, loadConfig} from './config.ts';
 import {migrate} from './db/migrate.ts';
-import {createPostgresDb} from './db/postgres.ts';
+import {DbLockedError, isPgliteUrl, openDb} from './db/open.ts';
 import {resolveClientIp} from './http/client-ip.ts';
 
 function log(line: string): void {
@@ -17,9 +17,11 @@ function log(line: string): void {
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const db = createPostgresDb(config.databaseUrl);
+  const db = await openDb(config.databaseUrl);
 
-  if (config.migrateOnStart) {
+  // The local embedded database always starts up to date: nobody can run
+  // db:migrate while the API holds it.
+  if (config.migrateOnStart || isPgliteUrl(config.databaseUrl)) {
     const result = await migrate(db, {log});
     log(
       result.applied.length
@@ -72,7 +74,7 @@ async function main(): Promise<void> {
 }
 
 main().catch(err => {
-  if (err instanceof ConfigError) {
+  if (err instanceof ConfigError || err instanceof DbLockedError) {
     console.error(err.message);
   } else {
     const e = err instanceof Error ? err : new Error(String(err));
