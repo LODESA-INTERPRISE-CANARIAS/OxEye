@@ -47,6 +47,7 @@ export function useDayReport(
   const resources = useLogisticsStore(s => s.resources);
   const notes = useLogisticsStore(s => s.notes);
   const hypotheses = useLogisticsStore(s => s.hypotheses);
+  const acceptances = useLogisticsStore(s => s.acceptances);
   const user = useLogisticsStore(s => s.session?.user ?? null);
   const orgId = useLogisticsStore(s => s.orgId);
   const outbox = useLogisticsStore(s => s.outbox);
@@ -78,7 +79,10 @@ export function useDayReport(
       const at = h.appliedAt ?? h.createdAt;
       if (at > latest) latest = at;
     }
-    return `${count}|${hypotheses.length}|${latest}`;
+    for (const a of acceptances) {
+      if (a.acceptedAt > latest) latest = a.acceptedAt;
+    }
+    return `${count}|${hypotheses.length}|${acceptances.length}|${latest}`;
   }, [
     date,
     today,
@@ -91,6 +95,7 @@ export function useDayReport(
     resources,
     notes,
     hypotheses,
+    acceptances,
   ]);
 
   const activity = useDayActivity(date, timeZone, refreshKey);
@@ -119,6 +124,7 @@ export function useDayReport(
       resources,
       notes,
       hypotheses,
+      acceptances,
       includeText,
     });
   }, [
@@ -137,6 +143,7 @@ export function useDayReport(
     resources,
     notes,
     hypotheses,
+    acceptances,
     includeText,
   ]);
 

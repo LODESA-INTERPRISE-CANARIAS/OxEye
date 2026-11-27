@@ -21,6 +21,8 @@ export type SyncList =
   | 'resources'
   | 'notes'
   | 'hypotheses'
+  /** Revisión 1 · E2: `GET …/conflict-acceptances`. */
+  | 'acceptances'
   | 'activity';
 
 export const SYNC_LISTS: readonly SyncList[] = [
@@ -35,6 +37,7 @@ export const SYNC_LISTS: readonly SyncList[] = [
   'resources',
   'notes',
   'hypotheses',
+  'acceptances',
   'activity',
 ];
 
@@ -58,9 +61,30 @@ const TOUCHES: Readonly<Record<string, readonly SyncList[]>> = {
   category: ['categories', 'companies', 'offers', 'resources'],
   warehouse: ['warehouses', 'resources', 'notes'],
   resource: ['resources', 'tasks', 'warehouses', 'companies', 'notes'],
+  // E3: an answer is logged as an update of its note (`changedFields`
+  // ['answer']), an image as an update of its resource (['media']).
   note: ['notes'],
   hypothesis: ['hypotheses', 'tasks'],
+  // E2: the organization's acronym lives in the session (`GET /me`), not in a
+  // list: the device refreshes `/me` when `types` includes `organization`.
+  organization: [],
+  conflict_acceptance: ['acceptances'],
+  // E5: budget data is never a stored list; the open budget views reload
+  // when `budgetMayHaveChanged` says so.
+  budget: [],
+  expense: [],
 };
+
+/**
+ * E5: `…/changes` types after which an open budget view (an event's budget,
+ * the organization's overview) reloads: its own types, plus events (names)
+ * and companies (names, deletions unlink expenses).
+ */
+const BUDGET_TOUCHED_BY = new Set(['budget', 'expense', 'event', 'company']);
+
+export function budgetMayHaveChanged(changes: ChangesResponse): boolean {
+  return changes.full || changes.types.some(t => BUDGET_TOUCHED_BY.has(t));
+}
 
 /**
  * Lists to reload after a `…/changes` answer: every list on `full` or on a
@@ -75,7 +99,7 @@ export function listsToReload(changes: ChangesResponse): Set<SyncList> {
     if (!touched) return new Set(SYNC_LISTS);
     for (const list of touched) out.add(list);
   }
-  if (out.size) out.add('activity');
+  if (changes.types.length) out.add('activity');
   return out;
 }
 

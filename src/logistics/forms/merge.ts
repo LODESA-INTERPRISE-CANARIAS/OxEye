@@ -181,6 +181,10 @@ export const MERGE_FIELD_LABEL: Record<string, string> = {
   maintenanceCost: 'Coste de mantenimiento',
   vat: 'Impuestos (IGIC/IVA)',
   conditions: 'Condiciones',
+  acronym: 'Siglas',
+  openingHours: 'Horario',
+  opensAt: 'Abre',
+  closesAt: 'Cierra',
 };
 
 export function mergeFieldLabel(key: string): string {
@@ -191,6 +195,9 @@ export function mergeFieldLabel(key: string): string {
 const TEXT_KEYS = new Set([
   'title',
   'name',
+  'acronym',
+  'opensAt',
+  'closesAt',
   'venueName',
   'companyName',
   'notes',

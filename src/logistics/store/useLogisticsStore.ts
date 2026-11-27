@@ -30,21 +30,32 @@ import type {
   CompanyInput,
   Contact,
   ContactInput,
+  ConflictAcceptance,
+  ConflictAcceptanceInput,
   CreateEventInput,
   CategoryScope,
+  MoveTaskInput,
+  MoveTaskResponse,
+  VenueInput,
   DelayHypothesis,
   HypothesisInput,
   IsoInstant,
   LogisticsEvent,
+  MediaInfo,
+  MediaUploadInput,
   Note,
+  NoteAnswer,
   NoteInput,
   Offer,
   OfferInput,
   Organization,
+  OrganizationInput,
   RecentSearch,
   Resource,
   ResourceInput,
+  LoginResponse,
   SessionUser,
+  SupportSessionResponse,
   Task,
   TaskInput,
   UpdateEventInput,
@@ -61,8 +72,10 @@ import {
   canQueue,
   enqueue,
   guardSubsoil,
+  MEDIA_QUEUE_MAX,
   nextToSend,
   outboxLabel,
+  queuedMedia,
   settleAccepted,
   referencedIds,
   unsentRecordIds,
@@ -88,18 +101,23 @@ import {
   type SyncList,
 } from '../../../shared/logistics/sync.ts';
 import {DEFAULT_TIMEZONE} from '../../../shared/logistics/time.ts';
+import {can} from '../../../shared/logistics/permissions.ts';
+import {orgPermissions} from '../account/access';
 import {
   ApiError,
   errorMessage,
   isApiError,
   resolveApiBaseUrl,
+  setTokenRejectedHandler,
 } from '../api/client';
 import {api} from '../api/endpoints';
+import {withMain, withMedia, withoutMedia} from '../inventory/media';
 import {clearRescue} from '../lib/rescue';
 import {sortCompanies, sortContacts, sortOffers} from '../lib/directory';
 import {sortEvents} from '../lib/events';
 import {sortNotes, sortResources, sortWarehouses} from '../lib/inventory';
 import {sortTasks} from '../lib/tasks';
+import {clearTasksPrefs} from '../tasks-space/filters';
 import * as device from '../offline/db';
 import {
   alreadyApplied,
@@ -199,6 +217,42 @@ interface StoredSession {
 
 const SESSION_KEY = 'oxeye.logistics.session.v1';
 const ORG_KEY = 'oxeye.logistics.org.v1';
+/** E4: the own session kept aside during a support session. */
+const SUPPORT_KEY = 'oxeye.logistics.support-return.v1';
+
+export interface SupportReturn {
+  /** The support or «Ver como Invitado» session to end. */
+  sessionId: string;
+  kind: 'support' | 'view_as_guest';
+  /** The administrator's own session. */
+  session: StoredSession;
+  /**
+   * When it ends by this device's clock (the countdown), so a device whose
+   * clock is off does not end it early or show a wrong time left.
+   */
+  endsAt?: string;
+}
+
+function readStoredSupport(): SupportReturn | null {
+  try {
+    // Session storage: the tab only, never the device's copy.
+    const raw = sessionStorage.getItem(SUPPORT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SupportReturn;
+    return parsed?.sessionId && parsed.session?.token ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSupport(value: SupportReturn | null): void {
+  try {
+    if (value) sessionStorage.setItem(SUPPORT_KEY, JSON.stringify(value));
+    else sessionStorage.removeItem(SUPPORT_KEY);
+  } catch {
+    // Without storage the way back lasts the tab.
+  }
+}
 
 function readStoredSession(): StoredSession | null {
   try {
@@ -321,6 +375,11 @@ export interface LogisticsState {
   orgId: string | null;
   /** Message shown on the login screen (e.g. expired session). */
   sessionNotice: string | null;
+  /**
+   * E4: during a support session or «Ver como Invitado», the
+   * administrator's own session to go back to, and the session to end.
+   */
+  supportReturn: SupportReturn | null;
 
   events: LogisticsEvent[];
   eventsState: LoadState;
@@ -357,6 +416,12 @@ export interface LogisticsState {
    */
   hypotheses: DelayHypothesis[];
   hypothesesState: LoadState;
+  /**
+   * Revisión 1 · E2: accepted conflicts («Mantener ambas»), newest first. For
+   * guests every `reason` is null (`restricted`).
+   */
+  acceptances: ConflictAcceptance[];
+  acceptancesState: LoadState;
   /** The current user's five recent searches, newest first. */
   recentSearches: RecentSearch[];
   recentState: LoadState;
@@ -383,12 +448,31 @@ export interface LogisticsState {
   toasts: Toast[];
 
   boot: () => Promise<void>;
-  login: (displayName: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   /**
    * Signs out. With unsent changes it asks first (`leave`) unless
-   * `discardUnsent`; then the device's copy is wiped.
+   * `discardUnsent`; then the device's copy is wiped. During a support
+   * session or «Ver como Invitado» it ends that session instead. `notice`
+   * is shown on the login screen (e.g. after a reset link in a session).
    */
-  logout: (options?: {discardUnsent?: boolean}) => Promise<void>;
+  logout: (options?: {
+    discardUnsent?: boolean;
+    notice?: string;
+  }) => Promise<void>;
+  /**
+   * E4: the own account changed (profile, password, welcome): takes the
+   * user and the organizations' permissions again from `GET /me`, or uses
+   * `user` as given. Quiet on failure.
+   */
+  refreshAccount: (user?: SessionUser) => Promise<void>;
+  /**
+   * E4: a support session or «Ver como Invitado» was opened: the
+   * administrator's own session is kept aside (`supportReturn`) and this one
+   * is used until it ends. Refused with unsent changes on the device.
+   */
+  beginSupport: (res: SupportSessionResponse, minutes: number) => Promise<void>;
+  /** E4: ends the support session and goes back to the own session. */
+  endSupport: () => Promise<void>;
   /** Same rule as `logout` for changing organization. */
   selectOrg: (id: string, options?: {discardUnsent?: boolean}) => void;
   /** Full reload of every list (or of `lists`). */
@@ -534,6 +618,34 @@ export interface LogisticsState {
   ) => Promise<Note>;
   deleteNote: (note: Note) => Promise<void>;
   upsertNote: (note: Note) => void;
+  // Revisión 1 · E3: answers to open questions and material photos.
+  /** Every answer of a question, newest first (needs the server). */
+  noteAnswers: (noteId: string, signal?: AbortSignal) => Promise<NoteAnswer[]>;
+  /**
+   * Answers an open question. `replaces` is the current answer the user saw
+   * (null when none): 409 VERSION_CONFLICT with `current` when it changed.
+   * Needs the server (answers never wait in the outbox).
+   */
+  answerNote: (
+    note: Note,
+    text: string,
+    replaces: string | null,
+  ) => Promise<NoteAnswer>;
+  /**
+   * Adds a prepared photo to a resource. Without coverage (or when the
+   * request does not get through) it waits in the outbox: `queued: true`.
+   */
+  addResourcePhoto: (
+    resource: Resource,
+    photo: Omit<
+      MediaUploadInput,
+      'organizationId' | 'ownerType' | 'ownerId' | 'id'
+    >,
+  ) => Promise<{queued: boolean; id: string; media: MediaInfo | null}>;
+  /** Makes a stored photo the main one (needs the server). */
+  setMainPhoto: (resource: Resource, media: MediaInfo) => Promise<void>;
+  /** Removes a stored photo for everyone (needs the server). */
+  deletePhoto: (resource: Resource, media: MediaInfo) => Promise<void>;
   // Milestone 5: delay hypotheses.
   /** Stores a hypothesis for the team; it never changes the plan. */
   createHypothesis: (
@@ -551,6 +663,28 @@ export interface LogisticsState {
     input: ApplyHypothesisInput,
   ) => Promise<ApplyHypothesisResponse>;
   upsertHypothesis: (hypothesis: DelayHypothesis) => void;
+  // Revisión 1 · E2: moves, accepted conflicts, venue acronym and hours.
+  /**
+   * Moves a task after the member confirmed `input.expected` (never queued).
+   * On a 409 the tasks as they are now are put in the list and the error is
+   * rethrown: nothing moved.
+   */
+  moveTask: (id: string, input: MoveTaskInput) => Promise<MoveTaskResponse>;
+  /** «Mantener ambas» (members). 409 VERSION_CONFLICT (warning gone) / DUPLICATE. */
+  acceptConflict: (
+    input: Omit<ConflictAcceptanceInput, 'organizationId'>,
+  ) => Promise<ConflictAcceptance>;
+  /** «Retirar»: the warning opens again. */
+  withdrawAcceptance: (acceptance: ConflictAcceptance) => Promise<void>;
+  upsertAcceptance: (acceptance: ConflictAcceptance) => void;
+  /** Acronym and opening hours; `input.version` required (409 VERSION_CONFLICT). */
+  updateVenue: (id: string, input: VenueInput) => Promise<Venue>;
+  /**
+   * E2: saves the current organization's acronym. On a 409 the store takes
+   * the server's copy (so the form can show it) and the error is rethrown.
+   */
+  updateOrganization: (input: OrganizationInput) => Promise<Organization>;
+  upsertVenue: (venue: Venue) => void;
   /** The history of one record, newest first (not kept in the store). */
   loadHistory: (
     entityType: string,
@@ -650,6 +784,8 @@ let replaying = false;
 let replayTimer: ReturnType<typeof setTimeout> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryStep = 0;
+/** The session token already being expired (see `expireSession`). */
+let expiredToken: string | null = null;
 /** Bumped when the device copy is wiped: pending cache writes are dropped. */
 let persistGen = 0;
 /**
@@ -703,7 +839,8 @@ function swapId(value: unknown, from: string, to: string): unknown {
   return value;
 }
 
-const RECORD_LISTS = Object.values(LIST_OF) as RecordListKey[];
+// A photo lives in its resource's list too (E3): each list once.
+const RECORD_LISTS = [...new Set(Object.values(LIST_OF))] as RecordListKey[];
 
 const ENTITY_OF: Record<RecordListKey, OutboxEntity> = {
   events: 'event',
@@ -778,7 +915,15 @@ const SEND: Record<
     create: (t, b) => api.createNote(t, b as unknown as NoteInput),
     update: (t, id, b) => api.updateNote(t, id, b as unknown as NoteInput),
   },
+  // E3: photos queue as creates only (`canQueue`).
+  media: {
+    create: (t, b) => api.uploadMedia(t, b as unknown as MediaUploadInput),
+    update: () => Promise.reject(new ApiError({code: 'VALIDATION', status: 0})),
+  },
 };
+
+/** Photos waiting on this device reached MEDIA_QUEUE_MAX. */
+const PHOTO_QUEUE_FULL = `Ya hay ${MEDIA_QUEUE_MAX} fotos esperando en este dispositivo. Se enviarán al volver la conexión; después podrás añadir más.`;
 
 /**
  * Whether a write must wait behind the outbox: no network, no server, or
@@ -932,6 +1077,7 @@ const EMPTY_RECORDS = {
   resources: [],
   notes: [],
   hypotheses: [],
+  acceptances: [],
   recentSearches: [],
   activity: [],
 } satisfies Partial<LogisticsState>;
@@ -946,6 +1092,7 @@ const IDLE_STATES = {
   resourcesState: 'idle',
   notesState: 'idle',
   hypothesesState: 'idle',
+  acceptancesState: 'idle',
   recentState: 'idle',
   activityState: 'idle',
 } satisfies Partial<LogisticsState>;
@@ -961,6 +1108,13 @@ const ALL_LISTS: ReadonlySet<SyncList> = new Set(SYNC_LISTS);
 
 /** A rejected `Promise.allSettled` slot for a list that was not asked for. */
 const SKIP = Symbol('skip');
+
+/** E4: lists behind `directory.read` (Contactos and Catálogo). */
+const DIRECTORY_LISTS: ReadonlySet<SyncList> = new Set([
+  'companies',
+  'contacts',
+  'offers',
+]);
 
 /** How long the boot waits for the server when the device has a copy. */
 const BOOT_PROBE_MS = 4000;
@@ -1056,6 +1210,17 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
   };
 
   const expireSession = () => {
+    // One 401 may be reported twice (the client's hook and `authed`): the
+    // second must not end what the first started (e.g. back from support).
+    const token = get().session?.token ?? null;
+    if (token !== null && token === expiredToken) return;
+    expiredToken = token;
+    // E4: a support session that ran out takes the administrator back to
+    // their own session instead of the login screen.
+    if (get().supportReturn) {
+      void restoreOwnSession();
+      return;
+    }
     writeStoredSession(null);
     // The device keeps its copy and the outbox for this person: signing in
     // again as the same user picks them up (`prepareDevice`).
@@ -1074,6 +1239,12 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       sessionNotice: 'Tu sesión ha caducado. Vuelve a entrar para seguir.',
     });
   };
+
+  // A screen's own `api.*` call, a budget call or a photo that gets a 401
+  // ends the session the same way, if it is still the session in use.
+  setTokenRejectedHandler(token => {
+    if (get().session?.token === token) expireSession();
+  });
 
   /** Runs an authenticated call, handling expiry and connectivity. */
   async function authed<T>(call: (token: string) => Promise<T>): Promise<T> {
@@ -1206,7 +1377,18 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         return s.upsertResource(record as Resource);
       case 'note':
         return s.upsertNote(record as Note);
+      case 'media':
+        return putMedia(record as MediaInfo);
     }
+  };
+
+  /**
+   * E3: a stored photo joins its resource's local copy. The resource's
+   * version does not change with photos, so the copy is replaced in place.
+   */
+  const putMedia = (info: MediaInfo) => {
+    if (!info || typeof info !== 'object' || !info.ownerId) return;
+    changeResource(info.ownerId, r => withMedia(r, info));
   };
 
   /** Drops a record from its list (a create that only existed here). */
@@ -1416,6 +1598,76 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
   };
 
   /**
+   * E3: stores a photo upload in the outbox. The resized image stays only in
+   * the entry until the server accepts it; at most MEDIA_QUEUE_MAX wait.
+   */
+  const queuePhoto = async (
+    resource: Resource,
+    id: string,
+    input: Record<string, unknown>,
+  ): Promise<void> => {
+    const s = get();
+    const session = s.session!;
+    const orgId = s.orgId!;
+    if (
+      deviceOwner?.userId !== session.user.id ||
+      deviceOwner.orgId !== orgId
+    ) {
+      throw new ApiError({
+        code: 'UNAVAILABLE',
+        status: 0,
+        message: DEVICE_STORAGE_FAILED,
+      });
+    }
+    if (queuedMedia(s.outbox).length >= MEDIA_QUEUE_MAX) {
+      throw new ApiError({
+        code: 'VALIDATION',
+        status: 0,
+        message: PHOTO_QUEUE_FULL,
+      });
+    }
+    const draft: OutboxEntry = {
+      id: uuid(),
+      seq: 0,
+      userId: session.user.id,
+      orgId,
+      entity: 'media',
+      op: 'create',
+      recordId: id,
+      input,
+      base: null,
+      values: null,
+      label: outboxLabel('media', 'create', resource.name),
+      queuedAt: new Date().toISOString(),
+      status: 'pending',
+      attempts: 0,
+      nextAttemptAt: null,
+      error: null,
+      current: null,
+      dropped: [],
+    };
+    const next = enqueue(s.outbox, draft);
+    const added = next.find(e => e.id === draft.id);
+    if (!added || !(await device.putEntry(added))) {
+      throw new ApiError({
+        code: 'INTERNAL',
+        status: 0,
+        message: DEVICE_STORAGE_FAILED,
+      });
+    }
+    setOutbox(next);
+    scheduleReplay(0);
+  };
+
+  /** E3: changes the photos of a resource's local copy. */
+  const changeResource = (id: string, change: (r: Resource) => Resource) => {
+    const list = get().resources;
+    if (!list.some(r => r.id === id)) return;
+    resourceEpoch++;
+    set({resources: list.map(r => (r.id === id ? change(r) : r))});
+  };
+
+  /**
    * One write of a record: straight to the server when it can, otherwise to
    * the outbox. Online failures behave as before (the form keeps the text and
    * shows the error); after a network failure the next save waits here.
@@ -1528,6 +1780,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       : new ApiError({code: 'INTERNAL', status: 0});
     if (
       e.code === 'VERSION_CONFLICT' &&
+      // A photo has no optimistic record (and its upload never answers 409).
+      entry.entity !== 'media' &&
       alreadyApplied(entry, e.current, ctxFor(entry))
     ) {
       // Our own change came back (a lost response): nothing to ask.
@@ -1662,6 +1916,87 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     return orgId ? settleLoaded(await device.loadOutbox(user.id, orgId)) : [];
   };
 
+  /**
+   * Opens the window with a session the server just gave (login, support
+   * session, or back to the own session): someone else's copy is wiped
+   * before anything of this user lands.
+   */
+  async function enterSession(res: LoginResponse): Promise<void> {
+    const session: StoredSession = {
+      token: res.token,
+      expiresAt: res.expiresAt,
+      user: res.user,
+    };
+    writeStoredSession(session);
+    const orgId = pickOrg(res.organizations, readStoredOrg());
+    writeStoredOrg(orgId);
+    resetOfflineMemory();
+    expiredToken = null;
+    const entries = await prepareDevice(res.user, orgId, res.organizations);
+    set({
+      phase: 'ready',
+      session,
+      organizations: res.organizations,
+      orgId,
+      sessionNotice: null,
+      ...EMPTY_RECORDS,
+      // Loading, not empty: no «nothing here» nor «No se encuentra esa
+      // ficha» while the new session's lists arrive.
+      ...IDLE_STATES,
+      fromCache: false,
+      outbox: entries,
+      unsent: unsentRecordIds(entries),
+      leave: null,
+      // A «Deshacer» must never run under another account.
+      ...dropToasts(),
+    });
+    markReachable();
+    void get()
+      .refresh()
+      .then(() => get().replay());
+  }
+
+  /**
+   * E4: leaves a support session (ended or run out) for the administrator's
+   * own session. If that one is gone too, the login screen.
+   */
+  async function restoreOwnSession(): Promise<void> {
+    const back = get().supportReturn;
+    writeStoredSupport(null);
+    set({supportReturn: null});
+    if (!back) return;
+    try {
+      const me = await api.me(back.session.token);
+      await enterSession({
+        token: back.session.token,
+        expiresAt: back.session.expiresAt,
+        user: me.user,
+        organizations: me.organizations,
+      });
+      get().toast(
+        back.kind === 'support'
+          ? 'Sesión de soporte terminada. Vuelves a tu cuenta.'
+          : 'Has dejado de ver como Invitado.',
+        'success',
+      );
+    } catch {
+      writeStoredSession(null);
+      resetOfflineMemory();
+      set({
+        phase: 'login',
+        session: null,
+        organizations: [],
+        ...EMPTY_RECORDS,
+        ...IDLE_STATES,
+        ...NO_OUTBOX,
+        fromCache: false,
+        sessionNotice: 'La sesión de soporte ha terminado. Vuelve a entrar.',
+        ...dropToasts(),
+      });
+      await device.wipeDevice();
+    }
+  }
+
   /** Opens the window from the device's copy, without the server. */
   const openLocal = (
     stored: StoredSession,
@@ -1691,6 +2026,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       resources: arr(l.resources),
       notes: arr(l.notes),
       hypotheses: arr(l.hypotheses),
+      acceptances: arr(l.acceptances),
       activity: arr(l.activity),
       eventsState: 'ready',
       tasksState: 'ready',
@@ -1701,6 +2037,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       resourcesState: 'ready',
       notesState: 'ready',
       hypothesesState: 'ready',
+      acceptancesState: 'ready',
       activityState: 'ready',
       lastSyncAt: local.savedAt,
     });
@@ -1835,10 +2172,24 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     const reEpoch = resourceEpoch;
     const noEpoch = noteEpoch;
     const hyEpoch = hypothesisEpoch;
+    // E4: without `directory.read` the server answers 403 to these lists;
+    // they are simply empty for this viewer (Contactos and Catálogo say why).
+    const directory = can(
+      orgPermissions(
+        get().organizations.find(o => o.id === orgId),
+        get().session?.user.role,
+      ),
+      'directory.read',
+    );
     const ask = <T>(
       list: SyncList,
       call: (token: string) => Promise<T>,
-    ): Promise<T> => (want(list) ? authed(call) : Promise.reject(SKIP));
+    ): Promise<T> =>
+      !want(list)
+        ? Promise.reject(SKIP)
+        : !directory && DIRECTORY_LISTS.has(list)
+          ? Promise.resolve({items: []} as unknown as T)
+          : authed(call);
     const [
       changes,
       events,
@@ -1853,6 +2204,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       resources,
       notes,
       hypotheses,
+      acceptances,
     ] = await Promise.allSettled([
       full ? authed(token => api.changes(token, orgId)) : Promise.reject(SKIP),
       ask('events', token => api.events(token, orgId)),
@@ -1867,6 +2219,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       ask('resources', token => api.resources(token, orgId)),
       ask('notes', token => api.notes(token, orgId)),
       ask('hypotheses', token => api.hypotheses(token, orgId)),
+      ask('acceptances', token => api.acceptances(token, orgId)),
     ]);
     // The organization may have changed while loading.
     if (get().orgId !== orgId || get().phase !== 'ready') return false;
@@ -2043,6 +2396,25 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         patch.hypothesesState = 'error';
       }
     }
+    // Accepted conflicts (Revisión 1 · E2): quiet on failure too; an older
+    // server without the route (404) simply has none.
+    if (acceptances.status === 'fulfilled') {
+      patch.acceptances = keepIfSame(
+        get().acceptances,
+        acceptances.value.items,
+      );
+      patch.acceptancesState = 'ready';
+    } else if (failed(acceptances)) {
+      if (
+        isApiError(acceptances.reason) &&
+        acceptances.reason.code === 'NOT_FOUND'
+      ) {
+        patch.acceptances = [];
+        patch.acceptancesState = 'ready';
+      } else if (!silent || get().acceptancesState !== 'ready') {
+        patch.acceptancesState = 'error';
+      }
+    }
     // M6: the device's waiting changes stay visible over the server lists.
     if (get().outbox.length) {
       for (const key of RECORD_LISTS) {
@@ -2065,6 +2437,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     organizations: [],
     orgId: null,
     sessionNotice: null,
+    supportReturn: readStoredSupport(),
     events: [],
     eventsState: 'idle',
     eventsError: null,
@@ -2093,6 +2466,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
     notesError: null,
     hypotheses: [],
     hypothesesState: 'idle',
+    acceptances: [],
+    acceptancesState: 'idle',
     recentSearches: [],
     recentState: 'idle',
     activity: [],
@@ -2195,39 +2570,106 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       }
     },
 
-    login: async (displayName, password) => {
-      const res = await api.login({displayName, password});
-      const session: StoredSession = {
-        token: res.token,
-        expiresAt: res.expiresAt,
-        user: res.user,
-      };
-      writeStoredSession(session);
-      const orgId = pickOrg(res.organizations, readStoredOrg());
-      writeStoredOrg(orgId);
-      // Someone else's copy is wiped before anything of this user lands.
-      resetOfflineMemory();
-      const entries = await prepareDevice(res.user, orgId, res.organizations);
-      set({
-        phase: 'ready',
-        session,
-        organizations: res.organizations,
-        orgId,
-        sessionNotice: null,
-        ...EMPTY_RECORDS,
-        recentState: 'idle',
-        fromCache: false,
-        outbox: entries,
-        unsent: unsentRecordIds(entries),
-        leave: null,
+    login: async (username, password) => {
+      // `displayName` too, so a server not yet migrated to E4 still accepts it.
+      const res = await api.login({
+        username,
+        displayName: username,
+        password,
       });
-      markReachable();
-      void get()
-        .refresh()
-        .then(() => get().replay());
+      await enterSession(res);
     },
 
-    logout: async ({discardUnsent = false} = {}) => {
+    refreshAccount: async user => {
+      const session = get().session;
+      if (!session) return;
+      if (user) {
+        const next = {...session, user};
+        writeStoredSession(next);
+        set({session: next});
+        return;
+      }
+      try {
+        const me = await api.me(session.token);
+        if (get().session?.token !== session.token) return;
+        const next = {...session, user: me.user};
+        writeStoredSession(next);
+        const patch: Partial<LogisticsState> = {session: next};
+        // Permissions change with the password (provisional or not).
+        const orgId = get().orgId;
+        const before = get().organizations.find(o => o.id === orgId);
+        const after = me.organizations.find(o => o.id === orgId);
+        if (after) patch.organizations = me.organizations;
+        set(patch);
+        const reads = (o: Organization | undefined) =>
+          can(orgPermissions(o, me.user.role), 'directory.read');
+        if (after && reads(after) !== reads(before)) {
+          void get().refresh({silent: true});
+        }
+      } catch {
+        // Not now: the next `GET /me` (reconnection, reload) brings it.
+      }
+    },
+
+    beginSupport: async (res, minutes) => {
+      const own = get().session;
+      if (!own) throw new ApiError({code: 'UNAUTHENTICATED', status: 401});
+      if (get().outbox.some(isUnresolved)) {
+        // The server already opened it: close it again, unused.
+        await api.logout(res.token).catch(() => undefined);
+        throw new ApiError({
+          code: 'VALIDATION',
+          status: 0,
+          message:
+            'Tienes cambios sin enviar en este dispositivo. Envíalos antes de entrar en otra cuenta.',
+        });
+      }
+      // The server's end, unless this device's clock disagrees with it.
+      const serverEnds = Date.parse(res.user.support?.endsAt ?? res.expiresAt);
+      const left = serverEnds - Date.now();
+      const endsAt =
+        left > 0 && left <= (minutes + 1) * 60_000
+          ? new Date(serverEnds).toISOString()
+          : new Date(Date.now() + minutes * 60_000).toISOString();
+      const back: SupportReturn = {
+        sessionId: res.sessionId,
+        kind: res.user.support?.kind ?? 'support',
+        // Kept as it is now; the own token never goes to the device's copy.
+        session: get().supportReturn?.session ?? own,
+        endsAt,
+      };
+      writeStoredSupport(back);
+      set({supportReturn: back});
+      await enterSession(res);
+    },
+
+    endSupport: async () => {
+      const back = get().supportReturn;
+      if (!back) return;
+      const token = get().session?.token;
+      // Signing out of the support token ends it on the server (logged);
+      // best effort: it may have run out already. If that fails, the
+      // administrator's own token ends it by id.
+      if (token && token !== back.session.token) {
+        const ended = await api.logout(token).then(
+          () => true,
+          () => false,
+        );
+        if (!ended) {
+          await api
+            .endSupportSession(back.session.token, back.sessionId)
+            .catch(() => undefined);
+        }
+      }
+      await restoreOwnSession();
+    },
+
+    logout: async ({discardUnsent = false, notice} = {}) => {
+      // E4: signing out of a support session ends it and goes back.
+      if (get().supportReturn) {
+        await get().endSupport();
+        return;
+      }
       if (!discardUnsent && get().outbox.some(isUnresolved)) {
         set({leave: {kind: 'logout'}});
         return;
@@ -2242,6 +2684,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       // «Equipo» are shared, and a rescued note must not be offered to the
       // next person. (Session expiry keeps it: that is what it is for.)
       clearRescue();
+      // «Tareas» filters stay with the person, not the device.
+      clearTasksPrefs();
       writeStoredSession(null);
       resetOfflineMemory();
       set({
@@ -2252,7 +2696,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         ...IDLE_STATES,
         ...NO_OUTBOX,
         fromCache: false,
-        sessionNotice: null,
+        sessionNotice: notice ?? null,
         // A «Deshacer» left on screen must never run under the next person.
         ...dropToasts(),
       });
@@ -2347,6 +2791,10 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         return;
       }
       if (get().orgId !== orgId || get().phase !== 'ready') return;
+      // E2: the acronym lives in the session's organizations (`GET /me`).
+      if (res.types.includes('organization')) {
+        void get().refreshAccount();
+      }
       const lists = listsToReload(res);
       if (SYNC_LISTS.every(l => lists.has(l))) {
         await load(ALL_LISTS, true);
@@ -2930,7 +3378,14 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       write<Resource>('resource', 'update', id, {...input}, options),
 
     deleteResource: async resource => {
-      if (await discardLocalCreate('resource', resource.id)) return;
+      // E3: photos still waiting for it go with it (the server would refuse
+      // them: their material no longer exists).
+      const dropPhotos = () =>
+        removeEntries(queuedMedia(get().outbox, resource.id).map(e => e.id));
+      if (await discardLocalCreate('resource', resource.id)) {
+        await dropPhotos();
+        return;
+      }
       requireConnection();
       try {
         await authed(token =>
@@ -2945,6 +3400,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
         if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
       }
       await forgetRecord(resource.id);
+      await dropPhotos();
       resourceEpoch++;
       warehouseEpoch++;
       taskEpoch++;
@@ -3007,6 +3463,131 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       noteEpoch++;
       const next = upsertInto(get().notes, note, sortNotes);
       if (next) set({notes: next, notesState: 'ready'});
+    },
+
+    // ------------------------------------- answers and photos (Revisión 1 · E3)
+
+    noteAnswers: async (noteId, signal) => {
+      requireConnection();
+      const res = await authed(token => api.noteAnswers(token, noteId, signal));
+      return res.items;
+    },
+
+    answerNote: async (note, text, replaces) => {
+      requireConnection();
+      const live = () => get().notes.find(n => n.id === note.id) ?? note;
+      try {
+        const answer = await authed(token =>
+          api.createNoteAnswer(token, note.id, {text, replaces}),
+        );
+        // The server bumped the note's version (its `answer` changed); the
+        // refresh below brings its exact copy.
+        const n = live();
+        get().upsertNote({
+          ...n,
+          answer,
+          version: n.version + 1,
+          updatedAt: answer.answeredAt,
+          updatedBy: answer.answeredBy,
+        });
+        return answer;
+      } catch (err) {
+        if (
+          isApiError(err) &&
+          err.code === 'VERSION_CONFLICT' &&
+          (err.current === null || typeof err.current === 'object')
+        ) {
+          // Someone answered meanwhile: show their answer at once.
+          get().upsertNote({
+            ...live(),
+            answer: (err.current ?? null) as NoteAnswer | null,
+          });
+        }
+        throw err;
+      } finally {
+        void get()
+          .pull()
+          .catch(() => undefined);
+      }
+    },
+
+    addResourcePhoto: async (resource, photo) => {
+      const s = get();
+      const orgId = s.orgId;
+      const session = s.session;
+      if (!orgId || !session) {
+        throw new ApiError({code: 'VALIDATION', status: 0});
+      }
+      const id = uuid();
+      const input: Record<string, unknown> = {
+        id,
+        organizationId: orgId,
+        ownerType: 'resource',
+        ownerId: resource.id,
+        contentType: photo.contentType,
+        width: photo.width,
+        height: photo.height,
+        data: photo.data,
+        ...(photo.main ? {main: true} : {}),
+      };
+      const queueable = canQueue(session.user.role, 'media', 'create');
+      if (queueable && mustQueue(s.outbox, s.connection, id, input)) {
+        await queuePhoto(resource, id, input);
+        return {queued: true, id, media: null};
+      }
+      const stillHere = () =>
+        get().session?.user.id === session.user.id && get().orgId === orgId;
+      try {
+        const saved = await authed(token =>
+          api.uploadMedia(token, input as unknown as MediaUploadInput),
+        );
+        if (stillHere()) {
+          putMedia(saved);
+          void get()
+            .pull()
+            .catch(() => undefined);
+        }
+        return {queued: false, id: saved.id, media: saved};
+      } catch (err) {
+        // The upload did not get through: it waits here with the same id,
+        // so a copy the server did store is answered, never duplicated.
+        if (queueable && stillHere() && isApiError(err) && err.isUnavailable) {
+          await queuePhoto(resource, id, input);
+          return {queued: true, id, media: null};
+        }
+        throw err;
+      }
+    },
+
+    setMainPhoto: async (resource, media) => {
+      requireConnection();
+      try {
+        const saved = await authed(token => api.setMainMedia(token, media.id));
+        changeResource(resource.id, r => withMain(r, saved.id));
+      } catch (err) {
+        if (isApiError(err) && err.code === 'NOT_FOUND') {
+          changeResource(resource.id, r => withoutMedia(r, media.id));
+        }
+        throw err;
+      } finally {
+        void get()
+          .pull()
+          .catch(() => undefined);
+      }
+    },
+
+    deletePhoto: async (resource, media) => {
+      requireConnection();
+      try {
+        await authed(token => api.deleteMedia(token, media.id));
+      } catch (err) {
+        // Already removed by someone else: the result is the same.
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      changeResource(resource.id, r => withoutMedia(r, media.id));
+      void get()
+        .pull()
+        .catch(() => undefined);
     },
 
     // ---------------------------------------------------- hypotheses (M5)
@@ -3075,6 +3656,145 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       hypothesisEpoch++;
       const next = upsertHypothesisInto(get().hypotheses, hypothesis);
       if (next) set({hypotheses: next, hypothesesState: 'ready'});
+    },
+
+    // ---------------------------------------------------- Revisión 1 · E2
+
+    moveTask: async (id, input) => {
+      // Never queued: a move always needs a live confirmation on the plan
+      // as the server has it.
+      requireConnection();
+      try {
+        const res = await authed(token => api.moveTask(token, id, input));
+        for (const task of res.tasks) get().upsertTask(task);
+        void get()
+          .pull()
+          .catch(() => undefined);
+        return res;
+      } catch (err) {
+        if (
+          isApiError(err) &&
+          err.code === 'VERSION_CONFLICT' &&
+          Array.isArray(err.current)
+        ) {
+          // The plan changed: show the tasks as they are now; nothing moved.
+          for (const task of err.current as Task[]) {
+            if (task && typeof task === 'object') get().upsertTask(task);
+          }
+        }
+        throw err;
+      }
+    },
+
+    acceptConflict: async input => {
+      requireConnection();
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'VALIDATION', status: 0});
+      try {
+        const created = await authed(token =>
+          api.createAcceptance(token, {...input, organizationId: orgId}),
+        );
+        get().upsertAcceptance(created);
+        return created;
+      } catch (err) {
+        if (isApiError(err) && err.current && typeof err.current === 'object') {
+          if (err.code === 'DUPLICATE' && !Array.isArray(err.current)) {
+            // Someone accepted it first: show theirs.
+            get().upsertAcceptance(err.current as ConflictAcceptance);
+          } else if (
+            err.code === 'VERSION_CONFLICT' &&
+            Array.isArray(err.current)
+          ) {
+            for (const task of err.current as Task[]) {
+              if (task && typeof task === 'object') get().upsertTask(task);
+            }
+          }
+        }
+        void get()
+          .pull()
+          .catch(() => undefined);
+        throw err;
+      }
+    },
+
+    withdrawAcceptance: async acceptance => {
+      requireConnection();
+      try {
+        await authed(token => api.deleteAcceptance(token, acceptance.id));
+      } catch (err) {
+        if (!(isApiError(err) && err.code === 'NOT_FOUND')) throw err;
+      }
+      set({
+        acceptances: get().acceptances.filter(a => a.id !== acceptance.id),
+      });
+      void get()
+        .pull()
+        .catch(() => undefined);
+    },
+
+    upsertAcceptance: acceptance => {
+      set({
+        acceptances: [
+          acceptance,
+          ...get().acceptances.filter(a => a.id !== acceptance.id),
+        ],
+        acceptancesState: 'ready',
+      });
+    },
+
+    updateOrganization: async input => {
+      requireConnection();
+      const orgId = get().orgId;
+      if (!orgId) throw new ApiError({code: 'NOT_FOUND', status: 404});
+      const adopt = (org: Organization) => {
+        if (get().orgId !== orgId) return;
+        const current = get().organizations.find(o => o.id === org.id);
+        if (current && current.version > org.version) return;
+        // `/me` copies carry the viewer's roles and permissions: keep them.
+        set({
+          organizations: get().organizations.map(o =>
+            o.id === org.id ? {...o, ...org} : o,
+          ),
+        });
+      };
+      try {
+        const org = await authed(token =>
+          api.updateOrganization(token, orgId, input),
+        );
+        adopt(org);
+        return org;
+      } catch (err) {
+        const current = conflictCopy<Organization>(err);
+        if (current) adopt(current);
+        throw err;
+      }
+    },
+
+    updateVenue: async (id, input) => {
+      requireConnection();
+      try {
+        const venue = await authed(token => api.updateVenue(token, id, input));
+        get().upsertVenue(venue);
+        void get()
+          .pull()
+          .catch(() => undefined);
+        return venue;
+      } catch (err) {
+        const current = conflictCopy<Venue>(err);
+        if (current) get().upsertVenue(current);
+        throw err;
+      }
+    },
+
+    upsertVenue: venue => {
+      writeEpoch++;
+      const current = get().venues.find(v => v.id === venue.id);
+      if (current && current.version > venue.version) return;
+      set({
+        venues: [...get().venues.filter(v => v.id !== venue.id), venue].sort(
+          (a, b) => a.name.localeCompare(b.name, 'es'),
+        ),
+      });
     },
 
     loadHistory: async (entityType, entityId, limit = 50) => {
@@ -3245,6 +3965,7 @@ const WITHHELD_KIND: Partial<Record<SyncList, WithheldKind>> = {
   resources: 'resource',
   notes: 'note',
   hypotheses: 'hypothesis',
+  acceptances: 'acceptance',
 };
 
 /** A list is kept once it has really loaded (never an empty placeholder). */
@@ -3260,6 +3981,7 @@ const LOADED_BY: Record<SyncList, keyof LogisticsState> = {
   resources: 'resourcesState',
   notes: 'notesState',
   hypotheses: 'hypothesesState',
+  acceptances: 'acceptancesState',
   activity: 'activityState',
 };
 

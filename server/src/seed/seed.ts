@@ -1,6 +1,6 @@
 /**
- * Pilot seed: the organization with its built-in categories, the five pilot
- * users and one fictitious demo event with its demo tasks, companies,
+ * Pilot seed: the organization with its built-in categories, the six pilot
+ * users (with their roles, E4) and one fictitious demo event with its demo tasks, companies,
  * contacts, offers, warehouse, resources and notes. Idempotent: running it
  * again creates only what is missing and keeps
  * existing passwords unless `resetPasswords` is set. Passwords are generated
@@ -16,6 +16,14 @@ import {findOrCreateCompany} from '../companies/service.ts';
 import {labelOf} from '../notes/refs.ts';
 import {findOrCreateByName} from '../records/find-or-create.ts';
 import {lockCatalogue, lockGraph} from '../records/locks.ts';
+import {hasDemoBudget, seedDemoBudget} from './demo-budget.ts';
+import {
+  ORGANIZATION_COLUMNS,
+  parseRoles,
+  toOrgRecord,
+} from '../organizations/service.ts';
+import type {OrgRecord} from '../organizations/service.ts';
+import {normalizeRoles} from '../../../shared/logistics/permissions.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
 import {
   BUILT_IN_RESOURCE_CATEGORIES,
@@ -26,7 +34,7 @@ import type {
   CompanyKind,
   DataSource,
   NoteKind,
-  Organization,
+  OrgRole,
   PriceUnit,
   ResourceAvailability,
   ResourceCondition,
@@ -41,12 +49,30 @@ export const PILOT_ORGANIZATION = {
   timezone: 'Atlantic/Canary',
 };
 
-export const PILOT_USERS: {displayName: string; role: Role}[] = [
-  {displayName: 'Elvis', role: 'member'},
-  {displayName: 'Dailos', role: 'member'},
-  {displayName: 'Yeray', role: 'member'},
-  {displayName: 'Equipo', role: 'member'},
-  {displayName: 'Invitado', role: 'guest'},
+/**
+ * Pilot accounts. The username is the login name and never changes; the
+ * display name of an existing account is never touched (people edit it in
+ * their profile). Roles are applied once per membership (E4): after that
+ * only an administrator changes them. Fabián (E4) is listed last so the
+ * order of the existing accounts stays as it was.
+ */
+export const PILOT_USERS: {
+  username: string;
+  displayName: string;
+  role: Role;
+  roles: OrgRole[];
+}[] = [
+  {username: 'Elvis', displayName: 'Elvis', role: 'member', roles: ['admin']},
+  {username: 'Dailos', displayName: 'Dailos', role: 'member', roles: ['admin']},
+  {username: 'Yeray', displayName: 'Yeray', role: 'member', roles: ['admin']},
+  {username: 'Equipo', displayName: 'Equipo', role: 'member', roles: ['team']},
+  {username: 'Invitado', displayName: 'Invitado', role: 'guest', roles: []},
+  {
+    username: 'Fabián',
+    displayName: 'Fabián',
+    role: 'member',
+    roles: ['admin', 'developer'],
+  },
 ];
 
 /** Author of seeded demo records; cannot log in and is not listed. */
@@ -468,15 +494,18 @@ export const DEMO_NOTES: DemoNote[] = [
 ];
 
 export interface SeededUser {
+  username: string;
   displayName: string;
   role: Role;
+  /** Roles in the pilot organization after this run. */
+  roles: OrgRole[];
   /** Set only when the password was created or reset in this run. */
   password: string | null;
   created: boolean;
 }
 
 export interface SeedResult {
-  organization: Organization;
+  organization: OrgRecord;
   organizationCreated: boolean;
   users: SeededUser[];
   demoEventCreated: boolean;
@@ -488,6 +517,8 @@ export interface SeedResult {
   /** Demo resources and notes created in this run (0 when they already existed). */
   demoResourcesCreated: number;
   demoNotesCreated: number;
+  /** Revisión 1 · E5: demo expenses created in this run (with the demo budget). */
+  demoExpensesCreated: number;
   /**
    * When the organization removed its demo data (ISO instant); the seed then
    * leaves the demo alone. Null when the demo was never removed.
@@ -513,65 +544,73 @@ export async function seed(
   const existing = new Set(
     (
       await db.query<{name: string}>(
-        'SELECT lower(display_name) AS name FROM users',
+        'SELECT lower(username) AS name FROM users',
       )
     ).map(r => r.name),
   );
   const passwords = new Map<string, {clear: string; hash: string}>();
   for (const u of PILOT_USERS) {
-    if (options.resetPasswords || !existing.has(u.displayName.toLowerCase())) {
+    if (options.resetPasswords || !existing.has(u.username.toLowerCase())) {
       const clear = passwordFor(u.displayName);
-      passwords.set(u.displayName, {clear, hash: await hashPassword(clear)});
+      passwords.set(u.username, {clear, hash: await hashPassword(clear)});
     }
   }
 
   return db.transaction(async tx => {
     let organizationCreated = false;
     let org = (
-      await tx.query<Organization>(
-        'SELECT id, name, timezone FROM organizations WHERE lower(name) = lower($1)',
+      await tx.query<OrgRecord>(
+        `SELECT ${ORGANIZATION_COLUMNS} FROM organizations o
+          WHERE lower(o.name) = lower($1)`,
         [PILOT_ORGANIZATION.name],
       )
     )[0];
     if (!org) {
       org = (
-        await tx.query<Organization>(
-          `INSERT INTO organizations (name, timezone, created_at, updated_at)
+        await tx.query<OrgRecord>(
+          `INSERT INTO organizations AS o (name, timezone, created_at, updated_at)
            VALUES ($1, $2, $3::timestamptz, $3::timestamptz)
-           RETURNING id, name, timezone`,
+           RETURNING ${ORGANIZATION_COLUMNS}`,
           [
             PILOT_ORGANIZATION.name,
             PILOT_ORGANIZATION.timezone,
             now.toISOString(),
           ],
         )
-      )[0] as Organization;
+      )[0] as OrgRecord;
       organizationCreated = true;
     }
+    org = toOrgRecord(org);
 
     const users: SeededUser[] = [];
     for (const [index, u] of PILOT_USERS.entries()) {
-      const pw = passwords.get(u.displayName);
+      const pw = passwords.get(u.username);
       const found = (
-        await tx.query<{id: string}>(
-          'SELECT id FROM users WHERE lower(display_name) = lower($1)',
-          [u.displayName],
+        await tx.query<{id: string; display_name: string}>(
+          'SELECT id, display_name FROM users WHERE lower(username) = lower($1)',
+          [u.username],
         )
       )[0];
       let userId: string;
+      let displayName = u.displayName;
       let created = false;
       if (!found) {
-        if (!pw) throw new Error(`Missing password for ${u.displayName}`);
+        if (!pw) throw new Error(`Missing password for ${u.username}`);
         userId = (
           (
             await tx.query<{id: string}>(
-              `INSERT INTO users (display_name, role, password_hash, sort_order, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz)
+              `INSERT INTO users (username, display_name, role, password_hash,
+                                  password_provisional, sort_order, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $7::timestamptz)
                RETURNING id`,
               [
+                u.username,
                 u.displayName,
                 u.role,
                 pw.hash,
+                // Printed once for someone else to hand over: provisional
+                // (never for the guest account, which cannot change it).
+                u.role !== 'guest',
                 (index + 1) * 10,
                 now.toISOString(),
               ],
@@ -581,12 +620,14 @@ export async function seed(
         created = true;
       } else {
         userId = found.id;
+        displayName = found.display_name;
         if (pw) {
           await tx.query(
             `UPDATE users SET password_hash = $2, is_active = true,
+                    password_provisional = $4,
                     version = version + 1, updated_at = $3::timestamptz
               WHERE id = $1`,
-            [userId, pw.hash, now.toISOString()],
+            [userId, pw.hash, now.toISOString(), u.role !== 'guest'],
           );
           // A new password closes the sessions opened with the old one.
           await deleteUserSessions(tx, userId);
@@ -597,9 +638,25 @@ export async function seed(
          VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [org.id, userId],
       );
+      // Pilot roles once per membership; afterwards only an administrator
+      // changes them (roles_set_at records it).
+      const membership = (
+        await tx.query<{roles: unknown}>(
+          `UPDATE organization_members
+              SET roles = CASE WHEN roles_set_at IS NULL
+                               THEN ARRAY(SELECT jsonb_array_elements_text($3::jsonb))
+                               ELSE roles END,
+                  roles_set_at = COALESCE(roles_set_at, $4::timestamptz)
+            WHERE organization_id = $1 AND user_id = $2
+            RETURNING roles`,
+          [org.id, userId, JSON.stringify(u.roles), now.toISOString()],
+        )
+      )[0];
       users.push({
-        displayName: u.displayName,
+        username: u.username,
+        displayName,
         role: u.role,
+        roles: normalizeRoles(parseRoles(membership?.roles)),
         password: pw?.clear ?? null,
         created,
       });
@@ -632,6 +689,7 @@ export async function seed(
         demoOffersCreated: 0,
         demoResourcesCreated: 0,
         demoNotesCreated: 0,
+        demoExpensesCreated: 0,
         demoRemovedAt: toIso(demoRemovedAt),
       };
     }
@@ -772,6 +830,19 @@ export async function seed(
       });
     }
 
+    // Revisión 1 · E5, in the same way: the demo budget and expenses, once,
+    // while the demo event is there.
+    let demoExpensesCreated = 0;
+    if (demoEventId && !(await hasDemoBudget(tx, org.id))) {
+      demoExpensesCreated = await seedDemoBudget(tx, {
+        organizationId: org.id,
+        eventId: demoEventId,
+        eventName: DEMO_EVENT.name,
+        actorId: systemId,
+        now,
+      });
+    }
+
     return {
       organization: org,
       organizationCreated,
@@ -782,6 +853,7 @@ export async function seed(
       demoOffersCreated: catalogue.offers,
       demoResourcesCreated: inventory.resources,
       demoNotesCreated: inventory.notes,
+      demoExpensesCreated,
       demoRemovedAt: null,
     };
   });
@@ -797,7 +869,7 @@ export async function seed(
 async function seedDemoInventory(
   tx: Queryable,
   args: {
-    organization: Organization;
+    organization: OrgRecord;
     eventId: string;
     actorId: string;
     now: Date;
@@ -977,7 +1049,7 @@ async function seedDemoInventory(
 async function seedDemoTasks(
   tx: Queryable,
   args: {
-    organization: Organization;
+    organization: OrgRecord;
     eventId: string;
     actorId: string;
     now: Date;
@@ -1073,7 +1145,7 @@ async function seedDemoTasks(
 async function seedDemoCatalogue(
   tx: Queryable,
   args: {
-    organization: Organization;
+    organization: OrgRecord;
     eventId: string;
     actorId: string;
     now: Date;
@@ -1268,10 +1340,17 @@ async function seedDemoCatalogue(
   return {contacts: DEMO_CONTACTS.length, offers: DEMO_OFFERS.length};
 }
 
-async function ensureSystemUser(tx: Queryable, now: Date): Promise<string> {
+/**
+ * The «Sistema» author (inactive, cannot log in). E6 renegotiation tasks are
+ * written by it; the UI shows them as «Generada por Ox Eye» (OfferRenewal).
+ */
+export async function ensureSystemUser(
+  tx: Queryable,
+  now: Date,
+): Promise<string> {
   const found = (
     await tx.query<{id: string}>(
-      'SELECT id FROM users WHERE lower(display_name) = lower($1)',
+      'SELECT id FROM users WHERE lower(username) = lower($1)',
       [SYSTEM_USER],
     )
   )[0];
@@ -1279,8 +1358,8 @@ async function ensureSystemUser(tx: Queryable, now: Date): Promise<string> {
   return (
     (
       await tx.query<{id: string}>(
-        `INSERT INTO users (display_name, role, password_hash, is_active, sort_order, created_at, updated_at)
-         VALUES ($1, 'guest', NULL, false, 1000, $2::timestamptz, $2::timestamptz)
+        `INSERT INTO users (username, display_name, role, password_hash, is_active, sort_order, created_at, updated_at)
+         VALUES ($1, $1, 'guest', NULL, false, 1000, $2::timestamptz, $2::timestamptz)
          RETURNING id`,
         [SYSTEM_USER, now.toISOString()],
       )

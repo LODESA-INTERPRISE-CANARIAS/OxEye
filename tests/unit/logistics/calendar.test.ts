@@ -1,6 +1,27 @@
 import {describe, expect, it} from 'vitest';
-import {planWarnings} from '../../../shared/logistics/conflicts';
+import {acronymFor} from '../../../shared/logistics/acronym';
+import {
+  planWarnings,
+  type PlanWarning,
+} from '../../../shared/logistics/conflicts';
 import type {LogisticsEvent, Task} from '../../../shared/logistics/contracts';
+import {
+  bandVars,
+  blockTimeParts,
+  blockVars,
+  clampColumnWidth,
+  COLUMN,
+  columnTracks,
+  columnWarnings,
+  frameTimeLabel,
+  MAX_COLUMN_PREFS,
+  maxColumnWidth,
+  minuteToPx,
+  nextColumnScroll,
+  parseColumnPrefs,
+  pxToMinute,
+  withColumnPref,
+} from '../../../src/logistics/calendar/layout';
 import {
   buildDayIndex,
   layoutColumn,
@@ -8,6 +29,7 @@ import {
   monthCells,
   spanOnDate,
   weekBars,
+  type Span,
 } from '../../../src/logistics/lib/calendar';
 import {sortTasks} from '../../../src/logistics/lib/tasks';
 
@@ -429,5 +451,220 @@ describe('sortTasks', () => {
       'b sin hora',
       'sin fecha',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------- day timeline layout (Revisión 1)
+
+const span = (start: number, end: number, extra: Partial<Span> = {}): Span => ({
+  start,
+  end,
+  openEnd: false,
+  continuesBefore: false,
+  continuesAfter: false,
+  ...extra,
+});
+
+const warning = (
+  key: string,
+  severity: PlanWarning['severity'],
+  taskIds: string[],
+): PlanWarning => ({
+  key,
+  kind: severity === 'conflict' ? 'venue_overlap' : 'heavy_load',
+  severity,
+  taskIds,
+  minutes: null,
+  title: key,
+  detail: '',
+});
+
+describe('venue column preferences', () => {
+  it('reads only well-formed entries and keeps widths within limits', () => {
+    expect(parseColumnPrefs(null)).toEqual({});
+    expect(parseColumnPrefs('not json')).toEqual({});
+    expect(parseColumnPrefs('[1,2]')).toEqual({});
+    expect(
+      parseColumnPrefs(
+        JSON.stringify({
+          v1: {width: 250.4},
+          v2: {collapsed: true},
+          v3: {width: 20},
+          v4: {width: 'wide', collapsed: 'yes'},
+          v5: {width: 5000, collapsed: true},
+        }),
+      ),
+    ).toEqual({
+      v1: {width: 250},
+      v2: {collapsed: true},
+      v3: {width: COLUMN.min},
+      v5: {width: COLUMN.max, collapsed: true},
+    });
+  });
+
+  it('changes one venue, drops empty entries and keeps the newest', () => {
+    let prefs = withColumnPref({}, 'v1', {width: 300});
+    prefs = withColumnPref(prefs, 'v1', {collapsed: true});
+    expect(prefs).toEqual({v1: {width: 300, collapsed: true}});
+    prefs = withColumnPref(prefs, 'v1', {width: null});
+    expect(prefs).toEqual({v1: {collapsed: true}});
+    prefs = withColumnPref(prefs, 'v1', {collapsed: false});
+    expect(prefs).toEqual({});
+
+    let many = {};
+    for (let i = 0; i < MAX_COLUMN_PREFS + 5; i++) {
+      many = withColumnPref(many, `v${i}`, {collapsed: true});
+    }
+    const keys = Object.keys(many);
+    expect(keys).toHaveLength(MAX_COLUMN_PREFS);
+    expect(keys[0]).toBe('v5');
+    expect(keys.at(-1)).toBe(`v${MAX_COLUMN_PREFS + 4}`);
+  });
+});
+
+describe('venue column tracks', () => {
+  it('never lets a hand-sized column outgrow the visible plan', () => {
+    expect(maxColumnWidth(null)).toBe(COLUMN.max);
+    expect(maxColumnWidth(400)).toBe(400);
+    expect(maxColumnWidth(90)).toBe(COLUMN.min);
+    expect(clampColumnWidth(900, 400)).toBe(400);
+    expect(clampColumnWidth(10, 400)).toBe(COLUMN.min);
+  });
+
+  it('stretches automatic columns, fixes sized and collapsed ones', () => {
+    const t = columnTracks(
+      [
+        {lanes: 1},
+        {lanes: 2},
+        {pref: {width: 260}, lanes: 3},
+        {pref: {width: 260, collapsed: true}, lanes: 1},
+      ],
+      1000,
+    );
+    expect(t.columns).toEqual([
+      'minmax(var(--lx-colw), 1fr)',
+      'minmax(max(var(--lx-colw), calc(2 * var(--lx-lanew))), 1fr)',
+      '260px',
+      'var(--lx-colw-collapsed)',
+    ]);
+    expect(t.filler).toBe(false);
+  });
+
+  it('adds a filler when no column stretches', () => {
+    expect(
+      columnTracks(
+        [
+          {pref: {collapsed: true}, lanes: 1},
+          {pref: {width: 900}, lanes: 1},
+        ],
+        500,
+      ),
+    ).toEqual({columns: ['var(--lx-colw-collapsed)', '500px'], filler: true});
+    expect(columnTracks([], 500).filler).toBe(false);
+  });
+});
+
+describe('stepping between venues', () => {
+  // Columns start at 0, 190, 380, 570; 300 px of scroll at most.
+  const starts = [0, 190, 380, 570];
+  it('moves one venue right or left and stops at the ends', () => {
+    expect(nextColumnScroll(starts, 0, 1, 300)).toBe(190);
+    expect(nextColumnScroll(starts, 190, 1, 300)).toBe(300);
+    expect(nextColumnScroll(starts, 300, 1, 300)).toBeNull();
+    expect(nextColumnScroll(starts, 300, -1, 300)).toBe(190);
+    expect(nextColumnScroll(starts, 100, -1, 300)).toBe(0);
+    expect(nextColumnScroll(starts, 0, -1, 300)).toBeNull();
+  });
+});
+
+describe('warnings per venue', () => {
+  it('gives each column the warnings of its tasks, conflicts first', () => {
+    const columns = [
+      {tasks: [{id: 't1'}, {id: 't2'}]},
+      {tasks: [{id: 't3'}]},
+      {tasks: [{id: 't4'}]},
+    ];
+    const list = [
+      warning('heavy', 'reminder', ['t1']),
+      warning('overlap', 'conflict', ['t1', 't2']),
+      warning('company', 'conflict', ['t2', 't3']),
+    ];
+    expect(columnWarnings(columns, list).map(ws => ws.map(w => w.key))).toEqual(
+      [['overlap', 'company', 'heavy'], ['company'], []],
+    );
+  });
+});
+
+describe('timeline labels', () => {
+  it('names the event frame hours for the header', () => {
+    expect(frameTimeLabel(span(17 * 60, 21 * 60))).toBe('17:00 – 21:00');
+    expect(frameTimeLabel(span(600, 1440, {continuesAfter: true}))).toBe(
+      'desde 10:00',
+    );
+    expect(frameTimeLabel(span(0, 1200, {continuesBefore: true}))).toBe(
+      'hasta 20:00',
+    );
+    expect(
+      frameTimeLabel(
+        span(0, 1440, {continuesBefore: true, continuesAfter: true}),
+      ),
+    ).toBe('todo el día');
+    expect(frameTimeLabel(span(540, 570, {openEnd: true}))).toBe(
+      '09:00 · fin pendiente',
+    );
+    expect(frameTimeLabel(span(1320, 1440))).toBe('22:00 – 24:00');
+  });
+
+  it('always leads a block with its start', () => {
+    expect(blockTimeParts('08:00 – 13:00', span(480, 780))).toEqual({
+      lead: '08:00',
+      tail: ' – 13:00',
+    });
+    expect(
+      blockTimeParts('22:00 – 02:00 (día siguiente)', span(1320, 1440)),
+    ).toEqual({lead: '22:00', tail: ' – 02:00 (día siguiente)'});
+    expect(
+      blockTimeParts(
+        '2 dic 22:00 – 3 dic 02:00',
+        span(0, 120, {continuesBefore: true}),
+      ),
+    ).toEqual({lead: 'Sigue', tail: ' hasta 3 dic 02:00'});
+    expect(blockTimeParts('09:00 – fin pendiente', span(540, 570))).toEqual({
+      lead: '09:00',
+      tail: ' – fin pendiente',
+    });
+  });
+
+  it('acronyms fold venue names («Almacén Municipal» → «A.M.»)', () => {
+    expect(acronymFor({name: 'Almacén Municipal'}, {dotted: true})).toBe(
+      'A.M.',
+    );
+    expect(
+      acronymFor({name: 'Almacén Municipal', acronym: 'ALM'}, {dotted: true}),
+    ).toBe('ALM');
+  });
+});
+
+describe('timeline geometry', () => {
+  it('places blocks and bands with CSS variables', () => {
+    const [block] = layoutColumn(
+      [timed('a', '02', '08:00', '09:30')],
+      '2026-12-02',
+    );
+    expect(blockVars(block)).toEqual({
+      '--lx-s': 480,
+      '--lx-e': 570,
+      '--lx-lane': 0,
+      '--lx-lanes': 1,
+    });
+    expect(bandVars(span(600, 720))).toEqual({'--lx-s': 600, '--lx-e': 720});
+  });
+
+  it('converts minutes and pixels, snapping to 5 minutes within the day', () => {
+    expect(minuteToPx(90, 64)).toBe(96);
+    expect(pxToMinute(96, 64)).toBe(90);
+    expect(pxToMinute(99, 64)).toBe(95);
+    expect(pxToMinute(-40, 64)).toBe(0);
+    expect(pxToMinute(64 * 30, 64)).toBe(1440);
   });
 });

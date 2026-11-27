@@ -1,0 +1,294 @@
+/**
+ * Revisión 1 · E2: conflict exits under a warning, accepted conflicts and the
+ * move preview. Scoped under `.lx`; colours only from palette variables.
+ */
+
+/* ============================================================ exits */
+.lx .lx-warning.has-exits .lx-warning__row {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.lx .lx-warning__exits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border: 1.5px solid var(--lx-danger);
+  border-top: 0;
+  border-bottom-left-radius: var(--lx-radius);
+  border-bottom-right-radius: var(--lx-radius);
+  background: var(--lx-surface);
+}
+
+.lx .lx-warning__exit {
+  height: auto;
+  min-height: 38px;
+  padding-block: 6px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+  justify-content: flex-start;
+  max-width: 100%;
+}
+
+.lx .lx-warning__exit-amount {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-2);
+  color: var(--lx-heading);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.lx .lx-warning__exit--keep {
+  margin-left: auto;
+}
+
+@media (pointer: coarse) {
+  .lx .lx-warning__exit {
+    min-height: var(--lx-target);
+  }
+}
+
+/* ============================================================ accepted */
+.lx .lx-warnings-accepted {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lx .lx-warnings-accepted__title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-warning--accepted .lx-warning__row {
+  border: 1px dashed var(--lx-line-strong);
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  background: var(--lx-surface);
+}
+
+.lx .lx-warning--accepted .lx-warning__icon {
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+}
+
+.lx .lx-warning--accepted .lx-warning__text strong {
+  color: var(--lx-ink);
+  font-weight: 500;
+}
+
+.lx .lx-warning__accepted {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 6px 12px 8px 58px;
+  border: 1px dashed var(--lx-line-strong);
+  border-top: 0;
+  border-bottom-left-radius: var(--lx-radius);
+  border-bottom-right-radius: var(--lx-radius);
+  background: var(--lx-surface);
+  font-size: 14px;
+}
+
+.lx .lx-warning__reason {
+  grid-column: 1;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-warning__who {
+  grid-column: 1;
+  font-size: 12.5px;
+}
+
+.lx .lx-warning__withdraw {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+@media (max-width: 520px) {
+  .lx .lx-warning__accepted {
+    padding-left: 12px;
+  }
+}
+
+/* ============================================================ move sheet */
+.lx .lx-move {
+  display: grid;
+  gap: 12px;
+}
+
+.lx .lx-move__focus:focus {
+  outline: none;
+}
+
+.lx .lx-move__notice {
+  flex-wrap: wrap;
+}
+
+.lx .lx-move__notice-text {
+  flex: 1 1 220px;
+}
+
+/* The change itself: what someone checks first. */
+.lx .lx-move__summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-accent);
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-move__summary:focus {
+  outline: none;
+}
+
+.lx .lx-move__summary:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 3px;
+}
+
+.lx .lx-move__summary.is-refused {
+  border-color: var(--lx-danger);
+  background: var(--lx-danger-soft);
+}
+
+.lx .lx-move__shift {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lx-heading);
+}
+
+.lx .lx-move__times {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.lx .lx-move__times s {
+  color: var(--lx-muted);
+  font-size: 0.8em;
+}
+
+.lx .lx-move__times strong {
+  color: var(--lx-heading);
+  font-weight: 700;
+}
+
+.lx .lx-move__hours {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-move__quiet {
+  font-size: 14px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-move__warnline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--lx-danger);
+}
+
+.lx .lx-move__tag {
+  padding: 0 8px;
+  border-radius: var(--lx-pill);
+  border: 1px solid var(--lx-danger);
+  color: var(--lx-danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lx .lx-move__lead {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--lx-ink);
+}
+
+.lx .lx-move__lead:focus {
+  outline: none;
+}
+
+.lx .lx-move__count {
+  justify-self: end;
+  margin-top: -6px;
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-move__count.is-over {
+  color: var(--lx-danger);
+  font-weight: 700;
+}
+
+/* ============================================================ venue: acronym and hours */
+.lx .lx-venue-details__edit {
+  margin-left: auto;
+  font-family: var(--lx-font);
+}
+
+.lx .lx-venue-details__view {
+  margin: 0;
+}
+
+.lx .lx-venue-details__view dt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lx .lx-venue-details__form {
+  display: grid;
+  gap: 14px;
+}
+
+.lx .lx-venue-details__hours {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.lx .lx-venue-details__hours legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.lx .lx-venue-details__times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lx .lx-venue-details__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

@@ -1,6 +1,7 @@
 /**
- * Form primitives: a labelled field wrapper, text inputs, select, textarea and
- * a segmented choice built on native radios (arrow keys work out of the box).
+ * Form primitives: a labelled field wrapper, text inputs, select (the
+ * Gestor's own, see `SelectField.tsx`), textarea and a segmented choice built
+ * on native radios (arrow keys work out of the box).
  *
  * Labels use `htmlFor` instead of wrapping controls, so the simulator's
  * plain-language enhancer never rewrites them.
@@ -8,6 +9,7 @@
 import React from 'react';
 import {HelpTip} from './HelpTip';
 import {Icon, type IconName} from './icons';
+import {SelectField, optionsFromChildren} from './SelectField';
 
 export interface FieldProps {
   id: string;
@@ -88,21 +90,59 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
 );
 Input.displayName = 'Input';
 
-type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
-  invalid?: boolean;
-};
+/** What `Select` hands to `onChange`: the parts of a change event in use. */
+export interface SelectChange {
+  target: {value: string; name: string};
+  currentTarget: {value: string; name: string};
+}
 
+export interface SelectProps {
+  id: string;
+  name?: string;
+  value?: string;
+  /** Uncontrolled start value (mock-ups). */
+  defaultValue?: string;
+  onChange?: (event: SelectChange) => void;
+  invalid?: boolean;
+  disabled?: boolean;
+  className?: string;
+  title?: string;
+  'aria-describedby'?: string;
+  'aria-label'?: string;
+  /** `<option>` and `<optgroup>` elements, as for a native select. */
+  children?: React.ReactNode;
+}
+
+/**
+ * The Gestor's own select (`SelectField`) behind a native-like API: the
+ * options come from `<option>`/`<optgroup>` children and `onChange` gets
+ * `{target: {value}}`, so existing forms switch without changes.
+ */
 export const Select: React.FC<SelectProps> = ({
-  invalid,
-  className,
+  value,
+  defaultValue,
+  onChange,
+  name,
+  children,
   ...rest
-}) => (
-  <select
-    className={['lx-input', 'lx-select', className].filter(Boolean).join(' ')}
-    aria-invalid={invalid || undefined}
-    {...rest}
-  />
-);
+}) => {
+  const [own, setOwn] = React.useState(defaultValue ?? '');
+  const options = optionsFromChildren(children);
+  const current = value ?? own;
+  return (
+    <SelectField
+      {...rest}
+      name={name}
+      value={current}
+      options={options}
+      onChange={next => {
+        if (value === undefined) setOwn(next);
+        const target = {value: next, name: name ?? ''};
+        onChange?.({target, currentTarget: target});
+      }}
+    />
+  );
+};
 
 type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   invalid?: boolean;

@@ -3,7 +3,8 @@
  * OxEye mark, then each task with its time in tabular figures. Times not yet
  * confirmed are outlined and say «por confirmar» (OxEye's certainty grammar);
  * the routes A/B/C and Carpa Amarilla reminder stands apart. The same markup
- * is the on-screen preview and the printed page (`orders.css`).
+ * is the on-screen preview and the printed page (`orders.css`). A long time
+ * («07:00 → jue 3 dic, 22:30») wraps inside its pill, never over the title.
  */
 import React from 'react';
 import type {WorkOrder} from '../../../shared/logistics/work-order.ts';
@@ -34,7 +35,7 @@ export const WorkOrderPreview: React.FC<{
         <div className="lx-order__brand">
           <EyeMark size={34} />
           <span>
-            OxEye
+            Ox Eye
             <br />
             <small>Gestor logístico</small>
           </span>
@@ -172,9 +173,10 @@ export const WorkOrderPreview: React.FC<{
 
       <footer className="lx-order__foot">
         <p className="lx-num">
-          Generada por {order.generatedBy} desde OxEye · {order.generatedAt}.
+          Generada por {order.generatedBy} desde Ox Eye · {order.generatedAt}.
         </p>
         <p>{order.footer}</p>
+        <p>Ox Eye ayuda a decidir; no certifica.</p>
       </footer>
     </article>
   );

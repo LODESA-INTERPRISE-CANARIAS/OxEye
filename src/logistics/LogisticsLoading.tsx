@@ -92,7 +92,7 @@ export class LogisticsBoundary extends React.Component<
             className="lx-boot__btn"
             onClick={this.props.onClose}
           >
-            Volver a OxEye
+            Volver a Ox Eye
           </button>
         </div>
       </div>

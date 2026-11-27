@@ -10,6 +10,7 @@
  * - If the session expires mid-edit, the values are rescued for this tab and
  *   the form reopens with them after signing in again (`lib/rescue.ts`).
  * - Multi-day events («Varios días») and the event's tasks («Tareas»).
+ * - Revisión 1 · E5: its «Presupuesto» for viewers with `budget.read`.
  */
 import React, {
   useEffect,
@@ -80,6 +81,7 @@ import {
   Textarea,
   describedBy,
 } from '../ui';
+import {useBudgetSection} from '../budget/useBudgetSection';
 import {DemoChip, StatusChip, VerificationChip} from './EventChips';
 import {EventTasks} from './EventTasks';
 
@@ -278,6 +280,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({
 
 const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
   const {date, endDate} = recordSlot(event);
+  const budget = useBudgetSection(event);
   return (
     <>
       <ReadOnlyNotice />
@@ -317,6 +320,7 @@ const EventDetail: React.FC<{event: LogisticsEvent}> = ({event}) => {
           </dd>
         </div>
       </dl>
+      {budget.card}
       <EventTasks event={event} />
       <EventRecordParts event={event} />
     </>
@@ -362,6 +366,7 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
 
   const editing = mode.kind === 'edit' ? mode.event : null;
   const [base, setBase] = useState<LogisticsEvent | null>(editing);
+  const budget = useBudgetSection(base);
   const initial = useMemo(() => (base ? valuesFromEvent(base) : EMPTY), [base]);
   const [values, setValues] = useState<FormValues>(() =>
     mode.review
@@ -804,6 +809,7 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
         />
 
         <QualityFields
+          title="Calidad del evento"
           idPrefix="lx-event"
           source={values.source}
           verification={values.verification}
@@ -833,6 +839,7 @@ const EventForm: React.FC<EventFormProps> = ({mode, onClose, onDirty}) => {
           />
         </Field>
 
+        {budget.card}
         {base && <EventTasks event={base} />}
         {base && <EventRecordParts event={base} />}
         {/* Enter in a text field submits. */}

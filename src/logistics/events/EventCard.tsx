@@ -2,13 +2,19 @@
  * Event card for «Hoy»: name, venue, local time window, status, its tasks,
  * and the main action (edit for members, detail for guests). Missing data is
  * shown as «Pendiente de verificar», never guessed.
+ *
+ * With a `summary` (upcoming and undated events) the card also says what the
+ * event needs without opening it: tasks and how many are closed, its plan
+ * warnings and the companies involved. A narrow card (four columns) keeps the
+ * same facts in a shorter form; a wider one spells the companies out.
  */
 import React from 'react';
 import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
 import {TimeWindow} from '../common/TimeWindow';
-import {shortDate} from '../lib/format';
+import {plural, shortDate} from '../lib/format';
 import {UnsentMark} from '../offline/PendingMark';
 import {recordDate, recordDays} from '../lib/tasks';
+import {companiesText, warningsText, type EventSummary} from '../hoy/upcoming';
 import {Button, Icon, Pending} from '../ui';
 import {DemoChip, StatusChip, VerificationChip} from './EventChips';
 
@@ -21,6 +27,8 @@ export interface EventCardProps {
   today?: string;
   /** Number of tasks of this event, when known. */
   taskCount?: number;
+  /** Tasks, warnings and companies of the event (replaces `taskCount`). */
+  summary?: EventSummary;
   onOpen: (event: LogisticsEvent) => void;
 }
 
@@ -43,12 +51,75 @@ function whenText(
     : shortDate(date);
 }
 
+const SummaryFacts: React.FC<{summary: EventSummary}> = ({summary}) => {
+  const warnings = warningsText(summary);
+  const open = summary.tasks - summary.closed;
+  return (
+    <>
+      <div className="lx-event__fact--tasks">
+        <dt>
+          <Icon name="task" size={16} label="Tareas" />
+        </dt>
+        <dd className="lx-num">
+          {summary.tasks === 0 ? (
+            <span className="lx-muted">Sin tareas registradas</span>
+          ) : (
+            <>
+              {plural(summary.tasks, 'tarea', 'tareas')}
+              {summary.closed > 0 && (
+                <span className="lx-muted">
+                  {' '}
+                  · {open === 0 ? 'todas cerradas' : `${open} por hacer`}
+                </span>
+              )}
+            </>
+          )}
+        </dd>
+      </div>
+      {summary.tasks > 0 && (
+        <div
+          className={`lx-event__fact--warnings${
+            summary.conflicts ? ' is-conflict' : ''
+          }`}
+        >
+          <dt>
+            <Icon
+              name={warnings ? 'alert' : 'check'}
+              size={16}
+              label="Avisos"
+            />
+          </dt>
+          <dd className="lx-num">
+            {warnings ?? <span className="lx-muted">Sin avisos</span>}
+          </dd>
+        </div>
+      )}
+      {summary.companies.length > 0 && (
+        <div className="lx-event__fact--companies">
+          <dt>
+            <Icon name="building" size={16} label="Empresas" />
+          </dt>
+          <dd>
+            <span className="lx-event__long">
+              {companiesText(summary.companies)}
+            </span>
+            <span className="lx-event__short lx-num">
+              {plural(summary.companies.length, 'empresa', 'empresas')}
+            </span>
+          </dd>
+        </div>
+      )}
+    </>
+  );
+};
+
 export const EventCard: React.FC<EventCardProps> = ({
   event,
   canWrite,
   showDate = false,
   today,
   taskCount,
+  summary,
   onOpen,
 }) => (
   <article
@@ -86,15 +157,20 @@ export const EventCard: React.FC<EventCardProps> = ({
           <TimeWindow record={event} />
         </dd>
       </div>
-      {taskCount != null && taskCount > 0 && (
-        <div>
-          <dt>
-            <Icon name="task" size={16} label="Tareas" />
-          </dt>
-          <dd className="lx-num">
-            {taskCount === 1 ? '1 tarea' : `${taskCount} tareas`}
-          </dd>
-        </div>
+      {summary ? (
+        <SummaryFacts summary={summary} />
+      ) : (
+        taskCount != null &&
+        taskCount > 0 && (
+          <div>
+            <dt>
+              <Icon name="task" size={16} label="Tareas" />
+            </dt>
+            <dd className="lx-num">
+              {taskCount === 1 ? '1 tarea' : `${taskCount} tareas`}
+            </dd>
+          </div>
+        )
       )}
     </dl>
     <div className="lx-event__foot">

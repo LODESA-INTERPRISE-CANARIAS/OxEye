@@ -5,6 +5,8 @@ import {
   BUILT_IN_RESOURCE_CATEGORIES,
   BUILT_IN_SERVICE_CATEGORIES,
 } from '../../shared/logistics/rules.ts';
+import {NO_ACCESS} from '../../shared/logistics/permissions.ts';
+import {withholdFor} from '../../shared/logistics/redaction.ts';
 import type {
   ActivityEntry,
   ApiErrorBody,
@@ -680,7 +682,9 @@ describe('offers', () => {
       price: null,
       unit: 'unit',
       customUnit: null,
-      vatIncluded: null,
+      // E5: a new offer is before tax unless it says otherwise; no tax of its own.
+      vatIncluded: false,
+      tax: null,
       categoryId: null,
     });
     const free = await created<Offer>(
@@ -913,59 +917,65 @@ describe('guests never receive contact details, observations or prices', () => {
     );
   });
 
-  it('lists companies, contacts and offers without the withheld fields', async () => {
-    const companies = await listOf<Company>('companies', guest);
-    expect(companies.every(c => c.restricted)).toBe(true);
-    expect(companies.find(c => c.name === 'Empresa Reservada')).toMatchObject({
-      phone: null,
-      email: null,
-      notes: null,
-      website: 'https://example.com/reservada',
-      kind: 'supplier',
-      contactCount: 1,
-      offerCount: 1,
-      restricted: true,
-    });
-
-    const contacts = await listOf<Contact>('contacts', guest);
-    expect(contacts.every(c => c.restricted)).toBe(true);
-    expect(contacts.find(c => c.name === 'Persona Reservada')).toMatchObject({
-      role: 'Gerente',
-      company: {name: 'Empresa Reservada'},
-      phone: null,
-      email: null,
-      description: null,
-      notes: null,
-      restricted: true,
-    });
-
-    const offers = await listOf<Offer>('offers', guest);
-    expect(offers.every(o => o.restricted)).toBe(true);
-    expect(offers.find(o => o.name === 'Oferta Reservada')).toMatchObject({
-      description: 'Visible para todos',
-      unit: 'hour',
-      vatIncluded: true,
-      price: null,
-      transportCost: null,
-      assemblyCost: null,
-      maintenanceCost: null,
-      conditions: null,
-      restricted: true,
-    });
-
-    // Nothing withheld appears anywhere in the guest's responses.
-    const raw = [
-      await (
-        await h.request('GET', orgPath('companies'), {token: guest})
-      ).text(),
-      await (
-        await h.request('GET', orgPath('contacts'), {token: guest})
-      ).text(),
-      await (await h.request('GET', orgPath('offers'), {token: guest})).text(),
-    ].join('\n');
-    for (const secret of [...Object.values(SECRETS), '777.77']) {
-      expect(raw).not.toContain(secret);
+  it('E4: the guest account has no Contactos or Catálogo at all (403, nothing in the body)', async () => {
+    for (const list of ['companies', 'contacts', 'offers']) {
+      const res = await h.request('GET', orgPath(list), {token: guest});
+      expect(res.status).toBe(403);
+      const raw = await res.text();
+      expect(JSON.parse(raw)).toEqual({
+        code: 'FORBIDDEN',
+        message: NO_ACCESS['directory.read'],
+      });
+      for (const secret of [
+        ...Object.values(SECRETS),
+        '777.77',
+        'Empresa Reservada',
+        'Persona Reservada',
+        'Oferta Reservada',
+      ]) {
+        expect(raw).not.toContain(secret);
+      }
     }
+    // Inventory categories stay (materials are part of the plan); service
+    // categories belong to the directory.
+    const categories = await listOf<Category>('categories', guest);
+    expect(categories.length).toBeGreaterThan(0);
+    expect(categories.every(c => c.scope === 'resource')).toBe(true);
+    // The directory's history is not the guest's either.
+    const company = (await listOf<Company>('companies')).find(
+      c => c.name === 'Empresa Reservada',
+    )!;
+    const history = await h.request(
+      'GET',
+      `${orgPath('activity')}?entityType=company&entityId=${company.id}`,
+      {token: guest},
+    );
+    expect(history.status).toBe(403);
+    const feed = await listOf<ActivityEntry>('activity?limit=100', guest);
+    expect(
+      feed.filter(e => ['company', 'contact', 'offer'].includes(e.entityType)),
+    ).toEqual([]);
+    const memberFeed = await listOf<ActivityEntry>('activity?limit=100');
+    expect(memberFeed.some(e => e.entityType === 'contact')).toBe(true);
+  });
+
+  it('the single withholding path still blanks directory fields for a guest viewer (defence in depth)', () => {
+    expect(
+      withholdFor(
+        'company',
+        {name: 'Empresa Reservada', phone: SECRETS.phone, notes: SECRETS.notes},
+        'guest',
+      ),
+    ).toEqual({
+      name: 'Empresa Reservada',
+      phone: null,
+      email: null,
+      notes: null,
+      restricted: true,
+    });
+    expect(
+      withholdFor('offer', {price: 777.77, conditions: 'x'}, 'guest'),
+    ).toMatchObject({price: null, conditions: null, restricted: true});
   });
 
   it('members see everything, with restricted false', async () => {

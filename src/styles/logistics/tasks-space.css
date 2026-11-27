@@ -1,0 +1,554 @@
+/**
+ * «Tareas» (Revisión 1 · E2): search and filters on top, then the compact
+ * list by day or the groups. Rows share the task row's grammar (left edge =
+ * certainty, red outline = conflict) in a denser layout for reviewing many
+ * tasks; the chain highlight dims what is not in the chain.
+ */
+
+.lx .lx-tasks {
+  max-width: 1120px;
+}
+
+/* Never wider than the screen: the view switch scrolls inside itself. */
+.lx .lx-tasks,
+.lx .lx-tasks__bar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lx .lx-tasks__bar > *,
+.lx .lx-tasks__views {
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------- tools */
+.lx .lx-tasks__bar .lx-search {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.lx .lx-tasks__views {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--lx-pill);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-tasks__views-label {
+  padding: 0 6px 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tasks__view {
+  --lx-btn-bg-hover: var(--lx-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: var(--lx-pill);
+  color: var(--lx-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lx .lx-tasks__view[aria-checked='true'] {
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-bg-hover: var(--lx-surface);
+  color: var(--lx-heading);
+  box-shadow: var(--lx-shadow-card);
+}
+
+.lx .lx-tasks__view[aria-checked='true'] .lx-icon {
+  color: var(--lx-accent);
+}
+
+.lx .lx-tasks__quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-tasks__spacer {
+  flex: 1 1 auto;
+}
+
+.lx .lx-tasks__more .lx-icon:last-child {
+  transition: transform 0.15s ease;
+}
+
+.lx .lx-tasks__more .lx-icon.is-open {
+  transform: rotate(180deg);
+}
+
+.lx .lx-tasks__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px 14px;
+  padding: 14px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+}
+
+.lx .lx-tasks__field {
+  min-width: 0;
+}
+
+.lx .lx-tasks__dates {
+  grid-column: span 2;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* Same look as the other filter labels, not the app-wide legend. */
+.lx .lx-tasks__dates > legend {
+  padding: 0;
+  margin-bottom: 6px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Wide screens: the four lists and the days in one row, so the panel does
+   not push the tasks below the fold. */
+@media (min-width: 1280px) {
+  .lx .lx-tasks__filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 2fr);
+    align-items: start;
+  }
+
+  .lx .lx-tasks__dates {
+    grid-column: auto;
+  }
+}
+
+.lx .lx-tasks__dates-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tasks__dates-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.lx .lx-tasks__link {
+  min-height: 32px;
+  padding: 0 2px;
+  color: var(--lx-accent-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lx .lx-tasks__link:hover:not(:disabled) {
+  color: var(--lx-heading);
+}
+
+.lx .lx-tasks__offline {
+  align-items: center;
+}
+
+.lx #lx-tasks-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+/* ---------------------------------------------------------- chain banner */
+.lx .lx-tasks__chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px 8px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-accent);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-size: 14px;
+}
+
+.lx .lx-tasks__chain > .lx-icon {
+  color: var(--lx-accent);
+}
+
+.lx .lx-tasks__chain > span:first-of-type {
+  flex: 1 1 220px;
+}
+
+/* ---------------------------------------------------------- groups */
+.lx .lx-tasks__list {
+  display: grid;
+  gap: 18px;
+}
+
+.lx .lx-tlgroup {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lx .lx-tlgroup__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--lx-serif);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--lx-heading);
+}
+
+.lx .lx-tlgroup--day .lx-tlgroup__title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0;
+  background: var(--lx-canvas);
+}
+
+.lx .lx-tlgroup__today {
+  padding: 1px 8px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  font-family: var(--lx-font);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lx .lx-tlgroup__conflicts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--lx-font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lx-danger);
+}
+
+.lx .lx-tllist {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------------------------------------------------------- row */
+.lx .lx-tlrow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  transition: opacity 0.15s ease;
+}
+
+.lx .lx-tlrow__open {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  --lx-btn-border-hover: var(--lx-line-strong);
+  position: relative;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 14px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 7px 12px 7px 16px;
+  border-radius: var(--lx-radius-sm);
+  text-align: left;
+}
+
+/* Left edge: the certainty grammar in one stroke (as `.lx-taskrow`). */
+.lx .lx-tlrow__open::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--lx-accent);
+}
+
+.lx .lx-tlrow--planned .lx-tlrow__open::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lx-accent);
+}
+
+.lx .lx-tlrow--delayed .lx-tlrow__open::before {
+  background: var(--lx-danger);
+}
+
+.lx .lx-tlrow--cancelled .lx-tlrow__open::before {
+  background: var(--lx-line-strong);
+}
+
+.lx .lx-tlrow--conflict .lx-tlrow__open {
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-border-hover: var(--lx-danger);
+  border-width: 1.5px;
+}
+
+.lx .lx-tlrow__time {
+  display: grid;
+  gap: 1px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-tlrow__date {
+  font-size: 12px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tlrow__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lx .lx-tlrow__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-tlrow__kind {
+  flex: none;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tlrow--cancelled .lx-tlrow__title span {
+  text-decoration: line-through;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tlrow--done .lx-tlrow__title span {
+  color: var(--lx-muted);
+}
+
+.lx .lx-tlrow__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tlrow__company {
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-tlrow__waits {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--lx-ink);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-tlrow__waits .lx-icon {
+  flex: none;
+  color: var(--lx-accent);
+}
+
+.lx .lx-tlrow__end {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Warning dot: red filled for a conflict, an outlined dot for reminders. */
+.lx .lx-tlrow__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-tlrow__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--lx-control-border);
+  background: var(--lx-surface);
+}
+
+.lx .lx-tlrow__warn.is-conflict {
+  color: var(--lx-danger);
+}
+
+.lx .lx-tlrow__warn.is-conflict .lx-tlrow__dot {
+  border-color: var(--lx-danger);
+  background: var(--lx-danger);
+}
+
+/* Dependency mark: the button that highlights the chain. */
+.lx .lx-tlrow__chain {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  width: 48px;
+  min-height: 48px;
+  border-radius: var(--lx-radius-sm);
+  color: var(--lx-accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lx .lx-tlrow__chain[aria-pressed='true'] {
+  --lx-btn-bg: var(--lx-accent);
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-strong);
+  --lx-btn-border-hover: var(--lx-accent-strong);
+  color: var(--lx-on-accent);
+}
+
+/* ---------------------------------------------------------- chain highlight */
+.lx .lx-tlrow__role {
+  justify-self: start;
+  padding: 0 8px;
+  border-radius: var(--lx-pill);
+  font-size: 12px;
+  font-weight: 700;
+  border: 1.5px solid var(--lx-accent);
+  color: var(--lx-accent-strong);
+  background: var(--lx-surface);
+}
+
+.lx .lx-tlrow__role.is-root {
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-tlrow.is-chain-root .lx-tlrow__open,
+.lx .lx-tlrow.is-chain-before .lx-tlrow__open,
+.lx .lx-tlrow.is-chain-after .lx-tlrow__open {
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-border-hover: var(--lx-accent-strong);
+  border-width: 1.5px;
+}
+
+.lx .lx-tlrow.is-chain-root .lx-tlrow__open {
+  --lx-btn-bg: var(--lx-accent-soft);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+}
+
+/* Outside the chain: still readable and usable, just quieter. */
+.lx .lx-tlrow.is-chain-out {
+  opacity: 0.5;
+}
+
+.lx .lx-tlrow.is-chain-out:hover,
+.lx .lx-tlrow.is-chain-out:focus-within {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------- phones */
+@media (max-width: 899px) {
+  .lx .lx-tasks__views {
+    order: 3;
+    flex: 1 1 100%;
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+
+  .lx .lx-tasks__views-label {
+    display: none;
+  }
+
+  .lx .lx-tasks__view {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 8px;
+  }
+
+  .lx .lx-tasks__filters {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .lx .lx-tasks__dates {
+    grid-column: auto;
+  }
+
+  .lx .lx-tlrow__open {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'time end'
+      'main main';
+    align-items: start;
+    gap: 4px 10px;
+    padding: 9px 12px 9px 16px;
+  }
+
+  .lx .lx-tlrow__time {
+    grid-area: time;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+
+  .lx .lx-tlrow__main {
+    grid-area: main;
+  }
+
+  .lx .lx-tlrow__end {
+    grid-area: end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx .lx-tlrow,
+  .lx .lx-tasks__more .lx-icon:last-child {
+    transition: none;
+  }
+}

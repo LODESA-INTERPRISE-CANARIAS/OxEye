@@ -10,7 +10,13 @@ import {beforeAll, describe, expect, it} from 'vitest';
 import {AppError} from '../src/errors.ts';
 import {updateEvent} from '../src/events/service.ts';
 import {applyHypothesis, createHypothesis} from '../src/hypotheses/service.ts';
-import {createNote, updateNote} from '../src/notes/service.ts';
+import {
+  createAnswer,
+  createNote,
+  listAnswers,
+  updateNote,
+} from '../src/notes/service.ts';
+import {planWarnings} from '../../shared/logistics/conflicts.ts';
 import {forViewer, WITHHELD_FROM_GUESTS} from '../src/records/redact.ts';
 import {
   WITHHELD_FROM_GUESTS as SHARED_WITHHELD,
@@ -23,10 +29,12 @@ import {createHarness, json} from './helpers.ts';
 import type {Harness} from './helpers.ts';
 import type {
   ApiErrorBody,
+  ConflictAcceptance,
   DelayHypothesis,
   ListResponse,
   LogisticsEvent,
   Note,
+  NoteAnswer,
   Resource,
   SessionUser,
   Task,
@@ -48,6 +56,11 @@ const SECRET = {
   resourceNotes: 'SECRETO-RECURSO-46',
   noteText: 'SECRETO-NOTA-47',
   hypothesisNote: 'SECRETO-HIPOTESIS-48',
+  // Revisión 1.
+  answerText: 'SECRETO-RESPUESTA-49',
+  acceptReason: 'SECRETO-MOTIVO-50',
+  // E4: guests have no Contactos, so not even a person's name.
+  contactName: 'SECRETO-CONTACTO-51',
 };
 
 let ids: {
@@ -58,6 +71,9 @@ let ids: {
   note: Note;
   timedTask: Task;
   hypothesis: DelayHypothesis;
+  question: Note;
+  answer: NoteAnswer;
+  acceptance: ConflictAcceptance;
 };
 
 beforeAll(async () => {
@@ -91,11 +107,21 @@ beforeAll(async () => {
     location: SECRET.location,
     notes: SECRET.resourceNotes,
   });
+  const contact = await post<{id: string}>('/contacts', {
+    name: SECRET.contactName,
+  });
   const task = await post<Task>('/tasks', {
     title: 'Tarea Prueba Reservada',
     eventId: event.id,
     notes: SECRET.taskNotes,
     resourceIds: [resource.id],
+    contactId: contact.id,
+    companyName: 'Empresa Prueba Visible',
+  });
+  await post<Note>('/notes', {
+    kind: 'note',
+    text: 'Llamar',
+    ref: {type: 'contact', id: contact.id},
   });
   const note = await post<Note>('/notes', {
     kind: 'incident',
@@ -115,7 +141,50 @@ beforeAll(async () => {
     delayMinutes: 30,
     note: SECRET.hypothesisNote,
   });
-  ids = {event, task, warehouse, resource, note, timedTask, hypothesis};
+  // Revisión 1: an answered open question and an accepted conflict.
+  const question = await post<Note>('/notes', {
+    kind: 'open_question',
+    text: '¿Quién abre la nave?',
+  });
+  const answered = await h.request('POST', `/notes/${question.id}/answers`, {
+    token,
+    body: {text: SECRET.answerText, replaces: null},
+  });
+  expect(answered.status).toBe(201);
+  const answer = await json<NoteAnswer>(answered);
+  const clash = async (title: string) =>
+    post<Task>('/tasks', {
+      title,
+      venueName: 'Plaza Prueba Reservada',
+      date: '2026-12-03',
+      startTime: '09:00',
+      endTime: '11:00',
+    });
+  const [a, b] = [await clash('Carpa Prueba A'), await clash('Carpa Prueba B')];
+  const warning = planWarnings(await listOf<Task>('tasks', token)).find(
+    w => w.kind === 'venue_overlap' && w.taskIds.includes(a.id),
+  )!;
+  const acceptance = await post<ConflictAcceptance>('/conflict-acceptances', {
+    warningKey: warning.key,
+    windows: [a, b].map(t => ({
+      taskId: t.id,
+      startsAt: t.startsAt,
+      endsAt: t.endsAt,
+    })),
+    reason: SECRET.acceptReason,
+  });
+  ids = {
+    event,
+    task,
+    warehouse,
+    resource,
+    note,
+    timedTask,
+    hypothesis,
+    question,
+    answer,
+    acceptance,
+  };
 });
 
 const orgPath = (what: string) => `/organizations/${h.org.id}/${what}`;
@@ -156,12 +225,86 @@ describe('guests never receive notes, addresses, locations or note text', () => 
   it('withholds exactly the agreed fields', () => {
     expect(WITHHELD_FROM_GUESTS).toMatchObject({
       event: ['notes'],
-      task: ['notes'],
+      // E4: a task's contact person (guests have no Contactos).
+      task: ['notes', 'contact'],
       warehouse: ['address', 'notes'],
       resource: ['location', 'notes'],
       note: ['text'],
       hypothesis: ['note'],
+      answer: ['text'],
+      acceptance: ['reason'],
     });
+  });
+
+  it('answers and accepted conflicts: guests get the record without the free text, on every path', async () => {
+    // A note carries its current answer: both texts go for a guest.
+    const notes = await listOf<Note>('notes', guest);
+    expect(notes.find(n => n.id === ids.question.id)).toMatchObject({
+      text: null,
+      restricted: true,
+      answer: {id: ids.answer.id, text: null, restricted: true},
+    });
+    const answers = await h.request(
+      'GET',
+      `/notes/${ids.question.id}/answers`,
+      {
+        token: guest,
+      },
+    );
+    expect(answers.status).toBe(200);
+    const answerRaw = await answers.text();
+    expectNoSecret(answerRaw);
+    expect(JSON.parse(answerRaw).items[0]).toMatchObject({
+      id: ids.answer.id,
+      text: null,
+      answeredBy: {displayName: 'Elvis'},
+      restricted: true,
+    });
+    const accepted = await listOf<ConflictAcceptance>(
+      'conflict-acceptances',
+      guest,
+    );
+    expect(accepted.find(a => a.id === ids.acceptance.id)).toMatchObject({
+      reason: null,
+      restricted: true,
+      acceptedBy: {displayName: 'Elvis'},
+    });
+    // Members see both.
+    expect(
+      (await listOf<Note>('notes', token)).find(n => n.id === ids.question.id)
+        ?.answer,
+    ).toMatchObject({text: SECRET.answerText, restricted: false});
+    expect(
+      (await listOf<ConflictAcceptance>('conflict-acceptances', token)).find(
+        a => a.id === ids.acceptance.id,
+      ),
+    ).toMatchObject({reason: SECRET.acceptReason, restricted: false});
+
+    // Service paths with a guest viewer (guests cannot write over HTTP).
+    const listed = await listAnswers(h.db, guestUser, ids.question.id);
+    expect(listed.every(a => a.text === null && a.restricted)).toBe(true);
+    const stale = await thrown(
+      createAnswer(
+        h.db,
+        guestUser,
+        ids.question.id,
+        {text: 'x', replaces: null},
+        h.clock.now(),
+      ),
+    );
+    expect(stale.code).toBe('VERSION_CONFLICT');
+    expect(stale.current).toMatchObject({text: null, restricted: true});
+    expectNoSecret(JSON.stringify(stale.toBody()));
+    // The shared withholding reaches the nested answer (device cache).
+    const member = (await listOf<Note>('notes', token)).find(
+      n => n.id === ids.question.id,
+    )!;
+    const cached = withholdFor('note', member, 'guest');
+    expect(cached.answer).toMatchObject({text: null, restricted: true});
+    expectNoSecret(JSON.stringify(cached));
+    expectNoSecret(
+      JSON.stringify(withholdFor('acceptance', ids.acceptance, 'guest')),
+    );
   });
 
   it('hypotheses: the list withholds the note and keeps the label; members see it', async () => {
@@ -276,14 +419,28 @@ describe('guests never receive notes, addresses, locations or note text', () => 
       expect(items.find(t => t.id === ids.task.id)).toMatchObject({
         title: 'Tarea Prueba Reservada',
         resourceIds: [ids.resource.id],
+        // Safety audit: the company stays linked but reads «Empresa»; no contact.
+        company: {name: 'Empresa'},
+        contact: null,
         restricted: true,
       });
     }
     const asMember = await listOf<Task>('tasks', token);
     expect(asMember.find(t => t.id === ids.task.id)).toMatchObject({
       notes: SECRET.taskNotes,
+      company: {name: 'Empresa Prueba Visible'},
+      contact: {name: SECRET.contactName},
       restricted: false,
     });
+    // A note pointing at the person says what it is, not who.
+    const notes = await listOf<Note>('notes', guest);
+    expect(notes.find(n => n.ref?.type === 'contact')?.ref?.label).toBe(
+      'Persona de contacto',
+    );
+    const memberNotes = await listOf<Note>('notes', token);
+    expect(memberNotes.find(n => n.ref?.type === 'contact')?.ref?.label).toBe(
+      SECRET.contactName,
+    );
   });
 
   it('warehouses, resources and notes: names and figures stay, free text goes', async () => {
@@ -337,10 +494,10 @@ describe('guests never receive notes, addresses, locations or note text', () => 
       'hypotheses',
       `activity?entityType=hypothesis&entityId=${ids.hypothesis.id}`,
       'venues',
-      'companies',
-      'contacts',
-      'offers',
       'categories',
+      'conflict-acceptances',
+      `activity?entityType=note&entityId=${ids.question.id}`,
+      'members',
     ];
     const raw: string[] = [];
     for (const p of paths) {
@@ -348,6 +505,20 @@ describe('guests never receive notes, addresses, locations or note text', () => 
       expect(res.status, p).toBe(200);
       raw.push(await res.text());
     }
+    // E4: the directory is not the guest account's at all.
+    for (const p of ['companies', 'contacts', 'offers']) {
+      const res = await h.request('GET', orgPath(p), {token: guest});
+      expect(res.status, p).toBe(403);
+      raw.push(await res.text());
+    }
+    const answers = await h.request(
+      'GET',
+      `/notes/${ids.question.id}/answers`,
+      {
+        token: guest,
+      },
+    );
+    raw.push(await answers.text());
     expectNoSecret(raw.join('\n'));
   });
 

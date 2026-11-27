@@ -112,7 +112,7 @@ export const DaySafety: React.FC<{report: DayReport}> = ({report}) => {
           Tareas de este día y de los {NEXT_DAYS} siguientes que llevan (o
           pueden llevar) carga pesada, y entregas o transportes que coinciden
           con un evento. Son recordatorios para revisarlo en el simulador de
-          OxEye; OxEye ayuda a decidir, no certifica.
+          Ox Eye; Ox Eye ayuda a decidir, no certifica.
         </HelpTip>
       }
     >

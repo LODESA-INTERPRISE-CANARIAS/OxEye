@@ -17,11 +17,17 @@ import {
   SidebarNav,
   TabBar,
 } from '../ui';
-import {initials} from '../lib/format';
+import {roleSummary} from '../account/access';
+import {AccountBanner} from '../account/AccountBanner';
+import {PhoneAccountActions, SidebarAccount} from '../account/AccountEntry';
+import {useAccess} from '../account/useAccess';
+import {UserAvatar} from '../account/UserAvatar';
+import {OrganizationSheet} from './OrganizationSheet';
 import {OrgSelector} from './OrgSelector';
 import {
   MAIN_SPACES,
   neighbourSpace,
+  PHONE_TABS,
   type MainSpace,
   type Space,
 } from './spaces';
@@ -48,6 +54,8 @@ export interface ShellProps {
   /** Disables the swipe between spaces (e.g. inside the day timeline). */
   swipeLocked?: boolean;
   onExit: () => void;
+  /** «Maquetas»: given only in development builds. */
+  onMockups?: () => void;
   children: React.ReactNode;
 }
 
@@ -62,15 +70,17 @@ export const Shell: React.FC<ShellProps> = ({
   onSearch,
   swipeLocked = false,
   onExit,
+  onMockups,
   children,
 }) => {
   const session = useLogisticsStore(s => s.session);
   const logout = useLogisticsStore(s => s.logout);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [orgOpen, setOrgOpen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
   const user = session?.user;
-  const roleLabel =
-    user?.role === 'guest' ? 'Invitado · solo lectura' : 'Equipo';
+  const access = useAccess();
+  const roleLabel = roleSummary(access);
 
   const canGo = useCallback(
     (step: 1 | -1) => neighbourSpace(space, step) !== null,
@@ -106,10 +116,10 @@ export const Shell: React.FC<ShellProps> = ({
           <EyeMark size={38} />
           <div className="lx-brand__text">
             <strong>Gestor logístico</strong>
-            <span>OxEye · Ojo de Buey</span>
+            <span>Ox Eye</span>
           </div>
         </div>
-        <OrgSelector />
+        <OrgSelector onOpen={() => setOrgOpen(true)} />
         <p className="lx-sidebar__group">Espacios</p>
         <SidebarNav<MainSpace>
           items={MAIN_SPACES}
@@ -129,28 +139,22 @@ export const Shell: React.FC<ShellProps> = ({
           <Icon name="dayClose" size={20} />
           <span>Cierre de jornada</span>
         </button>
-        <div className="lx-sidebar__spacer" />
-        {user && (
-          <div className="lx-user" id="lx-user">
-            <span className="lx-avatar" aria-hidden="true">
-              {initials(user.displayName)}
-            </span>
-            <span className="lx-user__text">
-              <strong>{user.displayName}</strong>
-              <span>{roleLabel}</span>
-            </span>
+        {onMockups && (
+          <>
+            <p className="lx-sidebar__group">Desarrollo</p>
             <button
               type="button"
-              id="lx-logout"
-              className="lx-iconbtn lx-iconbtn--ghost"
-              aria-label="Cerrar sesión"
-              title="Cerrar sesión"
-              onClick={() => void logout()}
+              id="lx-nav-maquetas"
+              className="lx-sidenav__item"
+              onClick={onMockups}
             >
-              <Icon name="logout" size={20} />
+              <Icon name="flask" size={20} />
+              <span>Maquetas</span>
             </button>
-          </div>
+          </>
         )}
+        <div className="lx-sidebar__spacer" />
+        <SidebarAccount />
         <button
           type="button"
           id="lx-back-to-oxeye"
@@ -158,36 +162,48 @@ export const Shell: React.FC<ShellProps> = ({
           onClick={onExit}
         >
           <Icon name="back" size={20} />
-          <span>Volver a OxEye</span>
+          <span>Volver a Ox Eye</span>
         </button>
       </aside>
 
       <div className="lx-main">
-        <div className="lx-topbar">
-          <EyeMark size={32} />
-          <span className="lx-topbar__title">Gestor logístico</span>
-          <SyncChip compact id="lx-sync-chip-phone" />
-          <button
-            type="button"
-            id="lx-search-phone"
-            className="lx-iconbtn lx-iconbtn--secondary"
-            aria-label="Buscar"
-            title="Buscar"
-            aria-haspopup="dialog"
-            onClick={onSearch}
-          >
-            <Icon name="search" size={20} />
-          </button>
-          <button
-            type="button"
-            id="lx-account-button"
-            className="lx-avatar lx-avatar--button"
-            aria-label={`Menú de ${user?.displayName ?? 'usuario'}`}
-            aria-haspopup="dialog"
-            onClick={() => setAccountOpen(true)}
-          >
-            {user ? initials(user.displayName) : <Icon name="user" size={18} />}
-          </button>
+        {/* E4: the banners stay in view on every screen, under the phone bar. */}
+        <div className="lx-mainbar">
+          <div className="lx-topbar">
+            <EyeMark size={32} />
+            <span className="lx-topbar__title">Gestor logístico</span>
+            <SyncChip compact id="lx-sync-chip-phone" />
+            <button
+              type="button"
+              id="lx-search-phone"
+              className="lx-iconbtn lx-iconbtn--secondary"
+              aria-label="Buscar"
+              title="Buscar"
+              aria-haspopup="dialog"
+              onClick={onSearch}
+            >
+              <Icon name="search" size={20} />
+            </button>
+            <button
+              type="button"
+              id="lx-account-button"
+              className="lx-avatar-button"
+              aria-label={`Menú de ${user?.displayName ?? 'usuario'}`}
+              aria-haspopup="dialog"
+              onClick={() => setAccountOpen(true)}
+            >
+              {user ? (
+                <UserAvatar
+                  name={user.displayName}
+                  avatarId={user.avatarId}
+                  accent={user.accent}
+                />
+              ) : (
+                <Icon name="user" size={18} />
+              )}
+            </button>
+          </div>
+          <AccountBanner />
         </div>
 
         <header className="lx-header">
@@ -248,7 +264,7 @@ export const Shell: React.FC<ShellProps> = ({
       </div>
 
       <TabBar<MainSpace>
-        items={MAIN_SPACES}
+        items={PHONE_TABS}
         active={space as MainSpace}
         onSelect={onSpace}
         label="Espacios"
@@ -275,12 +291,17 @@ export const Shell: React.FC<ShellProps> = ({
         id="lx-account-sheet"
       >
         <div className="lx-account">
-          <OrgSelector id="lx-org-select-phone" />
+          <PhoneAccountActions onDone={() => setAccountOpen(false)} />
+          <OrgSelector
+            id="lx-org-select-phone"
+            onOpen={() => setOrgOpen(true)}
+          />
           <SyncChip id="lx-sync-chip-account" />
           <Button
             block
             size="lg"
             icon="dayClose"
+            id="lx-account-cierre"
             onClick={() => {
               setAccountOpen(false);
               onSpace('cierre');
@@ -288,8 +309,40 @@ export const Shell: React.FC<ShellProps> = ({
           >
             Cierre de jornada
           </Button>
+          {/* No tab on phones (`PHONE_TABS`): offers are desk work. E4:
+              only for those who may read it. */}
+          {access.can('directory.read') && (
+            <Button
+              block
+              size="lg"
+              icon="catalog"
+              id="lx-account-catalogo"
+              aria-current={space === 'catalogo' ? 'page' : undefined}
+              onClick={() => {
+                setAccountOpen(false);
+                onSpace('catalogo');
+              }}
+            >
+              Catálogo
+            </Button>
+          )}
+          {onMockups && (
+            <Button
+              block
+              size="lg"
+              variant="ghost"
+              icon="flask"
+              id="lx-account-maquetas"
+              onClick={() => {
+                setAccountOpen(false);
+                onMockups();
+              }}
+            >
+              Maquetas (desarrollo)
+            </Button>
+          )}
           <Button block size="lg" icon="back" onClick={onExit}>
-            Volver a OxEye
+            Volver a Ox Eye
           </Button>
           <Button
             block
@@ -306,6 +359,8 @@ export const Shell: React.FC<ShellProps> = ({
           </Button>
         </div>
       </Sheet>
+
+      <OrganizationSheet open={orgOpen} onClose={() => setOrgOpen(false)} />
     </>
   );
 };

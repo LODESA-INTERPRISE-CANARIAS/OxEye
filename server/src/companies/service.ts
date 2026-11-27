@@ -15,7 +15,12 @@ import {
   CATEGORIES_UNKNOWN,
 } from '../categories/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
-import {isUuid, requireMembership} from '../organizations/service.ts';
+import {
+  checkAccess,
+  isUuid,
+  requireMembership,
+} from '../organizations/service.ts';
+import type {Membership} from '../organizations/service.ts';
 import {createOnce, findReplay, fresh} from '../records/device-id.ts';
 import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {
@@ -32,16 +37,22 @@ import {forViewer} from '../records/redact.ts';
 import type {Viewer} from '../records/redact.ts';
 import {changedFields} from '../records/slot.ts';
 import {unlinkResources} from '../resources/links.ts';
+// Revisión 1 · E5: taxes and the expenses that name a company.
+import {unlinkExpenses} from '../budget/links.ts';
+import {taxColumns, taxParams, toTax} from '../budget/tax.ts';
+import type {TaxRow} from '../budget/tax.ts';
+import {sameTax} from '../../../shared/logistics/money.ts';
 import type {CreateCompanyBody, UpdateCompanyBody} from './schemas.ts';
 import type {
   Company,
   CompanyKind,
   DataSource,
   SessionUser,
+  TaxInfo,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
 
-interface CompanyRow extends MetaRow {
+interface CompanyRow extends MetaRow, TaxRow {
   organization_id: string;
   name: string;
   kind: CompanyKind;
@@ -57,7 +68,7 @@ interface CompanyRow extends MetaRow {
 
 const SELECT_COMPANY = `
   SELECT ${metaColumns('c')}, c.organization_id, c.name, c.kind, c.phone,
-         c.email, c.website, c.notes, c.main_contact_id,
+         c.email, c.website, c.notes, c.main_contact_id, ${taxColumns('c')},
          COALESCE((SELECT jsonb_agg(cc.category_id ORDER BY ${categoryOrder('cat')})
                      FROM company_categories cc
                      JOIN categories cat ON cat.id = cc.category_id
@@ -90,6 +101,7 @@ function toCompany(row: CompanyRow, viewer: Viewer): Company {
       mainContactId: row.main_contact_id,
       contactCount: Number(row.contact_count),
       offerCount: Number(row.offer_count),
+      tax: toTax(row),
     },
     viewer,
   );
@@ -108,6 +120,8 @@ interface CompanyState {
   mainContactId: string | null;
   source: DataSource | null;
   verification: Verification;
+  /** E5: compared with `sameTax` (not in FIELD_NAMES). */
+  tax: TaxInfo | null;
 }
 
 const FIELD_NAMES: readonly (readonly [keyof CompanyState, string])[] = [
@@ -135,6 +149,7 @@ function stateOf(row: CompanyRow): CompanyState {
     mainContactId: row.main_contact_id,
     source: row.source,
     verification: row.verification,
+    tax: toTax(row),
   };
 }
 
@@ -302,6 +317,7 @@ export async function createCompany(
   };
   return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
+    checkAccess(org, actor, 'directory.read');
     await lockCatalogue(tx, org.id);
     // A replay wins before the name check: it is this very company.
     const replay = await findReplay(tx, device, org.id);
@@ -319,9 +335,11 @@ export async function createCompany(
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO companies
          (organization_id, name, kind, phone, email, website, notes, source,
-          verification, created_by, created_at, updated_by, updated_at, id)
+          verification, created_by, created_at, updated_by, updated_at, id,
+          tax_regime, tax_name, tax_rate, tax_verification)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::timestamptz,
-               $10, $11::timestamptz, COALESCE($12::uuid, gen_random_uuid()))
+               $10, $11::timestamptz, COALESCE($12::uuid, gen_random_uuid()),
+               $13, $14, $15::numeric, $16)
        ON CONFLICT (organization_id, (lower(name))) DO NOTHING
        RETURNING id`,
       [
@@ -337,6 +355,7 @@ export async function createCompany(
         actor.id,
         now.toISOString(),
         input.id ?? null,
+        ...taxParams(input.tax ?? null),
       ],
     );
     const created = inserted[0];
@@ -369,11 +388,13 @@ async function loadOwnCompany(
 ): Promise<CompanyRow> {
   const row = await loadCompany(tx, id);
   if (!row) throw companyNotFound();
+  let membership: Membership;
   try {
-    await requireMembership(tx, actor.id, row.organization_id);
+    membership = await requireMembership(tx, actor.id, row.organization_id);
   } catch {
     throw companyNotFound();
   }
+  checkAccess(membership, actor, 'directory.read');
   return row;
 }
 
@@ -406,6 +427,7 @@ export async function updateCompany(
     if (input.verification !== undefined) {
       after.verification = input.verification;
     }
+    if (input.tax !== undefined) after.tax = input.tax;
 
     const fields: Record<string, string> = {};
     if (input.categoryIds !== undefined) {
@@ -442,13 +464,16 @@ export async function updateCompany(
     }
 
     const changed = changedFields(before, after, FIELD_NAMES);
+    if (!sameTax(before.tax, after.tax)) changed.push('tax');
     if (changed.length === 0) return toCompany(row, actor);
 
     await tx.query(
       `UPDATE companies
           SET name = $3, kind = $4, phone = $5, email = $6, website = $7,
               notes = $8, main_contact_id = $9, source = $10, verification = $11,
-              version = version + 1, updated_by = $12, updated_at = $13::timestamptz
+              version = version + 1, updated_by = $12, updated_at = $13::timestamptz,
+              tax_regime = $14, tax_name = $15, tax_rate = $16::numeric,
+              tax_verification = $17
         WHERE id = $1 AND version = $2`,
       [
         id,
@@ -464,6 +489,7 @@ export async function updateCompany(
         after.verification,
         actor.id,
         now.toISOString(),
+        ...taxParams(after.tax),
       ],
     );
     if (changed.includes('categoryIds')) {
@@ -493,7 +519,7 @@ export async function updateCompany(
  * tasks and resources stay without a company (resources also lose an offer
  * of it) and notes lose the link to the company or its offers: their version
  * increases and the change is logged, so a stale edit cannot restore the link
- * silently.
+ * silently. E5: expenses paid to it stay, with its name and no link.
  */
 export async function deleteCompany(
   db: Db,
@@ -535,6 +561,8 @@ export async function deleteCompany(
     });
     await unlinkNotes(tx, {...unlink, link: 'company', ids: [id]});
     await unlinkNotes(tx, {...unlink, link: 'offer', ids: offerIds});
+    // E5: expenses stay with the event and keep the company's name.
+    await unlinkExpenses(tx, {...unlink, organizationId: orgId, companyId: id});
     const contacts = await tx.query<{
       id: string;
       name: string;

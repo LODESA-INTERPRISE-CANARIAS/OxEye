@@ -17,6 +17,11 @@ import {
   findCompany,
   resolveCompanyRef,
 } from '../companies/service.ts';
+import {
+  deleteMediaOf,
+  mediaListColumn,
+  parseMediaList,
+} from '../media/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
 import {toAmount} from '../offers/domain.ts';
 import {isUuid, requireMembership} from '../organizations/service.ts';
@@ -71,6 +76,7 @@ interface ResourceRow extends MetaRow {
   to_assess: boolean;
   notes: string | null;
   task_ids: unknown;
+  media: unknown;
 }
 
 // The quantity comes back as text so both drivers agree; toAmount makes a number.
@@ -82,7 +88,8 @@ const SELECT_RESOURCE = `
          r.availability, r.location, r.to_assess, r.notes,
          COALESCE((SELECT jsonb_agg(tr.task_id ORDER BY tr.task_id)
                      FROM task_resources tr WHERE tr.resource_id = r.id),
-                  '[]'::jsonb) AS task_ids
+                  '[]'::jsonb) AS task_ids,
+         ${mediaListColumn('resource', 'r')} AS media
     FROM resources r
     LEFT JOIN warehouses w ON w.id = r.warehouse_id
     LEFT JOIN companies c ON c.id = r.company_id
@@ -121,6 +128,7 @@ function toResource(row: ResourceRow, viewer: Viewer): Resource {
       toAssess: Boolean(row.to_assess),
       notes: row.notes,
       taskIds: parseIds(row.task_ids),
+      media: parseMediaList(row.media),
     },
     viewer,
   );
@@ -690,6 +698,8 @@ export async function deleteResource(
       actorId: actor.id,
       now,
     });
+    // Its photos have no foreign key (polymorphic owner): deleted here.
+    await deleteMediaOf(tx, 'resource', [id]);
     // task_resources rows go with the resource (ON DELETE CASCADE).
     await tx.query('DELETE FROM resources WHERE id = $1', [id]);
     for (const t of tasks) {

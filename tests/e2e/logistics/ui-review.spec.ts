@@ -935,7 +935,7 @@ async function mockApi(page: Page, opts: MockOptions = {}) {
 async function signIn(page: Page, name = 'Elvis') {
   await page.addInitScript(() => localStorage.clear());
   await page.goto('/#logistica');
-  await page.locator(`.lx-person[data-name="${name}"]`).click();
+  await page.locator('#lx-login-username').fill(name);
   await page.locator('#lx-login-password').fill('secreto');
   await page.locator('#lx-login-submit').click();
   await expect(page.locator('#lx-title')).toBeVisible();
@@ -989,12 +989,14 @@ test.describe('Gestor logístico · revisión visual', () => {
     await capture(page, 'unreachable');
   });
 
-  test('login people and password', async ({page}) => {
+  test('login and password recovery', async ({page}) => {
     await mockApi(page);
     await page.goto('/#logistica');
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
+    await page.locator('#lx-login-username').fill('Elvis');
     await capture(page, 'login');
-    await page.locator('.lx-person[data-name="Elvis"]').click();
+    await page.locator('#lx-login-forgot').click();
+    await expect(page.locator('#lx-recovery-form')).toBeVisible();
     await capture(page, 'password');
   });
 
@@ -1264,7 +1266,9 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize(PHONE);
     await mockApi(page);
     await signIn(page);
-    await page.locator('#lx-tab-catalogo').click();
+    // No tab on phones since «Tareas»: «Catálogo» is in the account sheet.
+    await page.locator('#lx-account-button').click();
+    await page.locator('#lx-account-catalogo').click();
     await expect(page.locator('.lx-offerrow').first()).toBeVisible();
     await capture(page, 'catalog-phone');
   });
@@ -1327,21 +1331,21 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await capture(page, 'task-contact-desktop');
   });
 
-  test('guest: contact, company and offer withheld', async ({page}) => {
+  // Revisión 1 · E4: guests have no directory. Contactos and Catálogo say
+  // «Sin acceso» and the phone account sheet offers no Catálogo.
+  test('guest: Contactos and Catálogo without access', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page, {role: 'guest'});
     await signIn(page, 'Invitado');
     await page.locator('#lx-tab-contactos').click();
+    await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
     await capture(page, 'guest-contacts-phone');
-    await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
-    await expect(page.locator('#lx-contact-reach-withheld')).toBeVisible();
-    await capture(page, 'guest-contact-sheet');
+    await page.locator('#lx-account-button').click();
+    await expect(page.locator('#lx-account-catalogo')).toHaveCount(0);
     await page.keyboard.press('Escape');
-    await page.locator('#lx-tab-catalogo').click();
+    await goToHash(page, '#logistica/catalogo');
+    await expect(page.locator('#lx-catalogo-noaccess')).toBeVisible();
     await capture(page, 'guest-catalog-phone');
-    await page.locator('[data-offer-id="o1"]').click();
-    await expect(page.locator('#lx-offer-sheet')).toBeVisible();
-    await capture(page, 'guest-offer-sheet');
   });
 });
 

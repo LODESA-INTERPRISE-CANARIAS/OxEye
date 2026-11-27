@@ -9,6 +9,7 @@
  */
 import type {DelayMode, ShiftExpectation, Task, Uuid} from './contracts.ts';
 import {
+  movedSafety,
   planWarnings,
   type PlanEvent,
   type PlanResource,
@@ -138,12 +139,15 @@ export interface DelayAnalysis<T extends PlanTask = PlanTask> {
   newWarnings: PlanWarning[];
   /** Warnings that already exist but get worse (more minutes). */
   worsened: PlanWarning[];
-  /** Warnings the hypothesis would make disappear. */
+  /**
+   * Warnings the hypothesis would make disappear. Never route or heavy-load
+   * reminders (UNSOLVED_BY_MOVING): a delay does not solve those risks.
+   */
   clearedWarnings: PlanWarning[];
   /**
-   * Routes A/B/C and Carpa Amarilla reminders on moved tasks under the
-   * hypothesis, new or not: a delay that keeps or pushes a delivery inside
-   * the event window always shows it.
+   * Routes A/B/C and Carpa Amarilla: one reminder for every moved task with
+   * vehicles, load-bearing work or a known heavy load, inside the event
+   * window or not (`movedSafety`).
    */
   routeReminders: PlanWarning[];
   /** Events whose preparation the delay eats into, tightest first. */
@@ -185,10 +189,14 @@ export function analyzeDelay<T extends PlanTask>(input: {
     if (!old) newWarnings.push(w);
     else if ((w.minutes ?? 0) > (old.minutes ?? 0)) worsened.push(w);
   }
-  const clearedWarnings = before.filter(w => !afterKeys.has(w.key));
-  const routeReminders = after.filter(
-    w => w.kind === 'route_window' && w.taskIds.some(id => moved.has(id)),
-  );
+  // Routes A/B/C and Carpa Amarilla for every moved vehicle, load-bearing or
+  // heavy task; a delay never «clears» a route or heavy-load reminder.
+  const {routeReminders, cleared: clearedWarnings} = movedSafety({
+    after: hypothetical,
+    movedIds: moved,
+    afterWarnings: after,
+    cleared: before.filter(w => !afterKeys.has(w.key)),
+  });
 
   const eventsById = new Map(events.map(e => [e.id, e]));
   const margins = new Map<Uuid, EventMargin>();

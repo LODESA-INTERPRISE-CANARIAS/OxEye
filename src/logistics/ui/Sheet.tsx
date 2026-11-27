@@ -39,6 +39,36 @@ export interface SheetProps {
   children?: React.ReactNode;
 }
 
+/**
+ * An open sheet, as the browser history sees it (`shell/historyNav.ts`):
+ * every open sheet is one step of «Atrás», and «Atrás» asks the top one to
+ * close exactly as Escape does, so a form with unsaved changes asks first.
+ */
+export interface OpenSheet {
+  readonly dialog: HTMLDialogElement;
+  requestClose: () => void;
+}
+
+const openSheets: OpenSheet[] = [];
+const sheetListeners = new Set<() => void>();
+
+function sheetsChanged(): void {
+  for (const listener of sheetListeners) listener();
+}
+
+/** Open sheets, bottom first (the order they were shown in). */
+export function openSheetsNow(): OpenSheet[] {
+  return openSheets.filter(s => s.dialog.isConnected && s.dialog.open);
+}
+
+/** Called after any sheet opens or closes; returns the unsubscribe. */
+export function onSheetsChange(listener: () => void): () => void {
+  sheetListeners.add(listener);
+  return () => {
+    sheetListeners.delete(listener);
+  };
+}
+
 function showDialog(dialog: HTMLDialogElement): void {
   if (typeof dialog.showModal === 'function') dialog.showModal();
   else dialog.setAttribute('open', '');
@@ -117,6 +147,23 @@ export const Sheet: React.FC<SheetProps> = ({
       returnFocus.current = null;
     }
   }, [open, reshow]);
+
+  // Listed while open, right after `showModal` (same order as the top layer).
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!open || !dialog) return;
+    const entry: OpenSheet = {
+      dialog,
+      requestClose: () => onCloseRef.current(),
+    };
+    openSheets.push(entry);
+    sheetsChanged();
+    return () => {
+      const i = openSheets.indexOf(entry);
+      if (i >= 0) openSheets.splice(i, 1);
+      sheetsChanged();
+    };
+  }, [open]);
 
   // Parents often unmount the sheet instead of passing `open={false}`; the
   // dialog then disappears without `close()`. Close it first (the rest of the

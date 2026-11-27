@@ -19,6 +19,7 @@ import type {
   ResourceOwnership,
   Warehouse,
 } from '../../../shared/logistics/contracts.ts';
+import {openingHoursLabel} from '../../../shared/logistics/move.ts';
 import {missingForWarehouse} from '../../../shared/logistics/quality.ts';
 import {COMPANY_KIND_LABEL} from '../../../shared/logistics/rules.ts';
 import {universalSearch} from '../../../shared/logistics/search.ts';
@@ -621,6 +622,17 @@ const WarehouseGroupView: React.FC<{
                 <Pending>Dirección pendiente de verificar</Pending>
               )}
             </span>
+            {w.openingHours && (
+              <span className="lx-whgroup__sub" data-warehouse-hours>
+                <Icon name="clock" size={14} />
+                <span>
+                  Abre{' '}
+                  <span className="lx-num">
+                    {openingHoursLabel(w.openingHours)}
+                  </span>
+                </span>
+              </span>
+            )}
           </span>
           <Icon name="chevronRight" size={18} className="lx-dirrow__chev" />
         </button>

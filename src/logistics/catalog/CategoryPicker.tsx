@@ -3,10 +3,14 @@
  * resource. `scope` picks the list (service = companies and offers, resource
  * = inventory). «+ Nueva categoría» adds one for the whole organization (an
  * existing name, in any case, comes back as that category instead of a
- * duplicate). «Gestionar» lists the organization's own categories with a
- * delete that first says which records lose it; built-ins stay.
+ * duplicate).
+ *
+ * «Gestionar» switches the same chips into a manage mode: the
+ * organization's own categories turn soft red with a × in their corner,
+ * built-ins stay as they are (they cannot be deleted), and «Hecho» leaves
+ * the mode. The × first says which records lose the category.
  */
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import type {
   Category,
   CategoryScope,
@@ -48,6 +52,11 @@ export const CategoryPicker: React.FC<{
 }) => {
   const all = useLogisticsStore(s => s.categories);
   const createCategory = useLogisticsStore(s => s.createCategory);
+  const deleteCategory = useLogisticsStore(s => s.deleteCategory);
+  const companies = useLogisticsStore(s => s.companies);
+  const offers = useLogisticsStore(s => s.offers);
+  const resources = useLogisticsStore(s => s.resources);
+  const toast = useLogisticsStore(s => s.toast);
   const categories = useMemo(
     () =>
       scope === 'resource' ? resourceCategories(all) : serviceCategories(all),
@@ -59,7 +68,39 @@ export const CategoryPicker: React.FC<{
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /** The category whose × was pressed: its confirmation is open. */
+  const [asking, setAsking] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeProblem, setRemoveProblem] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const manageRef = useRef<HTMLButtonElement>(null);
+  /** Where focus goes after the confirmation closes. */
+  const returnFocus = useRef<string | null>(null);
+
+  const managedNow = managing && custom.length > 0;
+  const askingCategory = asking
+    ? (custom.find(c => c.id === asking) ?? null)
+    : null;
+  const locked = custom.filter(c => lockedIds.includes(c.id));
+
+  // The confirmation opens on «No borrar»: the safe answer is the default.
+  useEffect(() => {
+    if (askingCategory) keepRef.current?.focus();
+  }, [askingCategory]);
+
+  // After «No borrar», back to the × that opened it; after a delete (or when
+  // the last own category is gone), to «Hecho» / «Gestionar».
+  useEffect(() => {
+    if (asking || !returnFocus.current) return;
+    const target =
+      document.getElementById(returnFocus.current) ??
+      manageRef.current ??
+      // The last own category is gone with «Gestionar»: «Nueva categoría».
+      document.getElementById(`${idPrefix}-cat-new`);
+    returnFocus.current = null;
+    target?.focus();
+  }, [asking, managedNow, idPrefix]);
 
   const toggle = (c: Category, on: boolean) => {
     if (!multiple) onChange(on ? [c.id] : []);
@@ -99,8 +140,51 @@ export const CategoryPicker: React.FC<{
     }
   };
 
+  const losers = (c: Category): string => {
+    const parts: string[] = [];
+    const co = companies.filter(x => x.categoryIds.includes(c.id)).length;
+    const of = offers.filter(x => x.categoryId === c.id).length;
+    const re = resources.filter(x => x.categoryId === c.id).length;
+    if (co) parts.push(plural(co, 'empresa o entidad', 'empresas o entidades'));
+    if (of) parts.push(plural(of, 'oferta', 'ofertas'));
+    if (re) parts.push(plural(re, 'recurso', 'recursos'));
+    if (!parts.length) return 'Ningún registro la usa.';
+    const list =
+      parts.length > 1
+        ? `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`
+        : parts[0];
+    return `La perderán ${list}; no se borra nada más.`;
+  };
+
+  const remove = async (c: Category) => {
+    setRemoving(true);
+    setRemoveProblem(null);
+    try {
+      await deleteCategory(c);
+      if (value.includes(c.id)) onChange(value.filter(x => x !== c.id));
+      returnFocus.current = `${idPrefix}-cat-manage`;
+      setAsking(null);
+      // Nothing of your own left to delete: the mode ends by itself.
+      if (custom.length <= 1) setManaging(false);
+      toast(`Categoría borrada: ${c.name}`, 'success');
+    } catch (err) {
+      setRemoveProblem(`No se ha borrado. ${errorMessage(err)}`);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const stopManaging = () => {
+    setManaging(false);
+    setAsking(null);
+    setRemoveProblem(null);
+  };
+
   return (
-    <fieldset className="lx-catpick" id={`${idPrefix}-categories`}>
+    <fieldset
+      className={`lx-catpick${managedNow ? ' is-managing' : ''}`}
+      id={`${idPrefix}-categories`}
+    >
       <legend className="lx-field__label lx-segmented__legend">
         {legend}
         <span className="lx-field__optional"> · opcional</span>
@@ -112,8 +196,13 @@ export const CategoryPicker: React.FC<{
         {categories.map(c => {
           const id = `${idPrefix}-cat-${c.id}`;
           const checked = value.includes(c.id);
+          const removable = managedNow && !c.builtIn;
+          const isLocked = lockedIds.includes(c.id);
           return (
-            <span className="lx-catpick__chip" key={c.id}>
+            <span
+              className={`lx-catpick__chip${removable ? ' is-removable' : ''}`}
+              key={c.id}
+            >
               <input
                 type={multiple ? 'checkbox' : 'radio'}
                 name={`${idPrefix}-category`}
@@ -129,10 +218,29 @@ export const CategoryPicker: React.FC<{
                 {checked && <Icon name="check" size={14} />}
                 {c.name}
               </label>
+              {removable && (
+                <button
+                  type="button"
+                  className="lx-catpick__remove"
+                  id={`${idPrefix}-cat-delete-${c.id}`}
+                  aria-label={`Borrar la categoría ${c.name}`}
+                  aria-describedby={
+                    isLocked ? `${idPrefix}-cat-locked-${c.id}` : undefined
+                  }
+                  aria-expanded={asking === c.id}
+                  disabled={isLocked || removing}
+                  onClick={() => {
+                    setAsking(c.id);
+                    setRemoveProblem(null);
+                  }}
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              )}
             </span>
           );
         })}
-        {!adding && (
+        {!adding && !managedNow && (
           <Button
             size="sm"
             variant="ghost"
@@ -140,7 +248,7 @@ export const CategoryPicker: React.FC<{
             id={`${idPrefix}-cat-new`}
             onClick={() => {
               setAdding(true);
-              setManaging(false);
+              stopManaging();
               window.setTimeout(() => inputRef.current?.focus(), 0);
             }}
           >
@@ -149,15 +257,16 @@ export const CategoryPicker: React.FC<{
         )}
         {custom.length > 0 && !adding && (
           <Button
+            ref={manageRef}
             size="sm"
-            variant="ghost"
-            icon={managing ? 'close' : 'edit'}
+            variant={managedNow ? 'primary' : 'ghost'}
+            icon={managedNow ? 'check' : 'edit'}
             id={`${idPrefix}-cat-manage`}
-            aria-expanded={managing}
+            aria-pressed={managedNow}
             aria-controls={`${idPrefix}-cat-managed`}
-            onClick={() => setManaging(m => !m)}
+            onClick={() => (managedNow ? stopManaging() : setManaging(true))}
           >
-            {managing ? 'Terminar' : 'Gestionar'}
+            {managedNow ? 'Hecho' : 'Gestionar'}
           </Button>
         )}
       </div>
@@ -223,15 +332,67 @@ export const CategoryPicker: React.FC<{
           )}
         </div>
       )}
-      {managing && custom.length > 0 && (
-        <ManageCategories
-          idPrefix={idPrefix}
-          custom={custom}
-          lockedIds={lockedIds}
-          onDeleted={c => {
-            if (value.includes(c.id)) onChange(value.filter(x => x !== c.id));
-          }}
-        />
+      {managedNow && (
+        <div className="lx-catmanage" id={`${idPrefix}-cat-managed`}>
+          {askingCategory ? (
+            <div
+              className="lx-catmanage__confirm"
+              role="group"
+              aria-labelledby={`${idPrefix}-cat-ask-${askingCategory.id}`}
+            >
+              <p id={`${idPrefix}-cat-ask-${askingCategory.id}`}>
+                <strong>¿Borrar «{askingCategory.name}»?</strong>{' '}
+                {losers(askingCategory)}
+              </p>
+              <div className="lx-catmanage__actions">
+                <Button
+                  ref={keepRef}
+                  size="sm"
+                  variant="ghost"
+                  id={`${idPrefix}-cat-keep-${askingCategory.id}`}
+                  disabled={removing}
+                  onClick={() => {
+                    returnFocus.current = `${idPrefix}-cat-delete-${askingCategory.id}`;
+                    setAsking(null);
+                    setRemoveProblem(null);
+                  }}
+                >
+                  No borrar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon="trash"
+                  busy={removing}
+                  id={`${idPrefix}-cat-confirm-${askingCategory.id}`}
+                  onClick={() => void remove(askingCategory)}
+                >
+                  Borrar categoría
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="lx-muted lx-catmanage__intro">
+              Toca la <span aria-hidden="true">×</span>
+              <span className="lx-visually-hidden">cruz</span> de una categoría
+              vuestra (en rojo) para borrarla. Las que trae Ox Eye no se pueden
+              borrar.
+            </p>
+          )}
+          {locked.map(c => (
+            <p className="lx-catmanage__locked" key={c.id}>
+              <strong>{c.name}</strong>:{' '}
+              <span id={`${idPrefix}-cat-locked-${c.id}`}>
+                Quítala de esta ficha y guarda antes de borrarla.
+              </span>
+            </p>
+          ))}
+          {removeProblem && (
+            <p className="lx-field__error" role="alert">
+              {removeProblem}
+            </p>
+          )}
+        </div>
       )}
       {error && (
         <p
@@ -243,146 +404,5 @@ export const CategoryPicker: React.FC<{
         </p>
       )}
     </fieldset>
-  );
-};
-
-/** The organization's own categories, each with a confirmed delete. */
-const ManageCategories: React.FC<{
-  idPrefix: string;
-  custom: Category[];
-  lockedIds: readonly string[];
-  onDeleted: (category: Category) => void;
-}> = ({idPrefix, custom, lockedIds, onDeleted}) => {
-  const companies = useLogisticsStore(s => s.companies);
-  const offers = useLogisticsStore(s => s.offers);
-  const resources = useLogisticsStore(s => s.resources);
-  const deleteCategory = useLogisticsStore(s => s.deleteCategory);
-  const toast = useLogisticsStore(s => s.toast);
-  const [asking, setAsking] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  const losers = (c: Category): string => {
-    const parts: string[] = [];
-    const co = companies.filter(x => x.categoryIds.includes(c.id)).length;
-    const of = offers.filter(x => x.categoryId === c.id).length;
-    const re = resources.filter(x => x.categoryId === c.id).length;
-    if (co) parts.push(plural(co, 'empresa o entidad', 'empresas o entidades'));
-    if (of) parts.push(plural(of, 'oferta', 'ofertas'));
-    if (re) parts.push(plural(re, 'recurso', 'recursos'));
-    if (!parts.length) return 'Ningún registro la usa.';
-    const list =
-      parts.length > 1
-        ? `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`
-        : parts[0];
-    return `La perderán ${list}; no se borra nada más.`;
-  };
-
-  const remove = async (c: Category) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await deleteCategory(c);
-      onDeleted(c);
-      setAsking(null);
-      toast(`Categoría borrada: ${c.name}`, 'success');
-    } catch (err) {
-      setProblem(`No se ha borrado. ${errorMessage(err)}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="lx-catmanage" id={`${idPrefix}-cat-managed`}>
-      <p className="lx-muted lx-catmanage__intro">
-        Categorías añadidas por vuestra organización. Las que trae OxEye no se
-        pueden borrar.
-      </p>
-      <ul className="lx-catmanage__list">
-        {custom.map(c => (
-          <li key={c.id} className="lx-catmanage__row">
-            {asking === c.id ? (
-              <div
-                className="lx-catmanage__confirm"
-                role="group"
-                aria-labelledby={`${idPrefix}-cat-ask-${c.id}`}
-              >
-                <p id={`${idPrefix}-cat-ask-${c.id}`}>
-                  <strong>¿Borrar «{c.name}»?</strong> {losers(c)}
-                </p>
-                <div className="lx-catmanage__actions">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    id={`${idPrefix}-cat-keep-${c.id}`}
-                    disabled={busy}
-                    onClick={() => setAsking(null)}
-                  >
-                    No borrar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    icon="trash"
-                    busy={busy}
-                    id={`${idPrefix}-cat-confirm-${c.id}`}
-                    onClick={() => void remove(c)}
-                  >
-                    Borrar categoría
-                  </Button>
-                </div>
-              </div>
-            ) : lockedIds.includes(c.id) ? (
-              <>
-                <span className="lx-catmanage__name">
-                  {c.name}
-                  <span
-                    className="lx-catmanage__locked"
-                    id={`${idPrefix}-cat-locked-${c.id}`}
-                  >
-                    Quítala de esta ficha y guarda antes de borrarla.
-                  </span>
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="trash"
-                  id={`${idPrefix}-cat-delete-${c.id}`}
-                  aria-label={`Borrar la categoría ${c.name}`}
-                  aria-describedby={`${idPrefix}-cat-locked-${c.id}`}
-                  disabled
-                >
-                  Borrar
-                </Button>
-              </>
-            ) : (
-              <>
-                <span className="lx-catmanage__name">{c.name}</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="trash"
-                  className="lx-btn--danger-text"
-                  id={`${idPrefix}-cat-delete-${c.id}`}
-                  aria-label={`Borrar la categoría ${c.name}`}
-                  onClick={() => {
-                    setAsking(c.id);
-                    setProblem(null);
-                  }}
-                >
-                  Borrar
-                </Button>
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-      {problem && (
-        <p className="lx-field__error" role="alert">
-          {problem}
-        </p>
-      )}
-    </div>
   );
 };

@@ -2,6 +2,7 @@ import type {Hono, MiddlewareHandler} from 'hono';
 import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
 import {requireMembership} from '../organizations/service.ts';
+import {viewerIn} from '../records/redact.ts';
 import {parseVersionParam} from '../records/schemas.ts';
 import {createWarehouseSchema, updateWarehouseSchema} from './schemas.ts';
 import {
@@ -24,7 +25,7 @@ export function registerWarehouseRoutes(
     const user = c.get('user');
     const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
     const body: ListResponse<Warehouse> = {
-      items: await listWarehouses(deps.db, org.id, user),
+      items: await listWarehouses(deps.db, org.id, viewerIn(user, org)),
     };
     return c.json(body);
   });

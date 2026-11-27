@@ -3,6 +3,9 @@
  */
 import type {
   ActivityEntry,
+  AdminProfileInput,
+  AdminRolesInput,
+  AdminUser,
   ApplyHypothesisInput,
   ApplyHypothesisResponse,
   Category,
@@ -12,41 +15,113 @@ import type {
   CompanyInput,
   Contact,
   ContactInput,
+  ConflictAcceptance,
+  ConflictAcceptanceInput,
   CreateEventInput,
   DelayHypothesis,
+  EmailVerifyInput,
   HealthResponse,
   HypothesisInput,
   ListResponse,
   LoginRequest,
   LoginResponse,
-  LoginUserOption,
   LogisticsEvent,
+  MediaInfo,
+  MediaUploadInput,
+  MemberProfile,
   MeResponse,
+  MoveTaskInput,
+  MoveTaskResponse,
   Note,
+  NoteAnswer,
+  NoteAnswerInput,
   NoteInput,
   Offer,
   OfferInput,
+  Organization,
+  OrganizationInput,
+  PasswordChangeInput,
+  PasswordResetInput,
+  Profile,
+  ProfileInput,
+  ProvisionalPasswordResponse,
   RecentSearch,
   RecentSearchInput,
+  RecoveryEmailInput,
+  RecoveryRequest,
+  ResetLinkResponse,
   Resource,
   ResourceInput,
+  SecurityEvent,
+  SessionInfo,
+  SupportSession,
+  SupportSessionInput,
+  SupportSessionResponse,
   Task,
   TaskInput,
   UpdateEventInput,
   Venue,
+  VenueInput,
+  ViewAsGuestInput,
   Warehouse,
   WarehouseInput,
 } from '../../../shared/logistics/contracts.ts';
-import {apiRequest} from './client';
+import {
+  ApiError,
+  apiRequest,
+  reportTokenRejected,
+  resolveApiBaseUrl,
+} from './client';
 
 const enc = encodeURIComponent;
+
+/** Image downloads may take longer than JSON on a weak signal. */
+const MEDIA_TIMEOUT_MS = 30_000;
+
+/**
+ * The bytes of one image (`GET /media/:id`, authenticated). Not JSON, so it
+ * does not go through `apiRequest`; failures map to the same error codes.
+ */
+async function mediaBlob(
+  token: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const base = resolveApiBaseUrl();
+  if (!base) throw new ApiError({code: 'NOT_CONFIGURED', status: 0});
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MEDIA_TIMEOUT_MS);
+  const onOuterAbort = () => controller.abort();
+  signal?.addEventListener('abort', onOuterAbort);
+  try {
+    const response = await fetch(`${base}/media/${enc(id)}`, {
+      headers: {Authorization: `Bearer ${token}`},
+      signal: controller.signal,
+    });
+    if (response.status === 401) {
+      reportTokenRejected(token);
+      throw new ApiError({code: 'UNAUTHENTICATED', status: 401});
+    }
+    if (response.status === 404) {
+      throw new ApiError({code: 'NOT_FOUND', status: 404});
+    }
+    const type = response.headers.get('Content-Type') ?? '';
+    if (!response.ok || !type.startsWith('image/')) {
+      throw new ApiError({code: 'UNAVAILABLE', status: response.status});
+    }
+    return await response.blob();
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError({code: 'UNAVAILABLE', status: 0});
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onOuterAbort);
+  }
+}
 
 export const api = {
   health: (signal?: AbortSignal) =>
     apiRequest<HealthResponse>('GET', '/health', {signal}),
-
-  loginUsers: () =>
-    apiRequest<ListResponse<LoginUserOption>>('GET', '/auth/users'),
 
   login: (body: LoginRequest) =>
     apiRequest<LoginResponse>('POST', '/auth/login', {body}),
@@ -258,6 +333,35 @@ export const api = {
       token,
     }),
 
+  // ---- Revisión 1 · E3: answers to open questions and material photos
+  /** Every answer of a question, newest first (the current one included). */
+  noteAnswers: (token: string, noteId: string, signal?: AbortSignal) =>
+    apiRequest<ListResponse<NoteAnswer>>(
+      'GET',
+      `/notes/${enc(noteId)}/answers`,
+      {token, signal},
+    ),
+
+  createNoteAnswer: (token: string, noteId: string, body: NoteAnswerInput) =>
+    apiRequest<NoteAnswer>('POST', `/notes/${enc(noteId)}/answers`, {
+      token,
+      body,
+    }),
+
+  uploadMedia: (token: string, body: MediaUploadInput) =>
+    apiRequest<MediaInfo>('POST', '/media', {token, body}),
+
+  setMainMedia: (token: string, id: string) =>
+    apiRequest<MediaInfo>('PATCH', `/media/${enc(id)}`, {
+      token,
+      body: {main: true},
+    }),
+
+  deleteMedia: (token: string, id: string) =>
+    apiRequest<void>('DELETE', `/media/${enc(id)}`, {token}),
+
+  mediaBlob,
+
   // ---- milestone 5: delay hypotheses («¿Y si…?»)
   hypotheses: (token: string, orgId: string) =>
     apiRequest<ListResponse<DelayHypothesis>>(
@@ -278,6 +382,41 @@ export const api = {
       `/hypotheses/${enc(id)}/apply`,
       {token, body},
     ),
+
+  // ---- Revisión 1 · E2: accepted conflicts («Mantener ambas»)
+  acceptances: (token: string, orgId: string) =>
+    apiRequest<ListResponse<ConflictAcceptance>>(
+      'GET',
+      `/organizations/${enc(orgId)}/conflict-acceptances`,
+      {token},
+    ),
+
+  createAcceptance: (token: string, body: ConflictAcceptanceInput) =>
+    apiRequest<ConflictAcceptance>('POST', '/conflict-acceptances', {
+      token,
+      body,
+    }),
+
+  deleteAcceptance: (token: string, id: string) =>
+    apiRequest<void>('DELETE', `/conflict-acceptances/${enc(id)}`, {token}),
+
+  // ---- Revisión 1 · E2: moves (calendar drag, conflict exits, «Deshacer»)
+  moveTask: (token: string, id: string, body: MoveTaskInput) =>
+    apiRequest<MoveTaskResponse>('POST', `/tasks/${enc(id)}/move`, {
+      token,
+      body,
+    }),
+
+  // ---- Revisión 1 · E2: venue acronym and opening hours
+  updateVenue: (token: string, id: string, body: VenueInput) =>
+    apiRequest<Venue>('PATCH', `/venues/${enc(id)}`, {token, body}),
+
+  /** E2: the organization's acronym (members only; 409 with `current`). */
+  updateOrganization: (token: string, orgId: string, body: OrganizationInput) =>
+    apiRequest<Organization>('PATCH', `/organizations/${enc(orgId)}`, {
+      token,
+      body,
+    }),
 
   // ---- milestone 6: cheap refresh and the day's activity
   /** Which record types changed since `since` (none: a fresh cursor). */
@@ -304,6 +443,115 @@ export const api = {
       }`,
       {token, signal},
     ),
+
+  // ---- Revisión 1 · E4: account links (public, no token)
+  /** 202 always, the same whether the account exists or not. */
+  requestRecovery: (body: RecoveryRequest) =>
+    apiRequest<void>('POST', '/auth/recovery', {body}),
+
+  resetPassword: (body: PasswordResetInput) =>
+    apiRequest<void>('POST', '/auth/reset', {body}),
+
+  verifyEmail: (body: EmailVerifyInput) =>
+    apiRequest<void>('POST', '/auth/verify-email', {body}),
+
+  // ---- Revisión 1 · E4: own account
+  profile: (token: string) =>
+    apiRequest<Profile>('GET', '/me/profile', {token}),
+
+  updateProfile: (token: string, body: ProfileInput) =>
+    apiRequest<Profile>('PATCH', '/me/profile', {token, body}),
+
+  changePassword: (token: string, body: PasswordChangeInput) =>
+    apiRequest<void>('POST', '/me/password', {token, body}),
+
+  /** 202: a verification link goes to that address. */
+  requestRecoveryEmail: (token: string, body: RecoveryEmailInput) =>
+    apiRequest<void>('POST', '/me/email', {token, body}),
+
+  removeRecoveryEmail: (token: string) =>
+    apiRequest<void>('DELETE', '/me/email', {token}),
+
+  markWelcomed: (token: string) =>
+    apiRequest<void>('POST', '/me/welcome', {token}),
+
+  sessions: (token: string) =>
+    apiRequest<ListResponse<SessionInfo>>('GET', '/me/sessions', {token}),
+
+  endSession: (token: string, id: string) =>
+    apiRequest<void>('DELETE', `/me/sessions/${enc(id)}`, {token}),
+
+  endOtherSessions: (token: string) =>
+    apiRequest<void>('DELETE', '/me/sessions', {token}),
+
+  ownSecurity: (token: string) =>
+    apiRequest<ListResponse<SecurityEvent>>('GET', '/me/security', {token}),
+
+  members: (token: string, orgId: string) =>
+    apiRequest<ListResponse<MemberProfile>>(
+      'GET',
+      `/organizations/${enc(orgId)}/members`,
+      {token},
+    ),
+
+  // ---- Revisión 1 · E4: administration (`users.manage` unless stated)
+  adminUsers: (token: string) =>
+    apiRequest<ListResponse<AdminUser>>('GET', '/admin/users', {token}),
+
+  setRoles: (token: string, userId: string, body: AdminRolesInput) =>
+    apiRequest<AdminUser>('PUT', `/admin/users/${enc(userId)}/roles`, {
+      token,
+      body,
+    }),
+
+  /** Name and photo of a shared account (Equipo, Invitado). */
+  adminProfile: (token: string, userId: string, body: AdminProfileInput) =>
+    apiRequest<AdminUser>('PATCH', `/admin/users/${enc(userId)}/profile`, {
+      token,
+      body,
+    }),
+
+  provisionalPassword: (token: string, userId: string) =>
+    apiRequest<ProvisionalPasswordResponse>(
+      'POST',
+      `/admin/users/${enc(userId)}/provisional-password`,
+      {token},
+    ),
+
+  /** The link itself without a mail transport; nothing (202) when e-mailed. */
+  resetLink: (token: string, userId: string) =>
+    apiRequest<ResetLinkResponse | null>(
+      'POST',
+      `/admin/users/${enc(userId)}/reset-link`,
+      {token},
+    ),
+
+  /** `support.start`. */
+  startSupport: (token: string, body: SupportSessionInput) =>
+    apiRequest<SupportSessionResponse>('POST', '/admin/support-sessions', {
+      token,
+      body,
+    }),
+
+  /** `view_as_guest`. */
+  viewAsGuest: (token: string, body: ViewAsGuestInput) =>
+    apiRequest<SupportSessionResponse>('POST', '/admin/view-as-guest', {
+      token,
+      body,
+    }),
+
+  supportSessions: (token: string) =>
+    apiRequest<ListResponse<SupportSession>>('GET', '/admin/support-sessions', {
+      token,
+    }),
+
+  endSupportSession: (token: string, id: string) =>
+    apiRequest<void>('DELETE', `/admin/support-sessions/${enc(id)}`, {token}),
+
+  adminSecurity: (token: string) =>
+    apiRequest<ListResponse<SecurityEvent>>('GET', '/admin/security', {
+      token,
+    }),
 
   removeDemo: (token: string, orgId: string) =>
     apiRequest<{removed: number}>(

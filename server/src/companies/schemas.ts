@@ -17,6 +17,7 @@ import {
   versionField,
 } from '../records/schemas.ts';
 import {deviceIdField} from '../records/device-id.ts';
+import {taxField} from '../budget/tax.ts';
 import {
   COMPANY_KINDS,
   MAX_CATEGORIES_PER_COMPANY,
@@ -39,6 +40,8 @@ const common = {
   website: optionalText(WEBSITE_MAX),
   notes: optionalText(NOTES_MAX),
   mainContactId: optionalUuid,
+  // Revisión 1 · E5.
+  tax: taxField,
   source,
   verification,
 };

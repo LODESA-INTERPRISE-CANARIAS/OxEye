@@ -1,5 +1,12 @@
 import {expect, test, type Page} from '@playwright/test';
-import {dailos, makeTask, mockApi, signIn, type MockApi} from './mock-api';
+import {
+  dailos,
+  loginAs,
+  makeTask,
+  mockApi,
+  signIn,
+  type MockApi,
+} from './mock-api';
 import {DAY, NOW, fixClock} from './plan-fixtures';
 import {followData, followTasks} from './followup-fixtures';
 
@@ -229,13 +236,10 @@ test.describe('Gestor logístico · la jornada', () => {
     const started = toast(page, 'En curso: «Reparto de mesas Demo».');
     await expect(started).toBeVisible();
     await page.locator('#lx-logout').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     await expect(page.locator('.lx-toast')).toHaveCount(0);
     // The next person does not get the previous one's «Deshacer».
-    await page.locator('.lx-person[data-name="Dailos"]').click();
-    await page.locator('#lx-login-password').fill('secreto');
-    await page.locator('#lx-login-submit').click();
-    await expect(page.locator('#lx-title')).toBeVisible();
+    await loginAs(page, 'Dailos');
     await expect(page.locator('.lx-toast__action')).toHaveCount(0);
   });
 

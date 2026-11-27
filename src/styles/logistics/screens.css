@@ -188,6 +188,11 @@
   gap: 22px;
 }
 
+/*
+ * Wide screens: the day beside the notes, «Próximos eventos» across both
+ * columns, then the rest beside the month and the activity. The DOM order
+ * is the reading order on a phone (everything stacked).
+ */
 .lx .lx-hoy__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
@@ -196,10 +201,42 @@
 }
 
 .lx .lx-hoy__main,
+.lx .lx-hoy__notes,
+.lx .lx-hoy__rest,
 .lx .lx-hoy__side {
   display: grid;
   gap: 22px;
   min-width: 0;
+}
+
+.lx .lx-hoy__main {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.lx .lx-hoy__notes {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.lx .lx-hoy__wide {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.lx .lx-hoy__rest {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.lx .lx-hoy__side {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.lx .lx-hoy__notes:empty {
+  display: none;
 }
 
 .lx .lx-section {
@@ -328,6 +365,58 @@
 .lx .lx-event--skeleton {
   gap: 12px;
   min-height: 160px;
+}
+
+/*
+ * «Próximos eventos»: one to four columns as the width allows (never more
+ * than four, never narrower than 240 px), one on a portrait phone.
+ */
+.lx .lx-event-grid--upcoming {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(240px, calc((100% - 3 * 14px) / 4)), 1fr)
+  );
+}
+
+/* What the event needs, said on the card (upcoming and undated events). */
+.lx .lx-event {
+  container-type: inline-size;
+}
+
+.lx .lx-event__fact--warnings.is-conflict dt,
+.lx .lx-event__fact--warnings.is-conflict dd {
+  color: var(--lx-danger);
+}
+
+.lx .lx-event__fact--warnings.is-conflict dd {
+  font-weight: 600;
+}
+
+.lx .lx-event__short {
+  display: none;
+}
+
+/* A narrow card (four columns): the same facts, shorter. */
+@container (max-width: 299px) {
+  .lx .lx-event__long {
+    display: none;
+  }
+
+  .lx .lx-event__short {
+    display: inline;
+  }
+
+  .lx .lx-event__facts > div {
+    font-size: 14px;
+  }
+
+  .lx .lx-event__title {
+    font-size: 18px;
+  }
+
+  .lx .lx-event__top {
+    flex-wrap: wrap;
+  }
 }
 
 .lx .lx-event--skeleton span:nth-child(1) {
@@ -574,6 +663,53 @@
   display: grid;
 }
 
+/*
+ * «Actividad reciente» keeps its height: the list scrolls inside (also with
+ * the keyboard, it is focusable) and never pushes the rest of «Hoy» down.
+ * The scroll shadows say there is more above or below.
+ */
+.lx .lx-activity__scroll {
+  position: relative;
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -10px;
+  padding: 0 10px;
+  border-radius: var(--lx-radius-sm);
+  background:
+    linear-gradient(var(--lx-surface) 30%, transparent) top / 100% 28px
+      no-repeat local,
+    linear-gradient(transparent, var(--lx-surface) 70%) bottom / 100% 28px
+      no-repeat local,
+    radial-gradient(
+        farthest-side at 50% 0,
+        color-mix(in srgb, var(--lx-shadow) 45%, transparent),
+        transparent
+      )
+      top / 100% 10px no-repeat scroll,
+    radial-gradient(
+        farthest-side at 50% 100%,
+        color-mix(in srgb, var(--lx-shadow) 45%, transparent),
+        transparent
+      )
+      bottom / 100% 10px no-repeat scroll;
+}
+
+.lx .lx-activity__scroll:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-activity__more {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--lx-line);
+  font-size: 13.5px;
+}
+
 .lx .lx-feed__item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -789,6 +925,15 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .lx .lx-hoy__main,
+  .lx .lx-hoy__notes,
+  .lx .lx-hoy__wide,
+  .lx .lx-hoy__rest,
+  .lx .lx-hoy__side {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .lx .lx-hoy__side {
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     align-items: start;
@@ -809,6 +954,11 @@
 
   .lx .lx-event-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A tablet still fits two upcoming events side by side. */
+  .lx .lx-event-grid--upcoming {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   }
 
   .lx .lx-card {
@@ -843,6 +993,17 @@
 
   .lx .lx-placeholder__card {
     padding: 24px 20px;
+  }
+}
+
+@media (max-width: 599px) {
+  /* Portrait phone: one upcoming event per row, the whole width. */
+  .lx .lx-event-grid--upcoming {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lx .lx-activity__scroll {
+    max-height: 340px;
   }
 }
 

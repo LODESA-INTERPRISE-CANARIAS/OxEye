@@ -24,10 +24,12 @@ import type {
   RecordMeta,
   Resource,
   Task,
+  TaxInfo,
   UserRef,
   Uuid,
   Warehouse,
 } from './contracts.ts';
+import {normalizeTax} from './money.ts';
 import {DEFAULT_RESOURCE_UNIT} from './rules.ts';
 import {instantsToSlot, slotToInstants} from './time.ts';
 import {sameValue} from './merge.ts';
@@ -103,6 +105,20 @@ function byId(list: readonly Named[], id: Uuid): Named {
 
 const has = (input: In, key: string) =>
   Object.prototype.hasOwnProperty.call(input, key) && input[key] !== undefined;
+
+/** E5: the tax a write sets, read like the server (`normalizeTax`). */
+function taxPick(input: In, fallback: TaxInfo | null): TaxInfo | null {
+  if (!has(input, 'tax')) return fallback;
+  const result = normalizeTax(input.tax);
+  return result.ok ? result.tax : fallback;
+}
+
+/** E5: a company's tax when the context list carries full companies. */
+function companyTaxOf(list: readonly Named[], id: Uuid): TaxInfo | null {
+  const hit = list.find(x => x.id === id) as
+    (Named & {tax?: TaxInfo | null}) | undefined;
+  return hit?.tax ?? null;
+}
 
 /**
  * The reference a write sets: `undefined` = not sent (keep), `null` = cleared.
@@ -272,6 +288,7 @@ function company(input: In, base: Company | null, ctx: OptimisticContext) {
     mainContactId: pick(input, 'mainContactId', base?.mainContactId ?? null),
     contactCount: base?.contactCount ?? 0,
     offerCount: base?.offerCount ?? 0,
+    tax: taxPick(input, base?.tax ?? null),
     restricted: false,
   };
   return out;
@@ -332,7 +349,12 @@ function offer(input: In, base: Offer | null, ctx: OptimisticContext) {
       base?.maintenanceCost ?? null,
     ),
     conditions: pick(input, 'conditions', base?.conditions ?? null),
-    vatIncluded: pick(input, 'vatIncluded', base?.vatIncluded ?? null),
+    // E5: a new offer is before tax unless it says otherwise.
+    vatIncluded: pick(input, 'vatIncluded', base ? base.vatIncluded : false),
+    tax: taxPick(input, base?.tax ?? null),
+    companyTax: co
+      ? companyTaxOf(ctx.companies, co.id)
+      : (base?.companyTax ?? null),
     restricted: false,
   };
   return out;
@@ -346,6 +368,8 @@ function warehouse(input: In, base: Warehouse | null, ctx: OptimisticContext) {
     address: pick(input, 'address', base?.address ?? null),
     notes: pick(input, 'notes', base?.notes ?? null),
     resourceCount: base?.resourceCount ?? 0,
+    acronym: pick(input, 'acronym', base?.acronym ?? null),
+    openingHours: pick(input, 'openingHours', base?.openingHours ?? null),
     restricted: false,
   };
   return out;
@@ -394,6 +418,7 @@ function resource(input: In, base: Resource | null, ctx: OptimisticContext) {
     toAssess: pick(input, 'toAssess', base?.toAssess ?? false),
     notes: pick(input, 'notes', base?.notes ?? null),
     taskIds: base?.taskIds ?? [],
+    media: base?.media ?? [],
     restricted: false,
   };
   return out;
@@ -416,6 +441,9 @@ function note(input: In, base: Note | null, ctx: OptimisticContext) {
     event: ev === undefined ? (base?.event ?? null) : ev,
     ref,
     resolved: pick(input, 'resolved', base?.resolved ?? false),
+    answer: base?.answer ?? null,
+    resolvedBy: base?.resolvedBy ?? null,
+    resolvedAt: base?.resolvedAt ?? null,
     restricted: false,
   };
   return out;
@@ -449,5 +477,9 @@ export function optimisticRecord(
       return resource(input, base as Resource | null, ctx);
     case 'note':
       return note(input, base as Note | null, ctx);
+    case 'media':
+      // A queued photo is not a record of any list: the device shows it from
+      // the outbox entry itself, next to its resource.
+      throw new Error('optimisticRecord: photos have no optimistic record');
   }
 }

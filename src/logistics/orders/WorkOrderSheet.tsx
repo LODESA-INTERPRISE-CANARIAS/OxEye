@@ -11,7 +11,9 @@
  *
  * Printing: a copy of the page is portalled to <body> (`.lx-print-root`) and
  * the print stylesheet in `orders.css` shows only that copy while this sheet
- * is open. Nothing changes for the simulator's own printing.
+ * is open. Nothing changes for the simulator's own printing. While it
+ * prints, the page title names the saved PDF (`usePrintTitle`) and the page
+ * margin carries «Generado por Ox Eye · fecha · página N de M».
  */
 import React, {useMemo, useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -26,6 +28,7 @@ import {
   type WorkOrderField,
   type WorkOrderRecipient,
 } from '../../../shared/logistics/work-order.ts';
+import {printFileName} from '../../../shared/logistics/print-name.ts';
 import {useActions} from '../common/actions';
 import {TaskStatusChip} from '../common/TaskChips';
 import {windowText} from '../common/TimeWindow';
@@ -33,6 +36,7 @@ import {useNow} from '../common/useNow';
 import {usePlan} from '../common/usePlan';
 import {dayMonthShort, plural} from '../lib/format';
 import {recordDate, sortTasks} from '../lib/tasks';
+import {printWithName, usePrintTitle} from '../shell/usePrintTitle';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, EmptyState, Icon, Sheet} from '../ui';
 import {SendOrderSheet} from './SendOrderSheet';
@@ -61,10 +65,26 @@ export const WorkOrderSheet: React.FC<{
   const resources = useLogisticsStore(s => s.resources);
   const warehouses = useLogisticsStore(s => s.warehouses);
   const contacts = useLogisticsStore(s => s.contacts);
-  const me = useLogisticsStore(s => s.session?.user.displayName ?? 'OxEye');
+  const me = useLogisticsStore(s => s.session?.user.displayName ?? 'Ox Eye');
   const role = useLogisticsStore(s => s.session?.user.role ?? 'guest');
+  const organization = useLogisticsStore(
+    s => s.organizations.find(o => o.id === s.orgId) ?? null,
+  );
   const plan = usePlan();
   const now = useNow(30_000);
+
+  // The saved PDF is named «SCLL_Ficha-de-trabajo_<empresa>_<fecha>_<hora>».
+  usePrintTitle({
+    fileName: () =>
+      printFileName({
+        organization,
+        document: 'workOrder',
+        subject: recipient.name,
+        at: Date.now(),
+        timeZone,
+      }),
+    stamp: () => generatedAtText(Date.now(), timeZone),
+  });
 
   const mine = useMemo(
     () => sortTasks(tasksForRecipient(tasks, recipient)),
@@ -217,7 +237,7 @@ export const WorkOrderSheet: React.FC<{
             icon="print"
             id="lx-order-print"
             disabled={empty}
-            onClick={() => window.print()}
+            onClick={printWithName}
           >
             Imprimir o guardar como PDF
           </Button>

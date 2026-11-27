@@ -40,6 +40,8 @@ const warehouse = (id: string, name: string, over: Partial<Warehouse> = {}) =>
     address: null,
     notes: null,
     resourceCount: 0,
+    acronym: null,
+    openingHours: null,
     restricted: false,
     ...over,
   }) satisfies Warehouse;
@@ -62,6 +64,7 @@ const resource = (id: string, over: Partial<Resource> = {}): Resource => ({
   toAssess: false,
   notes: null,
   taskIds: [],
+  media: [],
   restricted: false,
   ...over,
 });
@@ -79,6 +82,7 @@ const company = (id: string, name: string): Company => ({
   mainContactId: null,
   contactCount: 0,
   offerCount: 0,
+  tax: null,
   restricted: false,
 });
 
@@ -90,6 +94,9 @@ const note = (id: string, over: Partial<Note> = {}): Note => ({
   event: null,
   ref: null,
   resolved: false,
+  answer: null,
+  resolvedBy: null,
+  resolvedAt: null,
   restricted: false,
   ...over,
 });

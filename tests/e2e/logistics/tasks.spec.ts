@@ -1,6 +1,7 @@
 import {expect, test, type Page} from '@playwright/test';
 import {ORG, addDays, dailos, mockApi, signIn, type MockApi} from './mock-api';
 import {DAY, fixClock, planData} from './plan-fixtures';
+import {choose, expectValue} from './controls';
 
 /**
  * Gestor logístico, milestone 2: the «Añadir» menu, creating tasks (only the
@@ -67,7 +68,7 @@ test.describe('Gestor logístico · menú «Añadir»', () => {
     await expect(taskSheet(page)).toContainText('Nueva tarea');
     await expect(page.locator('#lx-task-title')).toBeFocused();
     // Added from «Hoy»: the day starts as today.
-    await expect(page.locator('#lx-task-date')).toHaveValue(DAY);
+    await expectValue(page, 'lx-task-date', DAY);
     // A clean sheet closes on Escape and focus returns to «Añadir».
     await page.keyboard.press('Escape');
     await expect(taskSheet(page)).toHaveCount(0);
@@ -240,8 +241,8 @@ test.describe('Gestor logístico · crear tarea', () => {
     await page.locator('#lx-event-add-task').click();
 
     await expect(page.locator('#lx-task-form')).toBeVisible();
-    await expect(page.locator('#lx-task-event')).toHaveValue('e1');
-    await expect(page.locator('#lx-task-date')).toHaveValue(DAY);
+    await expectValue(page, 'lx-task-event', 'e1');
+    await expectValue(page, 'lx-task-date', DAY);
     await expect(page.locator('#lx-task-venue')).toHaveValue(
       'Plaza del Cristo',
     );
@@ -332,7 +333,7 @@ test.describe('Gestor logístico · crear tarea', () => {
     await page.locator('#lx-task-title').fill('Vigilancia nocturna');
     await pick(page, 'lx-task-multiday');
     const end = page.locator('#lx-task-enddate');
-    await expect(end).toHaveValue(addDays(DAY, 1));
+    await expectValue(page, 'lx-task-enddate', addDays(DAY, 1));
 
     await end.fill(DAY);
     await page.locator('#lx-task-save').click();
@@ -370,7 +371,7 @@ test.describe('Gestor logístico · crear tarea', () => {
     await signIn(page);
     await openAddTask(page);
     await pick(page, 'lx-task-kind-delivery');
-    await page.locator('#lx-task-event').selectOption('e1');
+    await choose(page, 'lx-task-event', 'e1');
     // Choosing the event fills the empty venue; the day was already today.
     await expect(page.locator('#lx-task-venue')).toHaveValue(
       'Plaza del Cristo',
@@ -385,11 +386,11 @@ test.describe('Gestor logístico · crear tarea', () => {
     await expect(title).toHaveValue('');
     await expect(title).toBeFocused();
     await expect(page.locator('#lx-task-kind-delivery')).toBeChecked();
-    await expect(page.locator('#lx-task-event')).toHaveValue('e1');
+    await expectValue(page, 'lx-task-event', 'e1');
     await expect(page.locator('#lx-task-venue')).toHaveValue(
       'Plaza del Cristo',
     );
-    await expect(page.locator('#lx-task-date')).toHaveValue(DAY);
+    await expectValue(page, 'lx-task-date', DAY);
 
     await title.fill('Entrega de mesas');
     await expect(page.locator('#lx-task-saved')).toHaveCount(0);
@@ -530,10 +531,15 @@ test.describe('Gestor logístico · «Empieza cuando termine…»', () => {
     const t3 = page.locator('#lx-task-dep-t3');
     await expect(t2).toBeDisabled();
     await expect(t3).toBeDisabled();
+    // The reason names the real chain with the tasks' titles.
     await expect(page.locator('#lx-task-dep-t2-why')).toHaveText(
-      'No se puede: «Instalación de sonido» ya espera a que termine esta.',
+      'No se puede: «Instalación de sonido» ya depende de esta tarea.',
+    );
+    await expect(page.locator('#lx-task-dep-t3-why')).toHaveText(
+      'No se puede: «Entrega de vallas» ya depende de «Instalación de sonido», que a su vez depende de esta tarea.',
     );
     await expect(t2).toHaveAttribute('aria-describedby', 'lx-task-dep-t2-why');
+    await expect(t3).toHaveAttribute('aria-describedby', 'lx-task-dep-t3-why');
     await expect(page.locator('#lx-task-dependents')).toContainText(
       '«Instalación de sonido»',
     );
@@ -745,7 +751,9 @@ test.describe('Gestor logístico · tareas para el invitado', () => {
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText('modo solo lectura');
     await expect(sheet).toContainText('Montaje del escenario');
-    await expect(sheet).toContainText('Escenarios Demo');
+    // Guests have no directory: the company reads generically (Revisión 1).
+    await expect(sheet).not.toContainText('Escenarios Demo');
+    await expect(sheet).toContainText('EmpresaEmpresa');
     await expect(page.locator('#lx-task-form')).toHaveCount(0);
     await expect(page.locator('#lx-task-save')).toHaveCount(0);
     await expect(page.locator('#lx-task-delete')).toHaveCount(0);

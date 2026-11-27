@@ -3,6 +3,7 @@ import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
 import {requireMembership} from '../organizations/service.ts';
 import {parseVersionParam} from '../records/schemas.ts';
+import {viewerIn} from '../records/redact.ts';
 import {createResourceSchema, updateResourceSchema} from './schemas.ts';
 import {
   createResource,
@@ -24,7 +25,7 @@ export function registerResourceRoutes(
     const user = c.get('user');
     const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
     const body: ListResponse<Resource> = {
-      items: await listResources(deps.db, org.id, user),
+      items: await listResources(deps.db, org.id, viewerIn(user, org)),
     };
     return c.json(body);
   });

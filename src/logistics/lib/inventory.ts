@@ -153,7 +153,7 @@ export type QuantityCertainty =
 
 /**
  * How sure the recorded quantity is, in OxEye's certainty grammar: not
- * counted → dotted (pending); «aún por evaluar» → hatched (provisional
+ * counted → dotted (pending); «aún por evaluar» → dashed (provisional
  * figure); counted and validated → solid; counted, not validated → outline.
  */
 export function quantityCertainty(
@@ -197,15 +197,27 @@ export function isOpenNote(n: Pick<Note, 'kind' | 'resolved'>): boolean {
   return RESOLVABLE_NOTE_KINDS.has(n.kind) && !n.resolved;
 }
 
-/** «Resuelta» / «Respondida», or «Abierta» / «Sin responder». */
+/**
+ * «Resuelta» / «Respondida», or «Abierta» / «Sin responder». E3: an open
+ * question with an answer its asker has not confirmed yet is «Con respuesta»
+ * (still open: only the asker closes it).
+ */
 export function resolvedLabel(
-  n: Pick<Note, 'kind' | 'resolved'>,
+  n: Pick<Note, 'kind' | 'resolved'> & {answer?: Note['answer']},
 ): string | null {
   if (!RESOLVABLE_NOTE_KINDS.has(n.kind)) return null;
   if (n.kind === 'open_question') {
-    return n.resolved ? 'Respondida' : 'Sin responder';
+    if (n.resolved) return 'Respondida';
+    return n.answer ? 'Con respuesta' : 'Sin responder';
   }
   return n.resolved ? 'Resuelta' : 'Abierta';
+}
+
+/** E3: an open question with an answer waiting for its asker. */
+export function awaitsAsker(
+  n: Pick<Note, 'kind' | 'resolved'> & {answer?: Note['answer']},
+): boolean {
+  return n.kind === 'open_question' && !n.resolved && !!n.answer;
 }
 
 /** The record a list of notes belongs to: an event, or one linked record. */

@@ -460,6 +460,42 @@
   overflow-wrap: anywhere;
 }
 
+/* Who answered and who closed an open question (E3). */
+.lx .lx-daynote__trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -2px 10px 8px 40px;
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-daynote__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lx .lx-daynote__answer-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-muted);
+  white-space: normal;
+}
+
+/* «Conflictos aceptados» heading inside «Decisiones». */
+.lx .lx-daygroup__sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lx-muted);
+}
+
 .lx .lx-daytoggle {
   display: inline-flex;
   align-items: center;
@@ -541,25 +577,17 @@
 }
 
 /* ---------------------------------------------------------- hypotheses */
-/* Always hatched, explored or applied: a hypothesis is never a fact. */
+/*
+ * Always marked, explored or applied: a hypothesis is never a fact. Same
+ * grammar as `.lx-chip--hypothesis`: dashed accent line, soft tint and the
+ * visible «Hipótesis» word (legible in full sun, unlike the old hatch).
+ */
 .lx .lx-dayhypo {
-  --lx-btn-border-w: 1.5px;
-  --lx-btn-border: color-mix(in srgb, var(--lx-accent) 45%, transparent);
-  --lx-btn-border-hover: var(--lx-accent);
-  --lx-btn-bg:
-    repeating-linear-gradient(
-      -45deg,
-      var(--lx-hatch-color) 0 2px,
-      transparent 2px 6px
-    ),
-    var(--lx-surface);
-  --lx-btn-bg-hover:
-    repeating-linear-gradient(
-      -45deg,
-      var(--lx-hatch-color) 0 2px,
-      transparent 2px 6px
-    ),
-    var(--lx-accent-soft);
+  --lx-btn-border-w: 2px;
+  --lx-btn-border: var(--lx-hypo-line);
+  --lx-btn-border-hover: var(--lx-hypo-line);
+  --lx-btn-bg: var(--lx-hypo-tint);
+  --lx-btn-bg-hover: var(--lx-hypo-tint-strong);
   border-style: dashed;
 }
 
@@ -684,10 +712,8 @@
   --dp-accent: var(--lx-accent, CanvasText);
   --dp-paper: var(--lx-canvas, Canvas);
   --dp-soft: var(--lx-accent-soft, Canvas);
-  --dp-hatch: var(
-    --lx-hatch-color,
-    color-mix(in srgb, CanvasText 22%, transparent)
-  );
+  --dp-hypo-line: var(--lx-hypo-line, CanvasText);
+  --dp-hypo-tint: var(--lx-hypo-tint, transparent);
   --dp-serif: var(--lx-serif, Georgia, 'Times New Roman', serif);
   --dp-sans: var(
     --lx-font,
@@ -801,6 +827,16 @@
 :is(.lx, .lx-day-root) .lx-dayp__group {
   display: grid;
   gap: 3px;
+}
+
+/* Sub-list inside a group (accepted conflicts under «Decisiones»). */
+:is(.lx, .lx-day-root) .lx-dayp__h4 {
+  margin-top: 4px;
+  font-family: var(--dp-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--dp-muted);
+  break-after: avoid;
 }
 
 :is(.lx, .lx-day-root) .lx-dayp__counts {
@@ -934,13 +970,10 @@
 
 :is(.lx, .lx-day-root) .lx-dayp__hypo {
   padding: 3px 8px;
-  border: 1.5px dashed var(--dp-muted);
   border-radius: 6px;
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--dp-hatch) 0 2px,
-    transparent 2px 6px
-  );
+  /* The dashed line alone carries the meaning in black and white. */
+  border: 2px dashed var(--dp-hypo-line);
+  background: var(--dp-hypo-tint);
 }
 
 :is(.lx, .lx-day-root) .lx-dayp__fine {
@@ -979,10 +1012,13 @@
   break-inside: avoid;
 }
 
+/* A window over several days («2 dic 07:00 – 3 dic 22:30») wraps after the
+   dash inside its column instead of running over the title (CAP2). */
 :is(.lx, .lx-day-root) .lx-dayp__time {
+  min-width: 0;
   font-weight: 700;
   color: var(--dp-heading);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 :is(.lx, .lx-day-root) .lx-dayp__time.is-pending {
@@ -1043,9 +1079,21 @@
   fill: CanvasText;
 }
 
+/* Same page footer as a work order (orders.css): origin, page and the
+   non-certification line; `--lx-print-foot` is set while printing. */
 @page lx-day {
   size: A4;
-  margin: 14mm 14mm 16mm;
+  margin: 14mm 14mm 18mm;
+
+  @bottom-center {
+    content: var(--lx-print-foot, 'Generado por Ox Eye') ' · página '
+      counter(page) ' de ' counter(pages)
+      ' · Ox Eye ayuda a decidir; no certifica.';
+    font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif;
+    font-size: 8pt;
+    font-variant-numeric: tabular-nums;
+    color: GrayText;
+  }
 }
 
 @media print {

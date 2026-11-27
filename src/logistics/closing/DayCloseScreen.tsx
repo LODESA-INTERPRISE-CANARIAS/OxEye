@@ -12,9 +12,13 @@
  * dates when the activity cannot be loaded.
  *
  * Link: `#logistica/cierre` is today; `#logistica/cierre/YYYY-MM-DD` a past
- * day. The screen keeps the link in step while it is open.
+ * day. The day comes from `LogisticsApp`, which keeps the link and the
+ * browser history in step (each day visited is a step of «Atrás»).
+ *
+ * Printing (the button or Ctrl+P) names the saved PDF
+ * `SIGLAS_Cierre-de-jornada_YYYY-MM-DD_HH-mm`; a past day adds «del-<día>».
  */
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {createPortal} from 'react-dom';
 import type {LocalDate, Task} from '../../../shared/logistics/contracts.ts';
 import {
@@ -22,24 +26,31 @@ import {
   type DayNoteKind,
   type DayTaskLine,
 } from '../../../shared/logistics/day-report.ts';
+import {printFileName} from '../../../shared/logistics/print-name.ts';
 import {ACTIVITY_RANGE_MAX} from '../../../shared/logistics/rules.ts';
 import {addDays, isLocalDate} from '../../../shared/logistics/time.ts';
 import {useActions} from '../common/actions';
 import {windowText} from '../common/TimeWindow';
 import {copyText} from '../lib/clipboard';
-import {longDate, zoneNote} from '../lib/format';
+import {longDate, todayIn, zoneNote} from '../lib/format';
 import {recordDays} from '../lib/tasks';
+import {usePrintTitle} from '../shell/usePrintTitle';
 import {useLogisticsStore} from '../store/useLogisticsStore';
-import {Button, EmptyState, Icon, IconButton, SkeletonRows} from '../ui';
 import {
-  CLOSE_HASH,
-  clampDay,
-  dayFromHash,
-  hashForDay,
-  isQuietDay,
-  stampText,
-} from './day';
-import {DayHypotheses, DayNotes, GuestNotesBlock} from './DayNotes';
+  Button,
+  DateField,
+  EmptyState,
+  Icon,
+  IconButton,
+  SkeletonRows,
+} from '../ui';
+import {clampDay, isQuietDay, stampText} from './day';
+import {
+  DayAccepted,
+  DayHypotheses,
+  DayNotes,
+  GuestNotesBlock,
+} from './DayNotes';
 import {DayNeeds, DayNext, DaySafety, DayUnfinished} from './DayPlan';
 import {DayPrintSheet} from './DayPrintSheet';
 import {DayRecords} from './DayRecords';
@@ -53,32 +64,24 @@ const UNSENT_SHOWN = 4;
 type Include = Partial<Record<DayNoteKind, boolean>>;
 const NONE: Include = {};
 
-function replaceHash(target: string) {
-  if (window.location.hash !== target) {
-    window.history.replaceState(
-      null,
-      '',
-      `${window.location.pathname}${window.location.search}${target}`,
-    );
-  }
+export interface DayCloseScreenProps {
+  /** Day from the link; null = today. Later days show today. */
+  day: LocalDate | null;
+  /** Another day was chosen (null = back to today). */
+  onDay: (day: LocalDate | null) => void;
 }
 
-/** The day from the link when the screen opens, else today. */
-function initialDay(today: LocalDate): LocalDate {
-  const fromLink = dayFromHash(window.location.hash);
-  return fromLink ? clampDay(fromLink, today) : today;
-}
-
-export const DayCloseScreen: React.FC = () => {
+export const DayCloseScreen: React.FC<DayCloseScreenProps> = ({day, onDay}) => {
   const {today, timeZone} = useActions();
   const orgId = useLogisticsStore(s => s.orgId);
-  const orgName = useLogisticsStore(
-    s => s.organizations.find(o => o.id === s.orgId)?.name ?? null,
+  const organization = useLogisticsStore(
+    s => s.organizations.find(o => o.id === s.orgId) ?? null,
   );
+  const orgName = organization?.name ?? null;
   const toast = useLogisticsStore(s => s.toast);
   const tasks = useLogisticsStore(s => s.tasks);
 
-  const [date, setDate] = useState<LocalDate>(() => initialDay(today));
+  const date = clampDay(day ?? today, today);
   // Note texts are chosen per day: another day starts with none included.
   const [include, setInclude] = useState<{date: LocalDate; kinds: Include}>({
     date,
@@ -90,28 +93,28 @@ export const DayCloseScreen: React.FC = () => {
   const goTo = useCallback(
     (next: LocalDate) => {
       if (!isLocalDate(next)) return;
-      setDate(clampDay(next, today));
+      const clamped = clampDay(next, today);
+      // Today keeps the plain link (a bookmark always opens today's close).
+      onDay(clamped === today ? null : clamped);
     },
-    [today],
+    [today, onDay],
   );
 
-  // Keep the link in step with the day shown (only while it is this screen's).
-  useEffect(() => {
-    if (window.location.hash.startsWith(CLOSE_HASH)) {
-      replaceHash(hashForDay(date, today));
-    }
-  }, [date, today]);
-
-  // Follow a pasted link while the screen is open.
-  useEffect(() => {
-    const onHash = () => {
-      const fromLink = dayFromHash(window.location.hash);
-      if (fromLink) setDate(clampDay(fromLink, today));
-      else if (window.location.hash === CLOSE_HASH) setDate(today);
-    };
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, [today]);
+  // «SCLL_Cierre-de-jornada_2026-12-02_18-30»: named at the moment of
+  // printing; a past day says which one.
+  usePrintTitle({
+    fileName: () => {
+      const at = Date.now();
+      return printFileName({
+        organization,
+        document: 'dayClose',
+        subject: date === todayIn(timeZone) ? null : `del ${date}`,
+        at,
+        timeZone,
+      });
+    },
+    stamp: () => stampText(new Date().toISOString(), timeZone),
+  });
 
   const onInclude = useCallback(
     (kind: DayNoteKind, on: boolean) =>
@@ -222,17 +225,19 @@ export const DayCloseScreen: React.FC = () => {
             id="lx-day-prev"
             onClick={() => goTo(addDays(date, -1))}
           />
-          <label className="lx-dayhead__date">
-            <span className="lx-visually-hidden">Elegir el día del cierre</span>
-            <input
-              type="date"
-              className="lx-input lx-dayhead__dateinput"
+          <div className="lx-dayhead__date">
+            <DateField
               id="lx-day-date"
+              className="lx-dayhead__dateinput"
+              aria-label="Elegir el día del cierre"
               value={date}
               max={today}
-              onChange={e => goTo(e.target.value)}
+              today={today}
+              timeZone={timeZone}
+              clearable={false}
+              onChange={v => goTo(v)}
             />
-          </label>
+          </div>
           <IconButton
             icon="chevronRight"
             label="Día siguiente"
@@ -368,7 +373,10 @@ export const DayCloseScreen: React.FC = () => {
                 <DayHypotheses report={report} timeZone={timeZone} />
               </>
             ) : (
-              <GuestNotesBlock />
+              <>
+                <DayAccepted report={report} timeZone={timeZone} />
+                <GuestNotesBlock />
+              </>
             )}
           </div>
           <div className="lx-dayclose__col">

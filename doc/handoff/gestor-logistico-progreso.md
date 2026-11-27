@@ -89,7 +89,7 @@ Node 26 runs TypeScript directly. Stack: Hono, zod, postgres.js. PGlite runs the
 
 ### `src/logistics/`
 A lazy module opened from `GameMenu.tsx`.
-- Deep links: `#logistica`, `#logistica/<space>`, `#logistica/calendario/YYYY-MM-DD`.
+- Deep links: `#logistica`, `#logistica/<space>`, `#logistica/calendario/YYYY-MM-DD`. Revisión 1: `#logistica[/<space>[/YYYY-MM-DD]][/ficha/<evento|tarea|persona|empresa|oferta|almacen|recurso|nota|lugar>/<id>]` (each sheet has its own address; parsing in `shell/route.ts`, history in `shell/historyNav.ts`, open-sheet registry in `ui/Sheet.tsx`), and `#logistica/maquetas` in development builds only. Back closes the top sheet; a dirty form asks first.
 - Store: write epochs, a version-aware merge that keeps object identity, and the unsaved-form rescue (`lib/rescue.ts`).
 - Plan: `common/usePlan.ts` is a cached selector.
 - Screens: `hoy/` (+ `NotesCard.tsx`), `calendar/`, `events/`, `tasks/TaskSheet.tsx` (+ `TaskContactField.tsx`, `TaskResourcesField.tsx`), `contacts/` (Personas / Empresas y entidades, reach-out confirmation, share), `catalog/` (offers, comparison, category picker with «Gestionar»), `inventory/` (Inventarios: Propios / Contratados, resource and warehouse sheets), `notes/` (note sheet, `RefPicker`), `common/RecordNotes.tsx` and `common/RecordHistory.tsx` (in every record sheet), `search/` (universal search, venue sheet), `shell/AddMenu.tsx` (grouped «Captura rápida» / «Planificación», with a fallback where the Popover API is missing), `closing/` (Cierre de jornada, M6).
@@ -132,7 +132,7 @@ A lazy module opened from `GameMenu.tsx`.
 - The backend will live on an external server; the choice is pending.
 - Only the name is required. Everything else can be «Pendiente de verificar».
 - Every record carries source, verification, author and time.
-- Certainty grammar: confirmed is solid, planned is an outline, hypothesis is hatched, pending is dotted.
+- Certainty grammar: confirmed is solid, planned is an outline, hypothesis is a dashed accent line with a soft tint and a visible «Hipótesis» label (Revisión 1 replaced the diagonal hatch, hard to read in full sun), pending is dotted.
 - A task's event is optional. Companies are created by name. Multi-day uses `endDate`.
 - PDFs come from the browser's «Guardar como PDF».
 

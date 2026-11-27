@@ -32,6 +32,20 @@ export function clampDay(date: LocalDate, today: LocalDate): LocalDate {
   return date > today ? today : date;
 }
 
+const NBSP = String.fromCharCode(0xa0);
+
+/**
+ * A task window for the printed page's narrow time column: no-break spaces
+ * glue «3 dic 22:30», «(día siguiente)» and the dash to what precedes it, so
+ * «2 dic 07:00 – 3 dic 22:30» wraps only after the dash.
+ */
+export function printableWindow(text: string): string {
+  return text
+    .replace(/(\d{1,2}) (\p{L}{3,5}) (\d{2}:\d{2})/gu, `$1${NBSP}$2${NBSP}$3`)
+    .replace(/\(día siguiente\)/g, `(día${NBSP}siguiente)`)
+    .replace(/ – /g, `${NBSP}– `);
+}
+
 /** «2 dic 2026, 20:04» in `timeZone`, for the page's footer. */
 export function stampText(instant: string, timeZone: string): string {
   const local = utcToLocal(instant, timeZone);
@@ -124,16 +138,31 @@ export function isQuietDay(report: DayReport): boolean {
     !lines &&
     !notes &&
     !hypotheses &&
+    !report.accepted.length &&
     !report.otherNotes &&
     totalChanges(report) === 0
   );
 }
 
-/** Titles of the note sections whose text goes into the page. */
+/**
+ * Titles of the note sections whose text goes into the page: a note's text,
+ * an answer's text, or (in «Decisiones») the reason of an accepted conflict.
+ */
 export function includedTextTitles(report: DayReport): string[] {
   return (report.notes ?? [])
-    .filter(s => s.textIncluded && s.items.some(n => n.text))
+    .filter(
+      s =>
+        s.textIncluded &&
+        (s.items.some(n => n.text || n.answer?.text) ||
+          (s.kind === 'decision' && report.accepted.some(a => a.reason))),
+    )
     .map(s => s.title);
+}
+
+/** Accepted conflicts count as decisions of the day (members' «Decisiones»). */
+export function decisionCount(report: DayReport): number {
+  const notes = report.notes?.find(s => s.kind === 'decision');
+  return (notes?.items.length ?? 0) + report.accepted.length;
 }
 
 /** «Decisiones», «Decisiones e Incidencias», «A, B y C». */

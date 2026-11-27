@@ -1,0 +1,758 @@
+/**
+ * Revisión 1 · E4, roles and access: login extras (recovery link, password
+ * strength), avatars with photo or accent. Scoped under `.lx`.
+ */
+
+/* Text button with a 44 px target («¿Has olvidado tu contraseña?»). */
+.lx .lx-linkbtn {
+  justify-self: center;
+  min-height: var(--lx-target);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--lx-pill);
+  background: transparent;
+  color: var(--lx-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.lx .lx-linkbtn:hover {
+  color: var(--lx-accent-strong);
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-linkbtn:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+/* Indicative password strength */
+.lx .lx-strength {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.lx .lx-strength__bars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.lx .lx-strength__bar {
+  height: 6px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-3);
+}
+
+.lx .lx-strength__bar[data-on] {
+  background: var(--lx-accent);
+}
+
+.lx .lx-strength[data-level='0'] .lx-strength__bar[data-on],
+.lx .lx-strength[data-level='1'] .lx-strength__bar[data-on] {
+  background: var(--lx-danger);
+}
+
+.lx .lx-strength__text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--lx-muted);
+}
+
+.lx .lx-strength__text strong {
+  color: var(--lx-ink);
+  font-weight: 600;
+}
+
+/* Avatars: photo, larger size, personal accent (palette colours only). */
+.lx .lx-avatar--xl {
+  width: 88px;
+  height: 88px;
+  font-size: 30px;
+}
+
+.lx .lx-avatar--photo {
+  overflow: hidden;
+  padding: 0;
+}
+
+.lx .lx-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lx .lx-avatar[data-accent='medio'] {
+  background: color-mix(in srgb, var(--purple-mid) 22%, var(--lx-surface));
+}
+
+.lx .lx-avatar[data-accent='lavanda'] {
+  background: color-mix(in srgb, var(--lavender) 45%, var(--lx-surface));
+}
+
+.lx .lx-avatar[data-accent='oro'] {
+  background: color-mix(in srgb, var(--gold) 38%, var(--lx-surface));
+}
+
+.lx .lx-avatar[data-accent='tinta'] {
+  background: var(--lx-heading);
+  color: var(--lx-surface);
+}
+
+/* Phone account button: the avatar inside a 44 px round target. */
+.lx .lx-avatar-button {
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  display: inline-grid;
+  place-items: center;
+  width: var(--lx-target);
+  height: var(--lx-target);
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+/* ============================================================ sidebar user */
+.lx .lx-user-block {
+  display: grid;
+  gap: 6px;
+}
+
+.lx .lx-user-block .lx-sidenav__item > .lx-icon:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--lx-muted);
+}
+
+.lx .lx-user .lx-user__open {
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lx-target);
+  margin: -4px 0 -4px -6px;
+  padding: 4px 6px;
+  border-radius: var(--lx-radius-sm);
+  text-align: left;
+}
+
+/* ============================================================ banners */
+/* Sticky above the content (and under the phone top bar). */
+.lx .lx-mainbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.lx .lx-acct-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--lx-line);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.lx .lx-acct-banner > .lx-icon {
+  flex-shrink: 0;
+}
+
+.lx .lx-acct-banner__text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.lx .lx-acct-banner--support {
+  background: var(--lx-heading);
+  color: var(--lx-surface);
+  border-bottom-color: var(--lx-heading);
+}
+
+.lx .lx-acct-banner--support .lx-btn--secondary {
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border: var(--lx-surface);
+  color: var(--lx-heading);
+}
+
+.lx .lx-acct-banner--provisional {
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+}
+
+.lx .lx-acct-banner__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: var(--lx-pill);
+  border: 1px solid currentColor;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================ «Sin acceso» */
+.lx .lx-noaccess {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  max-width: 560px;
+  margin: 12px 0;
+  padding: 26px 26px 24px;
+  border-radius: var(--lx-radius-lg);
+  border: 1px dashed var(--lx-line-strong);
+  background: var(--lx-surface);
+}
+
+.lx .lx-noaccess--compact {
+  margin: 0;
+  padding: 18px;
+}
+
+.lx .lx-noaccess__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--lx-surface-2);
+  color: var(--lx-heading);
+}
+
+.lx .lx-noaccess[data-denial='held'] .lx-noaccess__icon {
+  background: var(--lx-accent-soft);
+  color: var(--lx-accent);
+}
+
+.lx .lx-noaccess__title {
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--lx-heading);
+}
+
+.lx .lx-noaccess__text {
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--lx-ink);
+}
+
+.lx .lx-noaccess__hint {
+  font-size: 14px;
+  color: var(--lx-muted);
+}
+
+/* ============================================================ account sheets */
+.lx .lx-acct-tabs {
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.lx .lx-acct-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.lx .lx-acct-sections {
+  display: grid;
+  gap: 22px;
+}
+
+.lx .lx-acct-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-acct-sections > .lx-acct-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.lx .lx-acct-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lx .lx-acct-section__title {
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 20px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-acct-lead {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--lx-ink);
+}
+
+.lx .lx-acct-note {
+  font-size: 13.5px;
+}
+
+.lx .lx-acct-form {
+  display: grid;
+  gap: 16px;
+}
+
+.lx .lx-acct-inline {
+  display: grid;
+  gap: 10px;
+}
+
+.lx .lx-acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-acct-actions--end {
+  justify-content: flex-end;
+}
+
+.lx .lx-acct-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
+  font-size: 14px;
+}
+
+.lx .lx-acct-choices {
+  display: grid;
+  gap: 10px;
+}
+
+.lx .lx-acct-facts {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.lx .lx-acct-facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.lx .lx-acct-facts .lx-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--lx-accent);
+}
+
+.lx .lx-acct-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-acct-callout__text {
+  flex: 1 1 240px;
+  display: grid;
+  gap: 2px;
+}
+
+.lx .lx-acct-callout__text strong {
+  color: var(--lx-heading);
+}
+
+/* Photo and name */
+.lx .lx-acct-photo {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.lx .lx-acct-photo__text {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.lx .lx-acct-photo__name {
+  font-family: var(--lx-serif);
+  font-size: 24px;
+  line-height: 1.15;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-acct-accents {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.lx .lx-acct-accents__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.lx .lx-acct-accent {
+  position: relative;
+}
+
+.lx .lx-acct-accent input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lx .lx-acct-accent label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  padding: 4px 12px 4px 6px;
+  border-radius: var(--lx-pill);
+  border: 1.5px solid var(--lx-line);
+  background: var(--lx-surface);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.lx .lx-acct-accent input:checked + label {
+  border-color: var(--lx-accent);
+  box-shadow: 0 0 0 1.5px var(--lx-accent);
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.lx .lx-acct-accent input:focus-visible + label {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+/* Rows: sessions, e-mail, support sessions */
+.lx .lx-acct-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.lx .lx-acct-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+}
+
+.lx .lx-acct-row > .lx-icon {
+  flex-shrink: 0;
+  color: var(--lx-muted);
+}
+
+.lx .lx-acct-row[data-current] {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-acct-row__main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.lx .lx-acct-row__main strong {
+  color: var(--lx-heading);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-acct-email {
+  display: grid;
+  gap: 10px;
+}
+
+/* Security log */
+.lx .lx-acct-log {
+  display: grid;
+  list-style: none;
+  padding: 0;
+}
+
+.lx .lx-acct-log__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--lx-line);
+}
+
+.lx .lx-acct-log__item:last-child {
+  border-bottom: 0;
+}
+
+.lx .lx-acct-log__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+}
+
+.lx .lx-acct-log__item[data-alert] .lx-acct-log__icon {
+  background: var(--lx-danger-soft);
+  color: var(--lx-danger);
+}
+
+.lx .lx-acct-log__text {
+  display: grid;
+  gap: 2px;
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.lx .lx-acct-log__text strong {
+  color: var(--lx-heading);
+}
+
+.lx .lx-acct-log__detail {
+  font-style: italic;
+  color: var(--lx-ink);
+}
+
+.lx .lx-acct-log__device {
+  font-size: 13px;
+}
+
+.lx .lx-acct-log__time {
+  font-size: 13px;
+  color: var(--lx-muted);
+  white-space: nowrap;
+}
+
+/* Name and photo of a shared account, edited from «Usuarios». */
+.lx .lx-users__shared {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--lx-line);
+}
+
+.lx .lx-users__sharedform {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.lx .lx-users__sharedform .lx-field {
+  flex: 1 1 220px;
+  margin: 0;
+}
+
+.lx .lx-users__sharedphoto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* A change signed in a support session: «Dailos (soporte: Elvis)». */
+.lx .lx-signature__support {
+  color: var(--lx-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ============================================================ users */
+.lx .lx-users {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.lx .lx-users__item {
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+}
+
+.lx .lx-users__item[data-open] {
+  border-color: var(--lx-line-strong);
+  box-shadow: var(--lx-shadow-card);
+}
+
+.lx .lx-users__head {
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 14px;
+  border-radius: var(--lx-radius);
+  text-align: left;
+}
+
+.lx .lx-users__head > .lx-icon {
+  color: var(--lx-muted);
+  transition: transform 0.15s ease;
+}
+
+.lx .lx-users__head[aria-expanded='true'] > .lx-icon {
+  transform: rotate(180deg);
+}
+
+.lx .lx-users__who {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  line-height: 1.3;
+  font-size: 14px;
+}
+
+.lx .lx-users__who strong {
+  font-size: 16px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-users__flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-users__last {
+  font-size: 13px;
+}
+
+.lx .lx-users__panel {
+  display: grid;
+  gap: 16px;
+  padding: 4px 14px 16px;
+  border-top: 1px solid var(--lx-line);
+  padding-top: 14px;
+}
+
+.lx .lx-users__rolegroup {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.lx .lx-users__rolegroup legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.lx .lx-users__rolechecks {
+  display: grid;
+  gap: 4px;
+}
+
+.lx .lx-acct-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: var(--lx-target);
+  padding: 6px 0;
+}
+
+.lx .lx-acct-check input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--lx-accent);
+}
+
+.lx .lx-acct-check label {
+  display: grid;
+  gap: 1px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.lx .lx-acct-check label strong {
+  font-size: 15px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-users__rolegroup:disabled .lx-acct-check label {
+  cursor: default;
+}
+
+.lx .lx-users__help {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-users__secret {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-accent);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-size: 14px;
+}
+
+.lx .lx-users__secretvalue {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+  border: 1px solid var(--lx-line);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+@media (max-width: 899px) {
+  .lx .lx-acct-banner {
+    padding: 8px 14px;
+    font-size: 13.5px;
+  }
+
+  .lx .lx-noaccess {
+    padding: 20px 18px;
+  }
+}

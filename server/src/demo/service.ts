@@ -192,8 +192,27 @@ export async function clearDemo(
               ${inOrg('h')}`,
       params,
     );
+    // Revisión 1: conflicts accepted about demo tasks are demo data too.
+    const acceptances = await remove(
+      `DELETE FROM conflict_acceptances a
+        WHERE (a.is_demo
+               OR EXISTS (SELECT 1 FROM jsonb_array_elements(a.windows) w
+                            JOIN tasks t ON t.id = (w->>'taskId')::uuid
+                           WHERE t.is_demo))
+              ${inOrg('a')}
+        RETURNING a.organization_id`,
+    );
     const tasks = await remove(
       `DELETE FROM tasks t WHERE t.is_demo ${inOrg('t')} RETURNING t.organization_id`,
+    );
+    // Photos have no foreign key to their resource: they go first.
+    await tx.query(
+      `DELETE FROM media m
+        WHERE m.owner_type = 'resource'
+          AND EXISTS (SELECT 1 FROM resources s
+                       WHERE s.id = m.owner_id AND s.is_demo)
+              ${inOrg('m')}`,
+      params,
     );
     const resources = await remove(
       `DELETE FROM resources s WHERE s.is_demo ${inOrg('s')} RETURNING s.organization_id`,
@@ -203,6 +222,14 @@ export async function clearDemo(
     );
     const contacts = await remove(
       `DELETE FROM contacts k WHERE k.is_demo ${inOrg('k')} RETURNING k.organization_id`,
+    );
+    // Revisión 1 · E5: a demo event's budget and expenses go with it (the
+    // foreign keys cascade too; said here so nobody wonders).
+    await tx.query(
+      `DELETE FROM expenses x
+        WHERE EXISTS (SELECT 1 FROM events e WHERE e.id = x.event_id AND e.is_demo)
+              ${inOrg('x')}`,
+      params,
     );
     const events = await remove(
       `DELETE FROM events e WHERE e.is_demo ${inOrg('e')} RETURNING e.organization_id`,
@@ -230,6 +257,8 @@ export async function clearDemo(
           AND NOT EXISTS (SELECT 1 FROM offers o WHERE o.company_id = c.id)
           AND NOT EXISTS (SELECT 1 FROM resources s WHERE s.company_id = c.id)
           AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.company_id = c.id)
+          -- E5: a demo company a real expense is paid to stays.
+          AND NOT EXISTS (SELECT 1 FROM expenses x WHERE x.company_id = c.id)
         RETURNING c.organization_id`,
     );
     await tx.query(
@@ -248,6 +277,7 @@ export async function clearDemo(
     const removedRows = [
       ...notes,
       ...hypotheses,
+      ...acceptances,
       ...tasks,
       ...resources,
       ...offers,

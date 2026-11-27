@@ -1,6 +1,7 @@
 import {expect, test, type Page} from '@playwright/test';
 import {makeContact, mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
+import {choose, expectValue, optionLabels} from './controls';
 import {
   CAT,
   copied,
@@ -317,8 +318,9 @@ test.describe('Gestor logístico · Contactos · llamar, WhatsApp, correo', () =
     await go.click();
     expect((await opened(page))[2].href).toBe('mailto:ana.prueba@example.com');
 
-    // Nothing navigated away and no window was opened.
-    expect(page.url()).toBe(start);
+    // Nothing navigated away and no window was opened: the address is still
+    // the person's card (its own address since Revisión 1) over Contactos.
+    expect(page.url()).toBe(`${start}/ficha/persona/p1`);
     expect(context.pages()).toHaveLength(1);
     expect((await opened(page)).filter(o => o.via === 'window.open')).toEqual(
       [],
@@ -562,14 +564,13 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     await page.locator(`#lx-company-cat-${CAT.carpas}`).click();
 
     // Only the company's own people can be responsible.
-    const main = page.locator('#lx-company-mainContactId');
-    await expect(main).toHaveValue('p1');
-    expect(await main.locator('option').allTextContents()).toEqual([
+    await expectValue(page, 'lx-company-mainContactId', 'p1');
+    expect(await optionLabels(page, 'lx-company-mainContactId')).toEqual([
       'Sin persona responsable',
       'Ana Prueba · Jefa de montaje',
       'Carla Prueba · Montadora',
     ]);
-    await main.selectOption('p4');
+    await choose(page, 'lx-company-mainContactId', 'p4');
     await page.locator('#lx-company-save').click();
 
     await expect.poll(() => api.calls('PATCH', '/companies/c1').length).toBe(1);

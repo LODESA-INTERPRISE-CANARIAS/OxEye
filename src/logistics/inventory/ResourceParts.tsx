@@ -24,6 +24,7 @@ import {plural} from '../lib/format';
 import {UnsentMark} from '../offline/PendingMark';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Chip, CERTAINTY_HELP, HelpTip, Icon} from '../ui';
+import {PhotoThumb} from './PhotoThumb';
 
 /** Help next to quantity, unit and dimensions, in forms and sheets. */
 export const LoadNoteTip: React.FC<{label?: string}> = ({
@@ -67,7 +68,7 @@ export const LoadNoteInline: React.FC<{
 };
 
 /**
- * «200 unidades» solid when validated, outlined when not, hatched «≈ 40 ·
+ * «200 unidades» solid when validated, outlined when not, dashed «≈ 40 ·
  * por evaluar», dotted «Sin contar».
  */
 export const QuantityChip: React.FC<{
@@ -122,7 +123,10 @@ export const AvailabilityChip: React.FC<{
   );
 };
 
-/** A resource in a list: name, category, quantity, state and what is missing. */
+/**
+ * A resource in a list: its main photo (or category icon), name, category,
+ * quantity, state and what is missing.
+ */
 export const ResourceRow: React.FC<{
   resource: Resource;
   category?: string | null;
@@ -139,6 +143,7 @@ export const ResourceRow: React.FC<{
         className="lx-resrow__main"
         onClick={() => onOpen(r)}
       >
+        <PhotoThumb resource={r} categoryName={category} />
         <span className="lx-resrow__text">
           <span className="lx-resrow__name">
             {r.name}

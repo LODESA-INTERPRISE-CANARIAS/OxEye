@@ -94,6 +94,11 @@ export interface LogisticsActions {
   addResource: (prefill?: ResourcePrefill) => void;
   openNote: (note: Note) => void;
   addNote: (prefill?: NotePrefill) => void;
+  /**
+   * Revisión 1 · E5: an event's «Presupuesto», with its own address. Without
+   * `budget.read` it opens on «Sin acceso» and asks the server nothing.
+   */
+  openBudget: (event: LogisticsEvent) => void;
   // Milestone 6: changes saved only on this device.
   /** «Cambios pendientes». */
   openOutbox: () => void;

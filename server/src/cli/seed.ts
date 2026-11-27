@@ -7,6 +7,7 @@
 import {pendingMigrations} from '../db/migrate.ts';
 import {seed} from '../seed/seed.ts';
 import {runCli} from './common.ts';
+import {ROLE_LABEL} from '../../../shared/logistics/permissions.ts';
 
 const resetPasswords = process.argv.includes('--reset-passwords');
 
@@ -26,10 +27,15 @@ await runCli(async db => {
   );
   console.log('');
   console.log('Usuarios:');
-  const width = Math.max(...result.users.map(u => u.displayName.length));
+  const width = Math.max(...result.users.map(u => u.username.length));
+  const roleText = (u: (typeof result.users)[number]) =>
+    u.role === 'guest'
+      ? 'solo lectura'
+      : u.roles.map(r => ROLE_LABEL[r]).join(' + ') || 'sin roles';
+  const roleWidth = Math.max(...result.users.map(u => roleText(u).length));
   for (const u of result.users) {
-    const name = u.displayName.padEnd(width);
-    const role = u.role === 'guest' ? 'solo lectura' : 'miembro     ';
+    const name = u.username.padEnd(width);
+    const role = roleText(u).padEnd(roleWidth);
     const state = u.password
       ? `contraseña: ${u.password}${u.created ? '' : '  (restablecida)'}`
       : 'conserva su contraseña';
@@ -39,6 +45,9 @@ await runCli(async db => {
     console.log('');
     console.log(
       'Apunta ahora las contraseñas nuevas: no se guardan en ningún sitio y no se volverán a mostrar.',
+    );
+    console.log(
+      'Las personales son provisionales: cada persona la cambia al entrar (hasta entonces no ve presupuestos ni la administración). Las de Equipo e Invitado son compartidas: solo las cambia administración o desarrollo.',
     );
     console.log(
       'Para generar otras: npm --prefix server run db:seed -- --reset-passwords',
@@ -75,5 +84,10 @@ await runCli(async db => {
     result.demoResourcesCreated + result.demoNotesCreated > 0
       ? `Inventario y notas de demostración creados: «Almacén Demo», ${result.demoResourcesCreated} recursos y ${result.demoNotesCreated} notas (una incidencia, una decisión y una pregunta abierta).`
       : 'Inventario y notas de demostración: ya existían o no hay evento de demostración; no se ha tocado nada.',
+  );
+  console.log(
+    result.demoExpensesCreated > 0
+      ? `Presupuesto de demostración creado: 6.000 € y ${result.demoExpensesCreated} gastos ficticios (previstos y confirmados, uno con impuesto sin saber).`
+      : 'Presupuesto de demostración: ya existía o no hay evento de demostración; no se ha tocado nada.',
   );
 });

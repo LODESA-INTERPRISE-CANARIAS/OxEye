@@ -35,6 +35,20 @@
 
   /* Certainty grammar: hypothesis hatch (cartographic) */
   --lx-hatch-color: color-mix(in srgb, var(--purple) 32%, transparent);
+  /*
+   * Hypothesis marker that survives full sun and small screens: a dashed
+   * line in the accent, a soft tint and a visible «Hipótesis» label (print
+   * sheets keep the dashed line alone, legible in black and white; the hatch
+   * above is no longer used by the Gestor's hypotheses). Confirmed is solid, planned
+   * a solid outline, pending a dotted grey line.
+   */
+  --lx-hypo-line: var(--lx-accent);
+  --lx-hypo-tint: color-mix(in srgb, var(--lx-accent) 9%, var(--lx-surface));
+  --lx-hypo-tint-strong: color-mix(
+    in srgb,
+    var(--lx-accent) 17%,
+    var(--lx-surface)
+  );
 
   /* Shape and rhythm */
   --lx-radius-xl: 28px;

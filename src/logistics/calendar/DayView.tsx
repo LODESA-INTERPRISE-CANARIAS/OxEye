@@ -1,7 +1,8 @@
 /**
  * One day: its events, warnings and tasks without a time on top, then the
  * timed plan as a timeline by venue (desktop, tablet, phone in landscape) or
- * as a list by hour (phone upright).
+ * as a list by hour (phone upright). On the timeline each venue also carries
+ * its own warnings in its header; the day's list stays as the overview.
  */
 import React, {useMemo} from 'react';
 import type {PlanWarning} from '../../../shared/logistics/conflicts.ts';
@@ -13,6 +14,7 @@ import type {
 import {useActions} from '../common/actions';
 import {TaskRow} from '../common/TaskRow';
 import {TimeWindow} from '../common/TimeWindow';
+import {usePlan} from '../common/usePlan';
 import {WarningList, warningsSummary} from '../common/WarningList';
 import {StatusChip} from '../events/EventChips';
 import {spanOnDate, venueColumns} from '../lib/calendar';
@@ -62,6 +64,11 @@ export const DayView: React.FC<{
     [timed, events, date],
   );
   const conflicts = warnings.filter(w => w.severity === 'conflict').length;
+  const {acceptedByDay} = usePlan();
+  const accepted = useMemo(
+    () => acceptedByDay.get(date) ?? [],
+    [acceptedByDay, date],
+  );
 
   if (!tasks.length && !events.length) {
     return (
@@ -124,7 +131,7 @@ export const DayView: React.FC<{
           </section>
         )}
 
-        {warnings.length > 0 && (
+        {(warnings.length > 0 || accepted.length > 0) && (
           // Closed by default: the timeline is the main content and already
           // outlines the blocks in conflict; the summary line stays visible.
           <details
@@ -133,10 +140,19 @@ export const DayView: React.FC<{
           >
             <summary>
               <Icon name={conflicts ? 'alert' : 'bell'} size={18} />
-              Avisos del día · {warningsSummary(warnings)}
+              Avisos del día ·{' '}
+              {[
+                warnings.length ? warningsSummary(warnings) : '',
+                accepted.length
+                  ? `${accepted.length} ${accepted.length === 1 ? 'aceptado' : 'aceptados'}`
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </summary>
             <WarningList
               warnings={warnings}
+              accepted={accepted}
               tasksById={tasksById}
               onOpenTask={openTask}
             />
@@ -169,8 +185,11 @@ export const DayView: React.FC<{
           hour={hour}
           onHour={onHour}
           byTask={byTask}
+          warnings={warnings}
+          tasksById={tasksById}
           now={now}
           onOpenTask={openTask}
+          accepted={accepted}
         />
       )}
 

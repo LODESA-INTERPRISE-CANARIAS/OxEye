@@ -1,0 +1,586 @@
+/**
+ * Revisión 1 · E7: the public supplier page (personal or open link). Mobile
+ * first, no Gestor chrome: it spans the whole `.lx` grid and scrolls on its
+ * own. Also the guided proposal form, reused by «Registrar una recibida».
+ * Colours only from the palette variables.
+ */
+
+/* ============================================================ page */
+.lx .lx-supplier {
+  grid-column: 1 / -1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-height: 0;
+  padding: 14px 14px 32px;
+  overflow: hidden auto;
+  background: var(--lx-bg);
+}
+
+.lx .lx-supplier > .lx-contours {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: var(--lx-line);
+  opacity: 0.6;
+}
+
+.lx .lx-supplier__bar,
+.lx .lx-supplier__card,
+.lx .lx-supplier__foot {
+  position: relative;
+  width: min(620px, 100%);
+}
+
+.lx .lx-supplier__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.lx .lx-supplier__brand {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.lx .lx-supplier__brand strong {
+  font-family: var(--lx-serif);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-supplier__brand span {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-supplier__card {
+  display: grid;
+  gap: 14px;
+  padding: 20px 18px;
+  border-radius: var(--lx-radius-lg, 20px);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-float, var(--lx-shadow-card));
+}
+
+.lx .lx-supplier__foot {
+  font-size: 13px;
+  color: var(--lx-muted);
+  text-align: center;
+}
+
+.lx .lx-supplier__status {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 32px 0;
+  color: var(--lx-muted);
+}
+
+/* ---- end states (gone, limited, offline, used, sent, declined) */
+.lx .lx-supplier__end {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 18px 4px 8px;
+  text-align: center;
+}
+
+.lx .lx-supplier__end-icon {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--lx-surface-3);
+  color: var(--lx-heading);
+}
+
+.lx .lx-supplier__end[data-tone='ok'] .lx-supplier__end-icon {
+  background: var(--lx-accent-soft);
+  color: var(--lx-accent-strong);
+}
+
+.lx .lx-supplier__end[data-tone='warn'] .lx-supplier__end-icon {
+  background: var(--lx-danger-soft);
+  color: var(--lx-danger);
+}
+
+.lx .lx-supplier__end .lx-sf__text {
+  max-width: 46ch;
+}
+
+.lx .lx-supplier__end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 6px;
+}
+
+/* ============================================================ guided form */
+.lx .lx-sf {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.lx .lx-sf__progress {
+  display: grid;
+}
+
+.lx .lx-sf__sections {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lx .lx-sf__sections li {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-muted);
+  line-height: 1.2;
+}
+
+.lx .lx-sf__sections li::before {
+  content: '';
+  height: 5px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-3);
+}
+
+.lx .lx-sf__sections li[data-state='done']::before {
+  background: color-mix(in srgb, var(--lx-accent) 55%, var(--lx-surface));
+}
+
+.lx .lx-sf__sections li[data-state='now'] {
+  color: var(--lx-heading);
+}
+
+.lx .lx-sf__sections li[data-state='now']::before {
+  background: var(--lx-accent);
+}
+
+.lx .lx-sf__step {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.lx .lx-sf__title {
+  font-family: var(--lx-serif);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--lx-heading);
+}
+
+.lx .lx-sf__title:focus {
+  outline: none;
+}
+
+.lx .lx-sf__title:focus-visible {
+  outline: 2px solid var(--lx-accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.lx .lx-sf__text {
+  color: var(--lx-ink);
+}
+
+.lx .lx-sf__kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+  margin-bottom: -8px;
+}
+
+.lx .lx-sf__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.lx .lx-sf__foot {
+  position: sticky;
+  bottom: -32px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px -18px -20px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  border-radius: 0 0 var(--lx-radius-lg, 20px) var(--lx-radius-lg, 20px);
+}
+
+/* Inside the Gestor (manual proposal sheet) the sheet already has a foot. */
+.lx .lx-sheet .lx-sf__foot {
+  position: static;
+  margin: 4px 0 0;
+  padding: 12px 0 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.lx .lx-sf__foot .lx-btn[type='submit'] {
+  min-width: 150px;
+  justify-content: center;
+}
+
+/* ---- what is asked */
+.lx .lx-sf__asked {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: var(--lx-radius);
+  border: 1px solid color-mix(in srgb, var(--lx-accent) 40%, var(--lx-line));
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-sf__asked-title {
+  font-family: var(--lx-serif);
+  font-size: 21px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-sf__asked-need {
+  font-weight: 600;
+  color: var(--lx-ink);
+}
+
+.lx .lx-sf__asked-note {
+  white-space: pre-line;
+  color: var(--lx-ink);
+}
+
+.lx .lx-sf__asked-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-sf__asked-meta > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ---- large choice tiles */
+.lx .lx-choices,
+.lx .lx-months {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* Same look as the segmented legends, not the app-wide uppercase legend. */
+.lx .lx-choices > legend,
+.lx .lx-months > legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--lx-heading);
+}
+
+.lx .lx-choices__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.lx .lx-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 52px;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius-sm);
+  border: 1.5px solid var(--lx-control-border, var(--lx-line-strong));
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  cursor: pointer;
+}
+
+.lx .lx-choice input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--lx-accent);
+}
+
+.lx .lx-choice__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lx .lx-choice__text strong {
+  color: var(--lx-heading);
+}
+
+.lx .lx-choice__text span {
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-choice:hover {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-choice:has(input:checked) {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--lx-accent);
+}
+
+.lx .lx-choice:has(input:focus-visible) {
+  box-shadow: 0 0 0 4px var(--lx-ring);
+}
+
+/* ---- month toggles */
+.lx .lx-months__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lx .lx-months__m {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: var(--lx-target);
+  padding: 0 2px;
+  text-align: center;
+  border-radius: 10px;
+  border: 1.5px solid var(--lx-control-border, var(--lx-line-strong));
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lx .lx-months__m:hover:not(:disabled) {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-months__m[aria-pressed='true'] {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent, var(--lx-surface));
+}
+
+.lx .lx-months__m:disabled {
+  border-style: dashed;
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+  cursor: not-allowed;
+}
+
+.lx .lx-months__m:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--lx-ring);
+}
+
+/* ---- seasons, extras, products, commitment */
+.lx .lx-sf__seasons {
+  display: grid;
+  gap: 12px;
+}
+
+.lx .lx-sf__season,
+.lx .lx-sf__commitment {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-sf__extra {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--lx-line);
+}
+
+.lx .lx-sf__products {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-sf__products li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-sf__products li > span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lx .lx-sf__products-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ---- review */
+.lx .lx-sf__summary {
+  display: grid;
+  gap: 0;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  overflow: hidden;
+}
+
+.lx .lx-sf__summary > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.4fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.lx .lx-sf__summary > div + div {
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-sf__summary dt {
+  font-size: 13.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-sf__summary dd {
+  margin: 0;
+  color: var(--lx-heading);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-sf__issues {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-danger-soft);
+  color: var(--lx-ink);
+}
+
+.lx .lx-sf__issues li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.lx .lx-sf__issues .lx-icon {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--lx-danger);
+}
+
+.lx .lx-sf__privacy {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--lx-radius-sm);
+  border: 1px dashed var(--lx-line-strong);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-sf__privacy-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-sf__privacy-text {
+  font-size: 13.5px;
+  color: var(--lx-ink);
+  white-space: pre-line;
+}
+
+.lx .lx-sf__privacy .lx-check {
+  align-items: flex-start;
+  padding-top: 4px;
+}
+
+.lx .lx-sf__privacy .lx-check input {
+  margin-top: 2px;
+}
+
+/* ============================================================ wider screens */
+@media (min-width: 720px) {
+  .lx .lx-supplier {
+    padding: 28px 24px 48px;
+    gap: 20px;
+  }
+
+  .lx .lx-supplier__card {
+    padding: 28px 30px;
+  }
+
+  .lx .lx-sf__foot {
+    bottom: -48px;
+    margin: 4px -30px -28px;
+    padding: 14px 30px;
+  }
+
+  .lx .lx-months__grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .lx .lx-sf__sections span {
+    font-size: 11px;
+  }
+
+  .lx .lx-sf__summary > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}

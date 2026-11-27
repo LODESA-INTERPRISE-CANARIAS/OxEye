@@ -9,6 +9,7 @@ import {
   signInAgain,
 } from './mock-api';
 import {DAY, fixClock} from './plan-fixtures';
+import {choose, expectValue, optionGroups} from './controls';
 import {
   WITHHELD,
   directoryData,
@@ -47,74 +48,29 @@ async function expectNothingWithheld(page: Page) {
   await expect(page.locator(OUTGOING)).toHaveCount(0);
 }
 
+// E4: the guest account has no `directory.read`: Contactos and Catálogo say
+// why they are locked, and no person, company or offer reaches the page.
 test.describe('Gestor logístico · directorio para el invitado', () => {
-  test('sees names and offers, never phones, e-mails, notes or prices', async ({
+  test('Contactos and Catálogo are locked with the reason; nothing is asked for', async ({
     page,
   }) => {
     const api = await mockApi(page, directoryData());
     await signIn(page, 'Invitado', '#logistica/contactos');
     await expect(page.locator('#lx-readonly')).toBeVisible();
+    await expect(page.locator('#lx-contactos-noaccess')).toContainText(
+      'contienen datos de personas y precios',
+    );
+    await expect(page.locator('[data-contact-id="p1"]')).toHaveCount(0);
     await expect(page.locator('#lx-contacts-add')).toHaveCount(0);
-    await expect(page.locator('.lx-quickcall')).toHaveCount(0);
-    // Withheld is not «missing»: no «Falta teléfono o correo» for the guest.
-    await expect(page.locator('[data-contact-id="p1"]')).not.toContainText(
-      'Falta',
-    );
     await expectNothingWithheld(page);
-
-    await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
-    await expect(page.locator('#lx-contact-reach-withheld')).toContainText(
-      'Teléfono y correo: visibles para el equipo',
-    );
-    await expect(page.locator('#lx-contact-detail')).toContainText(
-      'Visible para el equipo',
-    );
-    await expect(page.locator('#lx-contact-subtitle')).toHaveText(
-      'Jefa de montaje · Escenarios Prueba',
-    );
-    for (const id of [
-      '#lx-contact-edit',
-      '#lx-contact-share',
-      '#lx-contact-reach',
-      '#lx-contact-missing',
-    ]) {
-      await expect(page.locator(id)).toHaveCount(0);
-    }
-    await expectNothingWithheld(page);
-
-    // The company card from the person.
-    await page.locator('#lx-contact-company').click();
-    await expect(page.locator('#lx-company-sheet')).toBeVisible();
-    await expect(page.locator('#lx-company-reach-withheld')).toBeVisible();
-    await expect(page.locator('#lx-company-edit')).toHaveCount(0);
-    await expect(page.locator('#lx-company-add-person')).toHaveCount(0);
-    await expect(page.locator('#lx-company-offers')).toContainText(
-      'Precio: equipo',
-    );
-    await expectNothingWithheld(page);
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
 
     await page.locator('#lx-nav-catalogo').click();
-    await expect(page.locator('#lx-catalog-add')).toHaveCount(0);
-    await expect(
-      page.locator('.lx-offerrow[data-offer-id="o1"]'),
-    ).toContainText('Visible para el equipo');
-    // Withheld prices are not «pendiente de verificar».
-    await expect(
-      page.locator('.lx-offerrow[data-offer-id="o1"]'),
-    ).not.toContainText('pendiente');
+    await expect(page.locator('#lx-catalogo-noaccess')).toBeVisible();
+    await expect(page.locator('.lx-offerrow')).toHaveCount(0);
     await expectNothingWithheld(page);
-
-    await page.locator('.lx-offerrow[data-offer-id="o1"]').click();
-    await expect(page.locator('#lx-offer-price')).toContainText(
-      'Visible para el equipo',
-    );
-    await expect(page.locator('#lx-offer-compare')).toContainText(
-      'Los precios son visibles para el equipo.',
-    );
-    await expect(page.locator('#lx-offer-edit')).toHaveCount(0);
-    await expectNothingWithheld(page);
+    expect(
+      api.requests.filter(r => /\/(contacts|companies|offers)$/.test(r.path)),
+    ).toEqual([]);
     expect(
       api.requests.filter(r => r.method !== 'GET' && r.path !== '/auth/login'),
     ).toEqual([]);
@@ -133,12 +89,12 @@ test.describe('Gestor logístico · directorio para el invitado', () => {
     await page.locator('#lx-logout').click();
     await signInAgain(page, 'Invitado');
     await page.locator('#lx-nav-contactos').click();
-    await expect(page.locator('[data-contact-id="p1"]')).toBeVisible();
+    await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
+    await expect(page.locator('[data-contact-id="p1"]')).toHaveCount(0);
     await expectNothingWithheld(page);
     await page.locator('#lx-nav-catalogo').click();
-    await expect(
-      page.locator('.lx-offerrow[data-offer-id="o1"]'),
-    ).toBeVisible();
+    await expect(page.locator('#lx-catalogo-noaccess')).toBeVisible();
+    await expect(page.locator('.lx-offerrow')).toHaveCount(0);
     await expectNothingWithheld(page);
   });
 });
@@ -153,13 +109,7 @@ test.describe('Gestor logístico · persona de contacto de una tarea', () => {
     await page.locator('#lx-add-task').click();
     await page.locator('#lx-task-title').fill('Revisar carpas');
     await page.locator('#lx-task-company').fill('Escenarios Prueba');
-    const select = page.locator('#lx-task-contact');
-    const groups = await select.locator('optgroup').evaluateAll(els =>
-      els.map(g => ({
-        label: g.getAttribute('label'),
-        options: [...g.querySelectorAll('option')].map(o => o.textContent),
-      })),
-    );
+    const groups = await optionGroups(page, 'lx-task-contact');
     expect(groups).toEqual([
       {
         label: 'De Escenarios Prueba',
@@ -173,7 +123,7 @@ test.describe('Gestor logístico · persona de contacto de una tarea', () => {
         ],
       },
     ]);
-    await select.selectOption('p4');
+    await choose(page, 'lx-task-contact', 'p4');
     await page.locator('#lx-task-save').click();
     await expect(page.locator('#lx-task-sheet')).toHaveCount(0);
     const body = api.calls('POST', '/tasks')[0].body as Record<string, unknown>;
@@ -199,7 +149,7 @@ test.describe('Gestor logístico · persona de contacto de una tarea', () => {
     await page.locator('#lx-add').click();
     await page.locator('#lx-add-task').click();
     await page.locator('#lx-task-title').fill('Prueba de sonido');
-    await page.locator('#lx-task-contact').selectOption('p2');
+    await choose(page, 'lx-task-contact', 'p2');
     await expect(page.locator('#lx-task-company')).toHaveValue('Sonido Prueba');
     // Reaching from the form confirms first, too.
     await page.locator('#lx-task-contact-reach-call').click();
@@ -224,7 +174,7 @@ test.describe('Gestor logístico · persona de contacto de una tarea', () => {
       page.locator('#lx-today-tasks [data-task-id="t1"] .lx-taskrow__contact'),
     ).toHaveText('Ana Prueba');
     await page.locator('#lx-today-tasks [data-task-id="t1"]').click();
-    await expect(page.locator('#lx-task-contact')).toHaveValue('p1');
+    await expectValue(page, 'lx-task-contact', 'p1');
     await page.locator('#lx-task-contact-open').click();
     await expect(page.locator('#lx-contact-sheet')).toBeVisible();
     await expect(page.locator('#lx-contact-tasks')).toContainText(
@@ -247,7 +197,7 @@ test.describe('Gestor logístico · persona de contacto de una tarea', () => {
     const api = await mockApi(page, directoryData());
     await signIn(page);
     await page.locator('#lx-today-tasks [data-task-id="t1"]').click();
-    await page.locator('#lx-task-contact').selectOption('');
+    await choose(page, 'lx-task-contact', '');
     await page.locator('#lx-task-save').click();
     await expect.poll(() => api.calls('PATCH', '/tasks/t1').length).toBe(1);
     expect(api.calls('PATCH', '/tasks/t1')[0].body).toEqual({
@@ -397,8 +347,7 @@ test.describe('Gestor logístico · Contactos y Catálogo en el móvil', () => {
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page);
-    await page.locator('#lx-tab-catalogo').click();
+    await signIn(page, 'Elvis', '#logistica/catalogo');
     await expect(page.locator('#lx-space-catalogo')).toBeVisible();
     const strip = page.locator('#lx-catalog-filters');
     await expect(strip).toBeVisible();

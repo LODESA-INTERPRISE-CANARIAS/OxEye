@@ -1,8 +1,19 @@
 /**
  * OxEye Logistics Manager («Gestor logístico»): full-screen layer over the
  * hub, lazy-loaded from the main menu. Default export for `React.lazy`.
+ *
+ * Addresses and browser history: `shell/route.ts` (every deep link,
+ * including `/ficha/<tipo>/<id>` for a record sheet) and
+ * `shell/historyNav.ts` (Back / Forward over spaces, days and sheets).
  */
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   Company,
   Contact,
@@ -17,6 +28,7 @@ import type {OutboxEntry} from '../../shared/logistics/outbox.ts';
 import {POLL_MS} from '../../shared/logistics/sync.ts';
 import {DEFAULT_TIMEZONE} from '../../shared/logistics/time.ts';
 import '../styles/logistics/index.css';
+import {BudgetRoute} from './budget/BudgetRoute';
 import {CalendarScreen} from './calendar/CalendarScreen';
 import {CatalogScreen} from './catalog/CatalogScreen';
 import {OfferSheet, type OfferSheetMode} from './catalog/OfferSheet';
@@ -51,28 +63,86 @@ import {LeaveConfirm} from './offline/LeaveConfirm';
 import {OutboxSheet} from './offline/OutboxSheet';
 import {reviewOf} from './offline/review';
 import {registerServiceWorker} from './offline/serviceWorker';
+import {can} from '../../shared/logistics/permissions.ts';
+import {orgPermissions} from './account/access';
+import {AccountLayer} from './account/AccountLayer';
+import {NoAccess} from './account/NoAccess';
 import {LoginScreen} from './screens/LoginScreen';
 import {ServerGate} from './screens/ServerGate';
 import {SearchSheet} from './search/SearchSheet';
+import {SupplierApp} from './supplier/SupplierApp';
+import {useSupplierLink} from './supplier/useSupplierLink';
 import {VenueSheet} from './search/VenueSheet';
 import type {AddOption} from './shell/AddMenu';
-import {Shell} from './shell/Shell';
 import {
-  calendarDayFromHash,
-  hashFor,
-  MAIN_SPACES,
-  SPACE_TITLE,
-  spaceFromHash,
-  type Space,
-} from './shell/spaces';
-import {useLogisticsStore} from './store/useLogisticsStore';
+  HistoryNav,
+  type HistoryNavHost,
+  type OpenResult,
+} from './shell/historyNav';
+import {
+  baseHash,
+  parseRoute,
+  ROOT_HASH,
+  stripSheet,
+  type Route,
+  type SheetAddress,
+} from './shell/route';
+import {Shell} from './shell/Shell';
+import {MAIN_SPACES, SPACE_TITLE, type Space} from './shell/spaces';
+import {
+  useLogisticsStore,
+  type LoadState,
+  type LogisticsState,
+} from './store/useLogisticsStore';
 import {TaskSheet, type TaskSheetMode} from './tasks/TaskSheet';
-import {ToastHostContext, Toaster, type ToastHost} from './ui';
+import {TasksScreen} from './tasks-space/TasksScreen';
+import {SkeletonRows, ToastHostContext, Toaster, type ToastHost} from './ui';
 
 export interface LogisticsAppProps {
   /** Leaves the module and returns to the OxEye hub. */
   onClose: () => void;
 }
+
+// Mock-ups for Yeray's two features: development builds only. In a
+// production build `import.meta.env.DEV` is false, the branch is dropped
+// and the chunk is never emitted.
+const MockupsApp = import.meta.env.DEV
+  ? React.lazy(() => import('./mockups/MockupsApp'))
+  : null;
+
+const MISSING_SHEET =
+  'No se encuentra esa ficha: puede que se haya borrado o que no tengas acceso.';
+
+/** Before the first render has given the navigator its callbacks. */
+const IDLE_HOST: HistoryNavHost = {
+  address: () => null,
+  showRoute: () => undefined,
+  openAddress: () => 'pending',
+  onMissing: () => undefined,
+};
+
+/** Whether a list may still bring the record of a link. */
+function stillLoading(state: LoadState): boolean {
+  return state === 'idle' || state === 'loading';
+}
+
+/** Record lists by sheet type, and the load state that tells if it is final. */
+const LINK_LISTS: Record<
+  SheetAddress['type'],
+  [keyof LogisticsState, keyof LogisticsState]
+> = {
+  event: ['events', 'eventsState'],
+  task: ['tasks', 'tasksState'],
+  contact: ['contacts', 'contactsState'],
+  company: ['companies', 'companiesState'],
+  offer: ['offers', 'offersState'],
+  warehouse: ['warehouses', 'warehousesState'],
+  resource: ['resources', 'resourcesState'],
+  note: ['notes', 'notesState'],
+  venue: ['venues', 'eventsState'],
+  // An event's budget: the address carries the event's id.
+  budget: ['events', 'eventsState'],
+};
 
 function spaceIndex(space: Space): number {
   const i = MAIN_SPACES.findIndex(s => s.id === space);
@@ -115,14 +185,13 @@ function isTyping(target: EventTarget | null): boolean {
   );
 }
 
-function replaceHash(target: string) {
-  if (window.location.hash !== target) {
-    window.history.replaceState(
-      null,
-      '',
-      `${window.location.pathname}${window.location.search}${target}`,
-    );
-  }
+/** The sheet on top: the one opened last. */
+function topOf(
+  candidates: {seq: number; address: SheetAddress | null}[],
+): SheetAddress | null {
+  let top: {seq: number; address: SheetAddress | null} | null = null;
+  for (const c of candidates) if (!top || c.seq > top.seq) top = c;
+  return top?.address ?? null;
 }
 
 const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
@@ -138,14 +207,36 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const setBrowserOnline = useLogisticsStore(s => s.setBrowserOnline);
   const discardEntry = useLogisticsStore(s => s.discardEntry);
   const toast = useLogisticsStore(s => s.toast);
+  const supplierLink = useSupplierLink();
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const [space, setSpace] = useState<Space>(() =>
-    spaceFromHash(window.location.hash),
+  const [initialRoute] = useState(() => parseRoute(window.location.hash));
+  const [space, setSpace] = useState<Space>(initialRoute.space);
+  const [calendarDay, setCalendarDay] = useState<string | null>(
+    initialRoute.calendarDay,
   );
-  const [calendarDay, setCalendarDay] = useState<string | null>(() =>
-    calendarDayFromHash(window.location.hash),
+  const [closeDay, setCloseDay] = useState<string | null>(
+    initialRoute.closeDay,
   );
+  const [mockups, setMockups] = useState(!!MockupsApp && initialRoute.mockups);
+  // Browser history: what the navigator needs from this render, kept fresh
+  // in a layout effect below.
+  const live = useRef<HistoryNavHost>(IDLE_HOST);
+  const [nav] = useState(
+    () =>
+      new HistoryNav({
+        address: () => live.current.address(),
+        showRoute: route => live.current.showRoute(route),
+        openAddress: address => live.current.openAddress(address),
+        onMissing: () => live.current.onMissing(),
+      }),
+  );
+  useEffect(() => {
+    // The opening address is shown as any other (a future day close falls
+    // back to today, mock-ups only in development) and its link kept tidy.
+    live.current.showRoute(nav.start());
+    return () => nav.stop();
+  }, [nav]);
   const [timeline, setTimeline] = useState(false);
   const [direction, setDirection] = useState<1 | -1 | 0>(0);
   // Task and event sheets stack: opening another one (e.g. a task from the
@@ -170,9 +261,14 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const [resourceSheet, setResourceSheet] =
     useState<Slot<ResourceSheetMode> | null>(null);
   const [noteSheet, setNoteSheet] = useState<Slot<NoteSheetMode> | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [venueId, setVenueId] = useState<string | null>(null);
-  const [outboxOpen, setOutboxOpen] = useState(false);
+  // Search, venue and «Cambios pendientes» also remember when they opened,
+  // so the address follows the sheet on top.
+  const [search, setSearch] = useState<Opened<true> | null>(null);
+  const [venue, setVenue] = useState<Opened<string> | null>(null);
+  const [budgetSheet, setBudgetSheet] = useState<Opened<LogisticsEvent> | null>(
+    null,
+  );
+  const [outbox, setOutbox] = useState<Opened<true> | null>(null);
   const openSeq = useRef(0);
   const opened = useCallback(
     <M,>(mode: M): Opened<M> => ({mode, seq: ++openSeq.current}),
@@ -208,14 +304,21 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const org = organizations.find(o => o.id === orgId);
   const timeZone = org?.timezone || DEFAULT_TIMEZONE;
   const [today, setToday] = useState(() => todayIn(timeZone));
-  // Without an organization there is nowhere to write to.
-  const canWrite = session?.user.role === 'member' && !!orgId;
+  // Without an organization there is nowhere to write to. E4: writing is
+  // `plan.edit` (the guest account and «Ver como Invitado» lack it).
+  const permissions = orgPermissions(org, session?.user.role);
+  const canWrite = can(permissions, 'plan.edit') && !!orgId;
+  const readsDirectory = can(permissions, 'directory.read');
   const userId = session?.user.id ?? null;
 
+  // E7: a supplier link shows only the supplier form. No boot: no session
+  // restore, no device copy, no `/me`, never the Gestor's login. If the form
+  // is left (link cleared), the Gestor starts as usual.
   useEffect(() => {
+    if (supplierLink) return;
     void boot();
     rootRef.current?.focus();
-  }, [boot]);
+  }, [boot, supplierLink]);
 
   // A sheet belongs to the session that opened it: drop it when the session
   // ends, and after signing in again reopen any form rescued from an expired
@@ -231,9 +334,10 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       setWarehouseSheet(null);
       setResourceSheet(null);
       setNoteSheet(null);
-      setSearchOpen(false);
-      setVenueId(null);
-      setOutboxOpen(false);
+      setSearch(null);
+      setVenue(null);
+      setBudgetSheet(null);
+      setOutbox(null);
       return;
     }
     if (!userId) return;
@@ -349,42 +453,81 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
 
   const goTo = useCallback(
     (next: Space, day: string | null = null) => {
-      if (next === space && (next !== 'calendario' || day === calendarDay)) {
+      if (
+        !mockups &&
+        next === space &&
+        (next !== 'calendario' || day === calendarDay)
+      ) {
         return;
       }
+      setMockups(false);
       if (next !== space) {
         setDirection(spaceIndex(next) > spaceIndex(space) ? 1 : -1);
         setSpace(next);
         rootRef.current?.querySelector('.lx-main')?.scrollTo?.({top: 0});
       }
-      setCalendarDay(next === 'calendario' ? day : null);
-      replaceHash(hashFor(next, next === 'calendario' ? day : null));
+      const nextDay = next === 'calendario' ? day : null;
+      setCalendarDay(nextDay);
+      setCloseDay(null);
+      nav.go(
+        baseHash({
+          space: next,
+          calendarDay: nextDay,
+          closeDay: null,
+          mockups: false,
+        }),
+      );
     },
-    [space, calendarDay],
+    [space, calendarDay, mockups, nav],
   );
 
-  // Follow links pasted or navigated while the module is open.
-  useEffect(() => {
-    const onHashChange = () => {
-      if (!window.location.hash.startsWith('#logistica')) return;
-      const next = spaceFromHash(window.location.hash);
-      setCalendarDay(calendarDayFromHash(window.location.hash));
-      setSpace(current => {
-        if (current !== next) {
-          setDirection(spaceIndex(next) > spaceIndex(current) ? 1 : -1);
-        }
-        return next;
-      });
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  /** The calendar moved between month and a day: a step of «Atrás». */
+  const onCalendarDay = useCallback(
+    (day: string | null) => {
+      setCalendarDay(day);
+      nav.go(
+        baseHash({
+          space: 'calendario',
+          calendarDay: day,
+          closeDay: null,
+          mockups: false,
+        }),
+        {fold: true},
+      );
+    },
+    [nav],
+  );
 
-  /** The calendar moved between month and a day: keep the link in step. */
-  const onCalendarDay = useCallback((day: string | null) => {
-    setCalendarDay(day);
-    replaceHash(hashFor('calendario', day));
-  }, []);
+  /** The day close moved to another day (null = today). */
+  const onCloseDay = useCallback(
+    (day: string | null) => {
+      setCloseDay(day);
+      nav.go(
+        baseHash({
+          space: 'cierre',
+          calendarDay: null,
+          closeDay: day,
+          mockups: false,
+        }),
+        {fold: true},
+      );
+    },
+    [nav],
+  );
+
+  const openMockups = useCallback(() => {
+    setMockups(true);
+    nav.go(baseHash({space, calendarDay: null, closeDay: null, mockups: true}));
+  }, [nav, space]);
+  const exitMockups = useCallback(() => {
+    // Back to where the mock-ups were opened from; from a direct link, Hoy.
+    if (nav.back()) return;
+    setMockups(false);
+    setSpace('hoy');
+    setCalendarDay(null);
+    setCloseDay(null);
+    nav.go(ROOT_HASH, {push: false});
+  }, [nav]);
 
   const openEvent = useCallback(
     (event: LogisticsEvent) =>
@@ -466,8 +609,18 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       setOfferSheet(opened<OfferSheetMode>({kind: 'create', prefill})),
     [opened],
   );
-  const openVenue = useCallback((id: string) => setVenueId(id), []);
-  const openSearch = useCallback(() => setSearchOpen(true), []);
+  const openVenue = useCallback(
+    (id: string) => setVenue(opened<string>(id)),
+    [opened],
+  );
+  const openBudget = useCallback(
+    (event: LogisticsEvent) => setBudgetSheet(opened<LogisticsEvent>(event)),
+    [opened],
+  );
+  const openSearch = useCallback(
+    () => setSearch(s => s ?? opened<true>(true)),
+    [opened],
+  );
   // Warehouses, resources and notes also open on their card (view).
   const openWarehouse = useCallback(
     (warehouse: Warehouse) =>
@@ -505,7 +658,10 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   );
 
   // M6: «Cambios pendientes» and «Revisar» a change the server did not take.
-  const openOutbox = useCallback(() => setOutboxOpen(true), []);
+  const openOutbox = useCallback(
+    () => setOutbox(s => s ?? opened<true>(true)),
+    [opened],
+  );
   const reviewChange = useCallback(
     (entry: OutboxEntry) => {
       const review = reviewOf(entry);
@@ -536,7 +692,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
         );
         return;
       }
-      setOutboxOpen(false);
+      setOutbox(null);
       switch (entry.entity) {
         case 'event':
           setEventSheets(
@@ -630,7 +786,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       void discardEntry(entry.id, {
         useInstead: typeof existingId === 'string' ? existingId : undefined,
       });
-      setOutboxOpen(false);
+      setOutbox(null);
       if (entry.entity === 'company') {
         setCompanySheet(
           opened<CompanySheetMode>({
@@ -738,7 +894,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   // «/» or Ctrl+K (⌘K) opens the search from anywhere in the workspace, but
   // never over an open sheet or while typing «/» in a field.
   useEffect(() => {
-    if (phase !== 'ready') return;
+    if (phase !== 'ready' || mockups || supplierLink) return;
     const onKey = (e: KeyboardEvent) => {
       const combo =
         (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k';
@@ -746,11 +902,11 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       if (!combo && !(slash && !isTyping(e.target))) return;
       if (rootRef.current?.querySelector('dialog[open]')) return;
       e.preventDefault();
-      setSearchOpen(true);
+      openSearch();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [phase]);
+  }, [phase, mockups, supplierLink, openSearch]);
 
   const actions = useMemo<LogisticsActions>(
     () => ({
@@ -776,6 +932,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       addResource,
       openNote,
       addNote,
+      openBudget,
       openOutbox,
     }),
     [
@@ -801,17 +958,236 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       addResource,
       openNote,
       addNote,
+      openBudget,
       openOutbox,
     ],
   );
 
+  // ---------------------------------------------------------- history
+  /** Address of the record sheet on top (the one opened last), if any. */
+  const topAddress = useMemo(() => {
+    const at = (
+      seq: number,
+      type: SheetAddress['type'],
+      record: {id: string} | null,
+    ) => ({seq, address: record ? {type, id: record.id} : null});
+    return topOf([
+      ...eventSheets.map(s =>
+        at(s.seq, 'event', s.mode.kind === 'create' ? null : s.mode.event),
+      ),
+      ...taskSheets.map(s =>
+        at(s.seq, 'task', s.mode.kind === 'create' ? null : s.mode.task),
+      ),
+      ...(contactSheet
+        ? [
+            at(
+              contactSheet.seq,
+              'contact',
+              contactSheet.mode.kind === 'create'
+                ? null
+                : contactSheet.mode.contact,
+            ),
+          ]
+        : []),
+      ...(companySheet
+        ? [
+            at(
+              companySheet.seq,
+              'company',
+              companySheet.mode.kind === 'create'
+                ? null
+                : companySheet.mode.company,
+            ),
+          ]
+        : []),
+      ...(offerSheet
+        ? [
+            at(
+              offerSheet.seq,
+              'offer',
+              offerSheet.mode.kind === 'create' ? null : offerSheet.mode.offer,
+            ),
+          ]
+        : []),
+      ...(warehouseSheet
+        ? [
+            at(
+              warehouseSheet.seq,
+              'warehouse',
+              warehouseSheet.mode.kind === 'create'
+                ? null
+                : warehouseSheet.mode.warehouse,
+            ),
+          ]
+        : []),
+      ...(resourceSheet
+        ? [
+            at(
+              resourceSheet.seq,
+              'resource',
+              resourceSheet.mode.kind === 'create'
+                ? null
+                : resourceSheet.mode.resource,
+            ),
+          ]
+        : []),
+      ...(noteSheet
+        ? [
+            at(
+              noteSheet.seq,
+              'note',
+              noteSheet.mode.kind === 'create' ? null : noteSheet.mode.note,
+            ),
+          ]
+        : []),
+      ...(venue ? [at(venue.seq, 'venue', {id: venue.mode})] : []),
+      ...(budgetSheet ? [at(budgetSheet.seq, 'budget', budgetSheet.mode)] : []),
+      ...(search ? [{seq: search.seq, address: null}] : []),
+      ...(outbox ? [{seq: outbox.seq, address: null}] : []),
+    ]);
+  }, [
+    eventSheets,
+    taskSheets,
+    contactSheet,
+    companySheet,
+    offerSheet,
+    warehouseSheet,
+    resourceSheet,
+    noteSheet,
+    venue,
+    budgetSheet,
+    search,
+    outbox,
+  ]);
+
+  /** Back / Forward or a link reached another space or day. */
+  const showRoute = useCallback(
+    (route: Route) => {
+      const wantsMockups = !!MockupsApp && route.mockups;
+      const next: Space = route.mockups ? 'hoy' : route.space;
+      // A day close is about a day that happened; today keeps the plain link.
+      const pastDay =
+        route.closeDay && route.closeDay < today ? route.closeDay : null;
+      setMockups(wantsMockups);
+      setSpace(current => {
+        if (current !== next) {
+          setDirection(spaceIndex(next) > spaceIndex(current) ? 1 : -1);
+        }
+        return next;
+      });
+      setCalendarDay(route.calendarDay);
+      setCloseDay(pastDay);
+      const normal = baseHash({
+        space: next,
+        calendarDay: route.calendarDay,
+        closeDay: pastDay,
+        mockups: wantsMockups,
+      });
+      if (normal !== stripSheet(window.location.hash)) {
+        nav.go(normal, {push: false});
+      }
+    },
+    [today, nav],
+  );
+
+  /** Opens the sheet of a shared link once its record is on the device. */
+  const openAddress = useCallback(
+    (address: SheetAddress): OpenResult => {
+      const s = useLogisticsStore.getState();
+      if (s.phase !== 'ready') return 'pending';
+      const [listKey, stateKey] = LINK_LISTS[address.type];
+      const list = s[listKey] as {id: string}[];
+      const found = list.find(r => r.id === address.id);
+      if (!found) {
+        return stillLoading(s[stateKey] as LoadState) ? 'pending' : 'missing';
+      }
+      switch (address.type) {
+        case 'event':
+          openEvent(found as LogisticsEvent);
+          break;
+        case 'task':
+          openTask(found as Task);
+          break;
+        case 'contact':
+          openContact(found as Contact);
+          break;
+        case 'company':
+          openCompany(found as Company);
+          break;
+        case 'offer':
+          openOffer(found as Offer);
+          break;
+        case 'warehouse':
+          openWarehouse(found as Warehouse);
+          break;
+        case 'resource':
+          openResource(found as Resource);
+          break;
+        case 'note':
+          openNote(found as Note);
+          break;
+        case 'venue':
+          openVenue(address.id);
+          break;
+        case 'budget':
+          openBudget(found as LogisticsEvent);
+          break;
+      }
+      return 'opened';
+    },
+    [
+      openBudget,
+      openEvent,
+      openTask,
+      openContact,
+      openCompany,
+      openOffer,
+      openWarehouse,
+      openResource,
+      openNote,
+      openVenue,
+    ],
+  );
+
+  useLayoutEffect(() => {
+    live.current = {
+      address: () => topAddress,
+      showRoute,
+      openAddress,
+      onMissing: () => toast(MISSING_SHEET, 'info'),
+    };
+  });
+
+  // A shared link waits for the sign-in and for its record to load.
+  useEffect(() => {
+    if (phase !== 'ready' || supplierLink) return;
+    nav.resolveLink();
+    return useLogisticsStore.subscribe(() => nav.resolveLink());
+  }, [phase, supplierLink, nav]);
+
+  /** Leaving the Gestor: rewind its history first (see `historyNav.ts`). */
+  const exit = useCallback(() => nav.exit(onClose), [nav, onClose]);
+
   const timelineActive = space === 'calendario' && timeline;
 
   let body: React.ReactNode;
-  if (phase === 'login') {
-    body = <LoginScreen onExit={onClose} />;
+  if (supplierLink) {
+    // E7: before the mock-ups and the login gate; a supplier never sees
+    // the Gestor.
+    body = <SupplierApp link={supplierLink} />;
+  } else if (mockups && MockupsApp) {
+    // Fictitious data only: no server, no sign-in needed.
+    body = (
+      <React.Suspense
+        fallback={<SkeletonRows rows={4} label="Cargando las maquetas" />}
+      >
+        <MockupsApp onExit={exitMockups} />
+      </React.Suspense>
+    );
+  } else if (phase === 'login') {
+    body = <LoginScreen onExit={exit} />;
   } else if (phase !== 'ready') {
-    body = <ServerGate onExit={onClose} />;
+    body = <ServerGate onExit={exit} />;
   } else {
     const name = session?.user.displayName ?? '';
     body = (
@@ -830,7 +1206,8 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
         addOptions={addOptions}
         onSearch={openSearch}
         swipeLocked={timelineActive}
-        onExit={onClose}
+        onExit={exit}
+        onMockups={MockupsApp ? openMockups : undefined}
       >
         {space === 'hoy' ? (
           <HoyScreen
@@ -846,14 +1223,32 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
             onDay={onCalendarDay}
             onTimelineChange={setTimeline}
           />
+        ) : space === 'tareas' ? (
+          <TasksScreen />
         ) : space === 'contactos' ? (
-          <ContactsScreen />
+          readsDirectory ? (
+            <ContactsScreen />
+          ) : (
+            <NoAccess
+              permission="directory.read"
+              what="Contactos"
+              id="lx-contactos-noaccess"
+            />
+          )
         ) : space === 'catalogo' ? (
-          <CatalogScreen />
+          readsDirectory ? (
+            <CatalogScreen />
+          ) : (
+            <NoAccess
+              permission="directory.read"
+              what="Catálogo"
+              id="lx-catalogo-noaccess"
+            />
+          )
         ) : space === 'inventarios' ? (
           <InventoryScreen />
         ) : (
-          <DayCloseScreen />
+          <DayCloseScreen day={closeDay} onDay={onCloseDay} />
         )}
       </Shell>
     );
@@ -873,7 +1268,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       <ToastHostContext.Provider value={toastHost}>
         <ActionsContext.Provider value={actions}>
           {body}
-          {phase === 'ready' && (
+          {phase === 'ready' && !mockups && !supplierLink && (
             <>
               {/* Keyed by opening (namespaced, they are siblings): every
                   opening mounts a fresh sheet on top. */}
@@ -923,24 +1318,30 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
                 mode={noteSheet?.mode ?? null}
                 onClose={() => setNoteSheet(back)}
               />
-              {venueId && (
+              {venue && (
                 <VenueSheet
-                  key={`venue:${venueId}`}
-                  venueId={venueId}
-                  onClose={() => setVenueId(null)}
+                  key={`venue:${venue.seq}`}
+                  venueId={venue.mode}
+                  onClose={() => setVenue(null)}
                 />
               )}
-              {searchOpen && (
-                <SearchSheet onClose={() => setSearchOpen(false)} />
+              {budgetSheet && (
+                <BudgetRoute
+                  key={`budget:${budgetSheet.seq}`}
+                  event={budgetSheet.mode}
+                  onClose={() => setBudgetSheet(null)}
+                />
               )}
-              {outboxOpen && (
+              {search && <SearchSheet onClose={() => setSearch(null)} />}
+              {outbox && (
                 <OutboxSheet
-                  onClose={() => setOutboxOpen(false)}
+                  onClose={() => setOutbox(null)}
                   onReview={reviewChange}
                   onUseExisting={takeExisting}
                 />
               )}
               <LeaveConfirm />
+              <AccountLayer />
             </>
           )}
         </ActionsContext.Provider>

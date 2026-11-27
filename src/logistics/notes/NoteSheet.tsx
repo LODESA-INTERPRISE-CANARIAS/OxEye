@@ -52,7 +52,12 @@ import {UnsentMark} from '../offline/PendingMark';
 import type {FormReview} from '../offline/review';
 import {SOURCE_LABEL, sortEvents, VERIFICATION_LABEL} from '../lib/events';
 import {dayMonthShort} from '../lib/format';
-import {isOpenNote, NOTE_KIND_ICON, resolvedLabel} from '../lib/inventory';
+import {
+  awaitsAsker,
+  isOpenNote,
+  NOTE_KIND_ICON,
+  resolvedLabel,
+} from '../lib/inventory';
 import {recordDate} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
@@ -67,6 +72,7 @@ import {
   Withheld,
   describedBy,
 } from '../ui';
+import {NoteAnswers} from './NoteAnswers';
 import {REF_ICON, RefPicker, type RefValue} from './RefPicker';
 
 type RescuedValues = Record<string, unknown>;
@@ -261,6 +267,8 @@ const NoteView: React.FC<{
   const goRef = note.ref ? openRef(note.ref) : null;
   const status = resolvedLabel(note);
   const resolvable = RESOLVABLE_NOTE_KINDS.has(note.kind);
+  // E3: an open question is answered and closed in its own panel.
+  const question = note.kind === 'open_question';
   const withheld = note.restricted || note.text === null;
 
   const toggleResolved = async () => {
@@ -300,8 +308,16 @@ const NoteView: React.FC<{
           {status && (
             <Chip
               size="sm"
-              certainty={isOpenNote(note) ? 'pending' : 'confirmed'}
-              tone={isOpenNote(note) ? 'danger' : 'accent'}
+              certainty={
+                awaitsAsker(note)
+                  ? 'planned'
+                  : isOpenNote(note)
+                    ? 'pending'
+                    : 'confirmed'
+              }
+              tone={
+                isOpenNote(note) && !awaitsAsker(note) ? 'danger' : 'accent'
+              }
             >
               {status}
             </Chip>
@@ -353,7 +369,11 @@ const NoteView: React.FC<{
           )}
         </div>
 
-        {resolvable && canWrite && !gone && (
+        {question && (
+          <NoteAnswers note={note} canWrite={canWrite} canEdit={!gone} />
+        )}
+
+        {resolvable && !question && canWrite && !gone && (
           <Button
             icon={note.resolved ? 'refresh' : 'check'}
             id="lx-note-toggle-resolved"
@@ -485,6 +505,9 @@ const NoteForm: React.FC<{
   const {values, set, errors, base, saving} = f;
   const isCreate = !base;
   const resolvable = RESOLVABLE_NOTE_KINDS.has(values.kind);
+  // E3: once answered, a question's status belongs to the answer panel (the
+  // server lets only its asker close it), and its kind no longer changes.
+  const answered = !!base?.answer && base.kind === 'open_question';
   const sortedEvents = useMemo(() => sortEvents(events), [events]);
 
   const change = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
@@ -714,6 +737,12 @@ const NoteForm: React.FC<{
           value={values.kind}
           options={KIND_OPTIONS}
           tiles
+          disabled={answered}
+          help={
+            answered
+              ? 'Ya tiene respuestas, así que sigue siendo una pregunta.'
+              : undefined
+          }
           onChange={v => v && change('kind', v)}
         />
 
@@ -743,7 +772,13 @@ const NoteForm: React.FC<{
           {NOTE_PRIVACY_HINT}
         </p>
 
-        {resolvable && (
+        {resolvable && answered && (
+          <p className="lx-form__note" id="lx-note-resolved-elsewhere">
+            Esta pregunta ya tiene respuesta: se da por respondida (o se reabre)
+            desde su ficha, junto a la respuesta.
+          </p>
+        )}
+        {resolvable && !answered && (
           <Segmented<'open' | 'resolved'>
             name="lx-note-resolved"
             id="lx-note-resolved"
@@ -788,6 +823,7 @@ const NoteForm: React.FC<{
         />
 
         <QualityFields
+          title="Calidad de la nota"
           idPrefix="lx-note"
           source={values.source}
           verification={values.verification}

@@ -109,6 +109,24 @@ function parseRetryAfter(header: string | null): number | undefined {
   return Math.max(0, Math.ceil((date - Date.now()) / 1000));
 }
 
+/**
+ * Told when the server refuses a session token (401), whoever made the
+ * call: the store's own calls, a screen's direct `api.*` call or a photo.
+ * The store ends the session only if it is still the one in use.
+ */
+let onTokenRejected: ((token: string) => void) | null = null;
+
+export function setTokenRejectedHandler(
+  handler: ((token: string) => void) | null,
+): void {
+  onTokenRejected = handler;
+}
+
+/** Report a 401 for `token` (also used by calls outside `apiRequest`). */
+export function reportTokenRejected(token: string | null | undefined): void {
+  if (token) onTokenRejected?.(token);
+}
+
 export interface RequestOptions {
   body?: unknown;
   token?: string | null;
@@ -116,7 +134,7 @@ export interface RequestOptions {
 }
 
 export async function apiRequest<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
@@ -149,6 +167,7 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 204) return undefined as T;
+  if (response.status === 401) reportTokenRejected(options.token);
 
   let payload: unknown = null;
   const text = await response.text().catch(() => '');

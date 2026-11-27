@@ -15,9 +15,9 @@ test.use({
 
 const SPACES = [
   {id: 'calendario', title: 'Calendario'},
+  {id: 'tareas', title: 'Tareas'},
   {id: 'inventarios', title: 'Inventarios'},
   {id: 'contactos', title: 'Contactos'},
-  {id: 'catalogo', title: 'Catálogo'},
 ] as const;
 
 test.describe('Gestor logístico · móvil', () => {
@@ -49,6 +49,16 @@ test.describe('Gestor logístico · móvil', () => {
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
     await expect(page).toHaveURL(/#logistica$/);
+
+    // Five tabs fit with readable labels; «Catálogo» (desk work) lives in
+    // the account sheet.
+    await expect(page.locator('.lx-tabbar [id^="lx-tab-"]')).toHaveCount(5);
+    await expect(page.locator('#lx-tab-catalogo')).toHaveCount(0);
+    await page.locator('#lx-account-button').click();
+    await page.locator('#lx-account-catalogo').click();
+    await expect(page.locator('#lx-space-catalogo')).toBeVisible();
+    await expect(page).toHaveURL(/#logistica\/catalogo$/);
+    await expect(page.locator('#lx-account-sheet')).toBeHidden();
 
     // The hash a tab wrote reopens the same space after a reload.
     await page.locator('#lx-tab-inventarios').click();
@@ -102,7 +112,7 @@ test.describe('Gestor logístico · móvil', () => {
     await page.locator('#lx-account-button').click();
     await expect(page.locator('#lx-account-sheet')).toBeVisible();
     await page.locator('#lx-logout-phone').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     await expect.poll(() => api.calls('POST', '/auth/logout').length).toBe(1);
   });
 });

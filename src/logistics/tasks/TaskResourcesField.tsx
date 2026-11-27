@@ -3,6 +3,8 @@
  * Owned material and contracted services are listed apart, each with its
  * quantity as recorded (`quantityLabel`) and where it is or who provides it.
  * A text filter appears when the inventory is long; chosen items stay on top.
+ * Each item shows its main photo (or category icon) so the right one is easy
+ * to recognise on site.
  *
  * Resources deleted meanwhile are shown as «Recurso borrado» and never sent.
  * Quantities are shown, never added up or turned into a load: whether the
@@ -13,7 +15,9 @@ import type {Resource} from '../../../shared/logistics/contracts.ts';
 import {quantityLabel} from '../../../shared/logistics/inventory.ts';
 import {MAX_RESOURCES_PER_TASK} from '../../../shared/logistics/rules.ts';
 import {universalSearch} from '../../../shared/logistics/search.ts';
+import {PhotoThumb} from '../inventory/PhotoThumb';
 import {LoadNoteTip} from '../inventory/ResourceParts';
+import {categoryNames} from '../lib/directory';
 import {sortResources} from '../lib/inventory';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon, SearchInput} from '../ui';
@@ -33,6 +37,7 @@ export const TaskResourcesField: React.FC<{
   const q = query.trim();
 
   const known = useMemo(() => new Set(resources.map(r => r.id)), [resources]);
+  const names = useMemo(() => categoryNames(categories), [categories]);
   const gone = ready ? value.filter(id => !known.has(id)) : [];
   const full = value.length >= MAX_RESOURCES_PER_TASK;
 
@@ -189,6 +194,13 @@ export const TaskResourcesField: React.FC<{
                           onChange={e => toggle(r.id, e.target.checked)}
                         />
                         <label htmlFor={id}>
+                          <PhotoThumb
+                            resource={r}
+                            categoryName={
+                              r.categoryId ? names.get(r.categoryId) : null
+                            }
+                            size="xs"
+                          />
                           <span className="lx-taskres__text">
                             <span className="lx-picklist__title">{r.name}</span>
                             {where && (

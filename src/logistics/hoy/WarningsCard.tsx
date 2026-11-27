@@ -24,6 +24,8 @@ export const WarningsCard: React.FC<{plan: Plan}> = ({plan}) => {
   const rows = warnings.slice(0, MAX_ROWS);
   const more = warnings.length - rows.length;
   const conflicts = bucket?.conflicts.length ?? 0;
+  // Revisión 1: conflicts the team kept today, listed apart with the reason.
+  const accepted = plan.acceptedByDay.get(today) ?? [];
 
   return (
     <Card
@@ -43,18 +45,25 @@ export const WarningsCard: React.FC<{plan: Plan}> = ({plan}) => {
       className="lx-warnings-card"
       actions={<HelpTip label="avisos">{WARNINGS_HELP}</HelpTip>}
     >
-      {warnings.length === 0 ? (
+      {warnings.length === 0 && (
         <p className="lx-muted lx-warnings__none" id="lx-warnings-empty">
-          <Icon name="check" size={16} /> Sin avisos para hoy con lo que hay
-          registrado.
+          <Icon name="check" size={16} />{' '}
+          {accepted.length
+            ? 'Sin avisos abiertos para hoy: los conflictos que quedan están aceptados.'
+            : 'Sin avisos para hoy con lo que hay registrado.'}
         </p>
-      ) : (
+      )}
+      {(warnings.length > 0 || accepted.length > 0) && (
         <>
-          <p className="lx-visually-hidden">{warningsSummary(warnings)}</p>
+          {warnings.length > 0 && (
+            <p className="lx-visually-hidden">{warningsSummary(warnings)}</p>
+          )}
           <WarningList
             warnings={rows}
             tasksById={plan.tasksById}
             onOpenTask={openTask}
+            accepted={accepted}
+            id="lx-warnings-list"
           />
           {more > 0 && (
             <Button

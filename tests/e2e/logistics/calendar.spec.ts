@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {choose} from './controls';
 import {addDays, mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData} from './plan-fixtures';
 
@@ -213,10 +214,12 @@ test.describe('Gestor logístico · Calendario, día', () => {
       }),
     ).toBeVisible();
     await expect(block(page, 't3')).not.toHaveClass(/has-conflict/);
-    // The event behind its venue's tasks.
-    await expect(timeline.locator('.lx-tl__band')).toContainText(
-      'Navidad en la Plaza del Cristo',
-    );
+    // The event behind its venue's tasks; its name and hours are in the
+    // venue's header (Revisión 1, CAP1), so no block can cover them.
+    await expect(timeline.locator('.lx-tl__band')).toHaveCount(1);
+    await expect(
+      timeline.locator('.lx-tl__head[data-col="v1"] .lx-tl__frame'),
+    ).toHaveText(/17:00 – 21:00\s*Navidad en la Plaza del Cristo/);
     // Tasks without a time sit under «Sin hora», not in the timeline.
     await expect(block(page, 't4')).toHaveCount(0);
     const untimed = page.locator('#lx-day-untimed');
@@ -239,9 +242,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
   test('the event filter narrows the month and the day', async ({page}) => {
     await mockApi(page, planData());
     await signIn(page, 'Elvis', '#logistica/calendario');
-    const filter = page.locator('#lx-cal-filter');
-
-    await filter.selectOption('e1');
+    await choose(page, 'lx-cal-filter', 'e1');
     await expect(dayCell(page, DAY)).toHaveAttribute(
       'aria-label',
       'miércoles 2 de diciembre, hoy: 1 evento, 3 tareas, 2 conflictos. Navidad en la Plaza del Cristo',
@@ -255,7 +256,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
       /sin nada registrado$/,
     );
 
-    await filter.selectOption('none');
+    await choose(page, 'lx-cal-filter', 'none');
     await expect(dayCell(page, DAY)).toHaveAttribute(
       'aria-label',
       'miércoles 2 de diciembre, hoy: 2 tareas',
@@ -274,14 +275,14 @@ test.describe('Gestor logístico · Calendario, día', () => {
       page.locator('#lx-day-untimed [data-task-id="t4"]'),
     ).toBeVisible();
 
-    await filter.selectOption('e1');
+    await choose(page, 'lx-cal-filter', 'e1');
     for (const id of ['t1', 't2', 't3']) {
       await expect(block(page, id)).toBeVisible();
     }
     await expect(block(page, 't5')).toHaveCount(0);
     await expect(page.locator('#lx-day-untimed')).toHaveCount(0);
 
-    await filter.selectOption('all');
+    await choose(page, 'lx-cal-filter', 'all');
     await expect(block(page, 't5')).toBeVisible();
     await expect(block(page, 't1')).toBeVisible();
   });
@@ -398,10 +399,11 @@ test.describe('Gestor logístico · Calendario en el móvil', () => {
     await expect(page).toHaveURL(hashOf(DAY));
     await expect(page.locator('#lx-timeline')).toBeVisible();
 
-    // Control: the same gesture on the month view moves to the next space.
+    // Control: the same gesture on the month view moves to the next space
+    // («Tareas», after «Calendario» since Revisión 1).
     await page.locator('#lx-cal-view-month').click();
     await expect(page.locator('#lx-month')).toBeVisible();
     await swipeLeft(page);
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(/#logistica\/tareas$/);
   });
 });

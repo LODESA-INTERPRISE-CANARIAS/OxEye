@@ -11,9 +11,13 @@
  */
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import type {
+  Company,
+  Contact,
+  Offer,
   SearchEntityType,
   SearchHit,
 } from '../../../shared/logistics/contracts.ts';
+import {useAccess} from '../account/useAccess';
 import {
   SEARCH_TYPE_LABEL,
   universalSearch,
@@ -56,6 +60,12 @@ const TYPE_ICON: Partial<Record<SearchEntityType, IconName>> = {
   resource: 'inventory',
 };
 
+/** E4: types behind `directory.read`. */
+const DIRECTORY_TYPES: SearchEntityType[] = ['contact', 'company', 'offer'];
+const NONE_COMPANIES: Company[] = [];
+const NONE_CONTACTS: Contact[] = [];
+const NONE_OFFERS: Offer[] = [];
+
 /** Types a category filter applies to, by category scope. */
 const SERVICE_TYPES: (SearchEntityType | null)[] = [null, 'company', 'offer'];
 const RESOURCE_TYPES: (SearchEntityType | null)[] = [null, 'resource'];
@@ -64,9 +74,18 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
   const events = useLogisticsStore(s => s.events);
   const tasks = useLogisticsStore(s => s.tasks);
   const venues = useLogisticsStore(s => s.venues);
-  const companies = useLogisticsStore(s => s.companies);
-  const contacts = useLogisticsStore(s => s.contacts);
-  const offers = useLogisticsStore(s => s.offers);
+  // E4: without `directory.read` people, companies and offers are never
+  // searched nor offered as a type (the server does not send them anyway).
+  const readsDirectory = useAccess().can('directory.read');
+  const storedCompanies = useLogisticsStore(s => s.companies);
+  const storedContacts = useLogisticsStore(s => s.contacts);
+  const storedOffers = useLogisticsStore(s => s.offers);
+  const companies = readsDirectory ? storedCompanies : NONE_COMPANIES;
+  const contacts = readsDirectory ? storedContacts : NONE_CONTACTS;
+  const offers = readsDirectory ? storedOffers : NONE_OFFERS;
+  const types = readsDirectory
+    ? TYPES
+    : TYPES.filter(t => !DIRECTORY_TYPES.includes(t.type));
   const warehouses = useLogisticsStore(s => s.warehouses);
   const resources = useLogisticsStore(s => s.resources);
   const categories = useLogisticsStore(s => s.categories);
@@ -113,7 +132,7 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
     () => resourceCategories(categories),
     [categories],
   );
-  const serviceApplies = SERVICE_TYPES.includes(type);
+  const serviceApplies = readsDirectory && SERVICE_TYPES.includes(type);
   const resourceApplies = RESOURCE_TYPES.includes(type);
   const categoryApplies = serviceApplies || resourceApplies;
   // A category of the other scope (chosen before switching type) is ignored.
@@ -291,8 +310,16 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
           data-autofocus
           value={query}
           onValue={setQuery}
-          label="Buscar personas, empresas, ofertas, eventos, tareas, lugares, almacenes y recursos"
-          placeholder="Nombre, empresa, lugar, almacén, categoría…"
+          label={
+            readsDirectory
+              ? 'Buscar personas, empresas, ofertas, eventos, tareas, lugares, almacenes y recursos'
+              : 'Buscar eventos, tareas, lugares, almacenes y recursos'
+          }
+          placeholder={
+            readsDirectory
+              ? 'Nombre, empresa, lugar, almacén, categoría…'
+              : 'Evento, tarea, lugar, almacén, recurso…'
+          }
           role="combobox"
           aria-expanded={hits.length > 0}
           aria-controls={hits.length > 0 ? 'lx-search-results' : undefined}
@@ -314,7 +341,7 @@ export const SearchSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
           >
             Todo
           </button>
-          {TYPES.map(t => (
+          {types.map(t => (
             <button
               key={t.type}
               type="button"

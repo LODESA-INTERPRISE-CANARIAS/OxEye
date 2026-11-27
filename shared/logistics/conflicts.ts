@@ -89,7 +89,7 @@ export const LOAD_BEARING_KINDS: ReadonlySet<Task['kind']> = new Set([
   'dismantling',
 ]);
 /** Vehicles that cross the town to reach the venue. */
-const VEHICLE_KINDS: ReadonlySet<Task['kind']> = new Set([
+export const VEHICLE_KINDS: ReadonlySet<Task['kind']> = new Set([
   'delivery',
   'transport',
 ]);
@@ -362,6 +362,85 @@ export function planWarnings(
 
   const rank = (w: PlanWarning) => (w.severity === 'conflict' ? 0 : 1);
   return out.sort((a, b) => rank(a) - rank(b));
+}
+
+// ---------------------------------------------------------------- previews of moved times
+
+/**
+ * Reminders that moving a task in time never «solves»: a move preview or a
+ * «¿Y si…?» never lists them as cleared (the Gestor cannot see the risk).
+ */
+export const UNSOLVED_BY_MOVING: ReadonlySet<PlanWarning['kind']> = new Set([
+  'route_window',
+  'heavy_load',
+  'heavy_load_unknown',
+]);
+
+/** Vehicles, load-bearing work or a known heavy load: check the routes. */
+export function needsRoutesCheck(
+  t: Pick<PlanTask, 'kind' | 'heavyLoad'>,
+): boolean {
+  return (
+    VEHICLE_KINDS.has(t.kind) ||
+    LOAD_BEARING_KINDS.has(t.kind) ||
+    t.heavyLoad === true
+  );
+}
+
+/** Said when a moved task no longer coincides with an event. */
+export const ROUTES_NO_LONGER_COINCIDES =
+  'Ya no coincide con el evento; revísalo igualmente en el simulador.';
+
+/**
+ * The fixed routes reminder of a moved task that does not coincide with an
+ * event after the change (`stopped`: it did before). Its own key
+ * (`routes-moved:`), so it never collides with a plan warning.
+ */
+export function movedRoutesReminder(
+  t: Pick<PlanTask, 'id' | 'title'>,
+  stopped: boolean,
+): PlanWarning {
+  return {
+    key: `routes-moved:${t.id}`,
+    kind: 'route_window',
+    severity: 'reminder',
+    taskIds: [t.id],
+    minutes: null,
+    title: stopped
+      ? `«${t.title}»: ${ROUTES_NO_LONGER_COINCIDES}`
+      : `«${t.title}» cambia de hora: revisa las rutas`,
+    detail: ROUTES_REMINDER,
+  };
+}
+
+/**
+ * The routes reminders and the cleared list of a change of times (a move or
+ * a «¿Y si…?»): every moved task that needs a routes check gets one reminder
+ * (the plan's own `route_window` while it still coincides with an event,
+ * else `movedRoutesReminder`), and `cleared` loses UNSOLVED_BY_MOVING.
+ */
+export function movedSafety(input: {
+  /** The plan after the change. */
+  after: readonly PlanTask[];
+  movedIds: {has(id: string): boolean};
+  afterWarnings: readonly PlanWarning[];
+  /** Warnings before the change that are gone after it. */
+  cleared: readonly PlanWarning[];
+}): {routeReminders: PlanWarning[]; cleared: PlanWarning[]} {
+  const routeOf = (list: readonly PlanWarning[], id: string) =>
+    list.find(w => w.kind === 'route_window' && w.taskIds[0] === id);
+  const routeReminders: PlanWarning[] = [];
+  for (const t of input.after) {
+    if (!input.movedIds.has(t.id) || !needsRoutesCheck(t)) continue;
+    routeReminders.push(
+      routeOf(input.afterWarnings, t.id) ??
+        movedRoutesReminder(t, !!routeOf(input.cleared, t.id)),
+    );
+  }
+  return {
+    routeReminders,
+    cleared: input.cleared.filter(w => !UNSOLVED_BY_MOVING.has(w.kind)),
+  };
 }
 
 function sameVenue(t: PlanTask, ev: PlanEvent): boolean {

@@ -16,7 +16,12 @@ import {
   resolveCompanyRef,
 } from '../companies/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
-import {isUuid, requireMembership} from '../organizations/service.ts';
+import {
+  checkAccess,
+  isUuid,
+  requireMembership,
+} from '../organizations/service.ts';
+import type {Membership} from '../organizations/service.ts';
 import {createOnce, findReplay, fresh} from '../records/device-id.ts';
 import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {normalizeName} from '../records/find-or-create.ts';
@@ -29,15 +34,26 @@ import type {Viewer} from '../records/redact.ts';
 import {changedFields} from '../records/slot.ts';
 import {resolveUnit, toAmount} from './domain.ts';
 import type {CreateOfferBody, UpdateOfferBody} from './schemas.ts';
+// Revisión 1 · E5: the offer's own tax and its company's.
+import {
+  prefixedTaxColumns,
+  taxColumns,
+  taxParams,
+  toCompanyTax,
+  toTax,
+} from '../budget/tax.ts';
+import type {CompanyTaxRow, TaxRow} from '../budget/tax.ts';
+import {sameTax} from '../../../shared/logistics/money.ts';
 import type {
   DataSource,
   Offer,
   PriceUnit,
   SessionUser,
+  TaxInfo,
   Verification,
 } from '../../../shared/logistics/contracts.ts';
 
-interface OfferRow extends MetaRow {
+export interface OfferRow extends MetaRow, TaxRow, CompanyTaxRow {
   organization_id: string;
   company_id: string;
   company_name: string;
@@ -62,7 +78,8 @@ const SELECT_OFFER = `
          o.transport_cost::text AS transport_cost,
          o.assembly_cost::text AS assembly_cost,
          o.maintenance_cost::text AS maintenance_cost,
-         o.conditions, o.vat_included
+         o.conditions, o.vat_included, ${taxColumns('o')},
+         ${prefixedTaxColumns('c', 'company_')}
     FROM offers o
     JOIN companies c ON c.id = o.company_id
     ${authorJoins('o')}`;
@@ -73,26 +90,32 @@ const CATEGORY_UNKNOWN =
 
 /** The single row → record mapping; the viewer decides what is withheld. */
 function toOffer(row: OfferRow, viewer: Viewer): Offer {
-  return forViewer(
-    'offer',
-    {
-      ...toMeta(row),
-      organizationId: row.organization_id,
-      company: {id: row.company_id, name: row.company_name},
-      categoryId: row.category_id,
-      name: row.name,
-      description: row.description,
-      price: toAmount(row.price),
-      unit: row.unit,
-      customUnit: row.custom_unit,
-      transportCost: toAmount(row.transport_cost),
-      assemblyCost: toAmount(row.assembly_cost),
-      maintenanceCost: toAmount(row.maintenance_cost),
-      conditions: row.conditions,
-      vatIncluded: row.vat_included,
-    },
-    viewer,
-  );
+  return forViewer('offer', toFullOffer(row), viewer);
+}
+
+/**
+ * E5: the offer as stored, before any withholding. Only for server-side
+ * copies (an expense's snapshot); every response goes through `toOffer`.
+ */
+export function toFullOffer(row: OfferRow): Omit<Offer, 'restricted'> {
+  return {
+    ...toMeta(row),
+    organizationId: row.organization_id,
+    company: {id: row.company_id, name: row.company_name},
+    categoryId: row.category_id,
+    name: row.name,
+    description: row.description,
+    price: toAmount(row.price),
+    unit: row.unit,
+    customUnit: row.custom_unit,
+    transportCost: toAmount(row.transport_cost),
+    assemblyCost: toAmount(row.assembly_cost),
+    maintenanceCost: toAmount(row.maintenance_cost),
+    conditions: row.conditions,
+    vatIncluded: row.vat_included,
+    tax: toTax(row),
+    companyTax: toCompanyTax(row),
+  };
 }
 
 /** The editable state of an offer, in comparable form. */
@@ -111,6 +134,8 @@ interface OfferState {
   vatIncluded: boolean | null;
   source: DataSource | null;
   verification: Verification;
+  /** E5: compared with `sameTax` (not in FIELD_NAMES). */
+  tax: TaxInfo | null;
 }
 
 const FIELD_NAMES: readonly (readonly [keyof OfferState, string])[] = [
@@ -146,6 +171,7 @@ function stateOf(row: OfferRow): OfferState {
     vatIncluded: row.vat_included,
     source: row.source,
     verification: row.verification,
+    tax: toTax(row),
   };
 }
 
@@ -172,6 +198,19 @@ async function loadOffer(
   const rows = await db.query<OfferRow>(
     `${SELECT_OFFER} WHERE o.id = $1${lock ? ' FOR UPDATE OF o' : ''}`,
     [id],
+  );
+  return rows[0];
+}
+
+/** E5: the offer row if it belongs to the organization (expense snapshots). */
+export async function findOfferRow(
+  db: Queryable,
+  organizationId: string,
+  id: string,
+): Promise<OfferRow | undefined> {
+  const rows = await db.query<OfferRow>(
+    `${SELECT_OFFER} WHERE o.id = $1 AND o.organization_id = $2`,
+    [id, organizationId],
   );
   return rows[0];
 }
@@ -210,6 +249,7 @@ export async function createOffer(
   };
   return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
+    checkAccess(org, actor, 'directory.read');
     await lockCatalogue(tx, org.id);
     const replay = await findReplay(tx, device, org.id);
     if (replay) return replay;
@@ -243,11 +283,13 @@ export async function createOffer(
          (organization_id, company_id, category_id, name, description, price,
           unit, custom_unit, transport_cost, assembly_cost, maintenance_cost,
           conditions, vat_included, source, verification,
-          created_by, created_at, updated_by, updated_at, id)
+          created_by, created_at, updated_by, updated_at, id,
+          tax_regime, tax_name, tax_rate, tax_verification)
        VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9::numeric,
                $10::numeric, $11::numeric, $12, $13, $14, $15,
                $16, $17::timestamptz, $16, $17::timestamptz,
-               COALESCE($18::uuid, gen_random_uuid()))
+               COALESCE($18::uuid, gen_random_uuid()),
+               $19, $20, $21::numeric, $22)
        RETURNING id`,
       [
         org.id,
@@ -262,12 +304,14 @@ export async function createOffer(
         input.assemblyCost ?? null,
         input.maintenanceCost ?? null,
         input.conditions ?? null,
-        input.vatIncluded ?? null,
+        // E5: prices are entered before tax unless the offer says otherwise.
+        input.vatIncluded === undefined ? false : input.vatIncluded,
         input.source ?? null,
         input.verification ?? 'draft',
         actor.id,
         now.toISOString(),
         input.id ?? null,
+        ...taxParams(input.tax ?? null),
       ],
     );
     const id = (inserted[0] as {id: string}).id;
@@ -304,11 +348,13 @@ async function loadOwnOffer(
 ): Promise<OfferRow> {
   const row = await loadOffer(tx, id);
   if (!row) throw offerNotFound();
+  let membership: Membership;
   try {
-    await requireMembership(tx, actor.id, row.organization_id);
+    membership = await requireMembership(tx, actor.id, row.organization_id);
   } catch {
     throw offerNotFound();
   }
+  checkAccess(membership, actor, 'directory.read');
   return row;
 }
 
@@ -347,6 +393,7 @@ export async function updateOffer(
     if (input.verification !== undefined) {
       after.verification = input.verification;
     }
+    if (input.tax !== undefined) after.tax = input.tax;
     Object.assign(after, resolveUnit(before, input));
 
     const fields: Record<string, string> = {};
@@ -377,6 +424,7 @@ export async function updateOffer(
     if (company) after.companyId = company.id;
 
     const changed = changedFields(before, after, FIELD_NAMES);
+    if (!sameTax(before.tax, after.tax)) changed.push('tax');
     if (changed.length === 0) return toOffer(row, actor);
     // A resource's offer belongs to the resource's company: resources that
     // came from this offer keep their company and lose the offer.
@@ -397,7 +445,9 @@ export async function updateOffer(
               transport_cost = $10::numeric, assembly_cost = $11::numeric,
               maintenance_cost = $12::numeric, conditions = $13,
               vat_included = $14, source = $15, verification = $16,
-              version = version + 1, updated_by = $17, updated_at = $18::timestamptz
+              version = version + 1, updated_by = $17, updated_at = $18::timestamptz,
+              tax_regime = $19, tax_name = $20, tax_rate = $21::numeric,
+              tax_verification = $22
         WHERE id = $1 AND version = $2`,
       [
         id,
@@ -418,6 +468,7 @@ export async function updateOffer(
         after.verification,
         actor.id,
         now.toISOString(),
+        ...taxParams(after.tax),
       ],
     );
     await appendActivity(tx, {

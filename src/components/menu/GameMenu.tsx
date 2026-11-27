@@ -356,7 +356,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
         <>
           <main className="game-card">
             <span className="game-eyebrow">SAN CRISTÓBAL DE LA LAGUNA</span>
-            <h1>Ojo de Buey</h1>
+            <h1>Ox Eye</h1>
             <p>
               Imagina el evento.
               <br />
@@ -454,7 +454,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
       {screen === 'credits' && (
         <main className="game-card">
           <h1>Créditos</h1>
-          <p>Ojo de Buey · proyecto de Yeray López de Saja.</p>
+          <p>Ox Eye · proyecto de Yeray López de Saja.</p>
           <p>
             Cartografía © OpenStreetMap contributors, ODbL. Ortofotografía
             PNOA–IGN, CC BY 4.0.
@@ -626,7 +626,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
             {step === 0 && (
               <>
                 <p>
-                  Selecciona tus prioridades. Ojo de Buey las utilizará para
+                  Selecciona tus prioridades. Ox Eye las utilizará para
                   ayudarte a calcular los recursos necesarios, organizar las
                   actividades, diseñar el recinto y comparar distintas alternativas.
                 </p>

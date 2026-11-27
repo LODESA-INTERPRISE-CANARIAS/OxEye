@@ -48,7 +48,8 @@ beforeAll(async () => {
   );
   orgB = b!.id;
   await h.db.query(
-    'INSERT INTO organization_members (organization_id, user_id) VALUES ($1, $2)',
+    // E4: a member edits and reads the directory through a role.
+    "INSERT INTO organization_members (organization_id, user_id, roles) VALUES ($1, $2, ARRAY['team'])",
     [orgB, elvisId],
   );
   const [f] = await h.db.query<{id: string}>(

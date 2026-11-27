@@ -1,5 +1,8 @@
 import {describe, expect, it} from 'vitest';
+import type {TaxInfo} from '../../../shared/logistics/contracts';
 import {
+  categoriesWithComparison,
+  compareCategory,
   compareOffer,
   comparisonKey,
   costLines,
@@ -135,6 +138,9 @@ describe('catalogue honesty', () => {
     assemblyCost: 40,
     maintenanceCost: null,
     restricted: false,
+    // E5: the offer's own tax and its company's.
+    tax: null as TaxInfo | null,
+    companyTax: null as TaxInfo | null,
   };
 
   it('formats euros the Spanish way', () => {
@@ -180,10 +186,24 @@ describe('catalogue honesty', () => {
     expect(cmp.otherTax).toEqual([]);
   });
 
-  it('never ranks prices with a different or unknown tax treatment', () => {
+  it('E5: ranks different taxes together by the estimate with tax; unknown ones apart', () => {
+    const iva: TaxInfo = {
+      regime: 'iva',
+      name: null,
+      ratePercent: 21,
+      verification: 'to_verify',
+    };
     const offers = [
       base,
-      {...base, id: 'o2', name: 'Sin impuestos', price: 95, vatIncluded: false},
+      // 95 € + 21 % IVA (the company's) = 114,95 €: cheaper than 120 € incl.
+      {
+        ...base,
+        id: 'o2',
+        name: 'Sin impuestos',
+        price: 95,
+        vatIncluded: false,
+        companyTax: iva,
+      },
       {
         ...base,
         id: 'o3',
@@ -192,16 +212,81 @@ describe('catalogue honesty', () => {
         vatIncluded: null,
       },
       {...base, id: 'o4', name: 'Con impuestos', price: 130},
+      // Before tax, but nobody stated a rate: apart, never ranked.
+      {
+        ...base,
+        id: 'o5',
+        name: 'Tipo desconocido',
+        price: 70,
+        vatIncluded: false,
+      },
     ];
     const cmp = compareOffer(base, offers)!;
-    expect(cmp.peers.map(o => o.id)).toEqual(['o1', 'o4']);
-    expect(cmp.position).toBe(1);
-    expect(cmp.otherTax.map(o => o.id)).toEqual(['o3', 'o2']);
+    expect(cmp.peers.map(o => o.id)).toEqual(['o2', 'o1', 'o4']);
+    expect(cmp.position).toBe(2);
+    expect(cmp.estimates.o2).toMatchObject({
+      beforeTax: 95,
+      withTax: 114.95,
+      inherited: true,
+      toVerify: true,
+    });
+    expect(cmp.unknownTax.map(o => o.id)).toEqual(['o3', 'o5']);
+    expect(cmp.otherTax).toEqual(cmp.unknownTax);
+    expect(cmp.estimates.o3?.missing).toBe('treatment');
+    expect(cmp.estimates.o5?.missing).toBe('rate');
 
-    const unknown = compareOffer(offers[2], offers)!;
-    expect(unknown.peers).toEqual([]);
+    // An offer that cannot be ranked still sees the ranking of the others.
+    const unknown = compareOffer(offers[2]!, offers)!;
+    expect(unknown.peers.map(o => o.id)).toEqual(['o2', 'o1', 'o4']);
     expect(unknown.position).toBeNull();
-    expect(unknown.otherTax.map(o => o.id)).toEqual(['o2', 'o1', 'o4']);
+    expect(unknown.unknownTax.map(o => o.id)).toEqual(['o5']);
+  });
+
+  it('E5: an offer’s own tax wins over its company’s; «ninguno» needs no treatment', () => {
+    const igic: TaxInfo = {
+      regime: 'igic',
+      name: null,
+      ratePercent: 7,
+      verification: 'validated',
+    };
+    const none: TaxInfo = {
+      regime: 'none',
+      name: null,
+      ratePercent: 0,
+      verification: 'to_verify',
+    };
+    const offers = [
+      {...base, id: 'a', name: 'A', price: 100, vatIncluded: false, tax: igic},
+      {
+        ...base,
+        id: 'b',
+        name: 'B',
+        price: 106,
+        vatIncluded: null,
+        companyTax: none,
+      },
+    ];
+    const cmp = compareOffer(offers[0]!, offers)!;
+    expect(cmp.peers.map(o => o.id)).toEqual(['b', 'a']);
+    expect(cmp.estimates.a).toMatchObject({withTax: 107, inherited: false});
+    expect(cmp.estimates.b).toMatchObject({beforeTax: 106, withTax: 106});
+  });
+
+  it('E5: «Comparar» per category ranks each unit apart and says why the rest are apart', () => {
+    const offers = [
+      base,
+      {...base, id: 'o2', name: 'Carpa B', price: 90},
+      {...base, id: 'o3', name: 'Sin precio', price: null},
+      {...base, id: 'o4', name: 'Sin saber', price: 50, vatIncluded: null},
+      {...base, id: 'o5', name: 'Por metro', unit: 'metre' as const},
+      {...base, id: 'o6', name: 'Otra', unit: 'custom' as const},
+    ];
+    const cmp = compareCategory('carpas', offers);
+    expect(cmp.groups.map(g => g.peers.map(o => o.id))).toEqual([['o2', 'o1']]);
+    expect(
+      Object.fromEntries(cmp.apart.map(a => [a.offer.id, a.reason])),
+    ).toEqual({o3: 'price', o4: 'tax', o5: 'alone', o6: 'unit'});
+    expect(categoriesWithComparison(offers)).toEqual(new Set(['carpas']));
   });
 
   it('has nothing to compare without a category or a known custom unit', () => {

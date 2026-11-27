@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {SUBSOIL_THRESHOLD_NOTE} from '../../../shared/logistics/conflicts';
 import type {
   ActivityEntry,
+  ConflictAcceptance,
   Contact,
   DelayHypothesis,
   LogisticsEvent,
@@ -42,6 +43,8 @@ const M = {
   hypothesis: 'MARCA-NOTA-HIPOTESIS',
   taskNotes: 'MARCA-OBSERVACION-TAREA',
   contactNotes: 'MARCA-NOTAS-PERSONA',
+  answer: 'MARCA-TEXTO-RESPUESTA',
+  reason: 'MARCA-MOTIVO-ACEPTADO',
 };
 
 const event: LogisticsEvent = {
@@ -91,6 +94,9 @@ const note = (id: string, extra: Partial<Note>): Note => ({
   event: {id: 'ev', name: 'Navidad Demo'},
   ref: null,
   resolved: false,
+  answer: null,
+  resolvedBy: null,
+  resolvedAt: null,
   restricted: false,
   ...extra,
 });
@@ -333,6 +339,151 @@ describe('day report: notes', () => {
     expect(r.otherNotes).toBeNull();
     expect(r.hypotheses).toBeNull();
     expect(JSON.stringify(r)).not.toContain('Incidencia');
+  });
+});
+
+describe('day report: open questions (E3)', () => {
+  const answer = (hhmm: string, day = DAY) => ({
+    id: `a-${hhmm}`,
+    noteId: 'q',
+    text: M.answer,
+    answeredBy: dailos,
+    answeredAt: at(hhmm, day),
+    replacesId: null,
+    restricted: false,
+  });
+  const questions = [
+    note('q-answered', {kind: 'open_question', answer: answer('15:00')}),
+    note('q-closed', {
+      kind: 'open_question',
+      ...meta(at('09:00', '2026-11-30')),
+      answer: answer('10:00', '2026-12-01'),
+      resolved: true,
+      resolvedBy: elvis,
+      resolvedAt: at('16:00'),
+    }),
+    note('q-closed-before', {
+      kind: 'open_question',
+      ...meta(at('09:00', '2026-11-30')),
+      resolved: true,
+      resolvedBy: elvis,
+      resolvedAt: at('16:00', '2026-12-01'),
+    }),
+  ];
+
+  it('shows the answered state, who answered and who closed it', () => {
+    const r = buildDayReport(input({notes: questions}));
+    const q = r.notes!.find(s => s.kind === 'open_question')!;
+    expect(
+      q.items.map(i => [
+        i.id,
+        i.status,
+        i.answer?.by.id ?? null,
+        i.closedBy?.id ?? null,
+      ]),
+    ).toEqual([
+      ['q-answered', 'Con respuesta', 'u-dailos', null],
+      // Closed that day: it comes along even though it was asked earlier.
+      ['q-closed', 'Respondida', 'u-dailos', 'u-elvis'],
+    ]);
+    expect(q.items[1].closedAt).toBe(at('16:00'));
+    // No answer text unless the section's text is included.
+    expect(JSON.stringify(r)).not.toContain(M.answer);
+  });
+
+  it('gives the answer text under «Incluir el texto», never to guests', () => {
+    const r = buildDayReport(
+      input({notes: questions, includeText: {open_question: true}}),
+    );
+    const q = r.notes!.find(s => s.kind === 'open_question')!;
+    expect(q.items[0].answer!.text).toBe(M.answer);
+    expect(dayReportText(r, '2 dic')).not.toContain(M.answer);
+    const guest = buildDayReport(
+      input({
+        viewer: {id: 'u-guest', displayName: 'Invitado', role: 'guest'},
+        notes: questions,
+        includeText: {open_question: true},
+      }),
+    );
+    expect(JSON.stringify(guest)).not.toContain(M.answer);
+  });
+});
+
+describe('day report: accepted conflicts (E2)', () => {
+  const a = task('a', {title: 'Montaje Demo'});
+  const b = task('b', {title: 'Reparto Demo', startsAt: at('10:00')});
+  const acceptance = (extra: Partial<ConflictAcceptance> = {}) => ({
+    id: 'acc',
+    organizationId: 'org',
+    warningKey: 'venue:a:b',
+    windows: [
+      {taskId: 'a', startsAt: a.startsAt!, endsAt: a.endsAt!},
+      {taskId: 'b', startsAt: b.startsAt!, endsAt: b.endsAt!},
+    ],
+    reason: M.reason,
+    acceptedBy: dailos,
+    acceptedAt: at('17:00'),
+    restricted: false,
+    ...extra,
+  });
+
+  it('lists the day decisions with who and when; the reason only when included', () => {
+    const r = buildDayReport(
+      input({tasks: [a, b], acceptances: [acceptance()]}),
+    );
+    expect(r.accepted).toEqual([
+      expect.objectContaining({
+        id: 'acc',
+        by: dailos,
+        at: at('17:00'),
+        applies: true,
+        reason: null,
+        taskIds: ['a', 'b'],
+      }),
+    ]);
+    expect(JSON.stringify(r)).not.toContain(M.reason);
+    const shown = buildDayReport(
+      input({
+        tasks: [a, b],
+        acceptances: [acceptance()],
+        includeText: {decision: true},
+      }),
+    );
+    expect(shown.accepted[0].reason).toBe(M.reason);
+    expect(dayReportText(shown, '2 dic')).not.toContain(M.reason);
+    expect(dayReportText(shown, '2 dic')).toContain('(Dailos)');
+  });
+
+  it('says when it no longer applies and names the tasks', () => {
+    const moved = {...b, startsAt: at('11:30'), endsAt: at('12:00')};
+    const r = buildDayReport(
+      input({tasks: [a, moved], acceptances: [acceptance()]}),
+    );
+    expect(r.accepted[0]).toMatchObject({
+      applies: false,
+      label: 'Conflicto entre Montaje Demo y Reparto Demo',
+      tasks: 'Montaje Demo y Reparto Demo',
+    });
+    expect(dayReportText(r, '2 dic')).toContain(
+      '- Conflicto entre Montaje Demo y Reparto Demo (',
+    );
+    expect(dayReportText(r, '2 dic')).toContain('ya no aplica');
+  });
+
+  it('leaves out other days and never shows a guest the reason', () => {
+    const other = acceptance({
+      id: 'old',
+      acceptedAt: at('17:00', '2026-12-01'),
+    });
+    const guest = buildDayReport(
+      input({
+        viewer: {id: 'u-guest', displayName: 'Invitado', role: 'guest'},
+        tasks: [a, b],
+        acceptances: [acceptance({reason: null, restricted: true}), other],
+        includeText: {decision: true},
+      }),
+    );
+    expect(guest.accepted.map(l => [l.id, l.reason])).toEqual([['acc', null]]);
   });
 });
 

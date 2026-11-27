@@ -1,9 +1,14 @@
 /**
  * A warehouse: view first, with its resources and «Añadir recurso aquí»;
- * «Editar» for members. Name, address and observations only: no map and no
- * geometry (a storage area on the venue needs its own plan, because it must
- * never block routes A/B/C or accessibility services).
+ * «Editar» for members. Name, acronym, address, opening hours and
+ * observations only: no map and no geometry (a storage area on the venue
+ * needs its own plan, because it must never block routes A/B/C or
+ * accessibility services).
  *
+ * - The acronym starts from a proposal («Almacén Municipal» → «A.M.») and
+ *   follows the name until someone writes their own.
+ * - Opening hours are optional, the same every day, both times or none;
+ *   unknown hours read «Pendiente de verificar».
  * - Two warehouses cannot share a name: the server answers 409 DUPLICATE and
  *   the sheet offers «Abrir el existente».
  * - Deleting keeps its resources, without a warehouse.
@@ -17,6 +22,16 @@ import type {
   Warehouse,
   WarehouseInput,
 } from '../../../shared/logistics/contracts.ts';
+import {
+  ACRONYM_MAX,
+  acronymProblem,
+  proposeAcronym,
+} from '../../../shared/logistics/acronym.ts';
+import {
+  OPENING_HOURS_INVALID,
+  openingHoursLabel,
+  openingHoursProblem,
+} from '../../../shared/logistics/move.ts';
 import {missingForWarehouse} from '../../../shared/logistics/quality.ts';
 import {
   ADDRESS_MAX,
@@ -52,10 +67,26 @@ import {plural} from '../lib/format';
 import {sortResources} from '../lib/inventory';
 import {nameKey} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
-import {Button, Field, Icon, Input, Sheet, Textarea, describedBy} from '../ui';
+import {
+  Button,
+  Field,
+  HelpTip,
+  Icon,
+  Input,
+  Pending,
+  Sheet,
+  Textarea,
+  TimeField,
+  describedBy,
+} from '../ui';
 import {ResourceRow} from './ResourceParts';
 
 type RescuedValues = Record<string, unknown>;
+
+export const HOURS_HELP =
+  'Horario en que se puede entrar al almacén a cargar o descargar material, cada día, en la hora del lugar. Ayuda a planificar recogidas y entregas. Si no se conoce, queda «Pendiente de verificar».';
+const ACRONYM_HELP =
+  'Forma corta del nombre para columnas y listas estrechas, como «A.M.» para «Almacén Municipal». Parte de una propuesta y se puede cambiar.';
 
 export type WarehouseSheetMode =
   | {kind: 'view'; warehouse: Warehouse}
@@ -74,7 +105,12 @@ export type WarehouseSheetMode =
 
 interface FormValues {
   name: string;
+  /** Starts from the proposal; empty = use the proposal. */
+  acronym: string;
   address: string;
+  /** `HH:MM` or '' (both or neither). */
+  opensAt: string;
+  closesAt: string;
   notes: string;
   source: DataSource | null;
   verification: Verification;
@@ -82,15 +118,25 @@ interface FormValues {
 
 const EMPTY: FormValues = {
   name: '',
+  acronym: '',
   address: '',
+  opensAt: '',
+  closesAt: '',
   notes: '',
   source: null,
   verification: 'draft',
 };
 
+/** «Almacén Municipal» → «A.M.»; '' for an empty name. */
+const proposalFor = (name: string) =>
+  proposeAcronym(name, {dotted: true}) ?? '';
+
 const toValues = (w: Warehouse): FormValues => ({
   name: w.name,
+  acronym: w.acronym ?? proposalFor(w.name),
   address: w.address ?? '',
+  opensAt: w.openingHours?.opensAt ?? '',
+  closesAt: w.openingHours?.closesAt ?? '',
   notes: w.notes ?? '',
   source: w.source,
   verification: w.verification,
@@ -98,7 +144,14 @@ const toValues = (w: Warehouse): FormValues => ({
 
 function fromRescue(raw: RescuedValues, fallback: FormValues): FormValues {
   const out = {...fallback};
-  for (const k of ['name', 'address', 'notes'] as const) {
+  for (const k of [
+    'name',
+    'acronym',
+    'address',
+    'opensAt',
+    'closesAt',
+    'notes',
+  ] as const) {
     if (typeof raw[k] === 'string') out[k] = raw[k];
   }
   if (raw.source === null) out.source = null;
@@ -116,17 +169,39 @@ function fromRescue(raw: RescuedValues, fallback: FormValues): FormValues {
 
 const SERVER_FIELD: Partial<Record<string, keyof FormValues>> = {
   name: 'name',
+  acronym: 'acronym',
   address: 'address',
+  // One message for the pair, shown under both times.
+  openingHours: 'opensAt',
+  opensAt: 'opensAt',
+  closesAt: 'opensAt',
   notes: 'notes',
   source: 'source',
   verification: 'verification',
 };
 
+/** The opening hours of the form: null when unknown (both empty). */
+function hoursOf(v: Pick<FormValues, 'opensAt' | 'closesAt'>) {
+  return v.opensAt || v.closesAt
+    ? {opensAt: v.opensAt, closesAt: v.closesAt}
+    : null;
+}
+
 function validate(v: FormValues): FormErrors<FormValues> {
   const e: FormErrors<FormValues> = {};
   if (!v.name.trim()) e.name = 'Escribe el nombre, aunque sea provisional.';
+  const acronym = acronymProblem(v.acronym);
+  if (acronym) e.acronym = acronym;
   if (v.address.trim().length > ADDRESS_MAX) {
     e.address = `Como mucho ${ADDRESS_MAX} caracteres.`;
+  }
+  const hours = hoursOf(v);
+  if (hours) {
+    const problem =
+      !hours.opensAt || !hours.closesAt
+        ? OPENING_HOURS_INVALID
+        : openingHoursProblem(hours);
+    if (problem) e.opensAt = problem;
   }
   if (v.notes.trim().length > NOTES_MAX) {
     e.notes = `Como mucho ${NOTES_MAX} caracteres.`;
@@ -189,6 +264,7 @@ const WarehouseView: React.FC<{
   );
   const contracted = resources.filter(r => r.ownership === 'contracted');
   const owned = resources.filter(r => r.ownership === 'owned');
+  const proposal = proposalFor(w.name);
 
   return (
     <Sheet
@@ -246,9 +322,43 @@ const WarehouseView: React.FC<{
             </dd>
           </div>
           <div>
+            <dt className="lx-whterm">
+              Horario
+              <HelpTip label="horario del almacén">{HOURS_HELP}</HelpTip>
+            </dt>
+            <dd id="lx-warehouse-hours-view">
+              {w.openingHours ? (
+                <span className="lx-num">
+                  {openingHoursLabel(w.openingHours)}
+                  <span className="lx-muted"> · cada día</span>
+                </span>
+              ) : (
+                <Pending />
+              )}
+            </dd>
+          </div>
+          <div>
             <dt>Observaciones</dt>
             <dd className="lx-detail__notes">
               <Value value={w.notes} withheld={w.restricted} empty="—" />
+            </dd>
+          </div>
+          <div>
+            <dt className="lx-whterm">
+              Siglas
+              <HelpTip label="siglas">{ACRONYM_HELP}</HelpTip>
+            </dt>
+            <dd id="lx-warehouse-acronym-view">
+              {w.acronym ? (
+                <strong className="lx-num">{w.acronym}</strong>
+              ) : proposal ? (
+                <>
+                  <strong className="lx-num">{proposal}</strong>
+                  <span className="lx-muted"> · propuesta</span>
+                </>
+              ) : (
+                <Pending />
+              )}
             </dd>
           </div>
           <div>
@@ -365,7 +475,11 @@ const WarehouseForm: React.FC<{
   const blank = useMemo<FormValues>(
     () =>
       mode.kind === 'create'
-        ? {...EMPTY, name: mode.prefill?.name ?? ''}
+        ? {
+            ...EMPTY,
+            name: mode.prefill?.name ?? '',
+            acronym: proposalFor(mode.prefill?.name ?? ''),
+          }
         : EMPTY,
     // Only the opening values matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -395,15 +509,48 @@ const WarehouseForm: React.FC<{
   const {values, set, errors, base, saving} = f;
   const isCreate = !base;
   const count = base?.resourceCount ?? 0;
+  const {timeZone} = useActions();
+  const hoursNoteId = errors.opensAt
+    ? 'lx-warehouse-hours-error'
+    : 'lx-warehouse-hours-hint';
+  const proposal = proposalFor(values.name);
+  // Leaving for another warehouse loses nothing typed when only the name
+  // changed: an acronym that still follows the name's proposal (or is empty)
+  // was never written by the user.
+  const acronymFollows =
+    !values.acronym.trim() || values.acronym.trim() === proposal;
+  const keepOnLeave: (keyof FormValues)[] = acronymFollows
+    ? ['name', 'acronym']
+    : ['name'];
+  const acronymHint = `Para columnas y listas estrechas.${
+    proposal && values.acronym.trim() !== proposal
+      ? ` Propuesta: ${proposal}`
+      : ''
+  }`;
 
   const change = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
     set(k, v);
-    if (k === 'name') setDuplicate(null);
+    if (k === 'name') {
+      setDuplicate(null);
+      // The acronym follows the name while it is still the proposal (or
+      // empty); one the user wrote is kept.
+      const acronym = values.acronym.trim();
+      if (!acronym || acronym === proposalFor(values.name)) {
+        set('acronym', proposalFor(v as string));
+      }
+    }
+    // One message covers both times: changing either clears it.
+    if (k === 'closesAt' && errors.opensAt) {
+      f.setErrors(e => ({...e, opensAt: undefined}));
+    }
   };
 
   const inputFrom = (v: FormValues): WarehouseInput => ({
     name: v.name.trim(),
+    // Empty means «use the proposal»: nothing stored.
+    acronym: nullIfEmpty(v.acronym),
     address: nullIfEmpty(v.address),
+    openingHours: hoursOf(v),
     notes: nullIfEmpty(v.notes),
     source: v.source,
     verification: v.verification,
@@ -435,12 +582,16 @@ const WarehouseForm: React.FC<{
       const patch: WarehouseInput = {version: base.version};
       for (const k of [
         'name',
+        'acronym',
         'address',
         'notes',
         'source',
         'verification',
       ] as const) {
         if (f.changed(k)) Object.assign(patch, {[k]: full[k]});
+      }
+      if (f.changed('opensAt') || f.changed('closesAt')) {
+        patch.openingHours = full.openingHours;
       }
       if (Object.keys(patch).length === 1) {
         toast('No había cambios que guardar.', 'info');
@@ -607,7 +758,7 @@ const WarehouseForm: React.FC<{
                       f.settleReview();
                       onShow(duplicate);
                     },
-                    ['name'],
+                    keepOnLeave,
                   )
                 }
               >
@@ -641,9 +792,34 @@ const WarehouseForm: React.FC<{
             excludeId={base?.id}
             noun="el mismo almacén"
             dismissLabel="No, es otro"
-            onOpen={w => f.leaveFor(w.name, () => onShow(w), ['name'])}
+            onOpen={w => f.leaveFor(w.name, () => onShow(w), keepOnLeave)}
           />
         )}
+
+        <Field
+          id="lx-warehouse-acronym"
+          label="Siglas"
+          optional
+          error={errors.acronym}
+          hint={acronymHint}
+        >
+          <Input
+            id="lx-warehouse-acronym"
+            name="lx-warehouse-acronym"
+            className="lx-whform__acronym"
+            value={values.acronym}
+            invalid={!!errors.acronym}
+            maxLength={ACRONYM_MAX + 4}
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby={describedBy('lx-warehouse-acronym', {
+              error: errors.acronym,
+              hint: true,
+            })}
+            placeholder={proposalFor(values.name) || 'A.M.'}
+            onChange={e => change('acronym', e.target.value)}
+          />
+        </Field>
 
         <Field
           id="lx-warehouse-address"
@@ -667,6 +843,68 @@ const WarehouseForm: React.FC<{
           />
         </Field>
 
+        <fieldset className="lx-whhours" id="lx-warehouse-hours">
+          <legend className="lx-field__label">
+            Horario
+            <span className="lx-field__optional"> · opcional</span>
+            <HelpTip label="horario del almacén">{HOURS_HELP}</HelpTip>
+          </legend>
+          <div className="lx-whhours__times">
+            <Field id="lx-warehouse-opensAt" label="Abre">
+              <TimeField
+                id="lx-warehouse-opensAt"
+                name="lx-warehouse-opensAt"
+                value={values.opensAt}
+                timeZone={timeZone}
+                invalid={!!errors.opensAt}
+                aria-describedby={hoursNoteId}
+                onChange={v => change('opensAt', v)}
+              />
+            </Field>
+            <Field id="lx-warehouse-closesAt" label="Cierra">
+              <TimeField
+                id="lx-warehouse-closesAt"
+                name="lx-warehouse-closesAt"
+                value={values.closesAt}
+                timeZone={timeZone}
+                invalid={!!errors.opensAt}
+                aria-describedby={hoursNoteId}
+                onChange={v => change('closesAt', v)}
+              />
+            </Field>
+            {(values.opensAt || values.closesAt) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="lx-whhours__clear"
+                id="lx-warehouse-hours-clear"
+                onClick={() => {
+                  change('opensAt', '');
+                  change('closesAt', '');
+                  // The button goes away: keep the focus in the field.
+                  document.getElementById('lx-warehouse-opensAt')?.focus();
+                }}
+              >
+                Quitar el horario
+              </Button>
+            )}
+          </div>
+          {errors.opensAt ? (
+            <p
+              className="lx-field__error"
+              id="lx-warehouse-hours-error"
+              role="alert"
+            >
+              {errors.opensAt}
+            </p>
+          ) : (
+            <p className="lx-field__hint" id="lx-warehouse-hours-hint">
+              El mismo cada día, en hora del lugar. Déjalo vacío si no se sabe:
+              quedará «Pendiente de verificar».
+            </p>
+          )}
+        </fieldset>
+
         <Field
           id="lx-warehouse-notes"
           label="Observaciones"
@@ -683,12 +921,13 @@ const WarehouseForm: React.FC<{
               error: errors.notes,
               hint: true,
             })}
-            placeholder="Abre de 7:30 a 15:00; la llave está en conserjería."
+            placeholder="La llave está en conserjería; se carga por la puerta trasera."
             onChange={e => change('notes', e.target.value)}
           />
         </Field>
 
         <QualityFields
+          title="Calidad del almacén"
           idPrefix="lx-warehouse"
           source={values.source}
           verification={values.verification}

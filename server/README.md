@@ -19,7 +19,7 @@ Para probar en un portátil sin Docker. Es PostgreSQL de verdad (PGlite), pero d
 ```sh
 npm --prefix server install                 # dependencias del servidor
 npm --prefix server run db:migrate          # crea las tablas
-npm --prefix server run db:seed             # organización, 5 usuarios y datos de demostración
+npm --prefix server run db:seed             # organización, 6 usuarios y datos de demostración
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
@@ -34,11 +34,11 @@ npm --prefix server ci                      # dependencias del servidor
 cp server/.env.example server/.env          # configuración local (no se sube a Git)
 npm --prefix server run db:up               # PostgreSQL en el puerto 5433
 npm --prefix server run db:migrate          # crea las tablas
-npm --prefix server run db:seed             # organización, 5 usuarios y datos de demostración
+npm --prefix server run db:seed             # organización, 6 usuarios y datos de demostración
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
-`db:seed` imprime **una sola vez** la contraseña de cada usuario (Elvis, Dailos, Yeray, Equipo e Invitado). Apúntalas: no se guardan en claro en ningún sitio. Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras y cierra las sesiones abiertas.
+`db:seed` imprime **una sola vez** la contraseña de cada usuario nuevo (Elvis, Dailos, Yeray, Equipo, Invitado y Fabián) con sus roles. Apúntalas: no se guardan en claro en ningún sitio. Son **provisionales**: cada persona la cambia en «Mi cuenta» al entrar. Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras (provisionales) y cierra las sesiones abiertas; también puede hacerlo una persona de administración o desarrollo desde «Usuarios», cuenta por cuenta.
 
 Comprobación: `http://localhost:8787/api/health` responde `{"status":"ok","database":"ok","version":"0.1.0"}`.
 
@@ -57,11 +57,50 @@ Después arranca la web con `npm run dev` y abre `http://localhost:5173/#logisti
 | Base de datos y API en Docker                   | `docker compose -f server/docker-compose.yml --profile full up -d --build` |
 | Tests (sin Docker: PostgreSQL en memoria)       | `npx vitest run --root server`                                             |
 
-**Al actualizar el código** (por ejemplo, al llegar las tareas y el calendario, o los contactos y el catálogo): para la API, ejecuta `db:migrate` y después `db:seed`. Las migraciones nuevas solo añaden tablas y columnas, así que los datos existentes se conservan; `db:seed` conserva los usuarios y contraseñas existentes, da a la organización las 15 categorías de serie y añade al evento demo lo que le falte (tareas; empresas, personas y ofertas de demostración), una sola vez.
+**Al actualizar el código** (por ejemplo, al llegar las tareas y el calendario, o los contactos y el catálogo): para la API, ejecuta `db:migrate` y después `db:seed`. Las migraciones nuevas solo añaden tablas y columnas, así que los datos existentes se conservan; `db:seed` conserva los usuarios y contraseñas existentes, da a la organización las 15 categorías de serie y añade al evento demo lo que le falte (tareas; empresas, personas y ofertas de demostración), una sola vez. Con «Roles y acceso» (migración `0009_roles_access.sql`) las contraseñas existentes pasan a ser provisionales y `db:seed` crea el usuario Fabián (imprime su contraseña una vez) y asigna los roles del piloto.
 
 **Datos de demostración**: se borran desde la app («Borrar datos de demostración») o con `db:clear-demo`. Una vez borrados, la base de datos lo recuerda y `db:seed` (también con `--reset-passwords`) ya no los vuelve a crear; lo indica con una línea «Datos de demostración: se borraron el …». Los registros reales que tenían un enlace a la demo se conservan y lo pierden: tareas (su evento, una tarea previa o su contacto), personas (el evento demo) y empresas (su contacto principal). Quedan en «Actividad reciente» como modificados por quien borró la demo («Sistema» si fue con `db:clear-demo`). Las personas y empresas de demostración son ficticias (teléfonos `+34 000 000 00X`, correos `@example.com`); si una tarea real usa una de ellas, pasa a ser real y no se borra.
 
-**Invitado** ve nombres, empresas, cargos y ofertas, pero nunca teléfonos, correos, observaciones, precios, costes ni condiciones: el servidor los envía vacíos con `restricted: true`.
+**Invitado** solo consulta: ve el plan (tareas con el nombre de la empresa, lugares, inventario, notas), pero no Contactos ni Catálogo (el servidor responde 403 y la búsqueda no los devuelve), ni la persona de contacto de una tarea, ni fotos de perfil, observaciones, precios, costes o condiciones: el servidor los envía vacíos con `restricted: true`. No tiene perfil ni puede cambiar su contraseña.
+
+## Cuentas, roles y correo
+
+Cada persona entra con su **nombre de usuario** (el nombre con el que se creó; no cambia nunca, da igual mayúsculas o minúsculas). El nombre visible, la descripción, el color y la foto se cambian en «Mi cuenta».
+
+Los roles son por organización y se suman:
+
+| Rol            | Qué permite                                                                                                             |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Administración | Editar el plan, Contactos y Catálogo, presupuesto, aprobar ofertas, usuarios y roles, soporte                           |
+| Desarrollo     | Editar el plan, Contactos y Catálogo, ver el presupuesto, ayudar a entrar (contraseña provisional, enlace), diagnóstico |
+| Equipo         | Editar el plan, Contactos y Catálogo                                                                                    |
+
+Mientras la contraseña sea provisional, presupuesto, aprobación de ofertas, usuarios, soporte y diagnóstico quedan retenidos hasta cambiarla. `db:seed` asigna los roles del piloto una sola vez; si después alguien de administración los cambia, `db:seed` ya no los toca.
+
+**Sesión de soporte**: una persona de administración puede entrar como otra cuenta durante 5 a 30 minutos, repitiendo su contraseña y con un motivo. La cuenta lo ve en su historial de seguridad y en sus sesiones y puede cerrarla; en soporte no se llega a la contraseña, el correo, las sesiones, el perfil ni la administración. **Ver como Invitado** abre durante 30 minutos exactamente lo que ve Invitado.
+
+**Correo**: «¿Olvidaste tu contraseña?» manda un enlace de un solo uso, válido 30 minutos, al correo personal verificado de la cuenta o, si no tiene, al buzón del proyecto (`RECOVERY_FALLBACK_EMAIL`). La respuesta es siempre la misma, exista o no la cuenta. Restablecer cierra todas las sesiones de esa cuenta. Los correos son texto en español, firmados «Ox Eye», y nunca llevan una contraseña.
+
+Sin `SMTP_HOST` no se envía nada: en desarrollo el enlace aparece en la consola de la API; en producción solo «Correo pendiente para y•••@… (SMTP sin configurar)». Desde «Usuarios», el enlace para restablecer se muestra en pantalla para pasarlo en mano.
+
+**Enviar con Gmail (contraseña de aplicación)**
+
+1. Con la cuenta de Google del proyecto, activa la verificación en dos pasos: <https://myaccount.google.com/security>.
+2. Crea una contraseña de aplicación en <https://myaccount.google.com/apppasswords> (nombre, por ejemplo, «Ox Eye»). Google muestra 16 letras una sola vez.
+3. En `server/.env` (nunca en el repositorio):
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=465
+   SMTP_SECURE=true
+   SMTP_USER=<la cuenta de Gmail>
+   SMTP_PASS=<las 16 letras, sin espacios>
+   MAIL_FROM=Ox Eye <la cuenta de Gmail>
+   RECOVERY_FALLBACK_EMAIL=<buzón del proyecto>
+   PUBLIC_APP_URL=<dirección de la web, sin #logistica>
+   ```
+4. Reinicia la API: al arrancar indica «Correo de cuentas: SMTP smtp.gmail.com:465».
+
+Si la contraseña de aplicación se filtra, revócala en la misma página y crea otra. Con el puerto 587, `SMTP_SECURE=false` (la API exige STARTTLS).
 
 **Empezar de cero** (borra todos los datos locales): `npm --prefix server run db:down`, elimina la carpeta `server/pgdata` y repite migrate y seed.
 
@@ -107,7 +146,8 @@ Arranca la API (o usa la que ya esté en marcha), compila la web, la sirve en `h
 - Tu PC tiene que estar encendido, sin suspenderse y con la terminal abierta.
 - La dirección cambia cada vez que arrancas: hay que reenviarla.
 - Si cambias el código, para y vuelve a lanzar `npm run equipo` (compila de nuevo).
-- Cada persona entra con su usuario y la contraseña que generó `db:seed`.
+- Cada persona entra con su usuario y la contraseña que generó `db:seed` (provisional: la cambia al entrar).
+- «¿Olvidaste tu contraseña?» no manda enlace por el túnel (su dirección cambia cada vez y la API no la conoce); usa «Usuarios › Enlace para restablecer» desde una cuenta de administración o desarrollo.
 - La API ve todas las peticiones como si vinieran de tu PC, así que el límite de intentos de acceso es compartido: si alguien falla varias veces la contraseña, el bloqueo temporal afecta a todos.
 - Los datos viajan cifrados, pero pasan por Cloudflare. Para la jornada real, el servidor externo.
 

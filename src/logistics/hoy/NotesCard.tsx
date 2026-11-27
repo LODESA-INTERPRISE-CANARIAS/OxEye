@@ -6,13 +6,16 @@
  *
  * Members read the first line of each note here; guests see «Visible para
  * el equipo». The button that opens a note never carries its text.
+ *
+ * E3: a question with an answer reads «Con respuesta» and stays pending
+ * until its asker closes it; the asker gets a one-line reminder here.
  */
 import React, {useMemo, useState} from 'react';
 import {useActions} from '../common/actions';
 import {NoteItem} from '../common/RecordNotes';
-import {notesForToday} from '../lib/inventory';
+import {awaitsAsker, notesForToday} from '../lib/inventory';
 import {useLogisticsStore} from '../store/useLogisticsStore';
-import {Button, Card, EmptyState, LoadError, SkeletonRows} from '../ui';
+import {Button, Card, EmptyState, Icon, LoadError, SkeletonRows} from '../ui';
 
 /** Notes shown before «Ver todas». */
 const SHOWN = 5;
@@ -29,6 +32,9 @@ export const NotesCard: React.FC = () => {
     [notes, today, timeZone],
   );
   const total = open.length + todays.length;
+  // E3: questions of this person that have an answer waiting for them.
+  const me = useLogisticsStore(s => s.session?.user.id ?? null);
+  const mine = open.filter(n => awaitsAsker(n) && n.createdBy.id === me);
   // Open ones always show; today's fill up to SHOWN unless expanded.
   const collapsedRoom = Math.max(0, SHOWN - open.length);
   const shownToday = todays.slice(0, expanded ? todays.length : collapsedRoom);
@@ -64,6 +70,14 @@ export const NotesCard: React.FC = () => {
                 {open.length}
               </span>
             </p>
+            {canWrite && mine.length > 0 && (
+              <p className="lx-hoynotes__mine" id="lx-hoy-notes-answered">
+                <Icon name="chat" size={15} />
+                {mine.length === 1
+                  ? 'Una pregunta tuya tiene respuesta: ábrela para darla por respondida.'
+                  : `${mine.length} preguntas tuyas tienen respuesta: ábrelas para darlas por respondidas.`}
+              </p>
+            )}
             <ul className="lx-notelist" aria-labelledby="lx-hoy-notes-open">
               {open.map(n => (
                 <NoteItem key={n.id} note={n} showRef showEvent />

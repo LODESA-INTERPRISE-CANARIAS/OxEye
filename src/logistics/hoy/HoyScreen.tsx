@@ -2,6 +2,10 @@
  * «Hoy»: today's events and tasks (now / next first), today's warnings,
  * open incidents and today's notes, upcoming events, how much information
  * is verified, the month at a glance and recent activity.
+ *
+ * Wide screens: the day and the notes side by side, «Próximos eventos»
+ * across the whole width (up to four columns), then the rest beside the
+ * month and the activity. Narrower screens stack everything in that order.
  */
 import React, {useMemo} from 'react';
 import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
@@ -19,10 +23,16 @@ import {DemoNotice, type DemoCounts} from './DemoNotice';
 import {MiniCalendar} from './MiniCalendar';
 import {NotesCard} from './NotesCard';
 import {TodayTasks} from './TodayTasks';
+import {emptySummary, summarizeEvents} from './upcoming';
 import {VerifiedCard} from './VerifiedCard';
 import {WarningsCard} from './WarningsCard';
 
-const MAX_UPCOMING = 6;
+/**
+ * Upcoming events shown before «Y N más»: two rows of four on a wide screen,
+ * fewer on a phone, where each card takes the whole width.
+ */
+const MAX_UPCOMING = 8;
+const MAX_UPCOMING_PHONE = 4;
 
 export interface HoyScreenProps {
   today: string;
@@ -36,9 +46,14 @@ const Section: React.FC<{
   id: string;
   title: React.ReactNode;
   count?: number;
+  className?: string;
   children: React.ReactNode;
-}> = ({id, title, count, children}) => (
-  <section className="lx-section" aria-labelledby={`${id}-title`} id={id}>
+}> = ({id, title, count, className, children}) => (
+  <section
+    className={className ? `lx-section ${className}` : 'lx-section'}
+    aria-labelledby={`${id}-title`}
+    id={id}
+  >
     <h2 className="lx-section__title" id={`${id}-title`}>
       {title}
       {count != null && <span className="lx-count lx-num">{count}</span>}
@@ -76,8 +91,9 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
   const hasOrg = useLogisticsStore(s => !!s.orgId);
   const {addTask, openDay} = useActions();
   const plan = usePlan();
-  // Same breakpoint as the two-column grid in screens.css.
-  const wide = useMediaQuery('(min-width: 1240px)');
+  // Same breakpoint as the single-column layout in screens.css.
+  const phone = useMediaQuery('(max-width: 599px)');
+  const maxUpcoming = phone ? MAX_UPCOMING_PHONE : MAX_UPCOMING;
 
   const {todayEvents, upcoming, undated} = useMemo(
     () => groupForToday(events, today),
@@ -88,13 +104,11 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
     () => sortTasks(plan.byDay.get(today)?.tasks ?? []),
     [plan, today],
   );
-  const taskCount = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const t of tasks) {
-      if (t.eventId) counts.set(t.eventId, (counts.get(t.eventId) ?? 0) + 1);
-    }
-    return counts;
-  }, [tasks]);
+  // Tasks, warnings and companies per event, from the shared plan.
+  const summaries = useMemo(
+    () => summarizeEvents(tasks, plan.warnings),
+    [tasks, plan],
+  );
   const contacts = useLogisticsStore(s => s.contacts);
   const companies = useLogisticsStore(s => s.companies);
   const offers = useLogisticsStore(s => s.offers);
@@ -146,6 +160,10 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
   const tasksReady = tasksState === 'ready' || tasks.length > 0;
   const nothingToday = todayEvents.length === 0 && todayTasks.length === 0;
 
+  /**
+   * Today's cards keep the short form (the day's tasks and warnings follow
+   * right below); upcoming and undated ones say what the event needs.
+   */
   const card = (event: LogisticsEvent, showDate: boolean) => (
     <EventCard
       key={event.id}
@@ -153,7 +171,12 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
       canWrite={canWrite}
       showDate={showDate}
       today={today}
-      taskCount={taskCount.get(event.id)}
+      taskCount={summaries.get(event.id)?.tasks}
+      summary={
+        showDate && tasksReady
+          ? (summaries.get(event.id) ?? emptySummary())
+          : undefined
+      }
       onOpen={onOpenEvent}
     />
   );
@@ -241,68 +264,71 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
           {!loading && !failed && tasksReady && todayTasks.length > 0 && (
             <WarningsCard plan={plan} />
           )}
+        </div>
 
-          {/* Below the wide layout, right after the day: on site it is the
-              first thing to check and to write. */}
-          {!wide && <NotesCard />}
+        {/* Right after the day (beside it on a wide screen): on site it is
+            the first thing to check and to write. */}
+        <div className="lx-hoy__notes">
+          <NotesCard />
+        </div>
 
-          {!loading && !failed && (
-            <Section id="lx-upcoming" title="Próximos" count={upcoming.length}>
-              {upcoming.length ? (
-                <>
-                  <div className="lx-event-grid">
-                    {upcoming.slice(0, MAX_UPCOMING).map(e => card(e, true))}
-                  </div>
-                  {upcoming.length > MAX_UPCOMING && (
-                    <p className="lx-section__more">
-                      <span className="lx-muted">
-                        Y {upcoming.length - MAX_UPCOMING} más.
-                      </span>{' '}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon="month"
-                        onClick={() =>
-                          openDay(upcoming[MAX_UPCOMING].date ?? today)
-                        }
-                      >
-                        Verlos en el calendario
-                      </Button>
-                    </p>
-                  )}
-                </>
-              ) : (
-                <EmptyState
-                  compact
-                  icon="calendar"
-                  title="Sin eventos próximos"
-                >
-                  Los eventos con fecha posterior a hoy aparecerán aquí.
-                </EmptyState>
-              )}
-            </Section>
-          )}
+        {!loading && !failed && (
+          <Section
+            id="lx-upcoming"
+            title="Próximos eventos"
+            count={upcoming.length}
+            className="lx-hoy__wide"
+          >
+            {upcoming.length ? (
+              <>
+                <div className="lx-event-grid lx-event-grid--upcoming">
+                  {upcoming.slice(0, maxUpcoming).map(e => card(e, true))}
+                </div>
+                {upcoming.length > maxUpcoming && (
+                  <p className="lx-section__more" id="lx-upcoming-more">
+                    <span className="lx-muted">
+                      Y {upcoming.length - maxUpcoming} más.
+                    </span>{' '}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="month"
+                      onClick={() =>
+                        openDay(upcoming[maxUpcoming].date ?? today)
+                      }
+                    >
+                      Verlos en el calendario
+                    </Button>
+                  </p>
+                )}
+              </>
+            ) : (
+              <EmptyState compact icon="calendar" title="Sin eventos próximos">
+                Los eventos con fecha posterior a hoy aparecerán aquí.
+              </EmptyState>
+            )}
+          </Section>
+        )}
 
-          {!loading && !failed && undated.length > 0 && (
-            <Section id="lx-undated" title="Sin fecha" count={undated.length}>
-              <div className="lx-event-grid">
-                {undated.map(e => card(e, true))}
-              </div>
-            </Section>
-          )}
-
-          {!loading && !failed && (
+        {!loading && !failed && (
+          <div className="lx-hoy__rest">
+            {undated.length > 0 && (
+              <Section id="lx-undated" title="Sin fecha" count={undated.length}>
+                <div className="lx-event-grid">
+                  {undated.map(e => card(e, true))}
+                </div>
+              </Section>
+            )}
             <VerifiedCard
               events={events}
               tasks={tasks}
               canWrite={canWrite}
               onOpenEvent={onOpenEvent}
             />
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="lx-hoy__side">
-          {wide && <NotesCard />}
           <MiniCalendar today={today} plan={plan} onOpenEvent={onOpenEvent} />
           <ActivityCard timeZone={timeZone} />
         </div>

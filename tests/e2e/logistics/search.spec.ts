@@ -2,6 +2,7 @@ import {expect, test, type Page} from '@playwright/test';
 import {ORG, mockApi, signIn} from './mock-api';
 import {NOW, fixClock} from './plan-fixtures';
 import {CAT, directoryData} from './directory-fixtures';
+import {choose} from './controls';
 
 /**
  * Gestor logístico, milestone 3: the universal search. «/» and Ctrl+K open
@@ -106,7 +107,7 @@ test.describe('Gestor logístico · búsqueda universal', () => {
     expect(new Set(await hitTypes(page))).toEqual(new Set(['offer']));
     await expect(hits(page)).toHaveCount(6);
 
-    await page.locator('#lx-search-category').selectOption(CAT.sonido);
+    await choose(page, 'lx-search-category', CAT.sonido);
     expect(await hitTitles(page)).toEqual(['Equipo de sonido Prueba']);
 
     // «Todo» with the category: companies and offers of that category.
@@ -330,11 +331,17 @@ test.describe('Gestor logístico · búsquedas recientes', () => {
     await expect(page.locator('#lx-search-recent')).not.toContainText(
       'búsqueda de Elvis',
     );
+    // E4: no people for the guest; the search is still kept on the device.
     await input(page).fill('ana');
+    await expect(page.locator('#lx-search-sheet')).not.toContainText(
+      'Ana Prueba',
+    );
     await page.keyboard.press('Enter');
-    await expect(page.locator('#lx-contact-sheet')).toBeVisible();
-    await page.keyboard.press('Escape');
-    await openSearch(page);
+    await expect(page.locator('#lx-contact-sheet')).toHaveCount(0);
+    await expect(page.locator('.lx-toast')).toContainText(
+      'Búsqueda guardada en recientes',
+    );
+    await input(page).fill('');
     await expect(
       page.locator('#lx-search-recent .lx-recent__query'),
     ).toHaveText(['ana']);

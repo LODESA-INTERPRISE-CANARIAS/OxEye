@@ -1,0 +1,690 @@
+/**
+ * The Gestor's own form controls: TimeField, DateField, SelectField,
+ * MultiSelectField and the floating panel they share (`ui/Popover.tsx`).
+ * 44 px targets, tabular figures, colours from the tokens only.
+ */
+
+/* ============================================================ field shell */
+.lx .lx-ctl {
+  position: relative;
+  min-width: 0;
+}
+
+/* Room for the picker button (and the weekday) inside the input. */
+.lx .lx-ctl .lx-ctl__input:not([type='checkbox']):not([type='radio']) {
+  padding-right: 52px;
+}
+
+.lx
+  .lx-ctl--date.lx-ctl--hasday
+  .lx-ctl__input:not([type='checkbox']):not([type='radio']) {
+  padding-right: 92px;
+}
+
+.lx .lx-ctl--open .lx-ctl__input:not([type='checkbox']):not([type='radio']),
+.lx .lx-ctl__select.lx-ctl--open {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-ctl__toggle {
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: var(--lx-target);
+  height: var(--lx-target);
+  border-radius: var(--lx-radius-sm);
+  color: var(--lx-muted);
+  transform: translateY(-50%);
+}
+
+.lx .lx-ctl__toggle:hover:not(:disabled),
+.lx .lx-ctl__toggle[aria-expanded='true'] {
+  color: var(--lx-accent-strong);
+}
+
+.lx .lx-ctl__toggle[aria-expanded='true'] {
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-ctl__toggle:active:not(:disabled) {
+  transform: translateY(-50%);
+}
+
+.lx .lx-ctl__toggle:focus-visible {
+  outline-offset: -3px;
+}
+
+.lx .lx-ctl__weekday {
+  position: absolute;
+  top: 50%;
+  right: 48px;
+  transform: translateY(-50%);
+  padding: 2px 7px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.lx .lx-ctl__note {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--lx-danger-soft);
+  color: var(--lx-ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ============================================================ select button */
+.lx .lx-input.lx-ctl__select {
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-bg-hover: var(--lx-surface);
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-border: var(--lx-control-border);
+  --lx-btn-border-hover: var(--lx-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lx .lx-input.lx-ctl__select[aria-invalid='true'] {
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-border-hover: var(--lx-danger);
+}
+
+.lx .lx-input.lx-ctl__select.lx-ctl--open {
+  --lx-btn-border: var(--lx-accent);
+  --lx-btn-border-hover: var(--lx-accent);
+}
+
+.lx .lx-ctl__select:active:not(:disabled) {
+  transform: none;
+}
+
+.lx .lx-ctl__select:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.lx .lx-ctl__selected {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx .lx-ctl__selected--empty {
+  color: var(--lx-muted);
+}
+
+.lx .lx-ctl__chevron {
+  color: var(--lx-muted);
+  transition: transform 0.15s ease;
+}
+
+.lx [aria-expanded='true'] > .lx-ctl__chevron {
+  transform: rotate(180deg);
+  color: var(--lx-accent-strong);
+}
+
+/* ============================================================ multi-select */
+.lx .lx-ctl--multi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 5px 6px 5px 8px;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  cursor: pointer;
+}
+
+.lx .lx-ctl--multi:hover {
+  border-color: var(--lx-muted);
+}
+
+.lx .lx-ctl--multi:focus-within {
+  border-color: var(--lx-accent);
+  box-shadow: 0 0 0 4px var(--lx-ring);
+}
+
+.lx .lx-ctl--multi.lx-ctl--open {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-ctl--multi.lx-ctl--invalid {
+  border-color: var(--lx-danger);
+}
+
+.lx .lx-ctl--multi.lx-ctl--disabled {
+  background: var(--lx-surface-2);
+  cursor: not-allowed;
+}
+
+.lx .lx-ms__chips {
+  display: contents;
+  list-style: none;
+}
+
+.lx .lx-ms__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0 2px 0 12px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.lx .lx-ms__chiplabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx .lx-ms__remove {
+  --lx-btn-bg-hover: color-mix(in srgb, var(--lx-accent) 18%, transparent);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--lx-heading);
+}
+
+/* 44 px touch target around the small round ×. */
+.lx .lx-ms__remove::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.lx .lx-ms__toggle {
+  display: inline-flex;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--lx-target);
+  min-width: 7.5rem;
+  padding: 0 8px 0 6px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.lx .lx-ms__toggle:active:not(:disabled) {
+  transform: none;
+}
+
+.lx .lx-ms__toggle:focus-visible {
+  outline-offset: 0;
+}
+
+.lx .lx-ms__none {
+  color: var(--lx-muted);
+}
+
+.lx .lx-ms__add {
+  color: var(--lx-accent-strong);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ============================================================ floating panel */
+.lx .lx-pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  box-shadow: var(--lx-shadow-float);
+  font-family: var(--lx-font);
+  font-size: 15px;
+}
+
+.lx .lx-pop:popover-open,
+.lx .lx-pop--fallback:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Without the Popover API: a fixed layer inside the sheet, above its body. */
+.lx .lx-pop--fallback {
+  z-index: 60;
+}
+
+.lx .lx-pop[hidden] {
+  display: none;
+}
+
+@supports not selector(:popover-open) {
+  .lx .lx-pop[popover] {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lx .lx-pop:popover-open,
+  .lx .lx-pop--fallback:not([hidden]) {
+    animation: lx-pop-in 0.14s ease-out;
+  }
+}
+
+@keyframes lx-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lx .lx-pop--picker {
+  gap: 10px;
+  padding: 12px;
+}
+
+/* ============================================================ picker parts */
+.lx .lx-pick__label {
+  margin-bottom: -4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-pick__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* «Ahora» and the duration chips line up two by two. */
+.lx .lx-pick__quick--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lx .lx-pick__quick--grid .lx-pick__chip {
+  justify-content: center;
+}
+
+.lx .lx-pick__chip {
+  --lx-btn-border-w: 1.5px;
+  --lx-btn-border: var(--lx-control-border);
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--lx-target);
+  padding: 0 14px;
+  border-radius: var(--lx-pill);
+  color: var(--lx-heading);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.lx .lx-pick__chip span {
+  color: var(--lx-muted);
+  font-weight: 500;
+}
+
+.lx .lx-pick__chip[aria-pressed='true'] {
+  --lx-btn-bg: var(--lx-accent-soft);
+  --lx-btn-border: var(--lx-accent);
+}
+
+.lx .lx-pick__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.lx .lx-pick__foot--list {
+  flex: none;
+  margin: 4px 6px 0;
+  padding: 8px 0 6px;
+}
+
+.lx .lx-pick__clear {
+  min-height: var(--lx-target);
+  padding: 0 10px;
+  border-radius: var(--lx-pill);
+  color: var(--lx-accent-strong);
+  font-size: 14.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lx .lx-pick__clear:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lx .lx-pick__value {
+  color: var(--lx-heading);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* ============================================================ time panel */
+.lx .lx-tp {
+  display: grid;
+  gap: 10px;
+}
+
+.lx .lx-tp__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.lx .lx-tp__cell {
+  --lx-btn-bg: var(--lx-surface-2);
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  position: relative;
+  min-height: var(--lx-target);
+  border-radius: 10px;
+  color: var(--lx-heading);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.lx .lx-tp__cell--night {
+  color: var(--lx-muted);
+  font-weight: 500;
+}
+
+.lx .lx-tp__cell--minute {
+  font-size: 15px;
+}
+
+/* The current hour: a small mark under the number. */
+.lx .lx-tp__cell--now::after {
+  content: '';
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--lx-accent);
+}
+
+.lx .lx-tp__cell[aria-pressed='true'] {
+  --lx-btn-bg: var(--lx-accent);
+  --lx-btn-bg-hover: var(--lx-accent-strong);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-tp__cell[aria-pressed='true']::after {
+  background: var(--lx-on-accent);
+}
+
+/* ============================================================ date panel */
+.lx .lx-dp {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-dp__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.lx .lx-dp__title {
+  font-family: var(--lx-serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--lx-heading);
+}
+
+.lx .lx-dp__grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  table-layout: fixed;
+}
+
+.lx .lx-dp__grid th {
+  height: 26px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-muted);
+  text-align: center;
+}
+
+.lx .lx-dp__day {
+  height: var(--lx-target);
+  border-radius: 10px;
+  color: var(--lx-heading);
+  font-size: 15.5px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.lx .lx-dp__day--weekend {
+  color: var(--lx-muted);
+}
+
+.lx .lx-dp__day:hover {
+  background: var(--lx-accent-soft);
+}
+
+.lx .lx-dp__day:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: -1px;
+}
+
+.lx .lx-dp__day[aria-current='date'] {
+  box-shadow: inset 0 0 0 1.5px var(--lx-accent);
+  color: var(--lx-accent-strong);
+  font-weight: 700;
+}
+
+.lx .lx-dp__day[aria-selected='true'] {
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  font-weight: 700;
+}
+
+.lx .lx-dp__day[aria-selected='true'][aria-current='date'] {
+  box-shadow: inset 0 0 0 2px var(--lx-surface);
+}
+
+.lx .lx-dp__day[aria-disabled='true'] {
+  background: none;
+  color: color-mix(in srgb, var(--lx-muted) 55%, var(--lx-surface));
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+/* ============================================================ option list */
+.lx .lx-pop--list {
+  overflow: hidden;
+  padding: 6px 0;
+}
+
+.lx .lx-lb__search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  margin: 0 6px 6px;
+  padding: 0 10px;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-radius-sm);
+  color: var(--lx-muted);
+}
+
+.lx .lx-lb__search:focus-within {
+  border-color: var(--lx-accent);
+  box-shadow: 0 0 0 3px var(--lx-ring);
+}
+
+.lx .lx-lb__searchinput:not([type='checkbox']):not([type='radio']) {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lx-ink);
+  font-size: 16px;
+  box-shadow: none;
+}
+
+.lx
+  .lx-lb__searchinput:not([type='checkbox']):not([type='radio']):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.lx .lx-lb__searchinput::placeholder {
+  color: var(--lx-muted);
+}
+
+.lx .lx-lb,
+.lx .lx-lb__group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-lb {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lx .lx-lb__heading {
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-lb__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lx-target);
+  padding: 7px 12px;
+  border-radius: 10px;
+  color: var(--lx-ink);
+  font-size: 15.5px;
+  cursor: pointer;
+}
+
+.lx .lx-lb__option.is-active {
+  background: var(--lx-accent-soft);
+  box-shadow: inset 3px 0 0 var(--lx-accent);
+}
+
+.lx .lx-lb__option[aria-selected='true'] {
+  color: var(--lx-heading);
+  font-weight: 600;
+}
+
+.lx .lx-lb__option[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lx .lx-lb__option--empty .lx-lb__label {
+  color: var(--lx-muted);
+}
+
+.lx .lx-lb__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.lx .lx-lb__label {
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-lb__hint {
+  color: var(--lx-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.lx .lx-lb__check {
+  color: var(--lx-accent-strong);
+}
+
+.lx .lx-lb__box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: 6px;
+  background: var(--lx-surface);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-lb__option[aria-selected='true'] .lx-lb__box {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent);
+}
+
+.lx .lx-lb__none {
+  padding: 12px 16px;
+  color: var(--lx-muted);
+  font-size: 14.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx .lx-ctl__chevron,
+  .lx .lx-dp__day {
+    transition: none;
+  }
+}

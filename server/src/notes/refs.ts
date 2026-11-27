@@ -8,6 +8,7 @@
 import type {Queryable} from '../db/db.ts';
 import {appendActivity} from '../activity/service.ts';
 import {noteLabel} from '../../../shared/logistics/history.ts';
+import {DIRECTORY_REF_LABEL} from '../../../shared/logistics/redaction.ts';
 import type {
   NoteKind,
   NoteRefType,
@@ -58,7 +59,9 @@ export const NOTE_LABEL_JOINS = `
 export const NOTE_LABEL_COLUMNS = `ref_e.name AS note_event_name,
     COALESCE(ref_t.title, ref_v.name, ref_c.name, ref_k.name, ref_o.name,
              ref_w.name, ref_r.name) AS note_ref_label,
-    (ref_k.id IS NOT NULL) AS note_ref_is_contact`;
+    (ref_k.id IS NOT NULL) AS note_ref_is_contact,
+    CASE WHEN ref_c.id IS NOT NULL THEN 'company'
+         WHEN ref_o.id IS NOT NULL THEN 'offer' END AS note_ref_directory`;
 
 /** The reference columns of a note row, as selected with `n.*_id`. */
 export interface NoteRefColumns {
@@ -85,19 +88,28 @@ export function refOf(
 /**
  * «Incidencia · Montaje del escenario»: kind and what it points at, never the
  * text, and never a person's name (`noteLabel` falls back to the event).
+ *
+ * Safety audit: the activity feed is read by viewers without
+ * `directory.read` (the guest account), so a note on a company or an offer
+ * is labelled by what it is, «Incidencia · Oferta del catálogo», never by
+ * the supplier's or the offer's name (`DIRECTORY_REF_LABEL`).
  */
 export function labelOf(row: {
   kind: NoteKind;
   note_event_name: string | null;
   note_ref_label: string | null;
   note_ref_is_contact?: boolean | null;
+  note_ref_directory?: 'company' | 'offer' | null;
 }): string {
+  const directory = row.note_ref_directory ?? null;
   return noteLabel({
     kind: row.kind,
     ref: row.note_ref_label
       ? {
-          label: row.note_ref_label,
-          type: row.note_ref_is_contact ? 'contact' : undefined,
+          label: directory
+            ? DIRECTORY_REF_LABEL[directory]
+            : row.note_ref_label,
+          type: row.note_ref_is_contact ? 'contact' : (directory ?? undefined),
         }
       : null,
     event: row.note_event_name ? {name: row.note_event_name} : null,
@@ -120,6 +132,7 @@ export async function noteLabels(
     note_event_name: string | null;
     note_ref_label: string | null;
     note_ref_is_contact: boolean | null;
+    note_ref_directory: 'company' | 'offer' | null;
   }>(
     `SELECT n.id, n.organization_id, n.is_demo, n.kind, ${NOTE_LABEL_COLUMNS}
        FROM notes n ${NOTE_LABEL_JOINS}

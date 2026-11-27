@@ -1,6 +1,10 @@
 import {expect, test, type Page} from '@playwright/test';
-import {WITHHELD_FROM_GUESTS} from '../../../shared/logistics/redaction.ts';
 import {
+  DIRECTORY_REF_LABEL,
+  WITHHELD_FROM_GUESTS,
+} from '../../../shared/logistics/redaction.ts';
+import {
+  MOCK_DIRECTORY_REF_LABEL,
   MOCK_WITHHELD,
   ORG,
   TOKEN,
@@ -55,6 +59,8 @@ test.describe('Gestor logístico · el mock sigue el contrato M6', () => {
           .sort(([a], [b]) => a.localeCompare(b)),
       );
     expect(norm(MOCK_WITHHELD)).toEqual(norm(WITHHELD_FROM_GUESTS));
+    // Safety audit: the generic directory names too.
+    expect(MOCK_DIRECTORY_REF_LABEL).toEqual(DIRECTORY_REF_LABEL);
   });
 
   test('device ids: 201, the same user again is 200 without a duplicate, anyone else is 400', async ({

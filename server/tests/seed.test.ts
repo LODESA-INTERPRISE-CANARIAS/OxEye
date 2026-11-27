@@ -68,7 +68,7 @@ async function loginStatus(
 }
 
 describe('seed', () => {
-  it('creates the organization, five users and one demo event, idempotently', async () => {
+  it('creates the organization, six users and one demo event, idempotently', async () => {
     const clock = createClock();
     const db = await createPgliteDb();
     await migrate(db);
@@ -81,6 +81,15 @@ describe('seed', () => {
       PILOT_USERS.map(u => u.displayName),
     );
     expect(first.users.every(u => u.created && u.password)).toBe(true);
+    // E4: pilot roles; Fabián is administrator and developer.
+    expect(first.users.map(u => [u.username, u.roles])).toEqual([
+      ['Elvis', ['admin']],
+      ['Dailos', ['admin']],
+      ['Yeray', ['admin']],
+      ['Equipo', ['team']],
+      ['Invitado', []],
+      ['Fabián', ['admin', 'developer']],
+    ]);
     expect(first.demoEventCreated).toBe(true);
     expect(first.demoTasksCreated).toBe(DEMO_TASKS.length);
 
@@ -133,7 +142,7 @@ describe('seed', () => {
     );
     expect(counts[0]).toEqual({
       orgs: 1,
-      users: 5,
+      users: 6,
       events: 1,
       tasks: DEMO_TASKS.length,
       companies: DEMO_COMPANIES.length,
@@ -329,6 +338,12 @@ describe('seed', () => {
       '0004_contacts_catalogue.sql',
       '0005_inventories.sql',
       '0006_followup.sql',
+      '0007_moves_acceptances.sql',
+      '0008_answers_media.sql',
+      '0009_roles_access.sql',
+      '0010_money.sql',
+      '0011_offer_terms.sql',
+      '0012_support_attribution.sql',
     ]);
     const first = await seed(db, {passwordFor});
     expect(first.demoTasksCreated).toBe(0);
@@ -422,6 +437,12 @@ describe('seed', () => {
     expect((await migrate(db)).applied).toEqual([
       '0005_inventories.sql',
       '0006_followup.sql',
+      '0007_moves_acceptances.sql',
+      '0008_answers_media.sql',
+      '0009_roles_access.sql',
+      '0010_money.sql',
+      '0011_offer_terms.sql',
+      '0012_support_attribution.sql',
     ]);
     const first = await seed(db, {passwordFor});
     expect(first.demoTasksCreated).toBe(0);

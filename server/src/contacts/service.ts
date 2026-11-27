@@ -19,7 +19,12 @@ import {
   unlinkTasks,
 } from '../companies/service.ts';
 import {unlinkNotes} from '../notes/refs.ts';
-import {isUuid, requireMembership} from '../organizations/service.ts';
+import {
+  checkAccess,
+  isUuid,
+  requireMembership,
+} from '../organizations/service.ts';
+import type {Membership} from '../organizations/service.ts';
 import {createOnce, findReplay, fresh} from '../records/device-id.ts';
 import type {Created, DeviceCreate} from '../records/device-id.ts';
 import {promoteDemo} from '../records/find-or-create.ts';
@@ -305,6 +310,7 @@ export async function createContact(
   };
   return createOnce(db, device, async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
+    checkAccess(org, actor, 'directory.read');
     await lockCatalogue(tx, org.id);
     const replay = await findReplay(tx, device, org.id);
     if (replay) return replay;
@@ -386,11 +392,13 @@ async function loadOwnContact(
 ): Promise<ContactRow> {
   const row = await loadContact(tx, id);
   if (!row) throw contactNotFound();
+  let membership: Membership;
   try {
-    await requireMembership(tx, actor.id, row.organization_id);
+    membership = await requireMembership(tx, actor.id, row.organization_id);
   } catch {
     throw contactNotFound();
   }
+  checkAccess(membership, actor, 'directory.read');
   return row;
 }
 

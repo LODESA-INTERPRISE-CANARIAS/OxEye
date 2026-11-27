@@ -3,11 +3,19 @@ import type {Hono, MiddlewareHandler} from 'hono';
 import {validationError} from '../errors.ts';
 import type {AppEnv, Deps} from '../http/env.ts';
 import {parseWith, uuid} from '../http/validate.ts';
-import {requireMembership} from '../organizations/service.ts';
+import {
+  checkAccess,
+  hasAccess,
+  permissionsIn,
+  requireMembership,
+} from '../organizations/service.ts';
+// Revisión 1 · E5: budget entries only for viewers with `budget.read`.
+import {hiddenBudgetTypes} from '../../../shared/logistics/redaction.ts';
 import {
   ACTIVITY_DEFAULT_LIMIT,
   ACTIVITY_MAX_LIMIT,
   changesSince,
+  DIRECTORY_ENTITY_TYPES,
   HISTORY_ENTITY_TYPES,
   listActivity,
   parseCursor,
@@ -100,13 +108,12 @@ export function registerActivityRoutes(
   // Recent activity of the organization, the history of one record
   // (`entityType` and `entityId` together) or a time range (`from` and `to`,
   // M6: the day close). Labels are names, never free text, so guests read it
-  // too.
+  // too; E4: without `directory.read` the directory's entries are left out
+  // (and its records' history is 403).
   api.get('/organizations/:orgId/activity', auth, async c => {
-    const org = await requireMembership(
-      deps.db,
-      c.get('user').id,
-      c.req.param('orgId'),
-    );
+    const user = c.get('user');
+    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
+    const directory = hasAccess(org, user, 'directory.read');
     const {entityType, entityId, from, to} = parseWith(querySchema, {
       entityType: c.req.query('entityType') || undefined,
       entityId: c.req.query('entityId') || undefined,
@@ -126,8 +133,19 @@ export function registerActivityRoutes(
     const {limit} = parseWith(range ? rangeLimit : recentLimit, {
       limit: c.req.query('limit') || undefined,
     });
+    const noBudget = hiddenBudgetTypes(permissionsIn(user, org.roles));
+    const hidden: readonly string[] = [
+      ...(directory ? [] : DIRECTORY_ENTITY_TYPES),
+      ...noBudget,
+    ];
+    if (entity && noBudget.includes(entity.type)) {
+      checkAccess(org, user, 'budget.read');
+    }
+    if (entity && hidden.includes(entity.type)) {
+      checkAccess(org, user, 'directory.read');
+    }
     const body: ListResponse<ActivityEntry> = {
-      items: await listActivity(deps.db, org.id, limit, entity, range),
+      items: await listActivity(deps.db, org.id, limit, entity, range, hidden),
     };
     return c.json(body);
   });
@@ -135,18 +153,21 @@ export function registerActivityRoutes(
   // M6 cheap refresh: which record types changed since the device's cursor.
   // Types only, so guests read it too.
   api.get('/organizations/:orgId/changes', auth, async c => {
-    const org = await requireMembership(
-      deps.db,
-      c.get('user').id,
-      c.req.param('orgId'),
-    );
-    const body: ChangesResponse = await changesSince(
+    const user = c.get('user');
+    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
+    const changes: ChangesResponse = await changesSince(
       deps.db,
       org.id,
       parseCursor(c.req.query('since')),
       deps.now(),
       CHANGES_OVERLAP_SECONDS,
     );
+    // E5: without `budget.read`, budget writes are not even mentioned.
+    const noBudget = hiddenBudgetTypes(permissionsIn(user, org.roles));
+    const body: ChangesResponse = {
+      ...changes,
+      types: changes.types.filter(t => !noBudget.includes(t)),
+    };
     return c.json(body);
   });
 }

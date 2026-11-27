@@ -110,6 +110,60 @@
   flex-shrink: 0;
 }
 
+/* Warehouse sheet: acronym and opening hours (Revisión 1). */
+.lx .lx-whterm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lx .lx-whform__acronym {
+  max-width: 16ch;
+}
+
+.lx .lx-whhours {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.lx .lx-whhours legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.lx .lx-whhours__times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 11rem)) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.lx .lx-whhours__clear {
+  justify-self: start;
+}
+
+.lx .lx-whhours > .lx-field__hint,
+.lx .lx-whhours > .lx-field__error {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .lx .lx-whhours__times {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lx .lx-whhours__clear {
+    grid-column: 1 / -1;
+  }
+}
+
 .lx .lx-whgroup__empty {
   padding: 12px 14px;
   border-radius: var(--lx-radius);
@@ -853,8 +907,468 @@
   gap: 8px;
 }
 
+/* ============================================================ photos (E3) */
+/* A resource's main photo as a square, or its category icon. */
+.lx .lx-thumb {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+}
+
+.lx .lx-thumb--xs {
+  width: 36px;
+  height: 36px;
+}
+
+.lx .lx-thumb--md {
+  width: 56px;
+  height: 56px;
+}
+
+/* A task's resources: thumbnail, name and where it comes from. */
+.lx .lx-linkrow .lx-thumb {
+  flex: none;
+}
+
+.lx .lx-linkrow__sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--lx-muted);
+}
+
+.lx .lx-thumb--lg {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--lx-radius);
+}
+
+.lx .lx-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lx .lx-thumb.is-loading {
+  background: var(--lx-surface-3);
+}
+
+/* Still on this device: the dotted «not confirmed yet» edge. */
+.lx .lx-thumb.is-waiting {
+  border: 2px dotted var(--lx-accent);
+}
+
+/* First block of the sheet: no rule above it, unlike later subsections. */
+.lx .lx-photos {
+  display: grid;
+  gap: 10px;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.lx .lx-photos .lx-subsection__head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lx .lx-photos__add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lx .lx-photos__empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px dashed var(--lx-line-strong);
+  background: var(--lx-surface);
+}
+
+.lx .lx-photos__empty-text {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lx .lx-photos__empty-text p {
+  margin: 0;
+}
+
+.lx .lx-photos__empty-title {
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+/* The photo being looked at: whole, never cropped (it documents material). */
+.lx .lx-photos__stage {
+  margin: 0;
+  display: grid;
+  overflow: hidden;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-photos__stage > img,
+.lx .lx-photos__stage > .lx-photos__placeholder {
+  width: 100%;
+  height: clamp(170px, 30vh, 290px);
+  object-fit: contain;
+}
+
+.lx .lx-photos__caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+  font-size: 13px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-photos__caption-text {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.lx .lx-photos__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 9px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lx .lx-photos__placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  color: var(--lx-muted);
+  font-size: 13.5px;
+}
+
+.lx .lx-photos__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-photos__hint {
+  font-size: 13px;
+}
+
+.lx .lx-photos__confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-danger);
+  background: var(--lx-danger-soft);
+  color: var(--lx-heading);
+}
+
+.lx .lx-photos__confirm p {
+  margin: 0;
+}
+
+.lx .lx-photos__progress,
+.lx .lx-photos__problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-photos__problem {
+  padding: 10px 12px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-danger);
+  background: var(--lx-danger-soft);
+  color: var(--lx-heading);
+}
+
+.lx .lx-photos__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-photos__pick {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--lx-radius-sm);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+  color: var(--lx-muted);
+  cursor: pointer;
+}
+
+.lx .lx-photos__pick img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lx .lx-photos__pick .lx-photos__placeholder {
+  padding: 0;
+}
+
+.lx .lx-photos__pick[aria-pressed='true'] {
+  outline: 3px solid var(--lx-accent);
+  outline-offset: 2px;
+}
+
+.lx .lx-photos__pick:focus-visible {
+  outline: 3px solid var(--lx-ring);
+  outline-offset: 2px;
+}
+
+.lx .lx-photos__pick-main {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-photos__pick-wait {
+  position: absolute;
+  inset: 0;
+  border: 2px dotted var(--lx-accent);
+  border-radius: inherit;
+}
+
+/* ============================================================ answers (E3) */
+.lx .lx-notestatus--answered {
+  border-style: dashed;
+  border-color: var(--lx-accent);
+  color: var(--lx-heading);
+}
+
+.lx .lx-hoynotes__mine {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: var(--lx-radius);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-size: 13.5px;
+}
+
+.lx .lx-answer {
+  display: grid;
+  gap: 10px;
+}
+
+.lx .lx-answer p {
+  margin: 0;
+}
+
+.lx .lx-answer__asked {
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+/* The answer reads right under the question, as its reply. */
+.lx .lx-answer__current {
+  display: grid;
+  gap: 6px;
+  margin-left: 18px;
+  padding: 12px 16px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  border-left: 4px solid var(--lx-accent);
+  background: var(--lx-surface);
+}
+
+.lx .lx-answer__text {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--lx-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-answer__by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-answer .lx-answer__none {
+  margin-left: 18px;
+  padding: 10px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px dotted var(--lx-line-strong);
+  color: var(--lx-muted);
+}
+
+.lx .lx-answer__ask {
+  font-size: 14px;
+  color: var(--lx-ink);
+}
+
+.lx .lx-answer__closed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
+  color: var(--lx-ink);
+  font-size: 14px;
+}
+
+.lx .lx-answer__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-danger);
+  background: var(--lx-danger-soft);
+  color: var(--lx-heading);
+  font-size: 14px;
+}
+
+.lx .lx-answer__notice > div {
+  display: grid;
+  gap: 6px;
+}
+
+.lx .lx-answer__draft {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.lx .lx-answer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx .lx-answer__compose {
+  display: grid;
+  gap: 8px;
+}
+
+.lx .lx-answer__confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius);
+  border: 1.5px solid var(--lx-accent);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+}
+
+.lx .lx-answer__quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--lx-line-strong);
+  background: var(--lx-surface);
+  border-radius: var(--lx-radius-sm);
+}
+
+.lx .lx-answer__quote-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--lx-ink);
+}
+
+.lx .lx-answer__earlier {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.lx .lx-answer__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx .lx-answer__old {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: var(--lx-radius-sm);
+  border: 1px dashed var(--lx-line-strong);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-answer__old-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--lx-ink);
+}
+
 /* ============================================================ phone */
 @media (max-width: 899px) {
+  .lx .lx-answer .lx-answer__current,
+  .lx .lx-answer .lx-answer__none {
+    margin-left: 0;
+  }
+
+  .lx .lx-photos__pick {
+    width: 56px;
+    height: 56px;
+  }
+
+  .lx .lx-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
   /* Phones add resources from the floating «Añadir»; a new warehouse has
      no other entry point there, so its button stays. */
   .lx .lx-inventory .lx-directory__tools .lx-inventory__addwh {

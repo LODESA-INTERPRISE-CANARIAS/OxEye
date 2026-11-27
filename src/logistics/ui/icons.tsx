@@ -58,6 +58,7 @@ export type IconName =
   | 'building'
   | 'offer'
   | 'scale'
+  | 'budget'
   | 'warehouse'
   | 'note'
   | 'decision'
@@ -67,7 +68,16 @@ export type IconName =
   | 'play'
   | 'print'
   | 'send'
-  | 'order';
+  | 'order'
+  | 'camera'
+  | 'tent'
+  | 'fence'
+  | 'table'
+  | 'chair'
+  | 'stage'
+  | 'bolt'
+  | 'speaker'
+  | 'sign';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   today: (
@@ -335,6 +345,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M14.5 9a3.2 3.2 0 1 0 0 6M8 11h5M8 13.2h5" />
     </>
   ),
+  // E5: a purse with a coin, for an event's budget.
+  budget: (
+    <>
+      <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H18a2 2 0 0 1 2 2v9.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5Z" />
+      <path d="M6.5 6 15 3.5a1.5 1.5 0 0 1 2 1.4V6" />
+      <path d="M20 11h-4a2 2 0 0 0 0 4h4" />
+      <circle cx="16.2" cy="13" r=".6" />
+    </>
+  ),
   scale: (
     <>
       <path d="M12 4v16M7 20h10M5 7h14" />
@@ -404,6 +423,57 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M9 4.5H6.5A1.5 1.5 0 0 0 5 6v13.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H15" />
       <rect x="9" y="3" width="6" height="3" rx="1" />
       <path d="M8.5 11h7M8.5 14.5h7M8.5 18h4" />
+    </>
+  ),
+  // «Hacer foto»: a camera body with its lens.
+  camera: (
+    <>
+      <path d="M3.5 9A1.5 1.5 0 0 1 5 7.5h2.5L9 5h6l1.5 2.5H19A1.5 1.5 0 0 1 20.5 9v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18Z" />
+      <circle cx="12" cy="13.2" r="3.4" />
+    </>
+  ),
+  // Material categories, for a resource without a photo.
+  // A marquee: peaked roof on four posts, open front.
+  tent: (
+    <>
+      <path d="M2.5 11 12 4.5l9.5 6.5M3 11h18" />
+      <path d="M5 11v9M19 11v9M3 20h18M10 20v-4.5h4V20" />
+    </>
+  ),
+  // A crowd barrier: two feet, rails and bars.
+  fence: (
+    <>
+      <path d="M5 5.5v14M19 5.5v14M3 19.5h4M17 19.5h4" />
+      <path d="M5 8h14M5 15h14M9.5 8v7M14.5 8v7" />
+    </>
+  ),
+  table: (
+    <>
+      <rect x="3" y="7" width="18" height="3" rx="1" />
+      <path d="M5.5 10v10M18.5 10v10M5.5 14.5h13" />
+    </>
+  ),
+  chair: <path d="M7 3.5v17M7 12.5h10v8M7 7h6.5" />,
+  // A stage: platform under a curtained frame.
+  stage: (
+    <>
+      <path d="M2.5 14h19v6h-19Z" />
+      <path d="M4.5 14V4h15v10M4.5 4c2 3.2 4.3 4.5 7.5 4.5S17.5 7.2 19.5 4" />
+    </>
+  ),
+  bolt: <path d="M13 2.5 5 13.5h6l-1 8 8-11h-6Z" />,
+  speaker: (
+    <>
+      <rect x="6" y="3" width="12" height="18" rx="2" />
+      <circle cx="12" cy="14" r="3.5" />
+      <path d="M12 7h.01" />
+    </>
+  ),
+  // A sign board on a post.
+  sign: (
+    <>
+      <rect x="4" y="3.5" width="16" height="9.5" rx="1.5" />
+      <path d="M12 13v8M8.5 21h7M8 8.2h8" />
     </>
   ),
 };

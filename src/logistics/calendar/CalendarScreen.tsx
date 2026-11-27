@@ -38,12 +38,15 @@ import {
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
+  DateField,
   EmptyState,
   HelpTip,
   Icon,
   IconButton,
   LoadError,
+  SelectField,
   SkeletonRows,
+  type SelectOption,
 } from '../ui';
 import {DayView} from './DayView';
 import {MonthView} from './MonthView';
@@ -183,6 +186,22 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   );
 
   const sortedEvents = useMemo(() => sortEvents(events), [events]);
+  const filterOptions = useMemo<SelectOption[]>(
+    () => [
+      {value: 'all', label: 'Todos los eventos'},
+      {value: 'none', label: 'Tareas sin evento'},
+      ...sortedEvents.map(e => {
+        const d = recordDate(e);
+        return {
+          value: e.id,
+          label: e.name,
+          hint: d ? dayMonthShort(d) : undefined,
+          group: 'Eventos',
+        };
+      }),
+    ],
+    [sortedEvents],
+  );
   const now = day ? nowMinutes(day, timeZone) : null;
 
   const title = day ? longDate(day) : monthTitle(cursor.year, cursor.month);
@@ -271,45 +290,35 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
             Hoy
           </Button>
           {day && (
-            <label className="lx-calbar__date">
-              <span className="lx-visually-hidden">Ir a la fecha</span>
-              <input
-                type="date"
-                className="lx-input lx-calbar__dateinput"
+            <div className="lx-calbar__date">
+              <DateField
                 id="lx-cal-date"
+                className="lx-calbar__dateinput"
+                aria-label="Ir a la fecha"
                 value={day}
-                onChange={e => {
-                  if (isLocalDate(e.target.value)) onDay(e.target.value);
+                today={today}
+                timeZone={timeZone}
+                clearable={false}
+                onChange={v => {
+                  if (isLocalDate(v)) onDay(v);
                 }}
               />
-            </label>
+            </div>
           )}
         </div>
 
         <div className="lx-calbar__tools">
-          <label className="lx-calbar__filter">
-            <span className="lx-visually-hidden">Filtrar por evento</span>
+          <div className="lx-calbar__filter">
             <Icon name="calendar" size={16} />
-            <select
+            <SelectField
               id="lx-cal-filter"
               className="lx-calbar__select"
+              aria-label="Filtrar por evento"
               value={activeFilter}
-              onChange={e => setFilter(e.target.value)}
-            >
-              <option value="all">Todos los eventos</option>
-              <option value="none">Tareas sin evento</option>
-              {sortedEvents.map(e => {
-                const d = recordDate(e);
-                return (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                    {d ? ` · ${dayMonthShort(d)}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-            <Icon name="chevronDown" size={16} />
-          </label>
+              onChange={setFilter}
+              options={filterOptions}
+            />
+          </div>
           {timeline && (
             <div
               className="lx-calbar__zoom"
@@ -332,10 +341,12 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 disabled={hour >= HOUR_MAX}
                 onClick={() => setHour(hour * ZOOM_STEP)}
               />
-              <HelpTip label="la escala de horas">
+              <HelpTip label="la escala de horas y las columnas">
                 Cambia la altura de cada hora para ver más detalle o más horas a
                 la vez. En pantallas táctiles, también pellizcando con dos dedos
-                sobre el plan.
+                sobre el plan. Cada lugar es una columna: arrastra su borde
+                derecho para ensancharla o estrecharla, y contráela a sus siglas
+                con el botón de su cabecera. Este dispositivo lo recuerda.
               </HelpTip>
             </div>
           )}
