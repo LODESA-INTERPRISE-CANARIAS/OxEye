@@ -390,7 +390,7 @@
  *   `contact` and `task` for what an approval or a renewal writes; all are
  *   directory types (hidden without `directory.read`). Renegotiation tasks
  *   are ordinary tasks without event written by «Sistema»; their
- *   `OfferRenewal` is the «Generada por Ox Eye» mark.
+ *   `OfferRenewal` is the «Generada por OxEye» mark.
  *
  * Guests (role `guest`, a shared login) never receive contact details,
  * prices or free-text observations: the server sends those fields as null and
@@ -529,9 +529,22 @@ export interface Organization {
 }
 
 /** E2: only the acronym is editable from the Gestor. */
+/**
+ * Reference time zones an organization can choose («Hora de Canarias»,
+ * «Hora peninsular»). It is the zone of the events and tasks created from
+ * then on; existing ones keep the zone they were created with.
+ */
+export const ORGANIZATION_TIMEZONES = [
+  'Atlantic/Canary',
+  'Europe/Madrid',
+] as const;
+export type OrganizationTimezone = (typeof ORGANIZATION_TIMEZONES)[number];
+
 export interface OrganizationInput {
   /** 1–ACRONYM_MAX letters, digits or dots; null clears it. */
   acronym?: string | null;
+  /** One of `ORGANIZATION_TIMEZONES`. */
+  timezone?: OrganizationTimezone;
   version: number;
 }
 
@@ -2229,9 +2242,9 @@ export interface OfferSettingsResponse {
 }
 
 /**
- * A renegotiation task Ox Eye generated before an offer version expires.
+ * A renegotiation task OxEye generated before an offer version expires.
  * The task itself is an ordinary task without event (company = the offer's);
- * this record is its «Generada por Ox Eye» mark and holds the assignee.
+ * this record is its «Generada por OxEye» mark and holds the assignee.
  */
 export interface OfferRenewal {
   id: Uuid;

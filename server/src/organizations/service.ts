@@ -4,8 +4,8 @@
  * found, so its existence is not revealed.
  *
  * Revisión 1 · E2: members edit the organization's acronym (it names saved
- * PDFs, «SCLL_Cierre-de-jornada_…»), with optimistic concurrency. Name and
- * time zone are not editable from the Gestor.
+ * PDFs, «SCLL_Cierre-de-jornada_…») and its time zone (Canarias or
+ * Península), with optimistic concurrency. The name is not editable.
  *
  * Revisión 1 · E4: a membership carries roles; what they allow is computed
  * by `effectivePermissions` (shared/logistics/permissions.ts) with the
@@ -24,6 +24,7 @@ import {
 } from '../../../shared/logistics/permissions.ts';
 import type {
   Organization,
+  OrganizationTimezone,
   OrgRole,
   Permission,
   SessionUser,
@@ -224,14 +225,18 @@ function orgNotFound() {
 }
 
 /**
- * Sets or clears the acronym at the given version (409 VERSION_CONFLICT
+ * Sets or clears the acronym and/or changes the time zone at the given version (409 VERSION_CONFLICT
  * with `current` otherwise). Logged as entityType `organization`.
  */
 export async function updateOrganization(
   db: Db,
   actor: SessionUser,
   organizationId: string,
-  input: {acronym?: string | null; version: number},
+  input: {
+    acronym?: string | null;
+    timezone?: OrganizationTimezone;
+    version: number;
+  },
   now: Date,
 ): Promise<Organization> {
   return db.transaction(async tx => {
@@ -249,15 +254,29 @@ export async function updateOrganization(
         {current: toOrganization(org, actor)},
       );
     }
-    if (input.acronym === undefined || input.acronym === org.acronym) {
-      return toOrganization(org, actor);
+    const changedFields: Array<'acronym' | 'timezone'> = [];
+    if (input.acronym !== undefined && input.acronym !== org.acronym) {
+      changedFields.push('acronym');
     }
+    if (input.timezone !== undefined && input.timezone !== org.timezone) {
+      changedFields.push('timezone');
+    }
+    if (changedFields.length === 0) return toOrganization(org, actor);
+    // Existing events and tasks keep the zone they were created with; only
+    // records created from now on read the new one.
+    const acronym = changedFields.includes('acronym')
+      ? (input.acronym ?? null)
+      : org.acronym;
+    const timezone = changedFields.includes('timezone')
+      ? (input.timezone as string)
+      : org.timezone;
     const rows = await tx.query<OrganizationRow>(
       `UPDATE organizations o
-          SET acronym = $2, version = version + 1, updated_at = $3::timestamptz
+          SET acronym = $2, timezone = $3, version = version + 1,
+              updated_at = $4::timestamptz
         WHERE o.id = $1
         RETURNING ${ORGANIZATION_COLUMNS}`,
-      [org.id, input.acronym, now.toISOString()],
+      [org.id, acronym, timezone, now.toISOString()],
     );
     await appendActivity(tx, {
       organizationId: org.id,
@@ -266,7 +285,7 @@ export async function updateOrganization(
       entityId: org.id,
       entityLabel: org.name,
       action: 'update',
-      changedFields: ['acronym'],
+      changedFields,
       at: now,
     });
     return toOrganization(

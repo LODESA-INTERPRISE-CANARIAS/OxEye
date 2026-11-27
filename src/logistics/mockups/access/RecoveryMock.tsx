@@ -84,7 +84,7 @@ export const RecoveryMock: React.FC<{
           </span>
           <h1 className="lx-gate__title">Revisa tu correo</h1>
           <p className="lx-gate__lead">
-            Si <strong>{username.trim()}</strong> es un usuario de Ox Eye, hemos
+            Si <strong>{username.trim()}</strong> es un usuario de OxEye, hemos
             enviado un enlace a su correo de recuperación. Caduca en 30 minutos
             y solo sirve una vez.
           </p>
@@ -123,9 +123,9 @@ export const RecoveryMock: React.FC<{
               <EyeMark size={30} />
               <div>
                 <p>
-                  <strong>Ox Eye</strong> &lt;no-reply@example.com&gt;
+                  <strong>OxEye</strong> &lt;no-reply@example.com&gt;
                 </p>
-                <p className="lx-muted">Restablece tu contraseña de Ox Eye</p>
+                <p className="lx-muted">Restablece tu contraseña de OxEye</p>
               </div>
             </header>
             <div className="lx-mk-email__body">

@@ -8,7 +8,7 @@ import {
 describe('Paletas de color predefinidas', () => {
   it('incluye exactamente las 6 paletas oficiales con sus colores exactos', () => {
     expect(COLOR_PALETTES.map((p) => `${p.code} · ${p.name}`)).toEqual([
-      '01 · Ox Eye',
+      '01 · OxEye',
       '02 · Atlas',
       '03 · Noctis',
       '04 · Territorio',

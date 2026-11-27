@@ -864,7 +864,7 @@ export function buildIncidentExportPayload(
   const cat = row.category || categoryForIncidentType(row.type);
   const redacted = cat === 'violet_point' && privacyMode === 'public';
   return {
-    ficha: 'Ox Eye — Análisis de Incidencia',
+    ficha: 'OxEye — Análisis de Incidencia',
     codigo: row.code || formatIncidentCode(cat, Number(row.id) || 1),
     categoria: INCIDENT_CATEGORIES[cat].label,
     gravedad: SEVERITY_META[normalizeSeverity(row.severity, row.type)].label,

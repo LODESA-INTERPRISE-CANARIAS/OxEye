@@ -303,13 +303,13 @@ export function parseImportedProject(
     p = parsed as Record<string, unknown>;
   } catch {
     throw new Error(
-      'El archivo subido no se corresponde con un modelo de Ox Eye (JSON no válido).'
+      'El archivo subido no se corresponde con un modelo de OxEye (JSON no válido).'
     );
   }
   if (p.format === 'ojo-de-buey') {
     if (p.version !== 1 || !p.scenes || typeof p.scenes !== 'object') {
       throw new Error(
-        'El archivo subido no se corresponde con un modelo compatible de Ox Eye.'
+        'El archivo subido no se corresponde con un modelo compatible de OxEye.'
       );
     }
     const scenes = p.scenes as Record<VenueKey, ProjectFile['scenes'][VenueKey]>;
@@ -333,7 +333,7 @@ export function parseImportedProject(
     const siteKey = old?.site as VenueKey;
     if (!siteKey || !ORIGINAL[siteKey] || !VENUES[siteKey]) {
       throw new Error(
-        'El archivo subido no se corresponde con un modelo de los que se usan en Ox Eye.'
+        'El archivo subido no se corresponde con un modelo de los que se usan en OxEye.'
       );
     }
     old = remapScene(old, ORIGINAL[siteKey], maps[siteKey]);

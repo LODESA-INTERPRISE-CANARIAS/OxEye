@@ -6,10 +6,10 @@
  * hash is stored; enabling or rotating it shows the address once).
  *
  * Renewals: from `noticeDays` before a version's acceptance deadline until
- * the deadline itself, Ox Eye creates one ordinary task without event
+ * the deadline itself, OxEye creates one ordinary task without event
  * («Renegociar oferta con …», company = the offer's, date = the deadline),
  * written by the inactive «Sistema» author and marked by an `offer_renewals`
- * row («Generada por Ox Eye») that holds the assignee: whoever approved the
+ * row («Generada por OxEye») that holds the assignee: whoever approved the
  * version, changeable by administrators. At most one per version (unique
  * key, checked under the catalogue lock), so running it again creates
  * nothing; a task deleted by somebody is not created again. Approving a
@@ -493,7 +493,7 @@ async function generateFor(
       const title = `Renegociar oferta con ${d.company_name}`.slice(0, 200);
       const notes =
         `Oferta «${d.offer_name}» (versión ${d.number}): se puede aceptar hasta el ${dateLabel(d.accept_until)}. ` +
-        `Generada por Ox Eye ${notice} días antes del vencimiento (desde el ${dateLabel(renewalStart(d.accept_until, notice))}).`;
+        `Generada por OxEye ${notice} días antes del vencimiento (desde el ${dateLabel(renewalStart(d.accept_until, notice))}).`;
       const task = (
         await tx.query<{id: string}>(
           `INSERT INTO tasks
@@ -594,7 +594,7 @@ export function startRenewalTimer(
       const created = await generateRenewals(db, now());
       if (created > 0) {
         log(
-          `Renegociaciones: ${created} ${created === 1 ? 'tarea nueva generada' : 'tareas nuevas generadas'} por Ox Eye.`,
+          `Renegociaciones: ${created} ${created === 1 ? 'tarea nueva generada' : 'tareas nuevas generadas'} por OxEye.`,
         );
       }
     } catch (err) {

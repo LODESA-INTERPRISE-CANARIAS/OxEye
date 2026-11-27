@@ -175,8 +175,8 @@ export function MockShell<T extends string>({
         <div className="lx-brand">
           <EyeMark size={38} />
           <div className="lx-brand__text">
-            <strong>Gestor logístico</strong>
-            <span>Ox Eye</span>
+            <strong>OxEye</strong>
+            <span>Gestor logístico</span>
           </div>
         </div>
         <div className="lx-org">
@@ -218,7 +218,7 @@ export function MockShell<T extends string>({
           >
             <Icon name="back" size={20} />
           </button>
-          <span className="lx-topbar__title">Gestor logístico</span>
+          <span className="lx-topbar__title">OxEye</span>
           <Avatar name={user.name} photo={user.photo} size="sm" />
         </div>
         {banner}
@@ -260,8 +260,8 @@ export const MockGate: React.FC<{
       <div className="lx-brand">
         <EyeMark size={36} />
         <div className="lx-brand__text">
-          <strong>Gestor logístico</strong>
-          <span>Ox Eye</span>
+          <strong>OxEye</strong>
+          <span>Gestor logístico</span>
         </div>
       </div>
       <button

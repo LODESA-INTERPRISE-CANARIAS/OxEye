@@ -41,7 +41,7 @@ export interface SmtpConfig {
 export interface MailConfig {
   /** Null: no SMTP; e-mails go to the console transport (never sent). */
   smtp: SmtpConfig | null;
-  /** «Ox Eye <cuenta@example.org>»; required with SMTP. */
+  /** «OxEye <cuenta@example.org>»; required with SMTP. */
   from: string | null;
   /**
    * Project inbox for recovery links of accounts without a verified
@@ -197,7 +197,7 @@ function mailConfig(e: z.output<typeof envSchema>): MailConfig {
   const from = e.MAIL_FROM || null;
   if (host && !from) {
     throw new ConfigError(
-      'Configuración no válida: con SMTP_HOST hace falta MAIL_FROM (por ejemplo «Ox Eye <cuenta@example.org>»).',
+      'Configuración no válida: con SMTP_HOST hace falta MAIL_FROM (por ejemplo «OxEye <cuenta@example.org>»).',
     );
   }
   let publicAppUrl: string | null = null;

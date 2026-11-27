@@ -53,8 +53,8 @@ export const SidebarAccount: React.FC = () => {
             type="button"
             className="lx-user__open"
             id="lx-user-open"
-            aria-label={`Tu espacio en Ox Eye: ${user.displayName}`}
-            title="Tu espacio en Ox Eye"
+            aria-label={`Tu espacio en OxEye: ${user.displayName}`}
+            title="Tu espacio en OxEye"
             onClick={() => openProfile()}
           >
             {who}
@@ -101,7 +101,7 @@ export const PhoneAccountActions: React.FC<{onDone: () => void}> = ({
             openProfile();
           }}
         >
-          Tu espacio en Ox Eye
+          Tu espacio en OxEye
         </Button>
       )}
       {users && (

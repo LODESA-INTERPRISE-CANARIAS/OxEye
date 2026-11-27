@@ -1,6 +1,6 @@
 /**
  * The personal links of a request, the one time they exist (Revisión 1 ·
- * E7). Ox Eye never writes to companies: each link goes out from the user's
+ * E7). OxEye never writes to companies: each link goes out from the user's
  * own mail (a prepared e-mail), by copying it, or through the phone's share
  * menu (WhatsApp…) when the browser has one.
  *
@@ -76,7 +76,7 @@ export const ShareLinks: React.FC<{
       <p className="lx-notice lx-notice--quiet">
         <Icon name="mail" size={18} />
         <span>
-          Ox Eye no envía correos a las empresas: el mensaje sale de tu correo o
+          OxEye no envía correos a las empresas: el mensaje sale de tu correo o
           de tu móvil. <strong>Es la única vez que se ven los enlaces</strong>;
           si se pierde uno, renuévalo desde «Solicitudes».
         </span>

@@ -130,7 +130,7 @@ const MockupsApp: React.FC<MockupsAppProps> = ({onExit}) => {
     {
       id: 'renewals',
       title: 'Renovar antes de que caduque',
-      text: 'Tareas «Generada por Ox Eye» con aviso configurable; historial de caducadas.',
+      text: 'Tareas «Generada por OxEye» con aviso configurable; historial de caducadas.',
       who: 'Administrador',
       icon: 'refresh',
       go: () => go({id: 'offers', view: 'renewals'}),
@@ -175,7 +175,7 @@ const MockupsApp: React.FC<MockupsAppProps> = ({onExit}) => {
     },
     {
       id: 'profile',
-      title: 'Tu espacio en Ox Eye',
+      title: 'Tu espacio en OxEye',
       text: 'Foto, nombre, descripción, apariencia, correo de recuperación y actividad.',
       who: 'Cada persona',
       icon: 'contacts',
@@ -305,7 +305,7 @@ const MockupsApp: React.FC<MockupsAppProps> = ({onExit}) => {
       ref={rootRef}
       tabIndex={-1}
       role="region"
-      aria-label="Maquetas de Ox Eye"
+      aria-label="Maquetas de OxEye"
       data-screen={screen.id}
     >
       <MockToasts>

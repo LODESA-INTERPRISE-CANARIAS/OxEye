@@ -16,7 +16,7 @@ import {printFooterLead} from '../../../shared/logistics/print-name.ts';
 export interface PrintJob {
   /** File name for this print, computed at the moment of printing. */
   fileName: () => string;
-  /** «2 dic 2026, 18:30» for the footer line «Generado por Ox Eye · …». */
+  /** «2 dic 2026, 18:30» for the footer line «Generado por OxEye · …». */
   stamp: () => string;
 }
 

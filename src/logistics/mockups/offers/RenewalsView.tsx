@@ -1,5 +1,5 @@
 /**
- * «Renovaciones»: tasks Ox Eye creates by itself before an offer's price
+ * «Renovaciones»: tasks OxEye creates by itself before an offer's price
  * expires, so nobody plans an event on a price that no longer holds. The
  * notice period is a setting; expired offers stay as history only.
  */
@@ -40,7 +40,7 @@ export const RenewalsView: React.FC<{
             Avisos de renovación
           </h2>
           <p>
-            Ox Eye revisa las ofertas cada día y crea una tarea cuando a una le
+            OxEye revisa las ofertas cada día y crea una tarea cuando a una le
             quedan menos días que este aviso, asignada a quien aprobó la oferta.
             Las caducadas se guardan en el historial y nunca se usan como tarifa
             vigente.
@@ -97,7 +97,7 @@ export const RenewalsView: React.FC<{
               </div>
               <div className="lx-mk-task__foot">
                 <span className="lx-mk-signed lx-mk-signed--ox">
-                  <EyeMark size={18} /> Generada por Ox Eye · {t.generatedAt}
+                  <EyeMark size={18} /> Generada por OxEye · {t.generatedAt}
                 </span>
                 <span className="lx-mk-task__assign">
                   <label

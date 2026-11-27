@@ -56,7 +56,7 @@ export const REQUEST = {
   answerBy: '4 dic',
 };
 
-/** The «Ox Eye says» line at the top of each step. */
+/** The «OxEye says» line at the top of each step. */
 export const Say: React.FC<{
   lead?: React.ReactNode;
   children: React.ReactNode;

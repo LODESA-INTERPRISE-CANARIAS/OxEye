@@ -13,16 +13,32 @@ import {
   acronymProblem,
   proposeAcronym,
 } from '../../../shared/logistics/acronym.ts';
+import {
+  ORGANIZATION_TIMEZONES,
+  type OrganizationTimezone,
+} from '../../../shared/logistics/contracts.ts';
 import {printFileName} from '../../../shared/logistics/print-name.ts';
 import {useAccess} from '../account/useAccess';
 import {errorMessage, isApiError} from '../api/client';
 import {DiscardStrip} from '../forms/FormParts';
 import {zoneNote} from '../lib/format';
 import {useLogisticsStore} from '../store/useLogisticsStore';
-import {Button, Field, HelpTip, Icon, Input, Sheet, describedBy} from '../ui';
+import {
+  Button,
+  Field,
+  HelpTip,
+  Icon,
+  Input,
+  Segmented,
+  Sheet,
+  describedBy,
+} from '../ui';
 
 const ACRONYM_HELP =
   'Las siglas encabezan el nombre de los PDF que se guardan desde el Gestor (fichas de trabajo, cierres de jornada), para encontrarlos y ordenarlos en una carpeta. Solo letras, números y puntos. Si se dejan vacías, se usa la propuesta a partir del nombre.';
+
+const ZONE_HELP =
+  'El reloj con el que se escriben y leen las horas de los eventos y tareas nuevos: hora de Canarias o hora peninsular (una hora más). Los que ya existen no cambian: conservan la hora con la que se crearon.';
 
 export const OrganizationSheet: React.FC<{
   open: boolean;
@@ -43,7 +59,9 @@ export const OrganizationSheet: React.FC<{
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [zoneBusy, setZoneBusy] = useState(false);
   const titleId = useId();
+  const zoneTitleId = useId();
 
   // A fresh sheet every time it opens.
   useEffect(() => {
@@ -126,6 +144,60 @@ export const OrganizationSheet: React.FC<{
   };
 
   const editing = draft !== null;
+  // «Usar la propuesta»: only when the acronym in use (or being typed)
+  // differs from the one proposed from the name.
+  const inUse = editing ? draft.trim() : (stored ?? proposal ?? '');
+  const canPropose = !!proposal && inUse !== proposal;
+
+  const restoreProposal = async () => {
+    if (!proposal || busy) return;
+    if (editing) {
+      setDraft(proposal);
+      setError(null);
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      await updateOrganization({acronym: null, version: org.version});
+      toast(`Se usarán las siglas propuestas: ${proposal}.`, 'success');
+    } catch (err) {
+      setNotice(
+        isApiError(err) && err.code === 'VERSION_CONFLICT'
+          ? 'Otra persona ha cambiado los datos de la organización: se muestran los suyos. Revisa y vuelve a intentarlo si hace falta.'
+          : `No se han cambiado las siglas. ${errorMessage(err)}`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveZone = async (timezone: OrganizationTimezone) => {
+    if (zoneBusy || timezone === org.timezone) return;
+    setZoneBusy(true);
+    setNotice(null);
+    try {
+      await updateOrganization({timezone, version: org.version});
+      toast(
+        `Hora de referencia: ${zoneNote(timezone)}. Se aplica a los eventos y tareas nuevos.`,
+        'success',
+      );
+    } catch (err) {
+      setNotice(
+        isApiError(err) && err.code === 'VERSION_CONFLICT'
+          ? 'Otra persona ha cambiado los datos de la organización: se muestra su hora de referencia. Revisa y vuelve a elegir si hace falta.'
+          : `No se ha cambiado la hora de referencia. ${errorMessage(err)}`,
+      );
+    } finally {
+      setZoneBusy(false);
+    }
+  };
+
+  const zoneValue: OrganizationTimezone | null = (
+    ORGANIZATION_TIMEZONES as readonly string[]
+  ).includes(org.timezone)
+    ? (org.timezone as OrganizationTimezone)
+    : null;
 
   return (
     <Sheet
@@ -246,6 +318,24 @@ export const OrganizationSheet: React.FC<{
               )}
             </p>
           )}
+          {canWrite && proposal && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="refresh"
+              id="lx-org-use-proposal"
+              className="lx-orgsheet__propose"
+              disabled={!canPropose || busy}
+              title={
+                canPropose
+                  ? `Vuelve a las siglas propuestas a partir del nombre: ${proposal}.`
+                  : 'Ya se usan las siglas propuestas a partir del nombre.'
+              }
+              onClick={() => void restoreProposal()}
+            >
+              Usar la propuesta ({proposal})
+            </Button>
+          )}
           <p className="lx-orgsheet__example" id="lx-org-example">
             <Icon name="print" size={16} />
             <span>
@@ -261,14 +351,40 @@ export const OrganizationSheet: React.FC<{
             </p>
           )}
         </section>
+        <section className="lx-subsection" aria-labelledby={zoneTitleId}>
+          <h3 className="lx-subsection__title" id={zoneTitleId}>
+            Hora de referencia
+            <HelpTip label="hora de referencia">{ZONE_HELP}</HelpTip>
+          </h3>
+          {canWrite ? (
+            <Segmented<OrganizationTimezone>
+              name="lx-org-timezone"
+              id="lx-org-timezone"
+              legend={
+                <span className="lx-visually-hidden">Hora de referencia</span>
+              }
+              value={zoneValue}
+              disabled={zoneBusy}
+              options={[
+                {value: 'Atlantic/Canary', label: 'Hora de Canarias'},
+                {value: 'Europe/Madrid', label: 'Hora peninsular'},
+              ]}
+              onChange={v => v && void saveZone(v)}
+            />
+          ) : (
+            <p className="lx-orgsheet__zone" id="lx-org-timezone-view">
+              {zoneNote(org.timezone)}
+            </p>
+          )}
+          <p className="lx-muted lx-orgsheet__zonenote" id="lx-org-zone-note">
+            Se aplica a los eventos y tareas que se creen a partir de ahora; los
+            que ya existen mantienen su hora.
+          </p>
+        </section>
         <dl className="lx-detail lx-orgsheet__facts">
           <div>
             <dt>Nombre</dt>
             <dd id="lx-org-name">{org.name}</dd>
-          </div>
-          <div>
-            <dt>Hora de referencia</dt>
-            <dd className="lx-num">{zoneNote(org.timezone)}</dd>
           </div>
         </dl>
       </div>

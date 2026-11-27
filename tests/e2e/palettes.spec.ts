@@ -19,14 +19,14 @@ test.describe('Paletas de color en Ajustes', () => {
     // Deben mostrarse exactamente las 6 paletas oficiales en orden
     const choices = picker.locator('[data-palette-choice]');
     await expect(choices).toHaveCount(6);
-    await expect(choices.nth(0)).toContainText('01 · Ox Eye');
+    await expect(choices.nth(0)).toContainText('01 · OxEye');
     await expect(choices.nth(1)).toContainText('02 · Atlas');
     await expect(choices.nth(2)).toContainText('03 · Noctis');
     await expect(choices.nth(3)).toContainText('04 · Territorio');
     await expect(choices.nth(4)).toContainText('05 · Vector');
     await expect(choices.nth(5)).toContainText('06 · Bendy');
 
-    // Por defecto debe estar seleccionada Ox Eye
+    // Por defecto debe estar seleccionada OxEye
     await expect(
       page.locator('[data-palette-choice="oxeye"]')
     ).toHaveAttribute('aria-checked', 'true');

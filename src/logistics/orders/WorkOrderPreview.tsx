@@ -35,7 +35,7 @@ export const WorkOrderPreview: React.FC<{
         <div className="lx-order__brand">
           <EyeMark size={34} />
           <span>
-            Ox Eye
+            OxEye
             <br />
             <small>Gestor logístico</small>
           </span>
@@ -173,10 +173,10 @@ export const WorkOrderPreview: React.FC<{
 
       <footer className="lx-order__foot">
         <p className="lx-num">
-          Generada por {order.generatedBy} desde Ox Eye · {order.generatedAt}.
+          Generada por {order.generatedBy} desde OxEye · {order.generatedAt}.
         </p>
         <p>{order.footer}</p>
-        <p>Ox Eye ayuda a decidir; no certifica.</p>
+        <p>OxEye ayuda a decidir; no certifica.</p>
       </footer>
     </article>
   );

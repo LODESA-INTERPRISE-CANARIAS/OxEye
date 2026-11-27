@@ -572,7 +572,7 @@ test.describe('Gestor logístico · Cierre de jornada (miembro)', () => {
     await expect(preview).toContainText(
       'Revisión del subsuelo declarada por Dailos',
     );
-    await expect(preview).toContainText('Generado por Elvis desde Ox Eye');
+    await expect(preview).toContainText('Generado por Elvis desde OxEye');
     await expect(preview).not.toContainText(DAY_NOTE_TEXT.decision);
     await page.locator('#lx-day-print-go').click();
     expect(

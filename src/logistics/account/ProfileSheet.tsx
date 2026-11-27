@@ -1,5 +1,5 @@
 /**
- * «Tu espacio en Ox Eye» (Revisión 1 · E4): the own account.
+ * «Tu espacio en OxEye» (Revisión 1 · E4): the own account.
  * - Perfil: photo, display name, bio, accent.
  * - Seguridad: password, recovery e-mail, open sessions.
  * - Actividad: the own security history and the latest own changes.
@@ -43,7 +43,7 @@ export const ProfileSheet: React.FC<{
     <Sheet
       open
       onClose={onClose}
-      title="Tu espacio en Ox Eye"
+      title="Tu espacio en OxEye"
       eyebrow={
         user
           ? `${user.displayName} · ${

@@ -78,9 +78,9 @@ export function printFileName(input: PrintNameInput): string {
 
 /**
  * The line in the printed page's margin, before the page number:
- * «Generado por Ox Eye · 2 dic 2026, 18:30». The page number and «Ox Eye
+ * «Generado por OxEye · 2 dic 2026, 18:30». The page number and «OxEye
  * ayuda a decidir; no certifica.» follow in the print stylesheet.
  */
 export function printFooterLead(stamp: string | null): string {
-  return stamp ? `Generado por Ox Eye · ${stamp}` : 'Generado por Ox Eye';
+  return stamp ? `Generado por OxEye · ${stamp}` : 'Generado por OxEye';
 }

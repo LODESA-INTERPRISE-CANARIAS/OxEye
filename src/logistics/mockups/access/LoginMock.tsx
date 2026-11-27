@@ -45,7 +45,7 @@ export const LoginMock: React.FC<{
 
   return (
     <MockGate id="mk-login" onBack={onBack}>
-      <h1 className="lx-gate__title">Entra en Ox Eye</h1>
+      <h1 className="lx-gate__title">Entra en OxEye</h1>
       <p className="lx-gate__lead">
         Con tu usuario y tu contraseña. Cada cambio quedará firmado con tu
         nombre.

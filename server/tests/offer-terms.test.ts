@@ -1026,7 +1026,7 @@ describe('the proposals inbox', () => {
 });
 
 describe('renegotiation tasks', () => {
-  it('generated once, before the deadline, by Ox Eye, assigned to the approver', async () => {
+  it('generated once, before the deadline, by OxEye, assigned to the approver', async () => {
     const lines: string[] = [];
     const stop = startRenewalTimer(
       h.db,
@@ -1037,7 +1037,7 @@ describe('renegotiation tasks', () => {
     await vi.waitFor(() => expect(lines).toHaveLength(1));
     stop();
     expect(lines[0]).toBe(
-      'Renegociaciones: 1 tarea nueva generada por Ox Eye.',
+      'Renegociaciones: 1 tarea nueva generada por OxEye.',
     );
 
     const renewals = await ok<ListResponse<OfferRenewal>>(

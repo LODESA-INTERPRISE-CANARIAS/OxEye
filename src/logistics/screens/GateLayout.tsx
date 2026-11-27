@@ -18,8 +18,8 @@ export const GateLayout: React.FC<{
       <div className="lx-brand">
         <EyeMark size={36} />
         <div className="lx-brand__text">
-          <strong>Gestor logístico</strong>
-          <span>Ox Eye</span>
+          <strong>OxEye</strong>
+          <span>Gestor logístico</span>
         </div>
       </div>
       <button
@@ -29,7 +29,7 @@ export const GateLayout: React.FC<{
         onClick={onExit}
       >
         <Icon name="back" size={18} />
-        <span className="lx-btn__label">Volver a Ox Eye</span>
+        <span className="lx-btn__label">Volver a OxEye</span>
       </button>
     </div>
     <main className={`lx-gate__card${wide ? ' lx-gate__card--wide' : ''}`}>

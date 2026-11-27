@@ -158,7 +158,7 @@ const ProposalSheet: React.FC<{
               <span>
                 Pasará al catálogo de contratación como versión {offer.version},
                 vigente hasta el {fmtDay(offer.acceptUntil)}, firmada por ti. Un
-                mes antes, Ox Eye creará la tarea de renegociarla.
+                mes antes, OxEye creará la tarea de renegociarla.
               </span>
             </div>
           )}

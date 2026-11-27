@@ -1,5 +1,5 @@
 /**
- * Geometry of the Ox Eye symbol (2026-11), copied from
+ * Geometry of the OxEye symbol (2026-11), copied from
  * `public/assets/logo/oxeye-simbolo-tinta.svg`. Single source for the React
  * marks (`EyeMark`, simulation header, loading screen) and the palette
  * favicon. Symbol coordinates are the original ones: centre (500, 500).

@@ -169,7 +169,7 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
         <div className="lx-dayp__brand">
           <EyeMark size={34} />
           <span>
-            Ox Eye
+            OxEye
             <br />
             <small>Gestor logístico</small>
           </span>
@@ -464,11 +464,11 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
 
       <footer className="lx-dayp__foot">
         <p className="lx-num">
-          Generado por {report.generatedBy.displayName} desde Ox Eye ·{' '}
+          Generado por {report.generatedBy.displayName} desde OxEye ·{' '}
           {generatedAtText}.
         </p>
         {textNote && <p>{textNote}</p>}
-        <p>Ox Eye ayuda a decidir; no certifica.</p>
+        <p>OxEye ayuda a decidir; no certifica.</p>
       </footer>
     </article>
   );

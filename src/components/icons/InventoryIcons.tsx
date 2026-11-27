@@ -9,7 +9,7 @@ export interface InventoryIconProps {
 /**
  * Iconos vectoriales limpios (SVG 24×24, `currentColor`) para categorías y piezas
  * del menú de inventario y condiciones de respuesta. Se adaptan automáticamente a
- * cualquier paleta activa (Ox Eye, Atlas, Noctis, Territorio, Vector, Bendy).
+ * cualquier paleta activa (OxEye, Atlas, Noctis, Territorio, Vector, Bendy).
  */
 export const InventoryIcon: React.FC<InventoryIconProps> = ({
   name,

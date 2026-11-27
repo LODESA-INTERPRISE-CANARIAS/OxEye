@@ -427,7 +427,7 @@ test.describe('Gestor logístico · categorías · «Gestionar» en el sitio', (
     // «Nueva categoría» steps aside while managing.
     await expect(page.locator('#lx-offer-cat-new')).toHaveCount(0);
     await expect(page.locator('#lx-offer-cat-managed')).toContainText(
-      'Las que trae Ox Eye no se pueden borrar.',
+      'Las que trae OxEye no se pueden borrar.',
     );
     await manage.click();
     await expect(manage).toHaveText('Gestionar');

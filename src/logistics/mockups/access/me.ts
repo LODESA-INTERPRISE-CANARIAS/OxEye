@@ -29,7 +29,7 @@ export function meFor(username: string): Me {
       displayName: 'Fabián',
       roles: ['admin', 'developer'],
       photo: null,
-      description: 'Desarrollo de Ox Eye',
+      description: 'Desarrollo de OxEye',
       email: 'fabian@example.com',
       emailState: 'verified',
       provisional: false,

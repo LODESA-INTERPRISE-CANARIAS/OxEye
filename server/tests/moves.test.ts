@@ -342,6 +342,76 @@ describe('organization acronym', () => {
   });
 });
 
+describe('organization time zone', () => {
+  it('members change it with a version; bad zones, stale versions and no-ops', async () => {
+    const me = await ok<MeResponse>(await h.request('GET', '/me', {token}));
+    const org = me.organizations.find(o => o.id === h.org.id)!;
+    expect(org.timezone).toBe('Atlantic/Canary');
+
+    const bad = await errorOf(
+      await patch(`/organizations/${h.org.id}`, {
+        version: org.version,
+        timezone: 'Europe/London',
+      }),
+      400,
+    );
+    expect(bad.fields?.timezone).toMatch(/Zona horaria no válida/);
+
+    const updated = await ok<Organization>(
+      await patch(`/organizations/${h.org.id}`, {
+        version: org.version,
+        timezone: 'Europe/Madrid',
+      }),
+    );
+    expect(updated).toMatchObject({
+      timezone: 'Europe/Madrid',
+      version: org.version + 1,
+    });
+    const [entry] = await listOf<ActivityEntry>('activity?limit=1');
+    expect(entry).toMatchObject({
+      entityType: 'organization',
+      changedFields: ['timezone'],
+    });
+
+    const stale = await errorOf(
+      await patch(`/organizations/${h.org.id}`, {
+        version: org.version,
+        timezone: 'Atlantic/Canary',
+      }),
+      409,
+    );
+    expect(stale.current).toMatchObject({
+      timezone: 'Europe/Madrid',
+      version: org.version + 1,
+    });
+
+    // Same zone again: nothing changes, no version bump.
+    const same = await ok<Organization>(
+      await patch(`/organizations/${h.org.id}`, {
+        version: updated.version,
+        timezone: 'Europe/Madrid',
+      }),
+    );
+    expect(same.version).toBe(updated.version);
+
+    // Both fields in one write: one bump, both listed.
+    const both = await ok<Organization>(
+      await patch(`/organizations/${h.org.id}`, {
+        version: updated.version,
+        timezone: 'Atlantic/Canary',
+        acronym: 'TZ.B',
+      }),
+    );
+    expect(both).toMatchObject({
+      timezone: 'Atlantic/Canary',
+      acronym: 'TZ.B',
+      version: updated.version + 1,
+    });
+    const [last] = await listOf<ActivityEntry>('activity?limit=1');
+    expect(last?.changedFields).toEqual(['acronym', 'timezone']);
+  });
+});
+
 describe('moving a task', () => {
   it('later: the dependants that run out of slack move too, in one write, signed with the origin', async () => {
     const a = await task({

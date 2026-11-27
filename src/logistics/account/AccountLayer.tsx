@@ -1,7 +1,7 @@
 /**
  * Account sheets over the workspace (Revisión 1 · E4), mounted once by
  * `LogisticsApp` while signed in: the first-login welcome, «Tu espacio en
- * Ox Eye», «Usuarios», and an account link opened inside a session.
+ * OxEye», «Usuarios», and an account link opened inside a session.
  */
 import React, {useEffect, useState, useSyncExternalStore} from 'react';
 import {UsersSheet} from '../admin/UsersSheet';

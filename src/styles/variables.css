@@ -1,5 +1,5 @@
 /**
- * Variables globales y sistema de paletas predefinidas (Ox Eye, Atlas, Noctis,
+ * Variables globales y sistema de paletas predefinidas (OxEye, Atlas, Noctis,
  * Territorio, Vector y Bendy) + estilos base para controles de Ojo de Buey (OxEye).
  */
 :root,
@@ -10,7 +10,7 @@
   font-synthesis: none;
   color-scheme: light;
 
-  /* 01 · Ox Eye (paleta base) */
+  /* 01 · OxEye (paleta base) */
   --bg: #f7f6fa;
   --paper: #fcfbfd;
   --surface: #ffffff;

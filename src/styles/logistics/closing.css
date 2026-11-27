@@ -1079,9 +1079,9 @@
   margin: 14mm 14mm 18mm;
 
   @bottom-center {
-    content: var(--lx-print-foot, 'Generado por Ox Eye') ' · página '
+    content: var(--lx-print-foot, 'Generado por OxEye') ' · página '
       counter(page) ' de ' counter(pages)
-      ' · Ox Eye ayuda a decidir; no certifica.';
+      ' · OxEye ayuda a decidir; no certifica.';
     font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif;
     font-size: 8pt;
     font-variant-numeric: tabular-nums;
