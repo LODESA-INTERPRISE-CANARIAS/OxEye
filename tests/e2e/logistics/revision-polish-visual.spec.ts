@@ -192,6 +192,9 @@ test.describe('Gestor logístico · revisión 1 · capturas', () => {
       await capture(page, `hoy-upcoming-${n}`, {
         palettes: ['oxeye', 'noctis'],
       });
+      await page.setViewportSize({width: 1920, height: 1080});
+      await page.locator('#lx-upcoming').scrollIntoViewIfNeeded();
+      await capture(page, `hoy-upcoming-${n}-wide`, {palettes: ['oxeye']});
       await page.setViewportSize(PHONE);
       await page.locator('#lx-upcoming').scrollIntoViewIfNeeded();
       await capture(page, `hoy-upcoming-${n}-phone`, {palettes: ['oxeye']});

@@ -59,7 +59,11 @@ const NextTasks: React.FC<{
   tasks: Task[];
   max: number;
   onOpenTask?: (task: Task) => void;
-}> = ({eventId, tasks, max, onOpenTask}) => {
+  /** Closed-task bar, shown under the heading. */
+  progress?: React.ReactNode;
+  /** The event's first day: tasks on it show only their time. */
+  eventDate?: string | null;
+}> = ({eventId, tasks, max, onOpenTask, progress, eventDate}) => {
   const shown = tasks.slice(0, max);
   return (
     <section
@@ -69,6 +73,7 @@ const NextTasks: React.FC<{
       <h4 className="lx-event__subtitle" id={`lx-event-next-${eventId}`}>
         Próximas tareas
       </h4>
+      {progress}
       {shown.length === 0 ? (
         <p className="lx-muted lx-event__none">Ninguna tarea por hacer.</p>
       ) : (
@@ -78,16 +83,24 @@ const NextTasks: React.FC<{
             const body = (
               <>
                 <span className="lx-event__taskwhen lx-num">
-                  {date ? shortDate(date) : 'Sin fecha'}
-                  {' · '}
+                  {/* The event's own day goes without saying. */}
+                  {date !== eventDate && (
+                    <>
+                      {date ? shortDate(date) : 'Sin fecha'}
+                      {' · '}
+                    </>
+                  )}
                   <TimeWindow record={t} />
                 </span>
-                <span className="lx-event__tasktitle">{t.title}</span>
-                {t.company && (
-                  <span className="lx-event__taskco lx-muted">
-                    {t.company.name}
-                  </span>
-                )}
+                <span className="lx-event__tasktitle">
+                  {t.title}
+                  {t.company && (
+                    <span className="lx-event__taskco lx-muted">
+                      {' · '}
+                      {t.company.name}
+                    </span>
+                  )}
+                </span>
               </>
             );
             return (
@@ -304,23 +317,31 @@ export const EventCard: React.FC<EventCardProps> = ({
       </h3>
       {wide ? (
         <div className="lx-event__body">
-          <div className="lx-event__main">
-            {facts}
-            <Progress summary={summary!} />
-            {notes && (
-              <p className="lx-event__notes">
-                {notes.length > 220
-                  ? `${notes.slice(0, 220).trimEnd()}…`
-                  : notes}
-              </p>
-            )}
-          </div>
+          {facts}
+          {/* The card keeps the regular card's height: the extra facts go
+              sideways, in their own columns, never downwards. */}
           <NextTasks
             eventId={event.id}
             tasks={nextTasks ?? []}
-            max={size === 'full' ? 5 : 3}
+            max={size === 'full' ? 3 : 2}
             onOpenTask={onOpenTask}
+            progress={<Progress summary={summary!} />}
+            eventDate={recordDate(event)}
           />
+          {size === 'full' && (
+            <div className="lx-event__aside">
+              <h4 className="lx-event__subtitle">Notas</h4>
+              {notes ? (
+                <p className="lx-event__notes">
+                  {notes.length > 160
+                    ? `${notes.slice(0, 160).trimEnd()}…`
+                    : notes}
+                </p>
+              ) : (
+                <p className="lx-muted lx-event__none">Sin notas.</p>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         facts

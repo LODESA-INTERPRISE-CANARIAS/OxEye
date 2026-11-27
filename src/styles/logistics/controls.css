@@ -433,6 +433,29 @@
   font-size: 15px;
 }
 
+/*
+ * With a mouse the whole picker fits without scrolling: hours in three rows
+ * of eight and lower cells. Touch keeps the 44 px targets.
+ */
+@media (pointer: fine) {
+  .lx .lx-tp__grid--hours {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  .lx .lx-tp__cell {
+    min-height: 34px;
+    font-size: 14px;
+  }
+
+  .lx .lx-tp__cell--minute {
+    font-size: 13px;
+  }
+
+  .lx .lx-tp__cell--now::after {
+    bottom: 3px;
+  }
+}
+
 /* The current hour: a small mark under the number. */
 .lx .lx-tp__cell--now::after {
   content: '';

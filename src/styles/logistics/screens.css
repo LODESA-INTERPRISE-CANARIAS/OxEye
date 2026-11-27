@@ -386,26 +386,54 @@
   color: var(--lx-accent);
 }
 
+/*
+ * Wider cards keep the regular card's height: facts | next tasks (half),
+ * facts | next tasks | notes (full), side by side.
+ */
 .lx .lx-event__body {
   display: grid;
-  gap: 16px;
+  gap: 22px;
   min-width: 0;
 }
 
-.lx .lx-event--full .lx-event__body {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 28px;
+.lx .lx-event__body > .lx-event__facts {
+  align-content: start;
 }
 
-.lx .lx-event--full .lx-event__title {
-  font-size: 24px;
+/* Too narrow for columns: exactly the regular card. */
+.lx .lx-event__body > .lx-event__next,
+.lx .lx-event__body > .lx-event__aside {
+  display: none;
 }
 
-.lx .lx-event__main {
+@container (min-width: 520px) {
+  .lx .lx-event__body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+
+  .lx .lx-event__body > .lx-event__next {
+    display: grid;
+  }
+}
+
+@container (min-width: 820px) {
+  .lx .lx-event--full .lx-event__body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 26px;
+  }
+
+  .lx .lx-event--full .lx-event__body > .lx-event__aside {
+    display: grid;
+  }
+}
+
+.lx .lx-event__aside {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
   min-width: 0;
+  padding-left: 22px;
+  border-left: 1px solid var(--lx-line);
 }
 
 .lx .lx-event__progress {
@@ -431,24 +459,14 @@
 .lx .lx-event__notes {
   font-size: 14px;
   color: var(--lx-muted);
-  border-left: 2px solid var(--lx-line);
-  padding-left: 10px;
   overflow-wrap: anywhere;
 }
 
 .lx .lx-event__next {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   align-content: start;
   min-width: 0;
-}
-
-.lx .lx-event--half .lx-event__next {
-  padding-top: 12px;
-  border-top: 1px dashed var(--lx-line);
-}
-
-.lx .lx-event--full .lx-event__next {
   padding-left: 22px;
   border-left: 1px solid var(--lx-line);
 }
@@ -463,20 +481,21 @@
 
 .lx .lx-event__tasks {
   display: grid;
-  gap: 4px;
+  gap: 0;
   list-style: none;
-  margin: 0;
+  margin: 0 -8px;
   padding: 0;
 }
 
+/* One line per task: when, then the title (and company) cut with «…». */
 .lx .lx-event__task {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   column-gap: 10px;
-  row-gap: 1px;
   width: 100%;
-  min-height: 44px;
-  padding: 6px 8px;
+  min-height: 34px;
+  padding: 4px 8px;
   border: 0;
   border-radius: var(--lx-radius);
   background: transparent;
@@ -500,7 +519,6 @@ button.lx-event__task {
 }
 
 .lx .lx-event__taskwhen {
-  grid-row: span 2;
   font-size: 13px;
   color: var(--lx-muted);
   white-space: nowrap;
@@ -508,7 +526,9 @@ button.lx-event__task {
 
 .lx .lx-event__tasktitle {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lx .lx-event__taskco {
@@ -1118,19 +1138,6 @@ button.lx-event__task {
   .lx .lx-event-grid--upcoming,
   .lx .lx-event-grid--upcoming[data-count='3'] {
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  }
-
-  /* The single wide card stacks its next tasks under the facts. */
-  .lx .lx-event--full .lx-event__body {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-  }
-
-  .lx .lx-event--full .lx-event__next {
-    padding-left: 0;
-    border-left: 0;
-    padding-top: 12px;
-    border-top: 1px dashed var(--lx-line);
   }
 
   .lx .lx-card {

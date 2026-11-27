@@ -16,8 +16,9 @@
 }
 
 .lx .lx-sidebar > .lx-contours {
+  /* Never below the bottom edge: it would make the sidebar scroll for nothing. */
   left: -40%;
-  bottom: -6%;
+  bottom: 0;
   width: 180%;
   height: 46%;
   opacity: 0.45;
