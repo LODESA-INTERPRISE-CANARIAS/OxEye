@@ -321,12 +321,19 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         </div>
 
         <div className="lx-calbar__tools">
-          <div className="lx-calbar__filter">
+          <div
+            className="lx-calbar__filter"
+            data-filtered={activeFilter !== 'all' || undefined}
+          >
             <Icon name="calendar" size={16} />
             <SelectField
               id="lx-cal-filter"
               className="lx-calbar__select"
               aria-label="Filtrar por evento"
+              title={
+                filterOptions.find(o => o.value === activeFilter)?.label ??
+                undefined
+              }
               value={activeFilter}
               onChange={setFilter}
               options={filterOptions}
