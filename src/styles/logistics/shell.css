@@ -16,8 +16,9 @@
 }
 
 .lx .lx-sidebar > .lx-contours {
+  /* Never below the bottom edge: it would make the sidebar scroll for nothing. */
   left: -40%;
-  bottom: -6%;
+  bottom: 0;
   width: 180%;
   height: 46%;
   opacity: 0.45;
@@ -114,6 +115,102 @@
   bottom: 14px;
   color: var(--lx-muted);
   pointer-events: none;
+}
+
+/* E2: the card opens «Organización» (name and the PDF acronym). */
+.lx .lx-org--button {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface);
+  --lx-btn-border: var(--lx-line);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  --lx-btn-border-hover: var(--lx-line-strong);
+  width: 100%;
+  padding-right: 34px;
+  text-align: left;
+}
+
+.lx .lx-org--button .lx-org__chevron {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+.lx .lx-org__acronym {
+  font-size: 12.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-org__acronym strong {
+  color: var(--lx-heading);
+  letter-spacing: 0.04em;
+}
+
+.lx .lx-org__selectfield {
+  width: 100%;
+}
+
+.lx .lx-org__more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  margin-top: 4px;
+  border-radius: var(--lx-radius-sm);
+  color: var(--lx-muted);
+}
+
+.lx .lx-org__more:hover:not(:disabled) {
+  color: var(--lx-heading);
+}
+
+.lx .lx-orgsheet {
+  display: grid;
+  gap: 16px;
+}
+
+/* First block under the sheet header: no second rule above it. */
+.lx .lx-orgsheet > .lx-subsection:first-child,
+.lx .lx-orgsheet > .lx-notice + .lx-subsection {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.lx .lx-orgsheet .lx-subsection__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lx .lx-orgsheet__edit {
+  margin-left: auto;
+}
+
+.lx .lx-orgsheet__acronym {
+  margin: 0;
+  font-size: 15px;
+}
+
+.lx .lx-orgsheet__acronym strong {
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  color: var(--lx-heading);
+}
+
+.lx .lx-orgsheet__example {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-orgsheet__example code {
+  font-family: var(--lx-font);
+  font-size: 13px;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
 }
 
 .lx .lx-sidebar__group {
@@ -376,10 +473,9 @@
     background: var(--lx-bg);
   }
 
+  /* Sticky through its wrapper `.lx-mainbar` (account.css), with the banners. */
   .lx .lx-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;

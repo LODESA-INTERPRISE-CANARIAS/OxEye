@@ -1,7 +1,8 @@
 /**
  * A place found by the universal search: its address and what happens there
  * (events and tasks), so «¿qué hay en la Plaza del Cristo?» has an answer,
- * plus the notes about it and its history.
+ * plus the notes about it and its history. Revisión 1 · E2: its acronym and
+ * opening hours, editable by members (`VenueDetails`).
  */
 import React, {useMemo} from 'react';
 import {useActions} from '../common/actions';
@@ -14,6 +15,7 @@ import {dayMonthShort} from '../lib/format';
 import {recordDate, sortTasks} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon, Pending, Sheet} from '../ui';
+import {VenueDetails} from './VenueDetails';
 
 export const VenueSheet: React.FC<{venueId: string; onClose: () => void}> = ({
   venueId,
@@ -53,6 +55,7 @@ export const VenueSheet: React.FC<{venueId: string; onClose: () => void}> = ({
             <Pending>Dirección pendiente de verificar</Pending>
           )}
         </p>
+        {venue && <VenueDetails venue={venue} />}
         <section className="lx-subsection" aria-labelledby="lx-venue-events">
           <h3 className="lx-subsection__title" id="lx-venue-events">
             Eventos

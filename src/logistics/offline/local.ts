@@ -30,7 +30,11 @@ import type {
 } from '../../../shared/logistics/outbox.ts';
 import type {SyncList} from '../../../shared/logistics/sync.ts';
 
-/** The store list each outbox type lives in. */
+/**
+ * The store list each outbox type lives in. A photo (E3) belongs to its
+ * resource: it never overlays a list (no optimistic record) and is shown
+ * from its outbox entry.
+ */
 export const LIST_OF = {
   event: 'events',
   task: 'tasks',
@@ -40,6 +44,7 @@ export const LIST_OF = {
   warehouse: 'warehouses',
   resource: 'resources',
   note: 'notes',
+  media: 'resources',
 } as const satisfies Record<OutboxEntity, SyncList>;
 
 export type RecordListKey = (typeof LIST_OF)[OutboxEntity];
@@ -113,7 +118,7 @@ export function recordName(
   entity: OutboxEntity,
   record: OptimisticRecord | null | undefined,
 ): string {
-  if (!record) return '';
+  if (!record || entity === 'media') return '';
   if (entity === 'task') return (record as Task).title ?? '';
   if (entity === 'note') return noteLabel(record as Note);
   return (record as {name?: string}).name ?? '';

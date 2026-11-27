@@ -10,6 +10,7 @@ import {ConfigError, loadConfig} from './config.ts';
 import {migrate} from './db/migrate.ts';
 import {DbLockedError, isPgliteUrl, openDb} from './db/open.ts';
 import {resolveClientIp} from './http/client-ip.ts';
+import {startRenewalTimer} from './offer-terms/renewals.ts';
 
 function log(line: string): void {
   console.log(`${new Date().toISOString()} ${line}`);
@@ -56,13 +57,31 @@ async function main(): Promise<void> {
           'Aviso: CORS_ORIGINS está vacío; solo se aceptan peticiones del mismo origen.',
         );
       }
+      // Host and port only: never the account, the password or the inbox.
+      if (config.mail.smtp) {
+        log(
+          `Correo de cuentas: SMTP ${config.mail.smtp.host}:${config.mail.smtp.port}`,
+        );
+      } else if (config.mail.printLinks) {
+        log(
+          'Correo de cuentas: sin SMTP; no se envía nada (NODE_ENV=development: los enlaces aparecen en este registro; nunca en un servidor compartido).',
+        );
+      } else {
+        log(
+          'Aviso: correo de cuentas sin SMTP. No se envía nada y los enlaces de recuperación no aparecen en el registro; configura SMTP_HOST, o NODE_ENV=development solo en un equipo local.',
+        );
+      }
     },
   );
+
+  // Revisión 1 · E6: renegotiation tasks, now and every hour.
+  const stopRenewals = startRenewalTimer(db, log);
 
   let closing = false;
   const shutdown = (signal: string) => {
     if (closing) return;
     closing = true;
+    stopRenewals();
     log(`${signal} recibido: cerrando el servidor…`);
     server.close(() => {
       void db.close().finally(() => process.exit(0));

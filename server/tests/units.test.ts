@@ -8,6 +8,7 @@ import {bearerToken} from '../src/auth/middleware.ts';
 import {createRateLimiter} from '../src/auth/rate-limit.ts';
 import {ConfigError, loadConfig, parseOrigins} from '../src/config.ts';
 import {resolveClientIp} from '../src/http/client-ip.ts';
+import {createConsoleTransport} from '../src/mail/transport.ts';
 import {
   changedEventFields,
   END_DATE_NOT_AFTER,
@@ -408,6 +409,14 @@ describe('guest redaction · forViewer', () => {
       maintenanceCost: 3,
       conditions: 'Privadas',
       vatIncluded: true,
+      // E5: taxes go with the prices.
+      tax: {
+        regime: 'igic' as const,
+        name: null,
+        ratePercent: 7,
+        verification: 'to_verify' as const,
+      },
+      companyTax: null,
     };
     const asGuest = forViewer('offer', offer, {role: 'guest'});
     expect(asGuest).toEqual({
@@ -417,6 +426,8 @@ describe('guest redaction · forViewer', () => {
       assemblyCost: null,
       maintenanceCost: null,
       conditions: null,
+      tax: null,
+      companyTax: null,
       restricted: true,
     });
     expect(forViewer('offer', offer, {role: 'member'})).toEqual({
@@ -607,7 +618,73 @@ describe('config', () => {
       nodeEnv: 'development',
       migrateOnStart: false,
       trustProxyHops: 0,
+      mail: {
+        smtp: null,
+        from: null,
+        recoveryFallback: null,
+        publicAppUrl: null,
+        // NODE_ENV not set: never print a usable link.
+        printLinks: false,
+      },
     });
+    expect(loadConfig({...env, NODE_ENV: 'development'}).mail.printLinks).toBe(
+      true,
+    );
+    expect(loadConfig({...env, NODE_ENV: 'production'}).mail.printLinks).toBe(
+      false,
+    );
+  });
+
+  it('E4: the console transport prints the link only when asked to', async () => {
+    const message = {
+      to: 'ana.perez@example.org',
+      subject: 'Restablecer la contraseña',
+      text: 'Abre https://equipo.example.org/#cuenta/restablecer/SECRETO',
+    };
+    const quiet: string[] = [];
+    await createConsoleTransport(false, l => quiet.push(l)).send(message);
+    expect(quiet.join('\n')).not.toContain('SECRETO');
+    expect(quiet.join('\n')).not.toContain('ana.perez');
+    const loud: string[] = [];
+    await createConsoleTransport(true, l => loud.push(l)).send(message);
+    expect(loud.join('\n')).toContain('SECRETO');
+    expect(loud.join('\n')).not.toContain('ana.perez@');
+  });
+
+  it('E4: reads the SMTP settings; the port decides TLS unless told', () => {
+    const mail = (extra: Record<string, string>) =>
+      loadConfig({...env, ...extra}).mail;
+    expect(
+      mail({
+        SMTP_HOST: 'smtp.example.org',
+        SMTP_USER: 'cuenta@example.org',
+        SMTP_PASS: 'secreto',
+        MAIL_FROM: 'Ox Eye <cuenta@example.org>',
+        RECOVERY_FALLBACK_EMAIL: 'buzon@example.org',
+        PUBLIC_APP_URL: 'https://equipo.example.org/',
+      }),
+    ).toEqual({
+      smtp: {
+        host: 'smtp.example.org',
+        port: 465,
+        secure: true,
+        user: 'cuenta@example.org',
+        pass: 'secreto',
+      },
+      from: 'Ox Eye <cuenta@example.org>',
+      recoveryFallback: 'buzon@example.org',
+      publicAppUrl: 'https://equipo.example.org',
+      printLinks: false,
+    });
+    expect(
+      mail({SMTP_HOST: 'h', SMTP_PORT: '587', MAIL_FROM: 'a@b.c'}).smtp,
+    ).toMatchObject({port: 587, secure: false, user: null});
+    expect(() => mail({SMTP_HOST: 'h'})).toThrow(/MAIL_FROM/);
+    expect(() => mail({RECOVERY_FALLBACK_EMAIL: 'no'})).toThrow(
+      /RECOVERY_FALLBACK_EMAIL/,
+    );
+    expect(() => mail({PUBLIC_APP_URL: 'ftp://x'})).toThrow(/PUBLIC_APP_URL/);
+    expect(() => mail({SMTP_PORT: 'abc'})).toThrow(/SMTP_PORT/);
   });
 
   it('reads TRUST_PROXY as a number of proxies, with true meaning one', () => {

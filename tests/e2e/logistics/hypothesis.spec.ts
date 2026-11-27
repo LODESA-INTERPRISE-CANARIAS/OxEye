@@ -1,6 +1,7 @@
 import {expect, test, type Page} from '@playwright/test';
 import {dailos, mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
+import {choose, expectValue} from './controls';
 import {
   ORDER_PRIVATE,
   SUBSOIL_DECLARED,
@@ -14,7 +15,7 @@ import {
  * Gestor logístico, milestone 5: «¿Y si…?». Exploring a delay never writes;
  * the sheet shows what moves, what absorbs it, the margin before the event,
  * route reminders (A/B/C, Carpa Amarilla) and the warnings re-run on the
- * hypothetical plan; saving shows a hatched chip in Hoy; «Aplicar al plan»
+ * hypothetical plan; saving shows a dashed «Hipótesis» chip in Hoy; «Aplicar al plan»
  * asks first, moves only times (and marks the task «Con retraso» if ticked)
  * and refuses when the plan changed; discarding, the applied read-only view,
  * the guest and «Se alarga». Fixed clock 10:30 (followup-fixtures.ts).
@@ -66,8 +67,7 @@ test.describe('Gestor logístico · ¿Y si…? · explorar', () => {
     // From Hoy: choose the task, late and running ones first.
     await page.locator('#lx-today-whatif').click();
     await expect(sheet(page)).toBeVisible();
-    const select = page.locator('select#lx-hypo-task');
-    await expect(select).toHaveValue('h1');
+    await expectValue(page, 'lx-hypo-task', 'h1');
     // h1 is 1 h 30 min late: that is the delay proposed.
     await expect(page.locator('#lx-hypo-minutes')).toHaveValue('90');
     await expect(page.locator('#lx-hypo-label')).toHaveText(
@@ -94,7 +94,7 @@ test.describe('Gestor logístico · ¿Y si…? · explorar', () => {
     await page.locator('#lx-hypo-estimated').check();
     await expect(page.locator('#lx-hypo-summary')).toContainText('≈ 45 min');
     await page.locator('#lx-hypo-note').fill('Prueba: no se guarda');
-    await select.selectOption('h7');
+    await choose(page, 'lx-hypo-task', 'h7');
     await expect(sheet(page).locator('.lx-sheet__title')).toHaveText(
       'Reparto de mesas Demo',
     );
@@ -153,9 +153,45 @@ test.describe('Gestor logístico · ¿Y si…? · explorar', () => {
     await expect(page.locator('#lx-hypo-margins')).toContainText(
       '«Navidad en la Plaza del Cristo»: quedan 1 h 30 min antes de que empiece (antes, 2 h).',
     );
-    // Nothing reaches the event: no route block, no new warnings.
-    await expect(page.locator('#lx-hypo-routes')).toHaveCount(0);
+    // Nothing reaches the event, but both moved assembly tasks still get the
+    // routes A/B/C and Carpa Amarilla reminder. No new warnings.
+    const routes = page.locator('#lx-hypo-routes');
+    await expect(routes).toContainText(
+      '«Montaje del escenario Demo» cambia de hora: revisa las rutas',
+    );
+    await expect(routes).toContainText(
+      '«Instalación de sonido Demo» cambia de hora: revisa las rutas',
+    );
+    await expect(routes).toContainText('Carpa Amarilla');
+    await expect(routes).not.toContainText('Entrega de vallas Demo');
+    // Montaje's subsoil review is declared: no subsoil reminder.
+    await expect(page.locator('#lx-hypo-subsoil')).toHaveCount(0);
     await expect(page.locator('#lx-hypo-new')).toHaveCount(0);
+  });
+
+  test('a heavy load without a declared review keeps its subsoil reminder, up to the confirmation', async ({
+    page,
+  }) => {
+    const tasks = followTasks().map(t =>
+      t.id === 'h1' ? {...t, subsoilReview: null} : t,
+    );
+    await mockApi(page, followData({tasks}));
+    await signIn(page);
+    await delayH1(page, 30);
+    const subsoil = page.locator('#lx-hypo-subsoil');
+    await expect(subsoil).toContainText(
+      'Carga pesada en «Montaje del escenario Demo»',
+    );
+    await expect(subsoil).toContainText('500 kg/m²');
+    // Its help says the threshold is indicative, never certified.
+    await expect(subsoil.locator('[popover]')).toContainText(
+      'umbral orientativo de revisión, no un límite certificado',
+    );
+    await expect(page.locator('#lx-hypo-cleared')).toHaveCount(0);
+    await page.locator('#lx-hypo-apply').click();
+    await expect(page.locator('#lx-hypo-confirm-subsoil')).toContainText(
+      'Carga pesada en «Montaje del escenario Demo»',
+    );
   });
 
   test('2 h: the delivery runs into the event — routes A/B/C and Carpa Amarilla', async ({
@@ -204,22 +240,28 @@ test.describe('Gestor logístico · ¿Y si…? · explorar', () => {
     );
   });
 
-  test('a delay that takes a delivery past the event clears its reminder', async ({
+  test('a delay that takes a delivery past the event never «clears» its routes reminder', async ({
     page,
   }) => {
     await mockApi(page, followData());
     await signIn(page);
     await page.locator('#lx-today-whatif').click();
-    await page.locator('select#lx-hypo-task').selectOption('h9');
+    await choose(page, 'lx-hypo-task', 'h9');
     await page.locator('#lx-hypo-minutes').fill('180');
-    const cleared = page.locator('#lx-hypo-cleared');
-    await expect(cleared).toContainText('Dejarían de aparecer');
-    await expect(cleared).toContainText('«Entrega de generador Demo» coincide');
-    await expect(page.locator('#lx-hypo-routes')).toHaveCount(0);
-    // No route reminder left: the confirmation has no routes block.
+    const relabelled =
+      '«Entrega de generador Demo»: Ya no coincide con el evento; revísalo igualmente en el simulador.';
+    const routes = page.locator('#lx-hypo-routes');
+    await expect(routes).toContainText(relabelled);
+    await expect(routes).toContainText('C (evacuación en camilla)');
+    await expect(routes).toContainText('Carpa Amarilla');
+    // A delay does not solve a route risk: it is not under «Dejarían de aparecer».
+    await expect(page.locator('#lx-hypo-cleared')).toHaveCount(0);
+    // The confirmation repeats it.
     await page.locator('#lx-hypo-apply').click();
     await expect(page.locator('#lx-hypo-confirm')).toBeVisible();
-    await expect(page.locator('#lx-hypo-confirm-routes')).toHaveCount(0);
+    const confirmRoutes = page.locator('#lx-hypo-confirm-routes');
+    await expect(confirmRoutes).toContainText(relabelled);
+    await expect(confirmRoutes).toContainText('Carpa Amarilla');
   });
 
   test('«Se alarga» on a task under way keeps its start', async ({page}) => {
@@ -296,8 +338,12 @@ test.describe('Gestor logístico · ¿Y si…? · guardar y aplicar', () => {
     await page.keyboard.press('Escape');
 
     const chip = page.locator('#lx-today-hypotheses [id^="lx-hypo-chip-"]');
+    // Every chip says «Hipótesis» in words, not only with its dashed line.
     await expect(chip).toHaveText(
-      'Retraso ≈ 30 min · Montaje del escenario Demo · Elvis, 10:30',
+      'Hipótesis Retraso ≈ 30 min · Montaje del escenario Demo · Elvis, 10:30',
+    );
+    await expect(chip).toHaveAccessibleName(
+      'Hipótesis Retraso ≈ 30 min · Montaje del escenario Demo · Elvis, 10:30',
     );
     await expect(page.locator('#lx-today-hypotheses')).toContainText(
       'no cambian el plan',
@@ -310,6 +356,9 @@ test.describe('Gestor logístico · ¿Y si…? · guardar y aplicar', () => {
     await expect(page.locator('#lx-task-hypotheses')).toContainText(
       'Retraso ≈ 30 min',
     );
+    await expect(
+      page.locator('#lx-task-hypotheses .lx-hypotag').first(),
+    ).toHaveText('Hipótesis');
   });
 
   test('«Aplicar al plan» confirms, moves the tasks and marks «Con retraso»; load, subsoil and resources stay', async ({
@@ -337,7 +386,10 @@ test.describe('Gestor logístico · ¿Y si…? · guardar y aplicar', () => {
     await expect(page.locator('#lx-hypo-confirm-keep')).toHaveText(
       'La carga pesada, los recursos y la revisión del subsuelo no cambian.',
     );
-    await expect(page.locator('#lx-hypo-confirm-routes')).toHaveCount(0);
+    // Both moved assembly tasks carry the routes reminder into the confirmation.
+    await expect(page.locator('#lx-hypo-confirm-routes')).toContainText(
+      '«Montaje del escenario Demo» cambia de hora: revisa las rutas',
+    );
     await expect(page.locator('#lx-hypo-apply-confirm')).toHaveText(
       'Aplicar: mover 2 tareas',
     );
@@ -497,7 +549,7 @@ test.describe('Gestor logístico · ¿Y si…? · guardadas', () => {
     await signIn(page);
     const chip = page.locator('#lx-hypo-chip-hy1');
     await expect(chip).toHaveText(
-      'Retraso ≈ 30 min · Montaje del escenario Demo · Dailos, 10:10',
+      'Hipótesis Retraso ≈ 30 min · Montaje del escenario Demo · Dailos, 10:10',
     );
     // The chip is a label: never the note.
     await expect(chip).not.toContainText(ORDER_PRIVATE.hypothesisNote);

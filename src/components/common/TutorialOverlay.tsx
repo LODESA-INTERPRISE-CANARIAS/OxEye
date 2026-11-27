@@ -239,7 +239,7 @@ export const TutorialOverlay: React.FC = () => {
         id="tour-coach"
         className={`tour-coach ${paused ? 'is-paused' : ''}`}
         role="dialog"
-        aria-label="Tutorial guiado de OxEye"
+        aria-label="Tutorial guiado de Ox Eye"
         style={cardStyle}
       >
         <div className="tour-coach-head">

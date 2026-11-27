@@ -71,6 +71,12 @@ describe('local database without Docker (pglite:)', () => {
       '0004_contacts_catalogue.sql',
       '0005_inventories.sql',
       '0006_followup.sql',
+      '0007_moves_acceptances.sql',
+      '0008_answers_media.sql',
+      '0009_roles_access.sql',
+      '0010_money.sql',
+      '0011_offer_terms.sql',
+      '0012_support_attribution.sql',
     ]);
     const seeded = await seed(db, {passwordFor: n => `pw-${n}-1234`});
     expect(seeded.organizationCreated).toBe(false);

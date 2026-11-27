@@ -12,6 +12,7 @@ import React, {useMemo, useState} from 'react';
 import type {Note} from '../../../shared/logistics/contracts.ts';
 import {NOTE_KIND_LABEL} from '../../../shared/logistics/rules.ts';
 import {
+  awaitsAsker,
   excerpt,
   isOpenNote,
   NOTE_KIND_ICON,
@@ -172,7 +173,11 @@ export const NoteItem: React.FC<{
           {status && (
             <span
               className={`lx-notestatus${
-                openOne ? ' lx-notestatus--open' : ''
+                awaitsAsker(note)
+                  ? ' lx-notestatus--answered'
+                  : openOne
+                    ? ' lx-notestatus--open'
+                    : ''
               }`}
             >
               {status}

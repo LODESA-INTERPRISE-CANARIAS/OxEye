@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
+  dependencyPath,
   findCycle,
   findOverlaps,
   simulateDelay,
@@ -75,6 +76,58 @@ describe('schedule · dependencies', () => {
     expect(findCycle(plan())).toBeNull();
     const cyc = [item('a', null, null, ['b']), item('b', null, null, ['a'])];
     expect(findCycle(cyc)).not.toBeNull();
+  });
+});
+
+describe('schedule · dependency chain', () => {
+  it('names the direct link', () => {
+    expect(dependencyPath(plan(), 'descarga', 'camion')).toEqual([
+      'descarga',
+      'camion',
+    ]);
+  });
+
+  it('follows the chain through other items, in waiting order', () => {
+    expect(dependencyPath(plan(), 'inspeccion', 'camion')).toEqual([
+      'inspeccion',
+      'carpas',
+      'descarga',
+      'camion',
+    ]);
+  });
+
+  it('is null when there is no chain, or it goes the other way', () => {
+    expect(dependencyPath(plan(), 'camion', 'inspeccion')).toBeNull();
+    expect(dependencyPath(plan(), 'adelantado', 'camion')).toBeNull();
+  });
+
+  it('picks the shortest chain when there are several', () => {
+    const items = [
+      item('self', null, null),
+      item('a', null, null, ['self']),
+      item('b', null, null, ['a']),
+      item('c', null, null, ['b', 'self']),
+    ];
+    expect(dependencyPath(items, 'c', 'self')).toEqual(['c', 'self']);
+    expect(dependencyPath(items, 'b', 'self')).toEqual(['b', 'a', 'self']);
+  });
+
+  it('reaches a target outside the list (a task still being edited)', () => {
+    const items = [
+      item('a', null, null, ['draft']),
+      item('b', null, null, ['a', 'gone']),
+    ];
+    expect(dependencyPath(items, 'b', 'draft')).toEqual(['b', 'a', 'draft']);
+  });
+
+  it('copes with an existing loop without hanging', () => {
+    const items = [
+      item('a', null, null, ['b']),
+      item('b', null, null, ['a']),
+      item('c', null, null, ['a']),
+    ];
+    expect(dependencyPath(items, 'c', 'z')).toBeNull();
+    expect(dependencyPath(items, 'c', 'b')).toEqual(['c', 'a', 'b']);
   });
 });
 

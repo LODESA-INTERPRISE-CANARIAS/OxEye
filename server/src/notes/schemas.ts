@@ -73,6 +73,14 @@ export const updateNoteSchema = z.object({
   ...common,
 });
 
+/** NoteAnswerInput (Revisión 1 · E3). */
+export const answerSchema = z.object({
+  text: requiredText(NOTE_TEXT_MAX),
+  // The current answer the user saw and replaces; null for the first one.
+  replaces: uuid.transform(v => v.toLowerCase()).nullable(),
+});
+
+export type AnswerBody = z.output<typeof answerSchema>;
 export type CreateNoteBody = z.output<typeof createNoteSchema>;
 export type UpdateNoteBody = z.output<typeof updateNoteSchema>;
 export type NoteBody = CreateNoteBody | UpdateNoteBody;

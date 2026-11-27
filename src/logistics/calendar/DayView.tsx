@@ -1,7 +1,8 @@
 /**
  * One day: its events, warnings and tasks without a time on top, then the
  * timed plan as a timeline by venue (desktop, tablet, phone in landscape) or
- * as a list by hour (phone upright).
+ * as a list by hour (phone upright). On the timeline each venue also carries
+ * its own warnings in its header; the day's list stays as the overview.
  */
 import React, {useMemo} from 'react';
 import type {PlanWarning} from '../../../shared/logistics/conflicts.ts';
@@ -13,7 +14,7 @@ import type {
 import {useActions} from '../common/actions';
 import {TaskRow} from '../common/TaskRow';
 import {TimeWindow} from '../common/TimeWindow';
-import {WarningList, warningsSummary} from '../common/WarningList';
+import {usePlan} from '../common/usePlan';
 import {StatusChip} from '../events/EventChips';
 import {spanOnDate, venueColumns} from '../lib/calendar';
 import {recordDate} from '../lib/tasks';
@@ -61,7 +62,11 @@ export const DayView: React.FC<{
       ),
     [timed, events, date],
   );
-  const conflicts = warnings.filter(w => w.severity === 'conflict').length;
+  const {acceptedByDay} = usePlan();
+  const accepted = useMemo(
+    () => acceptedByDay.get(date) ?? [],
+    [acceptedByDay, date],
+  );
 
   if (!tasks.length && !events.length) {
     return (
@@ -124,24 +129,7 @@ export const DayView: React.FC<{
           </section>
         )}
 
-        {warnings.length > 0 && (
-          // Closed by default: the timeline is the main content and already
-          // outlines the blocks in conflict; the summary line stays visible.
-          <details
-            className={`lx-disclosure lx-day__warnings${conflicts ? ' has-conflict' : ''}`}
-            id="lx-day-warnings"
-          >
-            <summary>
-              <Icon name={conflicts ? 'alert' : 'bell'} size={18} />
-              Avisos del día · {warningsSummary(warnings)}
-            </summary>
-            <WarningList
-              warnings={warnings}
-              tasksById={tasksById}
-              onOpenTask={openTask}
-            />
-          </details>
-        )}
+        {/* The day's warnings live in the calendar bar (DayWarnings). */}
       </div>
 
       {timed.length === 0 && !columns.length ? (
@@ -169,8 +157,11 @@ export const DayView: React.FC<{
           hour={hour}
           onHour={onHour}
           byTask={byTask}
+          warnings={warnings}
+          tasksById={tasksById}
           now={now}
           onOpenTask={openTask}
+          accepted={accepted}
         />
       )}
 

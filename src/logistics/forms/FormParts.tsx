@@ -207,14 +207,21 @@ const VERIFICATION_OPTIONS = (
 }));
 
 export const QualityFields: React.FC<{
+  /**
+   * Names the record being edited, so the group reads as part of it:
+   * «Calidad de la tarea», «Calidad del evento», «Calidad del contacto»…
+   */
+  title: string;
   idPrefix: string;
   source: DataSource | null;
   verification: Verification;
   onSource: (value: DataSource | null) => void;
   onVerification: (value: Verification) => void;
-}> = ({idPrefix, source, verification, onSource, onVerification}) => (
-  <div className="lx-form__group">
-    <p className="lx-form__group-title">Calidad del dato</p>
+}> = ({title, idPrefix, source, verification, onSource, onVerification}) => (
+  <div className="lx-form__group" id={`${idPrefix}-quality`}>
+    <p className="lx-form__group-title" id={`${idPrefix}-quality-title`}>
+      {title}
+    </p>
     <Segmented<DataSource>
       name={`${idPrefix}-source`}
       id={`${idPrefix}-source`}

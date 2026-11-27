@@ -1,6 +1,7 @@
 import {expect, test, type Page} from '@playwright/test';
-import {ORG, mockApi, signIn, type MockApi} from './mock-api';
+import {ORG, loginAs, mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
+import {choose, optionValues} from './controls';
 import {
   ALQUILERES,
   NORTE,
@@ -184,9 +185,7 @@ test.describe('Gestor logístico · Inventarios', () => {
     await page.keyboard.press('Escape');
 
     await page.locator('#lx-logout').click();
-    await page.locator('.lx-person[data-name="Invitado"]').click();
-    await page.locator('#lx-login-password').fill('secreto');
-    await page.locator('#lx-login-submit').click();
+    await loginAs(page, 'Invitado');
     await page.locator('#lx-nav-inventarios').click();
     await page.locator('#lx-inventory-tab-owned').click();
     await expect(page.locator('#lx-inventory-empty')).toContainText(
@@ -349,20 +348,19 @@ test.describe('Gestor logístico · captura rápida de recursos', () => {
       page.locator('#lx-resource-ownership-contracted'),
     ).toBeChecked();
     await page.locator('#lx-resource-name').fill('Cabinas Prueba');
-    const offer = page.locator('#lx-resource-offerId');
     // No company yet: every offer, with its company.
-    await expect(offer.locator('option')).toHaveCount(4);
+    expect(await optionValues(page, 'lx-resource-offerId')).toHaveLength(4);
     await page.locator('#lx-resource-companyName').fill('alquileres prueba');
     await expect(page.locator('#lx-resource-companyName-status')).toContainText(
       'Se enlazará con «Alquileres Prueba»',
     );
     // Only that company's offers.
-    expect(
-      await offer
-        .locator('option')
-        .evaluateAll(els => els.map(el => (el as HTMLOptionElement).value)),
-    ).toEqual(['', 'o10', 'o11']);
-    await offer.selectOption('o11');
+    expect(await optionValues(page, 'lx-resource-offerId')).toEqual([
+      '',
+      'o10',
+      'o11',
+    ]);
+    await choose(page, 'lx-resource-offerId', 'o11');
     await page.locator('#lx-resource-quantity').fill('2');
     await page.locator('#lx-resource-save').click();
     await expect(resourceForm(page)).toHaveCount(0);
@@ -388,7 +386,7 @@ test.describe('Gestor logístico · captura rápida de recursos', () => {
     // Picking an offer with no company typed fills its company.
     await page.locator('#lx-inventory-add').click();
     await page.locator('#lx-resource-name').fill('Escenario alquilado Prueba');
-    await offer.selectOption('o12');
+    await choose(page, 'lx-resource-offerId', 'o12');
     await expect(page.locator('#lx-resource-companyName')).toHaveValue(
       'Escenarios Prueba',
     );
@@ -506,26 +504,47 @@ test.describe('Gestor logístico · categorías de recursos', () => {
     await openInventory(page);
     await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
     await page.locator('#lx-resource-edit').click();
-    await page.locator('#lx-resource-cat-manage').click();
-    const managed = page.locator('#lx-resource-cat-managed');
-    // Only the organization's own categories can be deleted.
-    await expect(managed.locator('.lx-catmanage__row')).toHaveCount(1);
-    await page.locator(`#lx-resource-cat-delete-${custom.id}`).click();
+    const manage = page.locator('#lx-resource-cat-manage');
+    await manage.click();
+    // The same chips switch mode: no separate list.
+    await expect(manage).toHaveText('Hecho');
+    await expect(manage).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.lx-catmanage__list')).toHaveCount(0);
+    const picker = page.locator('#lx-resource-categories');
+    // Only the organization's own categories turn red with a ×; built-ins
+    // stay as they are.
+    await expect(picker.locator('.lx-catpick__chip.is-removable')).toHaveCount(
+      1,
+    );
+    await expect(picker.locator('.lx-catpick__remove')).toHaveCount(1);
+    const remove = page.locator(`#lx-resource-cat-delete-${custom.id}`);
+    await expect(remove).toHaveAccessibleName(
+      'Borrar la categoría Material de limpieza Prueba',
+    );
+    // Keyboard: the × is a real button.
+    await remove.focus();
+    await page.keyboard.press('Enter');
     await expect(
       page.locator(`#lx-resource-cat-ask-${custom.id}`),
     ).toContainText(
       '¿Borrar «Material de limpieza Prueba»? La perderán 1 recurso; no se borra nada más.',
     );
-    // «No borrar» keeps it.
-    await page.locator(`#lx-resource-cat-keep-${custom.id}`).click();
+    // The safe answer has the focus; «No borrar» keeps it and goes back.
+    const keep = page.locator(`#lx-resource-cat-keep-${custom.id}`);
+    await expect(keep).toBeFocused();
+    await keep.click();
+    await expect(remove).toBeFocused();
     expect(api.calls('DELETE', `/categories/${custom.id}`)).toHaveLength(0);
-    await page.locator(`#lx-resource-cat-delete-${custom.id}`).click();
+    await remove.click();
     await page.locator(`#lx-resource-cat-confirm-${custom.id}`).click();
     await expect(
       page.getByRole('status').filter({hasText: 'Categoría borrada'}),
     ).toContainText('Material de limpieza Prueba');
     expect(api.calls('DELETE', `/categories/${custom.id}`)).toHaveLength(1);
     await expect(page.locator(`#lx-resource-cat-${custom.id}`)).toHaveCount(0);
+    // Nothing of the organization's own is left: the mode ends by itself.
+    await expect(picker.locator('.lx-catpick__remove')).toHaveCount(0);
+    await expect(page.locator('#lx-resource-cat-managed')).toHaveCount(0);
     // The resource that used it lost it (the server unlinked it).
     expect(r2.categoryId).toBeNull();
     expect(r2.version).toBe(2);

@@ -42,6 +42,9 @@ const KIND_LABEL: Record<EntryKind, string> = {
 
 /** What «Descartar» loses, in plain words. */
 function lossText(e: OutboxEntry, later: number): string {
+  if (e.entity === 'media') {
+    return 'La foto no llegará al servidor y se borrará de este dispositivo.';
+  }
   if (e.op === 'create') {
     return later
       ? `El registro nuevo y ${later === 1 ? 'el cambio posterior' : `los ${later} cambios posteriores`} no llegarán al servidor y desaparecerán de este dispositivo.`
@@ -67,6 +70,8 @@ const EntryRow: React.FC<{
     kind === 'conflict' || kind === 'duplicate' || kind === 'rejected';
   // An edit of a record the server no longer has: only discarding helps.
   const gone = entry.op === 'update' && entry.error?.code === 'NOT_FOUND';
+  // A refused photo has no form to review: retry or discard (E3).
+  const reviewable = entry.entity !== 'media';
   const existing =
     kind === 'duplicate' &&
     entry.op === 'create' &&
@@ -186,7 +191,7 @@ const EntryRow: React.FC<{
         </div>
       ) : (
         <div className="lx-outbox__actions">
-          {needsPerson && !gone && (
+          {needsPerson && !gone && reviewable && (
             <Button
               size="sm"
               variant="primary"

@@ -6,6 +6,7 @@
  */
 import React from 'react';
 import type {DayReport} from '../../../shared/logistics/day-report.ts';
+import {printWithName} from '../shell/usePrintTitle';
 import {Button, Icon, Sheet} from '../ui';
 import {includedTextTitles, listJoin} from './day';
 import {DayReportPage, type DayReportPageProps} from './DayReportPage';
@@ -44,7 +45,7 @@ export const DayPrintSheet: React.FC<{
             variant="primary"
             icon="print"
             id="lx-day-print-go"
-            onClick={() => window.print()}
+            onClick={printWithName}
           >
             Guardar como PDF
           </Button>

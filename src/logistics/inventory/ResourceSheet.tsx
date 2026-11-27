@@ -95,6 +95,7 @@ import {
   LoadNoteTip,
   QuantityChip,
 } from './ResourceParts';
+import {ResourcePhotos} from './ResourcePhotos';
 
 type RescuedValues = Record<string, unknown>;
 
@@ -393,6 +394,13 @@ const ResourceView: React.FC<{
       <div className="lx-record">
         {gone && <GoneNotice what="Este recurso" masculine />}
         {!canWrite && <ReadOnlyNotice />}
+
+        <ResourcePhotos
+          resource={r}
+          categoryName={category}
+          canWrite={canWrite}
+          canEdit={!gone}
+        />
 
         <div className="lx-resfacts" id="lx-resource-facts">
           <div className="lx-resfacts__item">
@@ -1286,6 +1294,7 @@ const ResourceForm: React.FC<{
         </Field>
 
         <QualityFields
+          title="Calidad del recurso"
           idPrefix="lx-resource"
           source={values.source}
           verification={values.verification}

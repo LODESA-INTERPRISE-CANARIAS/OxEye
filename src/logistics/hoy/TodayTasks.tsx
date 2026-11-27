@@ -5,8 +5,8 @@
  *
  * Members move tasks on with one tap («Empezar», «Hecha», with «Deshacer»)
  * and open «¿Y si…?» from a late or running task. Open hypotheses for today
- * show as hatched chips: they never change the plan until someone applies
- * one.
+ * show as dashed chips labelled «Hipótesis»: they never change the plan
+ * until someone applies one.
  */
 import React, {useMemo, useState} from 'react';
 import type {Task} from '../../../shared/logistics/contracts.ts';
@@ -28,6 +28,7 @@ import {
   HypothesisSheet,
   type HypothesisStart,
 } from '../followup/HypothesisSheet';
+import {HypothesisTag} from '../followup/HypothesisTag';
 import {hypothesisChipLabel} from '../followup/text';
 import {useQuickStatus} from '../followup/useQuickStatus';
 import {useLogisticsStore} from '../store/useLogisticsStore';
@@ -259,7 +260,8 @@ export const TodayTasks: React.FC<{
                       id={`lx-hypo-chip-${h.id}`}
                       onClick={() => setHypo({kind: 'saved', hypothesis: h})}
                     >
-                      {hypothesisChipLabel(h, today, timeZone)}
+                      <HypothesisTag />{' '}
+                      <span>{hypothesisChipLabel(h, today, timeZone)}</span>
                     </button>
                   </li>
                 ))}

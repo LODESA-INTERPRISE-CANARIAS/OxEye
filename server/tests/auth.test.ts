@@ -8,9 +8,7 @@ import {createHarness, json, passwordFor} from './helpers.ts';
 import type {Harness} from './helpers.ts';
 import type {
   ApiErrorBody,
-  ListResponse,
   LoginResponse,
-  LoginUserOption,
   MeResponse,
 } from '../../shared/logistics/contracts.ts';
 
@@ -20,28 +18,31 @@ beforeAll(async () => {
 });
 
 describe('auth', () => {
-  it('lists the five pilot users in seed order, without the system author', async () => {
+  it('E4: there is no public list of users any more (404)', async () => {
     const res = await h.request('GET', '/auth/users');
-    expect(res.status).toBe(200);
-    const body = await json<ListResponse<LoginUserOption>>(res);
-    expect(body.items).toEqual([
-      {displayName: 'Elvis', role: 'member'},
-      {displayName: 'Dailos', role: 'member'},
-      {displayName: 'Yeray', role: 'member'},
-      {displayName: 'Equipo', role: 'member'},
-      {displayName: 'Invitado', role: 'guest'},
-    ]);
+    expect(res.status).toBe(404);
+    expect(JSON.stringify(await res.json())).not.toContain('Elvis');
   });
 
   it('logs in with the right password and returns a session', async () => {
     const res = await h.request('POST', '/auth/login', {
-      body: {displayName: 'elvis', password: passwordFor('Elvis')},
+      body: {username: 'elvis', password: passwordFor('Elvis')},
     });
     expect(res.status).toBe(200);
     const body = await json<LoginResponse>(res);
     expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(body.user).toMatchObject({displayName: 'Elvis', role: 'member'});
-    expect(body.organizations).toEqual([h.org]);
+    expect(body.user).toMatchObject({
+      username: 'Elvis',
+      displayName: 'Elvis',
+      role: 'member',
+      passwordProvisional: true,
+      welcomed: false,
+      support: null,
+      avatarId: null,
+    });
+    expect(body.organizations).toEqual([
+      expect.objectContaining({...h.org, roles: ['admin']}),
+    ]);
     expect(body.expiresAt).toBe('2026-12-26T10:00:00.000Z');
 
     // Only the hash is stored.
@@ -88,8 +89,14 @@ describe('auth', () => {
     const body = await json<ApiErrorBody>(res);
     expect(body.code).toBe('VALIDATION');
     expect(body.fields).toMatchObject({
-      displayName: 'Elige tu usuario.',
+      displayName: 'Escribe tu nombre de usuario.',
       password: 'Este campo es obligatorio.',
+    });
+    const noName = await h.request('POST', '/auth/login', {
+      body: {password: 'x'},
+    });
+    expect((await json<ApiErrorBody>(noName)).fields).toEqual({
+      username: 'Escribe tu nombre de usuario.',
     });
     const notJson = await h.request('POST', '/auth/login', {body: '{oops'});
     expect(notJson.status).toBe(400);
@@ -230,7 +237,12 @@ describe('auth', () => {
     const broken = {
       query: () => Promise.reject(new Error('connection lost')),
     } as unknown as Db;
-    const input = {displayName: 'Elvis', password: 'x', ip: '10.8.0.1'};
+    const input = {
+      username: 'Elvis',
+      password: 'x',
+      ip: '10.8.0.1',
+      device: null,
+    };
     const options = {now: h.clock.now(), sessionDays: 30, limits};
     await expect(login(broken, input, options)).rejects.toThrow(
       'connection lost',
@@ -260,7 +272,9 @@ describe('auth', () => {
     expect(ok.status).toBe(200);
     const me = await json<MeResponse>(ok);
     expect(me.user.displayName).toBe('Dailos');
-    expect(me.organizations).toEqual([h.org]);
+    expect(me.organizations).toEqual([
+      expect.objectContaining({...h.org, roles: ['admin']}),
+    ]);
   });
 
   it('expires sessions after the sliding window and extends them on use', async () => {

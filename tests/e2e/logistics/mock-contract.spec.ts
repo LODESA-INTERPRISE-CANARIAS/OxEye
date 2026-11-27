@@ -1,13 +1,20 @@
 import {expect, test, type Page} from '@playwright/test';
-import {WITHHELD_FROM_GUESTS} from '../../../shared/logistics/redaction.ts';
 import {
+  DIRECTORY_REF_LABEL,
+  WITHHELD_FROM_GUESTS,
+  withholdFor,
+} from '../../../shared/logistics/redaction.ts';
+import {
+  MOCK_DIRECTORY_REF_LABEL,
   MOCK_WITHHELD,
   ORG,
   TOKEN,
   makeActivity,
   makeContact,
+  makeEvent,
   mockApi,
   signIn,
+  today,
 } from './mock-api';
 
 /**
@@ -55,6 +62,51 @@ test.describe('Gestor logístico · el mock sigue el contrato M6', () => {
           .sort(([a], [b]) => a.localeCompare(b)),
       );
     expect(norm(MOCK_WITHHELD)).toEqual(norm(WITHHELD_FROM_GUESTS));
+    // Safety audit: the generic directory names too.
+    expect(MOCK_DIRECTORY_REF_LABEL).toEqual(DIRECTORY_REF_LABEL);
+  });
+
+  test('a member without roles is withheld like a guest (withholdFor with directory false)', async ({
+    page,
+  }) => {
+    const event = makeEvent(
+      'e-notes',
+      'Concierto',
+      {date: today},
+      {notes: 'Llave del cuadro: Ana, 600 000 000'},
+    );
+    await mockApi(page, {
+      events: [event],
+      accounts: {Equipo: {roles: []}},
+    });
+    await signIn(page, 'Equipo');
+    const res = await call(page, 'GET', `/organizations/${ORG}/events`);
+    expect(res.status).toBe(200);
+    const [seen] = res.json?.items as Record<string, unknown>[];
+    expect(seen).toMatchObject({notes: null, restricted: true});
+    expect(seen).toEqual(
+      withholdFor('event', event as object, 'member', false),
+    );
+    // The directory itself answers 403.
+    expect(
+      (await call(page, 'GET', `/organizations/${ORG}/contacts`)).status,
+    ).toBe(403);
+  });
+
+  test('a member with the directory keeps every value', async ({page}) => {
+    const event = makeEvent(
+      'e-notes',
+      'Concierto',
+      {date: today},
+      {notes: 'Llave del cuadro: Ana'},
+    );
+    await mockApi(page, {events: [event]});
+    await signIn(page, 'Equipo');
+    const res = await call(page, 'GET', `/organizations/${ORG}/events`);
+    expect((res.json?.items as Record<string, unknown>[])[0]).toMatchObject({
+      notes: 'Llave del cuadro: Ana',
+      restricted: false,
+    });
   });
 
   test('device ids: 201, the same user again is 200 without a duplicate, anyone else is 400', async ({

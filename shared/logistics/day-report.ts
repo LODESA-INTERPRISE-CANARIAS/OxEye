@@ -12,12 +12,19 @@
  *   `dayReportText`.
  * - Hypotheses only by `hypothesisLabel`, open and applied apart, always
  *   called «hipótesis».
+ * - Open questions show their state, who answered and who closed them; the
+ *   answer text follows the note text rule (Revisión 1 · E3).
+ * - Conflicts accepted that day («Mantener ambas», E2) are decisions of the
+ *   day: label, who and when for everyone; the reason only when a member
+ *   included the text of «Decisiones», never for guests, never in
+ *   `dayReportText`.
  * - A heavy task that finished without a declared subsoil review is listed
  *   as pending; a declared review is «declarada por X», never «verificada».
  * - Deliveries and transport inside an event's window carry the routes
  *   reminder (A/B/C, Carpa Amarilla). The threshold is only quoted through
  *   `SUBSOIL_THRESHOLD_NOTE`.
  */
+import {acceptanceApplies} from './acceptance.ts';
 import {
   LOAD_BEARING_KINDS,
   planWarnings,
@@ -27,6 +34,7 @@ import {
 import type {
   ActivityEntry,
   Company,
+  ConflictAcceptance,
   Contact,
   DelayHypothesis,
   IsoInstant,
@@ -138,15 +146,51 @@ export interface DayNoteLine {
   id: Uuid;
   /** `noteLabel`: kind and what it is about, never the text. */
   label: string;
-  /** «Abierta», «Resuelta», «Sin respuesta», «Respondida»; null otherwise. */
+  /**
+   * «Abierta», «Resuelta», «Sin respuesta», «Con respuesta» (answered, the
+   * asker has not closed it), «Respondida» (closed); null otherwise.
+   */
   status: string | null;
   by: UserRef;
   at: IsoInstant;
-  /** Created before the report day (still open). */
+  /** Created before the report day (still open, or closed that day). */
   earlier: boolean;
   /** Only when a member included this section's text. */
   text: string | null;
+  /**
+   * Open questions (E3): the current answer, who gave it and when. Its text
+   * follows the same rule as the note's text.
+   */
+  answer: {by: UserRef; at: IsoInstant; text: string | null} | null;
+  /** Incidents and open questions: who resolved / closed it, and when. */
+  closedBy: UserRef | null;
+  closedAt: IsoInstant | null;
 }
+
+/**
+ * A conflict the team decided to keep («Mantener ambas», E2), accepted that
+ * day: a decision of the day, signed. The reason follows the «Incluir el
+ * texto» rule of «Decisiones» and is never given to guests.
+ */
+export interface DayAcceptedLine {
+  id: Uuid;
+  /** The warning's title while it still exists; otherwise the task titles. */
+  label: string;
+  /** The tasks kept together, by title («Montaje Demo y Reparto Demo»). */
+  tasks: string;
+  taskIds: Uuid[];
+  by: UserRef;
+  at: IsoInstant;
+  /**
+   * False once one of its tasks changed its time: the warning is open again
+   * (the decision stays on record).
+   */
+  applies: boolean;
+  /** Only when a member included the text of «Decisiones». */
+  reason: string | null;
+}
+
+export const ACCEPTED_TITLE = 'Conflictos aceptados («Mantener ambas»)';
 
 export interface DayNoteSection {
   kind: DayNoteKind;
@@ -260,6 +304,11 @@ export interface DayReport {
   otherNotes: number | null;
   /** Null for guests. */
   hypotheses: {open: DayHypothesisLine[]; applied: DayHypothesisLine[]} | null;
+  /**
+   * Conflicts accepted that day, oldest first. Everyone sees them (the plan
+   * warnings are not secret); the reason only a member who included it.
+   */
+  accepted: DayAcceptedLine[];
   safety: {
     subsoil: DaySubsoilLine[];
     routes: DayRouteLine[];
@@ -289,6 +338,8 @@ export interface DayReportInput {
   resources: readonly Resource[];
   notes: readonly Note[];
   hypotheses: readonly DelayHypothesis[];
+  /** E2: «Mantener ambas» decisions (viewer copies: no reason for guests). */
+  acceptances?: readonly ConflictAcceptance[];
   /** Note sections whose text a member chose to include. */
   includeText?: Partial<Record<DayNoteKind, boolean>>;
 }
@@ -435,9 +486,23 @@ const byStart = (a: DayTaskLine, b: DayTaskLine) =>
 function noteStatus(n: Note): string | null {
   if (n.kind === 'incident') return n.resolved ? 'Resuelta' : 'Abierta';
   if (n.kind === 'open_question') {
-    return n.resolved ? 'Respondida' : 'Sin respuesta';
+    if (n.resolved) return 'Respondida';
+    return n.answer ? 'Con respuesta' : 'Sin respuesta';
   }
   return null;
+}
+
+/** «Montaje Demo y Reparto Demo» from the tasks an acceptance names. */
+function acceptedTasks(
+  acceptance: ConflictAcceptance,
+  titles: ReadonlyMap<Uuid, string>,
+): string {
+  const names = acceptance.windows.map(
+    w => titles.get(w.taskId) ?? 'una tarea borrada',
+  );
+  return names.length <= 1
+    ? (names[0] ?? 'tareas sin nombre')
+    : `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
 }
 
 export function buildDayReport(input: DayReportInput): DayReport {
@@ -567,12 +632,18 @@ export function buildDayReport(input: DayReportInput): DayReport {
     notes = DAY_NOTE_KINDS.map(kind => {
       const textIncluded = input.includeText?.[kind] === true;
       const resolvable = kind === 'incident' || kind === 'open_question';
+      const showText = (n: Note) => textIncluded && !n.restricted;
       const items = input.notes
         .filter(n => n.kind === kind)
         .filter(
           n =>
             inRange(n.createdAt, fromMs, toMs) ||
-            (resolvable && !n.resolved && Date.parse(n.createdAt) < fromMs),
+            (resolvable &&
+              Date.parse(n.createdAt) < fromMs &&
+              // Still open, or answered / closed that day.
+              (!n.resolved ||
+                inRange(n.resolvedAt, fromMs, toMs) ||
+                inRange(n.answer?.answeredAt ?? null, fromMs, toMs))),
         )
         .map((n): DayNoteLine => ({
           id: n.id,
@@ -581,7 +652,18 @@ export function buildDayReport(input: DayReportInput): DayReport {
           by: n.createdBy,
           at: n.createdAt,
           earlier: Date.parse(n.createdAt) < fromMs,
-          text: textIncluded && !n.restricted ? n.text : null,
+          text: showText(n) ? n.text : null,
+          answer:
+            kind === 'open_question' && n.answer
+              ? {
+                  by: n.answer.answeredBy,
+                  at: n.answer.answeredAt,
+                  text:
+                    showText(n) && !n.answer.restricted ? n.answer.text : null,
+                }
+              : null,
+          closedBy: resolvable && n.resolved ? n.resolvedBy : null,
+          closedAt: resolvable && n.resolved ? n.resolvedAt : null,
         }))
         .sort(
           (a, b) =>
@@ -667,11 +749,37 @@ export function buildDayReport(input: DayReportInput): DayReport {
     });
 
   const windowIds = new Set(input.tasks.filter(inWindow).map(t => t.id));
-  const routes: DayRouteLine[] = planWarnings(
+  const warnings = planWarnings(
     [...input.tasks],
     [...input.events],
     [...input.resources],
-  )
+  );
+
+  // ------------------------------------------------ conflicts accepted that day
+  const titles = new Map(input.tasks.map(t => [t.id, t.title]));
+  const warningTitle = new Map(warnings.map(w => [w.key, w.title]));
+  const reasonShown = member && input.includeText?.decision === true;
+  const accepted: DayAcceptedLine[] = (input.acceptances ?? [])
+    .filter(a => inRange(a.acceptedAt, fromMs, toMs))
+    .map(a => {
+      const applies = acceptanceApplies(a, input.tasks);
+      const tasks = acceptedTasks(a, titles);
+      return {
+        id: a.id,
+        label:
+          (applies ? warningTitle.get(a.warningKey) : undefined) ??
+          `Conflicto entre ${tasks}`,
+        tasks,
+        taskIds: a.windows.map(w => w.taskId),
+        by: a.acceptedBy,
+        at: a.acceptedAt,
+        applies,
+        reason: reasonShown && !a.restricted ? a.reason : null,
+      };
+    })
+    .sort((a, b) => a.at.localeCompare(b.at));
+
+  const routes: DayRouteLine[] = warnings
     .filter(
       w => w.kind === 'route_window' && w.taskIds.some(id => windowIds.has(id)),
     )
@@ -719,6 +827,7 @@ export function buildDayReport(input: DayReportInput): DayReport {
     notes,
     otherNotes,
     hypotheses,
+    accepted,
     safety: {
       subsoil,
       routes,
@@ -789,6 +898,16 @@ export function dayReportText(report: DayReport, dateLabel: string): string {
       }
     }
   }
+  if (report.accepted.length) {
+    // Labels and who signed them; never the reason.
+    out.push(`${ACCEPTED_TITLE}:`);
+    for (const a of report.accepted) {
+      const what = a.label.endsWith(a.tasks) ? '' : `: ${a.tasks}`;
+      out.push(
+        `- ${a.label}${what} (${a.by.displayName}${a.applies ? '' : '; ya no aplica'})`,
+      );
+    }
+  }
   if (report.hypotheses?.applied.length) {
     out.push(`${HYPOTHESIS_APPLIED_TITLE}:`);
     for (const h of report.hypotheses.applied) {
@@ -814,6 +933,6 @@ export function dayReportText(report: DayReport, dateLabel: string): string {
       `Próximos días: ${plural(report.nextTasks.length, 'tarea prevista', 'tareas previstas')}.`,
     );
   }
-  out.push('Resumen generado con OxEye. Ayuda a decidir; no certifica.');
+  out.push('Resumen generado con Ox Eye. Ayuda a decidir; no certifica.');
   return out.join('\n');
 }

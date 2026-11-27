@@ -80,17 +80,13 @@ const field = (page: Page, id: string) => page.locator(`#lx-order-field-${id}`);
 test.describe('Gestor logístico · órdenes de trabajo', () => {
   test('the guest has no work-order entry', async ({page}) => {
     await mockApi(page, followData());
+    // E4: no Contactos for the guest, so no company or person to start from.
     await signIn(page, 'Invitado', '#logistica/contactos');
-    await page.locator('#lx-contacts-tab-companies').click();
-    await page
-      .locator(`[data-company-id="${ESCENARIOS.id}"] .lx-dirrow__main`)
-      .click();
-    await expect(page.locator('#lx-company-sheet')).toBeVisible();
+    await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
+    await expect(
+      page.locator(`[data-company-id="${ESCENARIOS.id}"]`),
+    ).toHaveCount(0);
     await expect(page.locator('#lx-company-work-order')).toHaveCount(0);
-    await page.keyboard.press('Escape');
-    await page.locator('#lx-contacts-tab-people').click();
-    await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
-    await expect(page.locator('#lx-contact-sheet')).toBeVisible();
     await expect(page.locator('#lx-contact-work-order')).toHaveCount(0);
   });
 
@@ -359,7 +355,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     const copy = page.locator('body > .lx-print-root .lx-order');
     await expect(copy).toHaveCount(1);
     await expect(copy).toContainText('Montaje del escenario Demo');
-    await expect(copy).toContainText('Generada por Elvis desde OxEye');
+    await expect(copy).toContainText('Generada por Elvis desde Ox Eye');
     await expect(page.locator('body > .lx-print-root')).toHaveAttribute(
       'aria-hidden',
       'true',

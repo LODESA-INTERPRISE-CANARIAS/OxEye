@@ -2,15 +2,17 @@
  * The day close as a page: the same markup is the A4 preview on screen and
  * the printed copy (`closing.css`). Georgia titles, tabular figures, the
  * certainty grammar in ink (validated solid, the rest dotted, hypotheses
- * hatched), and the safety reminders apart. Only empty sections are left
+ * dashed), and the safety reminders apart. Only empty sections are left
  * out; note text appears only where a member included it.
  */
 import React from 'react';
 import {
+  ACCEPTED_TITLE,
   HYPOTHESIS_APPLIED_TITLE,
   HYPOTHESIS_OPEN_TITLE,
   NEXT_DAYS,
   subsoilLineLabel,
+  type DayAcceptedLine,
   type DayHypothesisLine,
   type DayReport,
   type DayTaskLine,
@@ -21,10 +23,12 @@ import {longDate, plural, shortDate, zoneNote} from '../lib/format';
 import {EyeMark, Icon} from '../ui';
 import {
   countTiles,
+  decisionCount,
   groupByDay,
   includedTextTitles,
   isQuietDay,
   noteTextSummary,
+  printableWindow,
   RECORD_SECTIONS,
   tileDetail,
 } from './day';
@@ -56,7 +60,7 @@ const TaskItems: React.FC<{
         <span
           className={`lx-dayp__time lx-num${l.startsAt ? '' : ' is-pending'}`}
         >
-          {windowOf(l)}
+          {printableWindow(windowOf(l))}
         </span>
         <span>
           <strong>{l.title}</strong>
@@ -90,6 +94,35 @@ const HypoItems: React.FC<{
   </ul>
 );
 
+const AcceptedItems: React.FC<{
+  lines: readonly DayAcceptedLine[];
+  timeZone: string;
+}> = ({lines, timeZone}) => (
+  <>
+    <p className="lx-dayp__h4">{ACCEPTED_TITLE}</p>
+    <ul className="lx-dayp__list">
+      {lines.map(a => (
+        <li key={a.id}>
+          <strong>{a.label}</strong>
+          {a.applies && <>: {a.tasks}</>}
+          <span className="lx-dayp__muted lx-num">
+            {' · '}
+            {a.applies
+              ? 'aceptado'
+              : 'ya no aplica (una tarea cambió de hora)'}{' '}
+            por {a.by.displayName}, {timeIn(a.at, timeZone)}
+          </span>
+          {a.reason && (
+            <blockquote className="lx-dayp__quote">
+              <strong>Motivo:</strong> {a.reason}
+            </blockquote>
+          )}
+        </li>
+      ))}
+    </ul>
+  </>
+);
+
 export const DayReportPage: React.FC<DayReportPageProps> = ({
   report,
   orgName,
@@ -106,7 +139,12 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
     s => report.records[s.key].length > 0,
   );
   const {pending, safety} = report;
-  const notes = report.notes?.filter(s => s.items.length > 0) ?? [];
+  const notes =
+    report.notes?.filter(
+      s =>
+        s.items.length > 0 ||
+        (s.kind === 'decision' && report.accepted.length > 0),
+    ) ?? [];
   const hypos = report.hypotheses;
   const nextDays = Array.from({length: NEXT_DAYS}, (_, i) =>
     addDays(report.date, i + 1),
@@ -131,7 +169,7 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
         <div className="lx-dayp__brand">
           <EyeMark size={34} />
           <span>
-            OxEye
+            Ox Eye
             <br />
             <small>Gestor logístico</small>
           </span>
@@ -272,7 +310,14 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
             {notes.map(s => (
               <div key={s.kind} className="lx-dayp__group">
                 <h3 className="lx-dayp__h3">
-                  {s.title} <span className="lx-num">({s.items.length})</span>
+                  {s.title}{' '}
+                  <span className="lx-num">
+                    (
+                    {s.kind === 'decision'
+                      ? decisionCount(report)
+                      : s.items.length}
+                    )
+                  </span>
                 </h3>
                 <ul className="lx-dayp__list">
                   {s.items.map(n => (
@@ -286,15 +331,28 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
                         {n.earlier
                           ? 'de días anteriores'
                           : `${n.by.displayName}, ${timeIn(n.at, tz)}`}
+                        {n.answer &&
+                          ` · respondió ${n.answer.by.displayName}, ${timeIn(n.answer.at, tz)}`}
+                        {n.closedBy &&
+                          n.closedAt &&
+                          ` · ${s.kind === 'incident' ? 'resuelta' : 'cerrada'} por ${n.closedBy.displayName}, ${timeIn(n.closedAt, tz)}`}
                       </span>
                       {n.text && (
                         <blockquote className="lx-dayp__quote">
                           {n.text}
                         </blockquote>
                       )}
+                      {n.answer?.text && (
+                        <blockquote className="lx-dayp__quote">
+                          <strong>Respuesta:</strong> {n.answer.text}
+                        </blockquote>
+                      )}
                     </li>
                   ))}
                 </ul>
+                {s.kind === 'decision' && report.accepted.length > 0 && (
+                  <AcceptedItems lines={report.accepted} timeZone={tz} />
+                )}
               </div>
             ))}
             {!!report.otherNotes && (
@@ -306,12 +364,20 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
           </section>
         )
       ) : (
-        <section className="lx-dayp__block">
-          <h2 className="lx-dayp__h2">Notas e hipótesis</h2>
-          <p className="lx-dayp__empty">
-            Visibles para el equipo con su propio usuario.
-          </p>
-        </section>
+        <>
+          {report.accepted.length > 0 && (
+            <section className="lx-dayp__block">
+              <h2 className="lx-dayp__h2">Decisiones del día</h2>
+              <AcceptedItems lines={report.accepted} timeZone={tz} />
+            </section>
+          )}
+          <section className="lx-dayp__block">
+            <h2 className="lx-dayp__h2">Notas e hipótesis</h2>
+            <p className="lx-dayp__empty">
+              Visibles para el equipo con su propio usuario.
+            </p>
+          </section>
+        </>
       )}
 
       {hypos && hypos.open.length + hypos.applied.length > 0 && (
@@ -398,11 +464,11 @@ export const DayReportPage: React.FC<DayReportPageProps> = ({
 
       <footer className="lx-dayp__foot">
         <p className="lx-num">
-          Generado por {report.generatedBy.displayName} desde OxEye ·{' '}
+          Generado por {report.generatedBy.displayName} desde Ox Eye ·{' '}
           {generatedAtText}.
         </p>
         {textNote && <p>{textNote}</p>}
-        <p>OxEye ayuda a decidir; no certifica.</p>
+        <p>Ox Eye ayuda a decidir; no certifica.</p>
       </footer>
     </article>
   );

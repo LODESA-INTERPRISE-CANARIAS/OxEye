@@ -33,7 +33,11 @@ export type DeviceIdTable =
   | 'offers'
   | 'warehouses'
   | 'resources'
-  | 'notes';
+  | 'notes'
+  /** Revisión 1 · E3: image uploads. */
+  | 'media'
+  /** Revisión 1 · E5: expenses (never queued offline, but safe to retry). */
+  | 'expenses';
 
 export const ID_IN_USE = 'Este identificador ya está en uso.';
 

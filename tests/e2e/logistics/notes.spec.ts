@@ -5,6 +5,7 @@ import {
 } from '../../../shared/logistics/rules.ts';
 import {ORG, makeNote, mockApi, signIn, type MockApi} from './mock-api';
 import {DAY, fixClock} from './plan-fixtures';
+import {choose} from './controls';
 import {inventoryData} from './inventory-fixtures';
 
 /**
@@ -58,7 +59,7 @@ test.describe('Gestor logístico · incidencias y notas', () => {
 
     const body = 'TEXTO-NOTA-NUEVA: el camión de vallas no llega.';
     await text.fill(body);
-    await page.locator('#lx-note-event').selectOption('e1');
+    await choose(page, 'lx-note-event', 'e1');
     await page.locator('#lx-note-save').click();
     await expect(page.locator('#lx-note-form')).toHaveCount(0);
     expect(notePosts(api)).toEqual([

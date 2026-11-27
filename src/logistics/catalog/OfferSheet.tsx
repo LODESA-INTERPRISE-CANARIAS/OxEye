@@ -8,6 +8,11 @@
  *   added up into an invented total.
  * - «Comparar» ranks only offers of the same category and the same unit
  *   (€/día with €/día) and lists the ones without a price apart.
+ * - E5: prices are entered before tax; the offer takes its company's tax
+ *   unless it sets its own, and the price with tax is always shown as an
+ *   «estimación». Offers recorded earlier keep how their price was written
+ *   (`vatIncluded`) and no rate is invented for them. «Comparar» ranks
+ *   different taxes together by that estimate; unknown tax stays apart.
  * - Guests see the offer and its company; prices, costs and conditions come
  *   withheld (`restricted`) and show «Visible para el equipo».
  */
@@ -72,7 +77,26 @@ import {
   Withheld,
   describedBy,
 } from '../ui';
+import {
+  EMPTY_TAX_DRAFT,
+  estimateLine,
+  priceBasis,
+  rescuedTaxDraft,
+  taxDraftOf,
+  taxFieldError,
+  taxInfoOfDraft,
+  taxProblem,
+  taxToSend,
+  type TaxDraft,
+} from '../budget/tax';
+import {inheritHint, TaxField} from '../budget/TaxField';
+import {EstimateNote, TaxTag} from '../budget/TaxParts';
+import {nameKey} from '../lib/tasks';
 import {CategoryPicker} from './CategoryPicker';
+import {COMPARE_HELP} from './compare';
+import {ApartList, RankedList} from './CompareParts';
+import {OfferTermsSection} from './terms/OfferTermsSection';
+import {useExpiredOffers} from './useExpiredOffers';
 
 type RescuedValues = Record<string, unknown>;
 
@@ -100,6 +124,8 @@ interface FormValues {
   assemblyCost: string;
   maintenanceCost: string;
   vat: Vat;
+  /** E5: the offer's own tax; regime '' = «como la empresa». */
+  tax: TaxDraft;
   conditions: string;
   source: DataSource | null;
   verification: Verification;
@@ -116,7 +142,9 @@ const EMPTY: FormValues = {
   transportCost: '',
   assemblyCost: '',
   maintenanceCost: '',
-  vat: 'unknown',
+  // E5: prices are entered before tax.
+  vat: 'no',
+  tax: EMPTY_TAX_DRAFT,
   conditions: '',
   source: null,
   verification: 'draft',
@@ -139,6 +167,8 @@ const toValues = (o: Offer): FormValues => ({
   assemblyCost: eurosForInput(o.assemblyCost),
   maintenanceCost: eurosForInput(o.maintenanceCost),
   vat: toVat(o.vatIncluded),
+  // `?? null`: a server not yet on E5 sends no tax.
+  tax: taxDraftOf(o.tax ?? null),
   conditions: o.conditions ?? '',
   source: o.source,
   verification: o.verification,
@@ -166,6 +196,8 @@ function fromRescue(raw: RescuedValues, fallback: FormValues): FormValues {
   if (raw.vat === 'yes' || raw.vat === 'no' || raw.vat === 'unknown') {
     out.vat = raw.vat;
   }
+  const tax = rescuedTaxDraft(raw.tax);
+  if (tax) out.tax = tax;
   if (raw.source === null) out.source = null;
   else if (typeof raw.source === 'string' && raw.source in SOURCE_LABEL) {
     out.source = raw.source as DataSource;
@@ -193,6 +225,11 @@ const SERVER_FIELD: Partial<Record<string, keyof FormValues>> = {
   assemblyCost: 'assemblyCost',
   maintenanceCost: 'maintenanceCost',
   vatIncluded: 'vat',
+  tax: 'tax',
+  'tax.regime': 'tax',
+  'tax.name': 'tax',
+  'tax.ratePercent': 'tax',
+  'tax.verification': 'tax',
   conditions: 'conditions',
   source: 'source',
   verification: 'verification',
@@ -218,6 +255,8 @@ function validate(v: FormValues): FormErrors<FormValues> {
   if (v.unit === 'custom' && v.customUnit.trim().length > CUSTOM_UNIT_MAX) {
     e.customUnit = `Como mucho ${CUSTOM_UNIT_MAX} caracteres.`;
   }
+  const tax = taxProblem(v.tax);
+  if (tax) e.tax = tax.message;
   return e;
 }
 
@@ -228,18 +267,12 @@ const UNIT_OPTIONS = PRICE_UNITS.map(u => ({
   label: PRICE_UNIT_LABEL[u],
 }));
 
+// E5: only offers recorded before prices were always before tax show this.
 const VAT_OPTIONS: {value: Vat; label: string}[] = [
-  {value: 'yes', label: 'Sí'},
-  {value: 'no', label: 'No'},
-  {value: 'unknown', label: 'No lo sé'},
+  {value: 'no', label: 'Sin impuestos'},
+  {value: 'yes', label: 'Con impuestos incluidos'},
+  {value: 'unknown', label: 'No consta'},
 ];
-
-// «Impuestos» covers IGIC in the Canaries and IVA elsewhere.
-const VAT_TEXT: Record<Vat, string> = {
-  yes: 'Impuestos incluidos',
-  no: 'Sin impuestos',
-  unknown: 'Impuestos sin verificar',
-};
 
 export const OfferSheet: React.FC<{
   mode: OfferSheetMode | null;
@@ -296,6 +329,10 @@ const OfferView: React.FC<{
     : undefined;
   const price = priceLabel(offer);
   const extras = costLines(offer).filter(l => l.key !== 'price');
+  // A server not yet on E5 sends no tax: read it as nobody said.
+  const own = offer.tax ?? null;
+  const companyTax = offer.companyTax ?? null;
+  const estimate = estimateLine({...offer, tax: own, companyTax});
 
   return (
     <Sheet
@@ -352,7 +389,15 @@ const OfferView: React.FC<{
         {!canWrite && <ReadOnlyNotice />}
 
         <div className="lx-pricebig" id="lx-offer-price">
-          <p className="lx-eyebrow">Precio</p>
+          <p className="lx-eyebrow">
+            Precio
+            {!w && price && (
+              <span className="lx-pricebig__basis">
+                {' '}
+                · {priceBasis(offer.vatIncluded)}
+              </span>
+            )}
+          </p>
           <p className="lx-pricebig__value lx-num">
             {price ? (
               price
@@ -362,11 +407,7 @@ const OfferView: React.FC<{
               <Pending>Precio pendiente de verificar</Pending>
             )}
           </p>
-          {!w && (
-            <p className="lx-pricebig__vat">
-              {VAT_TEXT[toVat(offer.vatIncluded)]}
-            </p>
-          )}
+          {!w && <EstimateNote line={estimate} id="lx-offer-estimate" />}
         </div>
         <MissingHint missing={missingForOffer(offer)} id="lx-offer-missing" />
 
@@ -427,6 +468,24 @@ const OfferView: React.FC<{
             </dd>
           </div>
           <div>
+            <dt>Impuesto</dt>
+            <dd id="lx-offer-tax-view">
+              {w ? (
+                <Withheld />
+              ) : own ? (
+                <>
+                  <TaxTag tax={own} />
+                  <span className="lx-muted lx-detail__aside">
+                    {' '}
+                    propio de esta oferta
+                  </span>
+                </>
+              ) : (
+                <TaxTag tax={companyTax} inherited={!!companyTax} />
+              )}
+            </dd>
+          </div>
+          <div>
             <dt>Condiciones</dt>
             <dd className="lx-detail__notes">
               <Value value={offer.conditions} withheld={w} />
@@ -446,6 +505,14 @@ const OfferView: React.FC<{
           categoryName={categoryName}
           onShow={onShow}
         />
+
+        {/*
+         * ── E6 slot (owned by the E6/E7 engineer) ──────────────────────
+         * Mount <OfferTermsSection offer={offer} /> here: validity, versions
+         * and quote requests sit after «Comparar» and before notes. The
+         * price block above stays this file's (E5 taxes).
+         */}
+        {!gone && <OfferTermsSection offer={offer} />}
 
         <RecordNotes
           target={{type: 'offer', id: offer.id}}
@@ -472,10 +539,13 @@ const Compare: React.FC<{
   categoryName: string | undefined;
   onShow: (offer: Offer) => void;
 }> = ({offer, offers, categoryName, onShow}) => {
+  // E6: expired offers are never ranked, as in the catalogue's «Comparar».
+  const expired = useExpiredOffers();
   const comparison = useMemo(
-    () => compareOffer(offer, offers),
-    [offer, offers],
+    () => compareOffer(offer, offers, {expired}),
+    [offer, offers, expired],
   );
+  const selfExpired = expired.has(offer.id);
   const per = perUnitLabel(offer);
   let body: React.ReactNode;
   if (offer.restricted) {
@@ -493,29 +563,32 @@ const Compare: React.FC<{
       </p>
     );
   } else {
-    const {peers, position, otherTax, unpriced} = comparison;
+    const {peers, position, ranks, estimates, unknownTax, unpriced, expired} =
+      comparison;
     const others = peers.filter(p => p.id !== offer.id);
     const ranked = peers.length >= 2;
-    const max = Math.max(...peers.map(p => p.price as number), 0);
-    const included = offer.vatIncluded === true;
-    const summary =
-      offer.price === null
+    const own = estimates[offer.id];
+    const tied =
+      position !== null && others.some(p => ranks[p.id] === position);
+    const summary = selfExpired
+      ? 'Esta oferta está caducada: no se ordena con las demás hasta renovarla.'
+      : offer.price === null
         ? 'Esta oferta no tiene precio: no se puede situar entre las demás.'
-        : offer.vatIncluded === null
-          ? 'No se puede ordenar hasta saber si su precio incluye impuestos (IGIC/IVA).'
+        : own && own.withTax === null
+          ? own.missing === 'treatment'
+            ? 'No se puede ordenar hasta saber si su precio incluye impuestos.'
+            : 'No se puede ordenar sin conocer su impuesto: indícalo en la oferta o en su empresa.'
           : ranked && position
             ? `Es la ${position === 1 ? '' : `${position}.ª `}más barata de ${
                 peers.length
-              } comparables · todas ${
-                included ? 'con impuestos incluidos' : 'sin impuestos'
-              }.`
-            : `Aún no hay otra oferta con precio que ${
-                included
-                  ? 'también incluya impuestos'
-                  : 'también esté sin impuestos'
-              }: no hay con qué ordenarla.`;
+              } comparables${tied ? ', empatada con otra' : ''}, con el impuesto de cada una (estimación).`
+            : 'Aún no hay otra oferta con precio e impuesto conocidos: no hay con qué ordenarla.';
     body =
-      others.length === 0 && otherTax.length === 0 && unpriced.length === 0 ? (
+      others.length === 0 &&
+      unknownTax.length === 0 &&
+      unpriced.length === 0 &&
+      expired.length === 0 &&
+      !selfExpired ? (
         <p className="lx-muted" id="lx-offer-compare-none">
           Aún no hay otras ofertas de {categoryName ?? 'esta categoría'} por{' '}
           {per}.
@@ -526,69 +599,35 @@ const Compare: React.FC<{
             {summary}
           </p>
           {ranked && (
-            <ol className="lx-compare" id="lx-offer-compare-list">
-              {peers.map((p, i) => {
-                const self = p.id === offer.id;
-                const width =
-                  max > 0 ? Math.max(4, ((p.price as number) / max) * 100) : 0;
-                return (
-                  <li key={p.id} className={self ? 'is-self' : ''}>
-                    <button
-                      type="button"
-                      className="lx-compare__row"
-                      disabled={self}
-                      aria-current={self ? 'true' : undefined}
-                      onClick={() => onShow(p)}
-                    >
-                      <span className="lx-compare__pos lx-num">{i + 1}</span>
-                      <span className="lx-compare__name">
-                        <strong>{self ? 'Esta oferta' : p.name}</strong>
-                        <span className="lx-muted">{p.company.name}</span>
-                      </span>
-                      <span className="lx-compare__price lx-num">
-                        {priceLabel(p)}
-                        <span className="lx-compare__tax">
-                          {VAT_TEXT[toVat(p.vatIncluded)]}
-                        </span>
-                      </span>
-                      <span className="lx-compare__bar" aria-hidden="true">
-                        <span style={{width: `${width}%`}} />
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
+            <RankedList
+              peers={peers}
+              estimates={estimates}
+              ranks={ranks}
+              selfId={offer.id}
+              onShow={onShow}
+              id="lx-offer-compare-list"
+            />
           )}
-          {otherTax.length > 0 && (
-            <div className="lx-compare__apart" id="lx-offer-compare-othertax">
-              <p className="lx-subtitle">
-                Impuestos distintos o sin verificar · no se ordenan
-              </p>
-              <ul className="lx-compare lx-compare--apart">
-                {otherTax.map(p => (
-                  <li key={p.id}>
-                    <button
-                      type="button"
-                      className="lx-compare__row"
-                      onClick={() => onShow(p)}
-                    >
-                      <span className="lx-compare__name">
-                        <strong>{p.name}</strong>
-                        <span className="lx-muted">{p.company.name}</span>
-                      </span>
-                      <span className="lx-compare__price lx-num">
-                        {priceLabel(p)}
-                        <span className="lx-compare__tax">
-                          {VAT_TEXT[toVat(p.vatIncluded)]}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <ApartList
+            items={unknownTax.map(p => ({
+              offer: p,
+              reason: 'tax' as const,
+              estimate: estimates[p.id],
+            }))}
+            title="Sin impuesto conocido · no se ordenan"
+            onShow={onShow}
+            id="lx-offer-compare-othertax"
+          />
+          <ApartList
+            items={expired.map(p => ({
+              offer: p,
+              reason: 'expired' as const,
+              estimate: estimates[p.id],
+            }))}
+            title="Caducadas · no se ordenan"
+            onShow={onShow}
+            id="lx-offer-compare-expired"
+          />
           {unpriced.length > 0 && (
             <div
               className="lx-compare__unpriced"
@@ -623,14 +662,7 @@ const Compare: React.FC<{
       <h3 className="lx-subsection__title" id="lx-offer-compare-title">
         <Icon name="scale" size={20} />
         Comparar
-        <HelpTip label="comparar">
-          Solo se comparan ofertas de la misma categoría y la misma unidad
-          (€/día con €/día, nunca con €/metro). Se compara el precio por unidad:
-          transporte, montaje y mantenimiento van aparte. Solo se ordenan juntas
-          las que tratan igual los impuestos (IGIC/IVA): un precio con impuestos
-          no se compara con uno sin ellos. Las ofertas sin precio o con
-          impuestos sin verificar se listan aparte y no se ordenan.
-        </HelpTip>
+        <HelpTip label="comparar">{COMPARE_HELP}</HelpTip>
       </h3>
       {comparison && !offer.restricted && (
         <p className="lx-muted lx-compare__scope">
@@ -702,6 +734,21 @@ const OfferForm: React.FC<{
     unit: values.unit,
     customUnit: nullIfEmpty(values.customUnit),
   });
+  // E5: the company's tax as typed in «Empresa» (a new company has none yet).
+  const companyTax =
+    companies.find(c => nameKey(c.name) === nameKey(values.companyName))?.tax ??
+    null;
+  const previewEstimate = estimateLine({
+    price: amount(values.price),
+    unit: values.unit,
+    customUnit: nullIfEmpty(values.customUnit),
+    vatIncluded: fromVat(values.vat),
+    tax: taxInfoOfDraft(values.tax),
+    companyTax,
+  });
+  // Offers recorded before E5 may say their price includes tax, or not say:
+  // only they get the question, so nothing is silently reinterpreted.
+  const legacyVat = !!base && base.vatIncluded !== false;
 
   const inputFrom = (v: FormValues): OfferInput => ({
     companyName: v.companyName.trim(),
@@ -715,6 +762,7 @@ const OfferForm: React.FC<{
     assemblyCost: amount(v.assemblyCost),
     maintenanceCost: amount(v.maintenanceCost),
     vatIncluded: fromVat(v.vat),
+    tax: taxToSend(v.tax),
     conditions: nullIfEmpty(v.conditions),
     source: v.source,
     verification: v.verification,
@@ -745,6 +793,7 @@ const OfferForm: React.FC<{
             unit: values.unit,
             customUnit: values.unit === 'custom' ? values.customUnit : '',
             vat: values.vat,
+            tax: values.tax,
             source: values.source,
             verification: values.verification,
           });
@@ -774,6 +823,7 @@ const OfferForm: React.FC<{
         patch.maintenanceCost = full.maintenanceCost;
       }
       if (f.changed('vat')) patch.vatIncluded = full.vatIncluded;
+      if (f.changed('tax')) patch.tax = full.tax;
       if (f.changed('conditions')) patch.conditions = full.conditions;
       if (f.changed('source')) patch.source = full.source;
       if (f.changed('verification')) patch.verification = full.verification;
@@ -994,7 +1044,9 @@ const OfferForm: React.FC<{
           <p className="lx-form__group-title">Precio</p>
           {money(
             'price',
-            'Precio por unidad',
+            values.vat === 'no'
+              ? 'Precio por unidad, sin impuestos'
+              : 'Precio por unidad, tal como se apuntó',
             'Vacío = pendiente de verificar (nunca se toma como 0). Admite coma: 85,50.',
           )}
           <Segmented<PriceUnit>
@@ -1034,15 +1086,27 @@ const OfferForm: React.FC<{
               {preview ?? 'Precio pendiente de verificar'}
             </strong>
           </p>
-          <Segmented<Vat>
-            name="lx-offer-vat"
-            id="lx-offer-vat"
-            legend="¿El precio incluye impuestos (IGIC/IVA)?"
-            value={values.vat}
-            options={VAT_OPTIONS}
-            onChange={v => v && change('vat', v)}
-            help="IGIC en Canarias, IVA en la Península y Baleares. Al comparar, solo se ordenan juntas las ofertas que tratan los impuestos igual; si no lo sabes, la oferta se guarda pero no se ordena."
+          {legacyVat && (
+            <Segmented<Vat>
+              name="lx-offer-vat"
+              id="lx-offer-vat"
+              legend="¿Cómo se apuntó este precio?"
+              value={values.vat}
+              options={VAT_OPTIONS}
+              onChange={v => v && change('vat', v)}
+              help="Ahora los precios se apuntan siempre sin impuestos. Esta oferta se guardó antes con otro criterio y se respeta tal cual: no se le inventa ningún porcentaje. Si escribes el precio sin impuestos, elige «Sin impuestos»."
+            />
+          )}
+          <TaxField
+            id="lx-offer-tax"
+            legend="Impuesto de esta oferta"
+            value={values.tax}
+            onChange={v => change('tax', v)}
+            emptyLabel="Como la empresa"
+            emptyHint={inheritHint(companyTax)}
+            error={taxFieldError(values.tax, errors.tax)}
           />
+          <EstimateNote line={previewEstimate} id="lx-offer-estimate-preview" />
         </div>
 
         <div className="lx-form__group">
@@ -1087,6 +1151,7 @@ const OfferForm: React.FC<{
         </Field>
 
         <QualityFields
+          title="Calidad de la oferta"
           idPrefix="lx-offer"
           source={values.source}
           verification={values.verification}

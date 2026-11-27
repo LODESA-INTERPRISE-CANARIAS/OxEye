@@ -23,6 +23,13 @@ import type {NamedRef} from '../records/find-or-create.ts';
 import {lockCatalogue} from '../records/locks.ts';
 import {authorJoins, metaColumns, toMeta} from '../records/meta.ts';
 import type {MetaRow} from '../records/meta.ts';
+import {
+  hoursFromKey,
+  hoursKey,
+  hoursOf,
+  placeColumns,
+} from '../records/places.ts';
+import type {PlaceColumns} from '../records/places.ts';
 import {forViewer} from '../records/redact.ts';
 import type {Viewer} from '../records/redact.ts';
 import {changedFields} from '../records/slot.ts';
@@ -35,7 +42,7 @@ import type {
   Warehouse,
 } from '../../../shared/logistics/contracts.ts';
 
-interface WarehouseRow extends MetaRow {
+interface WarehouseRow extends MetaRow, PlaceColumns {
   organization_id: string;
   name: string;
   address: string | null;
@@ -45,6 +52,7 @@ interface WarehouseRow extends MetaRow {
 
 const SELECT_WAREHOUSE = `
   SELECT ${metaColumns('w')}, w.organization_id, w.name, w.address, w.notes,
+         ${placeColumns('w')},
          (SELECT count(*)::int FROM resources r WHERE r.warehouse_id = w.id) AS resource_count
     FROM warehouses w ${authorJoins('w')}`;
 
@@ -62,6 +70,8 @@ function toWarehouse(row: WarehouseRow, viewer: Viewer): Warehouse {
       address: row.address,
       notes: row.notes,
       resourceCount: Number(row.resource_count),
+      acronym: row.acronym,
+      openingHours: hoursOf(row),
     },
     viewer,
   );
@@ -71,6 +81,9 @@ interface WarehouseState {
   name: string;
   address: string | null;
   notes: string | null;
+  acronym: string | null;
+  /** `hoursKey`, so two windows compare by value. */
+  hours: string | null;
   source: DataSource | null;
   verification: Verification;
 }
@@ -79,6 +92,8 @@ const FIELD_NAMES: readonly (readonly [keyof WarehouseState, string])[] = [
   ['name', 'name'],
   ['address', 'address'],
   ['notes', 'notes'],
+  ['acronym', 'acronym'],
+  ['hours', 'openingHours'],
   ['source', 'source'],
   ['verification', 'verification'],
 ];
@@ -88,6 +103,8 @@ function stateOf(row: WarehouseRow): WarehouseState {
     name: row.name,
     address: row.address,
     notes: row.notes,
+    acronym: row.acronym,
+    hours: hoursKey(hoursOf(row)),
     source: row.source,
     verification: row.verification,
   };
@@ -225,9 +242,10 @@ export async function createWarehouse(
     const inserted = await tx.query<{id: string}>(
       `INSERT INTO warehouses
          (organization_id, name, address, notes, source, verification,
-          created_by, created_at, updated_by, updated_at, id)
+          created_by, created_at, updated_by, updated_at, id, acronym,
+          opens_at, closes_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $7, $8::timestamptz,
-               COALESCE($9::uuid, gen_random_uuid()))
+               COALESCE($9::uuid, gen_random_uuid()), $10, $11::time, $12::time)
        ON CONFLICT (organization_id, (lower(name))) DO NOTHING
        RETURNING id`,
       [
@@ -240,6 +258,9 @@ export async function createWarehouse(
         actor.id,
         now.toISOString(),
         input.id ?? null,
+        input.acronym ?? null,
+        input.openingHours?.opensAt ?? null,
+        input.openingHours?.closesAt ?? null,
       ],
     );
     const created = inserted[0];
@@ -301,6 +322,10 @@ export async function updateWarehouse(
     }
     if (input.address !== undefined) after.address = input.address;
     if (input.notes !== undefined) after.notes = input.notes;
+    if (input.acronym !== undefined) after.acronym = input.acronym;
+    if (input.openingHours !== undefined) {
+      after.hours = hoursKey(input.openingHours);
+    }
     if (input.source !== undefined) after.source = input.source;
     if (input.verification !== undefined) {
       after.verification = input.verification;
@@ -314,11 +339,13 @@ export async function updateWarehouse(
     const changed = changedFields(before, after, FIELD_NAMES);
     if (changed.length === 0) return toWarehouse(row, actor);
 
+    const hours = hoursFromKey(after.hours);
     await tx.query(
       `UPDATE warehouses
           SET name = $3, address = $4, notes = $5, source = $6,
               verification = $7, version = version + 1,
-              updated_by = $8, updated_at = $9::timestamptz
+              updated_by = $8, updated_at = $9::timestamptz, acronym = $10,
+              opens_at = $11::time, closes_at = $12::time
         WHERE id = $1 AND version = $2`,
       [
         id,
@@ -330,6 +357,9 @@ export async function updateWarehouse(
         after.verification,
         actor.id,
         now.toISOString(),
+        after.acronym,
+        hours?.opensAt ?? null,
+        hours?.closesAt ?? null,
       ],
     );
     await appendActivity(tx, {

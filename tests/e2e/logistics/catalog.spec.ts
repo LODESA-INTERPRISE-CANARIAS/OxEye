@@ -2,6 +2,7 @@ import {expect, test, type Page} from '@playwright/test';
 import {mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
 import {CAT, directoryData} from './directory-fixtures';
+import {IGIC} from './money-fixtures';
 
 /**
  * Gestor logístico, milestone 3: «Catálogo». Category filter, honest prices
@@ -145,11 +146,23 @@ test.describe('Gestor logístico · Catálogo · lista', () => {
       'Pendiente de verificar',
       'Pendiente de verificar',
     ]);
-    // 180 + 60 = 240 must not appear as a total anywhere.
-    // (The «?» help says «cualquier total sería falso»: only a labelled
-    // total would be a problem.)
-    await expect(sheet).not.toContainText(/\bTotal\b|total:/);
-    await expect(sheet).not.toContainText('240');
+    // The offer's own cost lines are never added up: 180 + 60 = 240 must
+    // not appear as a total next to them. (The «?» help says «cualquier
+    // total sería falso»: only a labelled total would be a problem.)
+    // Revisión 1 · E6: «Coste de una necesidad» is the approved exception,
+    // a total for a concrete need with its breakdown and every unknown part
+    // listed, always marked as an estimate.
+    const lines = sheet.locator('#lx-offer-costs');
+    await expect(lines).not.toContainText(/\bTotal\b|total:/);
+    await expect(lines).not.toContainText('240');
+    await expect(page.locator('#lx-offer-price')).not.toContainText('240');
+    const needCost = sheet.locator('#lx-offer-terms');
+    if (await needCost.locator('.lx-cost__table').count()) {
+      await expect(
+        needCost.locator('.lx-cost__table tbody tr').first(),
+      ).toBeVisible();
+      await expect(needCost).toContainText(/estimación|Sin total/);
+    }
     await expect(page.locator('#lx-offer-detail')).toContainText(
       'CONDICION-PRIVADA',
     );
@@ -160,7 +173,11 @@ test.describe('Gestor logístico · Catálogo · comparar', () => {
   test('only the same category and unit; unpriced offers listed apart', async ({
     page,
   }) => {
-    await mockApi(page, directoryData());
+    // E5: offers are ranked by their estimate with tax, so both companies
+    // need a known tax; without one they would be listed apart.
+    const data = directoryData();
+    for (const c of data.companies ?? []) c.tax = IGIC;
+    await mockApi(page, data);
     await signIn(page, 'Elvis', '#logistica/catalogo');
     await openOffer(page, 'o1');
     const compare = page.locator('#lx-offer-compare');
@@ -236,7 +253,8 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
       transportCost: 12.5,
       assemblyCost: null,
       maintenanceCost: null,
-      vatIncluded: null,
+      // E5: a new offer's price is always before tax.
+      vatIncluded: false,
       conditions: null,
     });
     await expect(page.locator('#lx-offer-price')).toContainText(
@@ -272,7 +290,8 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
     await price.fill('1.250,5');
     await page.locator('#lx-offer-maintenanceCost').fill('0');
     await expect(page.locator('#lx-offer-price-error')).toHaveCount(0);
-    await page.locator('#lx-offer-vat-yes').click();
+    // E5: only offers recorded before E5 are asked whether tax is included.
+    await expect(page.locator('#lx-offer-vat')).toHaveCount(0);
     await page.locator('#lx-offer-save').click();
     await expect.poll(() => api.calls('POST', '/offers').length).toBe(1);
     expect(lastPost(api)).toMatchObject({
@@ -280,7 +299,7 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
       unit: 'unit',
       maintenanceCost: 0,
       transportCost: null,
-      vatIncluded: true,
+      vatIncluded: false,
     });
     // A known 0 is shown as 0 €; it is not «pendiente».
     await expect(page.locator('#lx-offer-costs dd').nth(2)).toHaveText('0 €');

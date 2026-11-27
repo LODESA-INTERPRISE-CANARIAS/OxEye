@@ -1,7 +1,7 @@
 import type {Hono, MiddlewareHandler} from 'hono';
 import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
-import {requireMembership} from '../organizations/service.ts';
+import {requireAccess} from '../organizations/service.ts';
 import {parseVersionParam} from '../records/schemas.ts';
 import {createCompanySchema, updateCompanySchema} from './schemas.ts';
 import {
@@ -22,7 +22,13 @@ export function registerCompanyRoutes(
 ): void {
   api.get('/organizations/:orgId/companies', auth, async c => {
     const user = c.get('user');
-    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
+    // E4: the directory needs `directory.read` (never the guest account).
+    const org = await requireAccess(
+      deps.db,
+      user,
+      c.req.param('orgId'),
+      'directory.read',
+    );
     const body: ListResponse<Company> = {
       items: await listCompanies(deps.db, org.id, user),
     };

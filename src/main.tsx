@@ -1,7 +1,12 @@
-import React from 'react';
+import React, {Suspense} from 'react';
 import {createRoot} from 'react-dom/client';
 import {App} from './App';
+import {pendingSupplierLink} from './logistics/supplier/link';
 import './styles/index.css';
+
+// A supplier link opens only the supplier's form: never the hub, the map or
+// the simulation (Revisión 1 · E7).
+const SupplierRoot = React.lazy(() => import('./logistics/SupplierRoot'));
 
 // Register global error handlers matching the prototype's safety toast
 window.addEventListener('error', () => {
@@ -24,5 +29,13 @@ window.addEventListener('unhandledrejection', () => {
 
 const rootEl = document.getElementById('root');
 if (rootEl) {
-  createRoot(rootEl).render(<App />);
+  createRoot(rootEl).render(
+    pendingSupplierLink() ? (
+      <Suspense fallback={null}>
+        <SupplierRoot />
+      </Suspense>
+    ) : (
+      <App />
+    ),
+  );
 }

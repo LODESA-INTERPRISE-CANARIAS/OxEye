@@ -314,7 +314,7 @@ export function isValidDelay(value: number): boolean {
  */
 export const SUBSOIL_REVIEW_LABEL = 'Subsuelo revisado en el simulador';
 export const SUBSOIL_REVIEW_NOTE =
-  'Marca declarada por quien hizo la revisión en el simulador (análisis de rayos X). OxEye no la comprueba y no certifica el suelo. Se borra si cambian el lugar, la carga pesada o los recursos de la tarea.';
+  'Marca declarada por quien hizo la revisión en el simulador (análisis de rayos X). Ox Eye no la comprueba y no certifica el suelo. Se borra si cambian el lugar, la carga pesada o los recursos de la tarea.';
 
 // ---------------------------------------------------------------- M6: offline and day close
 
@@ -328,3 +328,83 @@ export const CHANGES_OVERLAP_SECONDS = 120;
 export const ACTIVITY_RANGE_MAX = 2000;
 /** Longest `from`/`to` span the activity route accepts. */
 export const ACTIVITY_RANGE_MAX_DAYS = 8;
+
+// ---------------------------------------------------------------- Revisión 1 · E2: moves and accepted conflicts
+
+/** A move (calendar drag, conflict exit) snaps to this many minutes. */
+export const MOVE_STEP_MINUTES = 5;
+
+/**
+ * A move is a signed, non-zero whole number of minutes, a multiple of
+ * MOVE_STEP_MINUTES, at most MAX_DELAY_MINUTES (one day) either way.
+ */
+export function isValidMove(value: number): boolean {
+  return (
+    Number.isInteger(value) &&
+    value !== 0 &&
+    Math.abs(value) <= MAX_DELAY_MINUTES &&
+    value % MOVE_STEP_MINUTES === 0
+  );
+}
+
+/** «Mantener ambas»: the short reason the team gives (trimmed length). */
+export const ACCEPT_REASON_MIN = 3;
+export const ACCEPT_REASON_MAX = 280;
+
+// ---------------------------------------------------------------- Revisión 1 · E3: answers and images
+
+/**
+ * Largest image the server stores, in bytes. Images are resized on the
+ * device (about 1600 px, under 400 KB); the margin covers PNG screenshots.
+ */
+export const MEDIA_MAX_BYTES = 600 * 1024;
+/** One main image plus up to four more per record. */
+export const MEDIA_PER_RECORD = 5;
+/** Longest side, in pixels, the server accepts (the device sends ~1600). */
+export const MEDIA_MAX_SIDE = 4096;
+export const MEDIA_CONTENT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+] as const;
+
+// ---------------------------------------------------------------- Revisión 1 · E5: taxes and budget
+
+/** Picker order. */
+export const TAX_REGIMES = ['igic', 'iva', 'other', 'none', 'unknown'] as const;
+
+/** Names in pickers and labels. */
+export const TAX_REGIME_LABEL: Record<(typeof TAX_REGIMES)[number], string> = {
+  igic: 'IGIC',
+  iva: 'IVA',
+  other: 'Otro',
+  none: 'Ninguno',
+  unknown: 'Sin saber',
+};
+
+/**
+ * Rates prefilled when IGIC or IVA is picked without a percentage (general
+ * rates as of 2026). Indicative and editable: the tax stays «por verificar»
+ * until somebody confirms it, and it is never applied to a record that did
+ * not state its tax.
+ */
+export const DEFAULT_TAX_RATE = {igic: 7, iva: 21} as const;
+
+/** Name of an «otro» tax («IPSI»…). */
+export const TAX_NAME_MAX = 40;
+/** Largest percentage accepted. */
+export const TAX_RATE_MAX = 100;
+
+export const EXPENSE_STATUSES = ['planned', 'confirmed'] as const;
+export const EXPENSE_STATUS_LABEL: Record<
+  (typeof EXPENSE_STATUSES)[number],
+  string
+> = {
+  planned: 'Previsto',
+  confirmed: 'Confirmado',
+};
+/** Expenses one event can hold (a budget, not a ledger). */
+export const MAX_EXPENSES_PER_EVENT = 500;
+
+/** Label every amount with tax carries: it is computed, never stated. */
+export const TAX_ESTIMATE_LABEL = 'estimación';

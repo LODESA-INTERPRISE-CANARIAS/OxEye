@@ -93,6 +93,8 @@ const warehouse: Warehouse = {
   address: M.address,
   notes: M.warehouseNotes,
   resourceCount: 1,
+  acronym: null,
+  openingHours: null,
   restricted: false,
 };
 const resource: Resource = {
@@ -113,6 +115,7 @@ const resource: Resource = {
   toAssess: false,
   notes: M.resourceNotes,
   taskIds: ['montaje'],
+  media: [],
   restricted: false,
 };
 
@@ -229,17 +232,29 @@ describe('work order · fields', () => {
 });
 
 describe('work order · times', () => {
-  it('overnight reads as a range; a later end day is written out', () => {
+  it('overnight reads as a range; a later end day is named in the compact form', () => {
     const t = (startsAt: string, endsAt: string) =>
       buildWorkOrder(
         input(['schedule'], {tasks: [{...montaje, startsAt, endsAt}]}),
       ).items[0].time;
+    const nb = String.fromCharCode(0xa0);
     expect(t(at('22:00'), '2026-12-03T02:00:00.000Z')).toBe('22:00–02:00');
     expect(t('2026-11-30T08:00:00.000Z', at('06:00'))).toBe(
-      '08:00 → Miércoles, 2 de diciembre de 2026, 06:00',
+      `08:00${nb}→ mié${nb}2${nb}dic, 06:00`,
     );
-    expect(t(at('08:00'), '2026-12-03T10:00:00.000Z')).toBe(
-      '08:00 → Jueves, 3 de diciembre de 2026, 10:00',
+    // CAP2: «07:00 → jue 3 dic, 22:30», not the long date that overflowed.
+    expect(t(at('07:00'), '2026-12-03T22:30:00.000Z')).toBe(
+      `07:00${nb}→ jue${nb}3${nb}dic, 22:30`,
+    );
+    // Words of the date never split; only after the arrow or the comma.
+    expect(t(at('08:00'), '2026-12-03T10:00:00.000Z')!.split(' ')).toEqual([
+      `08:00${nb}→`,
+      `jue${nb}3${nb}dic,`,
+      '10:00',
+    ]);
+    // Another year is named.
+    expect(t(at('08:00'), '2027-01-02T10:00:00.000Z')).toBe(
+      `08:00${nb}→ sáb${nb}2${nb}ene${nb}2027, 10:00`,
     );
   });
 });

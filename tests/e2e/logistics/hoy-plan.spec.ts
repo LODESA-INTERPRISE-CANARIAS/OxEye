@@ -123,7 +123,8 @@ test.describe('Gestor logístico · «Hoy» con tareas', () => {
     expect(severities.join('')).toMatch(/^c+r+$/);
 
     const warning = (kind: string) =>
-      card.locator(`[data-warning="${kind}"] button`);
+      // The row itself, not the conflict exits shown under it (E2).
+      card.locator(`[data-warning="${kind}"] button.lx-warning__row`);
     await expect(warning('venue_overlap')).toHaveAttribute(
       'aria-label',
       /^Conflicto: Coinciden en Plaza del Cristo\..*Abrir «Montaje del escenario»\.$/,

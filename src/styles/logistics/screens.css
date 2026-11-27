@@ -188,6 +188,11 @@
   gap: 22px;
 }
 
+/*
+ * Wide screens: the day beside the notes, «Próximos eventos» across both
+ * columns, then the rest beside the month and the activity. The DOM order
+ * is the reading order on a phone (everything stacked).
+ */
 .lx .lx-hoy__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
@@ -195,11 +200,28 @@
   align-items: start;
 }
 
+/*
+ * Two independent columns: the day, «Próximos eventos» and the rest on the
+ * left; notes, month and activity on the right. Each stacks on its own, so
+ * a tall notes card never leaves a gap under a short day.
+ */
+.lx .lx-hoy__col,
 .lx .lx-hoy__main,
+.lx .lx-hoy__notes,
+.lx .lx-hoy__rest,
 .lx .lx-hoy__side {
   display: grid;
   gap: 22px;
+  align-content: start;
   min-width: 0;
+}
+
+.lx .lx-hoy__wide {
+  min-width: 0;
+}
+
+.lx .lx-hoy__notes:empty {
+  display: none;
 }
 
 .lx .lx-section {
@@ -328,6 +350,235 @@
 .lx .lx-event--skeleton {
   gap: 12px;
   min-height: 160px;
+}
+
+/*
+ * «Próximos eventos»: one to four columns as the width allows (never more
+ * than four, never narrower than 240 px), one on a portrait phone.
+ */
+.lx .lx-event-grid--upcoming {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(240px, calc((100% - 3 * 14px) / 4)), 1fr)
+  );
+}
+
+/*
+ * One or two upcoming events fill the row (`data-count`), with the richer
+ * card: facts and progress beside the next tasks (one), or stacked (two).
+ */
+.lx .lx-event-grid--upcoming[data-count='1'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lx .lx-event-grid--upcoming[data-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lx .lx-event-grid--upcoming[data-count='3'] {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(200px, calc((100% - 2 * 14px) / 3)), 1fr)
+  );
+}
+
+.lx .lx-event__countdown {
+  color: var(--lx-accent);
+}
+
+/*
+ * Wider cards keep the regular card's height: facts | next tasks (half),
+ * facts | next tasks | notes (full), side by side.
+ */
+.lx .lx-event__body {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.lx .lx-event__body > .lx-event__facts {
+  align-content: start;
+}
+
+/* Too narrow for columns: exactly the regular card. */
+.lx .lx-event__body > .lx-event__next,
+.lx .lx-event__body > .lx-event__aside {
+  display: none;
+}
+
+@container (min-width: 520px) {
+  .lx .lx-event__body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+
+  .lx .lx-event__body > .lx-event__next {
+    display: grid;
+  }
+}
+
+@container (min-width: 820px) {
+  .lx .lx-event--full .lx-event__body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 26px;
+  }
+
+  .lx .lx-event--full .lx-event__body > .lx-event__aside {
+    display: grid;
+  }
+}
+
+.lx .lx-event__aside {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+  padding-left: 22px;
+  border-left: 1px solid var(--lx-line);
+}
+
+.lx .lx-event__progress {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.lx .lx-event__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lx-surface-2);
+  overflow: hidden;
+}
+
+.lx .lx-event__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--lx-accent);
+}
+
+.lx .lx-event__notes {
+  font-size: 14px;
+  color: var(--lx-muted);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-event__next {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+  padding-left: 22px;
+  border-left: 1px solid var(--lx-line);
+}
+
+.lx .lx-event__subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.lx .lx-event__tasks {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0 -8px;
+  padding: 0;
+}
+
+/* One line per task: when, then the title (and company) cut with «…». */
+.lx .lx-event__task {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--lx-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  font-size: 14px;
+}
+
+button.lx-event__task {
+  cursor: pointer;
+}
+
+.lx button.lx-event__task:hover {
+  background: var(--lx-surface-2);
+}
+
+.lx button.lx-event__task:focus-visible {
+  outline: 2px solid var(--lx-accent);
+  outline-offset: 1px;
+}
+
+.lx .lx-event__taskwhen {
+  font-size: 13px;
+  color: var(--lx-muted);
+  white-space: nowrap;
+}
+
+.lx .lx-event__tasktitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx .lx-event__taskco {
+  font-size: 12.5px;
+}
+
+.lx .lx-event__none,
+.lx .lx-event__more {
+  font-size: 13.5px;
+}
+
+/* What the event needs, said on the card (upcoming and undated events). */
+.lx .lx-event {
+  container-type: inline-size;
+}
+
+.lx .lx-event__fact--warnings.is-conflict dt,
+.lx .lx-event__fact--warnings.is-conflict dd {
+  color: var(--lx-danger);
+}
+
+.lx .lx-event__fact--warnings.is-conflict dd {
+  font-weight: 600;
+}
+
+.lx .lx-event__short {
+  display: none;
+}
+
+/* A narrow card (four columns): the same facts, shorter. */
+@container (max-width: 299px) {
+  .lx .lx-event__long {
+    display: none;
+  }
+
+  .lx .lx-event__short {
+    display: inline;
+  }
+
+  .lx .lx-event__facts > div {
+    font-size: 14px;
+  }
+
+  .lx .lx-event__title {
+    font-size: 18px;
+  }
+
+  .lx .lx-event__top {
+    flex-wrap: wrap;
+  }
 }
 
 .lx .lx-event--skeleton span:nth-child(1) {
@@ -574,6 +825,53 @@
   display: grid;
 }
 
+/*
+ * «Actividad reciente» keeps its height: the list scrolls inside (also with
+ * the keyboard, it is focusable) and never pushes the rest of «Hoy» down.
+ * The scroll shadows say there is more above or below.
+ */
+.lx .lx-activity__scroll {
+  position: relative;
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -10px;
+  padding: 0 10px;
+  border-radius: var(--lx-radius-sm);
+  background:
+    linear-gradient(var(--lx-surface) 30%, transparent) top / 100% 28px
+      no-repeat local,
+    linear-gradient(transparent, var(--lx-surface) 70%) bottom / 100% 28px
+      no-repeat local,
+    radial-gradient(
+        farthest-side at 50% 0,
+        color-mix(in srgb, var(--lx-shadow) 45%, transparent),
+        transparent
+      )
+      top / 100% 10px no-repeat scroll,
+    radial-gradient(
+        farthest-side at 50% 100%,
+        color-mix(in srgb, var(--lx-shadow) 45%, transparent),
+        transparent
+      )
+      bottom / 100% 10px no-repeat scroll;
+}
+
+.lx .lx-activity__scroll:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-activity__more {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--lx-line);
+  font-size: 13.5px;
+}
+
 .lx .lx-feed__item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -783,10 +1081,68 @@
   color: var(--lx-accent);
 }
 
+/* A space locked for this user: the same card, with a lock on the icon. */
+.lx .lx-placeholder__icon {
+  position: relative;
+}
+
+.lx .lx-placeholder__lock {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--lx-heading);
+  color: var(--lx-surface);
+  border: 2px solid var(--lx-surface);
+}
+
+.lx .lx-placeholder__text {
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--lx-ink);
+}
+
+.lx .lx-placeholder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 4px;
+}
+
 /* ============================================================ responsive */
 @media (max-width: 1239px) {
   .lx .lx-hoy__grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* One column in reading order: day, notes, upcoming, rest, month. */
+  .lx .lx-hoy__col {
+    display: contents;
+  }
+
+  .lx .lx-hoy__main {
+    order: 1;
+  }
+
+  .lx .lx-hoy__notes {
+    order: 2;
+  }
+
+  .lx .lx-hoy__wide {
+    order: 3;
+  }
+
+  .lx .lx-hoy__rest {
+    order: 4;
+  }
+
+  .lx .lx-hoy__side {
+    order: 5;
   }
 
   .lx .lx-hoy__side {
@@ -809,6 +1165,12 @@
 
   .lx .lx-event-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A tablet still fits two upcoming events side by side. */
+  .lx .lx-event-grid--upcoming,
+  .lx .lx-event-grid--upcoming[data-count='3'] {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   }
 
   .lx .lx-card {
@@ -843,6 +1205,18 @@
 
   .lx .lx-placeholder__card {
     padding: 24px 20px;
+  }
+}
+
+@media (max-width: 599px) {
+  /* Portrait phone: one upcoming event per row, the whole width. */
+  .lx .lx-event-grid--upcoming,
+  .lx .lx-event-grid--upcoming[data-count] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lx .lx-activity__scroll {
+    max-height: 340px;
   }
 }
 

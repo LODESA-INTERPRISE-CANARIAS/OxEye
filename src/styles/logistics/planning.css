@@ -588,13 +588,23 @@
 }
 
 /* Dependencies */
+/* Not the simulator's boxed fieldset: a heading, then the list box. */
 .lx .lx-deps {
   border: 0;
+  border-radius: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
   display: grid;
   gap: 8px;
+  background: none;
+}
+
+/* A floated legend is laid out as ordinary content, not on the border. */
+.lx .lx-deps > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
 }
 
 .lx .lx-deps__list {
@@ -659,8 +669,10 @@
   opacity: 0.7;
 }
 
+/* Under the title, aligned with it (past the kind icon). */
 .lx .lx-deps__why {
   grid-column: 2;
+  padding-left: 26px;
   padding-bottom: 6px;
   font-size: 12.5px;
   color: var(--lx-ink);

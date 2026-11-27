@@ -43,6 +43,13 @@ export interface WorkOrderFieldInfo {
   membersOnly: boolean;
 }
 
+/**
+ * Said under any free text that goes out of Ox Eye (work-order notes, the
+ * message of a request for quotes).
+ */
+export const LEAVES_OX_EYE_NOTE =
+  'Sale de Ox Eye: que no lleve datos de salud, de personas atendidas ni casos de Punto Violeta.';
+
 export const WORK_ORDER_FIELDS: readonly WorkOrderFieldInfo[] = [
   {
     id: 'schedule',
@@ -103,7 +110,7 @@ export const WORK_ORDER_FIELDS: readonly WorkOrderFieldInfo[] = [
   {
     id: 'observations',
     label: 'Observaciones de la tarea',
-    hint: 'Texto libre del equipo: léelo antes de enviarlo. Sale de OxEye: que no lleve datos de salud, de personas atendidas ni casos de Punto Violeta.',
+    hint: `Texto libre del equipo: léelo antes de enviarlo. ${LEAVES_OX_EYE_NOTE}`,
     defaultOn: false,
     membersOnly: true,
   },
@@ -173,7 +180,7 @@ export interface WorkOrderItem {
   cancelled: boolean;
   /** «Miércoles, 2 de diciembre de 2026», or null without a date (or without the field). */
   day: string | null;
-  /** «08:00–10:00», «Desde las 08:00», or null. */
+  /** «08:00–10:00», «07:00 → jue 3 dic, 22:30», «Desde las 08:00», or null. */
   time: string | null;
   /** True when the time is only planned (not confirmed). */
   toConfirm: boolean;
@@ -217,6 +224,27 @@ function longLocalDate(date: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+const NBSP = String.fromCharCode(0xa0);
+
+/**
+ * «jue 3 dic» (with the year when it is not the year of `from`). Its words
+ * are joined by no-break spaces, so a narrow time column wraps a long time
+ * only after the arrow or the comma, never inside the date.
+ */
+function compactLocalDate(date: string, from: string): string {
+  const parts = new Intl.DateTimeFormat('es-ES', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).formatToParts(new Date(`${date}T12:00:00Z`));
+  const get = (type: string) =>
+    parts.find(p => p.type === type)?.value.replace('.', '') ?? '';
+  const words = [get('weekday'), get('day'), get('month')];
+  if (date.slice(0, 4) !== from.slice(0, 4)) words.push(date.slice(0, 4));
+  return words.join(NBSP);
+}
+
 function slotText(
   task: Pick<Task, 'startsAt' | 'endsAt' | 'date' | 'timezone'>,
 ): {day: string | null; time: string | null} {
@@ -227,13 +255,14 @@ function slotText(
   let time: string | null = null;
   if (start && end) {
     // Same day, or a plain overnight slot (22:00–02:00), reads as a range;
-    // any other later end day is written out so it is not misread.
+    // any other later end day is named so it is not misread, in the compact
+    // form («07:00 → jue 3 dic, 22:30») that fits the order's time column.
     const overnight =
       end.date === addDays(start.date, 1) && end.time <= start.time;
     time =
       end.date === start.date || overnight
         ? `${start.time}–${end.time}`
-        : `${start.time} → ${longLocalDate(end.date)}, ${end.time}`;
+        : `${start.time}${NBSP}→ ${compactLocalDate(end.date, start.date)}, ${end.time}`;
   } else if (start) time = `Desde las ${start.time}`;
   else if (end) time = `Hasta las ${end.time}`;
   return {day: date ? longLocalDate(date) : null, time};
@@ -376,7 +405,7 @@ export function workOrderText(order: WorkOrder): string {
   });
   if (order.routesNote) lines.push(order.routesNote, '');
   lines.push(
-    `Enviada por ${order.generatedBy} desde OxEye · ${order.generatedAt}.`,
+    `Enviada por ${order.generatedBy} desde Ox Eye · ${order.generatedAt}.`,
     order.footer,
   );
   return lines.join('\n');

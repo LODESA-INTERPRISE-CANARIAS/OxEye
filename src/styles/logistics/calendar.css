@@ -71,6 +71,102 @@
   color: var(--lx-heading);
 }
 
+.lx .lx-calbar__title-mid {
+  display: none;
+}
+
+/*
+ * One line on tablets and desktops: the bar measures itself and gives up
+ * room step by step, cheapest first, before anything wraps. The pill drops
+ * its words, then the title its weekday (the date field shows it), then the
+ * year («Mié 2 dic»), the filter narrows and the zoom help steps aside. The
+ * long date is always read out.
+ */
+.lx .lx-calbar {
+  container: lx-calbar / inline-size;
+}
+
+@media (min-width: 900px) {
+  @container lx-calbar (max-width: 1580px) {
+    .lx .lx-daywarn__word,
+    .lx .lx-daywarn__chevron {
+      display: none;
+    }
+  }
+
+  @container lx-calbar (max-width: 1420px) {
+    .lx .lx-calbar__title-long {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .lx .lx-calbar__title-mid {
+      display: inline;
+    }
+  }
+
+  @container lx-calbar (max-width: 1300px) {
+    .lx .lx-calbar__title-mid {
+      display: none;
+    }
+
+    .lx .lx-calbar__title-short {
+      display: inline;
+    }
+
+    .lx .lx-calbar__filter .lx-input.lx-calbar__select {
+      max-width: 170px;
+    }
+  }
+
+  @container lx-calbar (max-width: 1180px) {
+    .lx .lx-calbar__zoom .lx-help {
+      display: none;
+    }
+
+    .lx .lx-calbar__view {
+      padding: 0 11px;
+    }
+  }
+
+  /* «Todos los eventos» becomes its icon (the name is in its title and
+     read out); a chosen event keeps a short name. */
+  @container lx-calbar (max-width: 1120px) {
+    .lx .lx-calbar__filter:not([data-filtered]) .lx-input.lx-calbar__select {
+      width: 72px;
+      padding-right: 10px;
+    }
+
+    .lx .lx-calbar__filter:not([data-filtered]) .lx-ctl__selected {
+      visibility: hidden;
+    }
+
+    .lx .lx-calbar__filter[data-filtered] .lx-input.lx-calbar__select {
+      max-width: 150px;
+    }
+  }
+
+  /* The date field already says the day and its weekday. */
+  @container lx-calbar (max-width: 1060px) {
+    .lx .lx-calbar__date ~ * {
+      margin-left: 0;
+    }
+
+    .lx .lx-calbar__title:has(.lx-calbar__title-short) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+}
+
 .lx .lx-calbar__title-short {
   display: none;
 }
@@ -79,11 +175,17 @@
   margin-left: 6px;
 }
 
-.lx .lx-calbar__date .lx-calbar__dateinput {
-  width: auto;
-  min-height: 38px;
-  padding: 4px 8px;
+/* DateField: compact in the bar, room for the weekday and the picker. */
+.lx .lx-calbar__date {
   margin-left: 4px;
+}
+
+.lx .lx-calbar__date .lx-calbar__dateinput {
+  width: 190px;
+}
+
+.lx .lx-calbar__date .lx-ctl__input {
+  min-height: 38px;
   font-size: 14px;
 }
 
@@ -95,48 +197,30 @@
   margin-left: auto;
 }
 
+/* Event filter: the SelectField as a pill, with the calendar icon inside. */
 .lx .lx-calbar__filter {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: var(--lx-pill);
-  border: 1.5px solid var(--lx-control-border);
-  background: var(--lx-surface);
   color: var(--lx-heading);
 }
 
-.lx .lx-calbar__filter:focus-within {
-  outline: 3px solid var(--lx-accent-strong);
-  outline-offset: 2px;
-}
-
-.lx .lx-calbar__filter > .lx-icon:last-child {
+.lx .lx-calbar__filter > .lx-icon {
+  position: absolute;
+  left: 12px;
+  z-index: 1;
   pointer-events: none;
-  color: var(--lx-muted);
 }
 
-.lx .lx-calbar__select {
-  max-width: 220px;
-  min-height: 34px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  background-image: none;
-  color: inherit;
-  font-family: var(--lx-font);
+/* Scoped by the filter so it outranks `.lx-input:not(…):not(…)` padding. */
+.lx .lx-calbar__filter .lx-input.lx-calbar__select {
+  max-width: 240px;
+  min-height: var(--lx-target);
+  padding: 0 12px 0 36px;
+  border-radius: var(--lx-pill);
+  color: var(--lx-heading);
   font-size: 14px;
   font-weight: 600;
-  box-shadow: none;
-  appearance: none;
-  cursor: pointer;
-  text-overflow: ellipsis;
-}
-
-.lx .lx-calbar__select:focus-visible {
-  outline: none;
 }
 
 .lx .lx-calbar__zoom {
@@ -579,23 +663,70 @@
   color: var(--lx-muted);
 }
 
-.lx .lx-day__warnings {
-  margin-top: 0;
-}
-
-.lx .lx-day__warnings summary {
-  display: flex;
+/*
+ * The day's warnings: a pill in the bar, next to the date. Reddish with a
+ * conflict; quiet with reminders only. Opens the warnings panel.
+ */
+.lx .lx-daywarn {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-height: 38px;
+  margin-left: 4px;
+  padding: 0 10px 0 12px;
+  /* Through the shared button variables, so hover never clears them. */
+  --lx-btn-bg: var(--lx-surface-2);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  --lx-btn-border-w: 1px;
+  --lx-btn-border: var(--lx-line-strong);
+  --lx-btn-border-hover: var(--lx-muted);
+  border-radius: 999px;
+  color: var(--lx-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  flex: none;
 }
 
-.lx .lx-day__warnings.has-conflict {
-  border-color: var(--lx-danger);
-  background: var(--lx-danger-soft);
-}
-
-.lx .lx-day__warnings.has-conflict summary .lx-icon {
+.lx .lx-daywarn.has-conflict {
+  --lx-btn-bg: var(--lx-danger-soft);
+  --lx-btn-bg-hover: color-mix(
+    in srgb,
+    var(--lx-danger) 18%,
+    var(--lx-surface)
+  );
+  --lx-btn-border: color-mix(in srgb, var(--lx-danger) 45%, transparent);
+  --lx-btn-border-hover: var(--lx-danger);
   color: var(--lx-danger);
+}
+
+.lx .lx-daywarn:focus-visible {
+  outline: 2px solid var(--lx-accent);
+  outline-offset: 2px;
+}
+
+.lx .lx-daywarn[aria-expanded='true'] .lx-daywarn__chevron {
+  transform: rotate(180deg);
+}
+
+.lx .lx-daywarn__part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Reminders beside a conflict: same pill, softer. */
+.lx .lx-daywarn.has-conflict .lx-daywarn__part--soft {
+  padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--lx-danger) 30%, transparent);
+  font-weight: 500;
+  color: var(--lx-ink);
+}
+
+.lx .lx-daywarn__bell {
+  color: var(--lx-muted);
 }
 
 .lx .lx-day__untimed {
@@ -621,6 +752,10 @@
   --lx-lanew: 128px;
   --lx-gutter: 58px;
   --lx-minh: 30px;
+  /* Folded venue: room for «A.M.» and its slim markers. */
+  --lx-colw-collapsed: 54px;
+  /* Trailing cell that holds «›» when the venues do not fit. */
+  --lx-endw: 52px;
   min-width: 0;
   border-radius: var(--lx-radius-lg);
   border: 1px solid var(--lx-line);
@@ -635,6 +770,9 @@
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
   scroll-padding-top: 48px;
+  /* Sideways, the plan settles on a venue's start (beside the hours). */
+  scroll-snap-type: x proximity;
+  scroll-padding-left: var(--lx-gutter);
 }
 
 .lx .lx-tl__scroller:focus-visible {
@@ -650,6 +788,12 @@
   min-width: min-content;
 }
 
+.lx .lx-tl.is-resizing,
+.lx .lx-tl.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .lx .lx-tl__corner,
 .lx .lx-tl__head {
   position: sticky;
@@ -661,28 +805,91 @@
 
 .lx .lx-tl__corner {
   left: 0;
-  z-index: 5;
+  z-index: 6;
   display: grid;
   place-items: center;
   color: var(--lx-muted);
   border-right: 1px solid var(--lx-line);
 }
 
-.lx .lx-tl__head {
+/* ‹ › over the header row, outside the scrolling area: «‹» covers the
+   corner, «›» sits over the trailing cell the grid keeps free for it. */
+.lx .lx-tl {
+  position: relative;
+}
+
+.lx .lx-tl__arrow {
+  position: absolute;
+  z-index: 7;
+  top: 0;
+  height: var(--lx-headh);
+  min-height: var(--lx-target);
   display: grid;
-  gap: 1px;
-  padding: 8px 10px;
+  place-items: center;
+  background: var(--lx-surface);
+  border-bottom: 1px solid var(--lx-line-strong);
+}
+
+.lx .lx-tl__arrow--prev {
+  left: 0;
+  width: var(--lx-gutter);
+  border-right: 1px solid var(--lx-line);
+}
+
+.lx .lx-tl__arrow--next {
+  right: var(--lx-sbw, 0px);
+  width: var(--lx-endw);
   border-left: 1px solid var(--lx-line);
+  box-shadow: -10px 0 12px -10px var(--lx-shadow);
+}
+
+.lx .lx-tl__arrow .lx-iconbtn:disabled {
+  opacity: 0.35;
+}
+
+.lx .lx-tl__head--end {
+  scroll-snap-align: none;
+}
+
+.lx .lx-tl__head {
+  position: sticky;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 6px 18px 7px 10px;
+  border-left: 1px solid var(--lx-line);
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.lx .lx-tl__head--filler {
+  scroll-snap-align: none;
+}
+
+.lx .lx-tl__head-row,
+.lx .lx-tl__head-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
+.lx .lx-tl__head-meta {
+  min-height: 24px;
+}
+
 .lx .lx-tl__venue {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
   font-weight: 600;
   color: var(--lx-heading);
+}
+
+.lx .lx-tl__venue-name {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -703,6 +910,218 @@
 .lx .lx-tl__count {
   font-size: 12px;
   color: var(--lx-muted);
+  white-space: nowrap;
+}
+
+/* Fold / unfold: a 44 px target drawn as a small round button. */
+.lx .lx-tl__fold,
+.lx .lx-tl__expand {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: transparent;
+  --lx-btn-border: transparent;
+  --lx-btn-bg-hover: var(--lx-accent-soft);
+  --lx-btn-border-hover: var(--lx-accent);
+  position: relative;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__fold {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px -4px 0;
+  border-radius: 50%;
+}
+
+.lx .lx-tl__fold::after,
+.lx .lx-tl__warnbadge::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.lx .lx-tl__fold:hover,
+.lx .lx-tl__expand:hover {
+  color: var(--lx-heading);
+}
+
+/* Collapsed: the whole header is the button that expands it. */
+.lx .lx-tl__head--collapsed {
+  display: flex;
+  padding: 0;
+}
+
+.lx .lx-tl__expand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  width: 100%;
+  height: 100%;
+  min-height: var(--lx-target);
+  padding: 7px 2px 6px;
+  border-radius: 0;
+}
+
+.lx .lx-tl__expand:focus-visible {
+  outline-offset: -3px;
+}
+
+.lx .lx-tl__acronym {
+  max-width: 100%;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: var(--lx-heading);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-tl__head--none .lx-tl__acronym {
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__acrowarn {
+  min-width: 20px;
+  padding: 0 5px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface-2);
+  box-shadow: inset 0 0 0 1px var(--lx-line-strong);
+  color: var(--lx-heading);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.lx .lx-tl__acrowarn.has-conflict {
+  background: var(--lx-danger);
+  box-shadow: none;
+  color: var(--lx-on-danger);
+}
+
+/* The venue's own warnings: count and severity, opens the list. */
+.lx .lx-tl__warnbadge {
+  --lx-btn-border-w: 1px;
+  --lx-btn-bg: var(--lx-surface-2);
+  --lx-btn-border: var(--lx-line-strong);
+  --lx-btn-bg-hover: var(--lx-surface-3);
+  --lx-btn-border-hover: var(--lx-heading);
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px 0 5px;
+  border-radius: var(--lx-pill);
+  color: var(--lx-heading);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lx .lx-tl__warnbadge.has-conflict {
+  --lx-btn-bg: var(--lx-danger);
+  --lx-btn-border: var(--lx-danger);
+  --lx-btn-bg-hover: color-mix(in srgb, var(--lx-danger) 86%, var(--lx-ink));
+  --lx-btn-border-hover: color-mix(
+    in srgb,
+    var(--lx-danger) 86%,
+    var(--lx-ink)
+  );
+  color: var(--lx-on-danger);
+}
+
+/* Only accepted conflicts: quiet, but still opens the venue's panel. */
+.lx .lx-tl__warnbadge.is-accepted {
+  --lx-btn-bg: var(--lx-surface);
+  border-style: dashed;
+  color: var(--lx-muted);
+}
+
+/* Event frames held at the venue: hours first, so they never get cut. */
+.lx .lx-tl__frame {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--lx-heading);
+}
+
+.lx .lx-tl__frame-swatch {
+  flex-shrink: 0;
+  width: 12px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1.5px dashed var(--lx-accent);
+  background: color-mix(in srgb, var(--lx-accent-soft) 70%, transparent);
+}
+
+.lx .lx-tl__frame--cancelled .lx-tl__frame-swatch {
+  border-color: var(--lx-line-strong);
+  background: transparent;
+}
+
+.lx .lx-tl__frame-time {
+  flex-shrink: 0;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lx .lx-tl__frame-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl__frame--cancelled .lx-tl__frame-time,
+.lx .lx-tl__frame--cancelled .lx-tl__frame-name {
+  text-decoration: line-through;
+  color: var(--lx-muted);
+}
+
+/* Width handle on the right edge of the header. */
+.lx .lx-tl__resize {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.lx .lx-tl__resize::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 4px;
+  height: 22px;
+  border-radius: var(--lx-pill);
+  transform: translateY(-50%);
+  border-left: 1.5px solid var(--lx-line-strong);
+  border-right: 1.5px solid var(--lx-line-strong);
+}
+
+.lx .lx-tl__resize:hover::before,
+.lx .lx-tl__resize:focus-visible::before,
+.lx .lx-tl.is-resizing .lx-tl__resize:active::before {
+  border-color: var(--lx-accent);
+}
+
+.lx .lx-tl__resize:focus-visible {
+  outline-offset: -3px;
+  border-radius: 6px;
 }
 
 .lx .lx-tl__hours {
@@ -772,19 +1191,6 @@
   border-color: var(--lx-line-strong);
 }
 
-.lx .lx-tl__band-label {
-  position: sticky;
-  top: 52px;
-  display: block;
-  padding: 2px 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--lx-heading);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .lx .lx-tl__now {
   position: absolute;
   z-index: 2;
@@ -812,10 +1218,10 @@
     var(--lx-minh),
     calc((var(--lx-e) - var(--lx-s)) * var(--lx-hour) / 60 - 2px)
   );
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 1px;
+  /* Its own size decides how much text fits (queries below), so a pinch
+     re-flows the text without re-rendering. */
+  container: lx-block / size;
+  display: block;
   padding: 4px 8px;
   border-radius: 10px;
   overflow: hidden;
@@ -824,6 +1230,15 @@
   font-size: 12.5px;
   line-height: 1.25;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--lx-shadow) 40%, transparent);
+}
+
+.lx .lx-tl__block-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  min-width: 0;
+  height: 100%;
 }
 
 .lx .lx-tl__block:hover:not(:disabled),
@@ -916,12 +1331,108 @@
   vertical-align: -2px;
 }
 
-.lx .lx-tl__block-time,
-.lx .lx-tl__block-company {
+/* The start never gives way to an ellipsis; the end goes first. */
+.lx .lx-tl__block-time {
+  flex-shrink: 0;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0.92;
+}
+
+.lx .lx-tl__block-start {
+  font-weight: 700;
+}
+
+.lx .lx-tl__block-company {
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+}
+
+/* Less height, fewer title lines; the time line always stays. */
+@container lx-block (max-height: 84px) {
+  .lx .lx-tl__block-company {
+    display: none;
+  }
+}
+
+@container lx-block (max-height: 66px) {
+  .lx .lx-tl__block-title {
+    -webkit-line-clamp: 2;
+  }
+}
+
+@container lx-block (max-height: 48px) {
+  .lx .lx-tl__block-title {
+    -webkit-line-clamp: 1;
+  }
+}
+
+/* Short block: one line, «08:00 Title», the start first. */
+@container lx-block (max-height: 34px) {
+  .lx .lx-tl__block-body {
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .lx .lx-tl__block-time {
+    order: -1;
+    overflow: visible;
+  }
+
+  .lx .lx-tl__block-end {
+    display: none;
+  }
+
+  .lx .lx-tl__block-title {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .lx .lx-tl__block-title .lx-icon {
+    display: none;
+  }
+}
+
+/* Narrow lane: the start alone. */
+@container lx-block (max-width: 92px) {
+  .lx .lx-tl__block-end {
+    display: none;
+  }
+}
+
+/* Folded venue: slim markers that still open their task. */
+.lx .lx-tl__block.is-marker {
+  padding: 0;
+  border-radius: 6px;
+}
+
+.lx .lx-tl__block.is-marker .lx-tl__block-body {
+  display: none;
+}
+
+.lx .lx-tl__block.is-marker .lx-tl__block-warn {
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 1.5px var(--lx-surface);
+}
+
+.lx .lx-tl__block.is-marker .lx-tl__block-warn .lx-icon {
+  display: none;
+}
+
+.lx .lx-tl__block.is-marker:not(.has-conflict) .lx-tl__block-warn {
+  background: var(--lx-heading);
 }
 
 .lx .lx-tl__block-warn {
@@ -942,8 +1453,77 @@
   color: var(--lx-on-danger);
 }
 
-.lx .lx-tl__block:has(.lx-tl__block-warn) .lx-tl__block-title {
+.lx .lx-tl__block:has(.lx-tl__block-warn) .lx-tl__block-body {
   padding-right: 18px;
+}
+
+/* Columns after the venues: free space, and the cell under «›». */
+.lx .lx-tl__col--filler,
+.lx .lx-tl__col--end {
+  border-left-color: transparent;
+}
+
+/* A venue's warnings, opened from its header badge. */
+.lx .lx-tl-warnpop {
+  position: fixed;
+  z-index: 30;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--lx-radius-lg);
+  border: 1px solid var(--lx-line-strong);
+  border-top: 4px solid var(--lx-line-strong);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  box-shadow: var(--lx-shadow-float);
+}
+
+.lx .lx-tl-warnpop.has-conflict {
+  border-top-color: var(--lx-danger);
+}
+
+.lx .lx-tl-warnpop:focus-visible {
+  outline-offset: -3px;
+}
+
+.lx .lx-tl-warnpop__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lx .lx-tl-warnpop__head .lx-iconbtn {
+  margin: -6px -6px 0 0;
+}
+
+.lx .lx-tl-warnpop__title {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.lx .lx-tl-warnpop__title strong {
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.25;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.lx .lx-tl-warnpop__summary {
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-tl-warnpop__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lx-muted);
 }
 
 /* ============================================================ list by hour (phone upright) */
@@ -1052,14 +1632,16 @@
     margin-left: auto;
   }
 
-  .lx .lx-calbar__select {
-    max-width: 150px;
+  .lx .lx-calbar__filter .lx-input.lx-calbar__select {
+    max-width: 170px;
   }
 
   .lx .lx-tl {
     --lx-colw: 150px;
     --lx-lanew: 112px;
     --lx-gutter: 50px;
+    --lx-colw-collapsed: 50px;
+    --lx-endw: 50px;
   }
 
   .lx .lx-daychip {
@@ -1087,6 +1669,95 @@
 
   .lx .lx-calbar__title-short {
     display: inline;
+  }
+}
+
+/*
+ * Day timeline on tablets and desktops: one page. The panel stops
+ * scrolling; header, bar and the day's extras keep their height and the
+ * timeline takes the rest, scrolling inside. Tasks without a time sit above
+ * the plan, in a short box of their own.
+ */
+@media (min-width: 900px) and (min-height: 561px) {
+  .lx[data-timeline] .lx-main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .lx[data-timeline] .lx-mainbar,
+  .lx[data-timeline] .lx-header {
+    flex: none;
+  }
+
+  .lx[data-timeline] .lx-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-bottom: 20px;
+  }
+
+  .lx[data-timeline] .lx-space,
+  .lx[data-timeline] .lx-calendar,
+  .lx[data-timeline] .lx-day {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .lx[data-timeline] .lx-calendar > *,
+  .lx[data-timeline] .lx-day > * {
+    flex: none;
+  }
+
+  .lx[data-timeline] .lx-calendar > .lx-day,
+  .lx[data-timeline] .lx-day > .lx-tl {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .lx[data-timeline] .lx-day > .lx-day__extras {
+    order: 0;
+  }
+
+  .lx[data-timeline] .lx-day > .lx-day__untimed {
+    order: 1;
+    max-height: 132px;
+    overflow-y: auto;
+  }
+
+  .lx[data-timeline] .lx-day > .lx-tl,
+  .lx[data-timeline] .lx-day > .lx-day__notimed {
+    order: 2;
+  }
+
+  .lx[data-timeline] .lx-tl {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .lx[data-timeline] .lx-tl__scroller {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 240px;
+  }
+}
+
+/* Laptops (up to ~900 px high): a shorter page header, more plan. */
+@media (min-width: 900px) and (min-height: 561px) and (max-height: 900px) {
+  .lx[data-timeline] .lx-header {
+    padding-top: 16px;
+    padding-bottom: 10px;
+  }
+
+  .lx[data-timeline] .lx-header__title {
+    font-size: 30px;
+  }
+
+  .lx[data-timeline] .lx-calendar {
+    gap: 10px;
   }
 }
 
@@ -1134,8 +1805,8 @@
     padding: 0 10px;
   }
 
-  .lx[data-timeline] .lx-calbar__select {
-    max-width: 130px;
+  .lx[data-timeline] .lx-calbar__filter .lx-input.lx-calbar__select {
+    max-width: 150px;
   }
 
   .lx[data-timeline] .lx-calbar__zoom .lx-help {
@@ -1160,4 +1831,246 @@
     height: calc(100dvh - 84px);
     min-height: 220px;
   }
+
+  /* Compact headers: the count is in each column's spoken name; the
+     warnings badge and the event hours stay. */
+  .lx[data-timeline] .lx-tl__head {
+    padding-top: 4px;
+    padding-bottom: 5px;
+    gap: 1px;
+  }
+
+  .lx[data-timeline] .lx-tl__count {
+    display: none;
+  }
+
+  .lx[data-timeline] .lx-tl__head-meta:not(:has(.lx-tl__warnbadge)) {
+    display: none;
+  }
+}
+
+/* ============================================================ moves (E2) */
+/* Members can hold a block to lift it: no text selection or callout. */
+.lx .lx-tl__block.is-movable {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.lx .lx-tl__block.is-lifted,
+.lx .lx-tl__block.is-pending {
+  z-index: 3;
+  translate: 0 calc(var(--lx-drag, 0) * var(--lx-hour) / 60);
+}
+
+.lx .lx-tl__block.is-lifted {
+  scale: 1.035;
+  box-shadow: var(--lx-shadow-float);
+  outline: 2.5px solid var(--lx-accent-strong);
+  outline-offset: 1px;
+  cursor: grabbing;
+  touch-action: none;
+}
+
+.lx .lx-tl__block.is-lifted.is-refused {
+  outline-color: var(--lx-danger);
+  opacity: 0.88;
+}
+
+/* Waiting for the preview: at its new time, dashed like a proposal. */
+.lx .lx-tl__block.is-pending {
+  outline: 2px dashed var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lx .lx-tl__block.is-movable {
+    transition:
+      scale 0.12s ease-out,
+      box-shadow 0.12s ease-out;
+  }
+}
+
+.lx .lx-tl.is-dragging .lx-tl__scroller {
+  scroll-snap-type: none;
+}
+
+/* Where it was planned. */
+.lx .lx-tl__origin {
+  position: absolute;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60 + 1px);
+  left: calc(var(--lx-lane) * 100% / var(--lx-lanes) + 3px);
+  width: calc(100% / var(--lx-lanes) - 6px);
+  height: max(
+    var(--lx-minh),
+    calc((var(--lx-e) - var(--lx-s)) * var(--lx-hour) / 60 - 2px)
+  );
+  border: 1.5px dashed var(--lx-line-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lx-surface-2) 60%, transparent);
+  pointer-events: none;
+}
+
+/* The new time, just over the lifted block. */
+.lx .lx-tl__dragtime {
+  position: absolute;
+  z-index: 3;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60 - 26px);
+  left: calc(var(--lx-lane) * 100% / var(--lx-lanes) + 3px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 6px);
+  padding: 2px 9px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-heading);
+  color: var(--lx-surface);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--lx-shadow-float);
+  pointer-events: none;
+}
+
+.lx .lx-tl__dragtime.is-refused {
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+}
+
+.lx .lx-tl__dragshift {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* The venue's closed hours, only while a block moves there. */
+.lx .lx-tl__closed {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--lx-s) * var(--lx-hour) / 60);
+  height: calc((var(--lx-e) - var(--lx-s)) * var(--lx-hour) / 60);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--lx-line-strong) 55%, transparent) 0 2px,
+    transparent 2px 9px
+  );
+  pointer-events: none;
+}
+
+.lx .lx-tl__closed.is-hit {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--lx-danger) 45%, transparent) 0 2px,
+    transparent 2px 9px
+  );
+}
+
+.lx .lx-tl__closed-label {
+  position: absolute;
+  left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface);
+  border: 1px solid var(--lx-line-strong);
+  color: var(--lx-heading);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Label next to the edge the block would cross. */
+.lx .lx-tl__closed--before .lx-tl__closed-label {
+  bottom: 4px;
+}
+
+.lx .lx-tl__closed--after .lx-tl__closed-label {
+  top: 4px;
+}
+
+.lx .lx-tl__closed.is-hit .lx-tl__closed-label {
+  border-color: var(--lx-danger);
+  color: var(--lx-danger);
+}
+
+/* ---------------------------------------------------------- dependencies */
+.lx .lx-tl__grid {
+  position: relative;
+}
+
+.lx .lx-tl__block-link {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin-right: 4px;
+  opacity: 0.85;
+}
+
+.lx .lx-tl__block.is-pred,
+.lx .lx-tl__block.is-succ {
+  z-index: 2;
+  outline: 2px dashed var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-tl__block.is-pred.has-conflict,
+.lx .lx-tl__block.is-succ.has-conflict {
+  outline-color: var(--lx-danger);
+}
+
+.lx .lx-tl__links {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.lx .lx-tl__links path {
+  fill: none;
+  stroke: var(--lx-accent-strong);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.lx .lx-tl__links circle {
+  fill: var(--lx-accent-strong);
+}
+
+.lx .lx-tl__deps {
+  position: absolute;
+  z-index: 8;
+  left: calc(var(--lx-gutter) + 8px);
+  right: calc(var(--lx-sbw, 0px) + 8px);
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.lx .lx-tl__dep {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: var(--lx-pill);
+  border: 1.5px dashed var(--lx-accent-strong);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  font-size: 12.5px;
+  box-shadow: var(--lx-shadow-float);
+}
+
+.lx .lx-tl__dep-kind {
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-tl__dep-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

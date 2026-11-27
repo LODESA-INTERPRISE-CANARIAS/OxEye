@@ -5,7 +5,8 @@
  * carries `restricted: true`.
  *
  * Every row → record mapping of events, tasks, contacts, companies, offers,
- * warehouses, resources, notes and delay hypotheses goes through
+ * warehouses, resources, notes, delay hypotheses, answers and accepted
+ * conflicts (Revisión 1) goes through
  * `forViewer`, with the viewer as a required argument, so no route (lists,
  * single records, 409 `current`, DUPLICATE `current`) can skip it.
  *
@@ -15,16 +16,21 @@
  */
 import type {
   Company,
+  ConflictAcceptance,
   Contact,
   DelayHypothesis,
   LogisticsEvent,
   Note,
+  NoteAnswer,
   Offer,
   Resource,
   Role,
+  SessionUser,
   Task,
   Warehouse,
 } from '../../../shared/logistics/contracts.ts';
+import {hasAccess} from '../organizations/service.ts';
+import type {Membership} from '../organizations/service.ts';
 import {
   WITHHELD_FROM_GUESTS,
   withholdFor,
@@ -35,6 +41,21 @@ export {WITHHELD_FROM_GUESTS};
 
 export interface Viewer {
   role: Role;
+  /**
+   * Safety audit: whether the viewer reads the directory (`directory.read`
+   * in the organization), set by read routes with `viewerIn`. Omitted (a
+   * session user passed as is, writers): every member role that writes also
+   * reads the directory, so only the guest account is withheld.
+   */
+  directory?: boolean;
+}
+
+/** The viewer as the organization's permissions make it (read routes). */
+export function viewerIn(user: SessionUser, membership: Membership): Viewer {
+  return {
+    role: user.role,
+    directory: hasAccess(membership, user, 'directory.read'),
+  };
 }
 
 /** The record as stored, before deciding what this viewer may see. */
@@ -86,9 +107,24 @@ export function forViewer(
   viewer: Viewer,
 ): DelayHypothesis;
 export function forViewer(
+  kind: 'answer',
+  record: Full<NoteAnswer>,
+  viewer: Viewer,
+): NoteAnswer;
+export function forViewer(
+  kind: 'acceptance',
+  record: Full<ConflictAcceptance>,
+  viewer: Viewer,
+): ConflictAcceptance;
+export function forViewer(
   kind: WithheldKind,
   record: object,
   viewer: Viewer,
 ): object {
-  return withholdFor(kind, record, viewer.role);
+  return withholdFor(
+    kind,
+    record,
+    viewer.role,
+    viewer.directory ?? viewer.role !== 'guest',
+  );
 }

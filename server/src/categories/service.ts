@@ -8,7 +8,12 @@
 import type {Db, Queryable} from '../db/db.ts';
 import {AppError, notFound} from '../errors.ts';
 import {appendActivity} from '../activity/service.ts';
-import {isUuid, requireMembership} from '../organizations/service.ts';
+import {
+  checkAccess,
+  isUuid,
+  requireMembership,
+} from '../organizations/service.ts';
+import type {Membership} from '../organizations/service.ts';
 import {normalizeName} from '../records/find-or-create.ts';
 import {byId} from '../records/ids.ts';
 import {lockCatalogue} from '../records/locks.ts';
@@ -133,6 +138,8 @@ export async function createCategory(
 ): Promise<{category: Category; created: boolean}> {
   return db.transaction(async tx => {
     const org = await requireMembership(tx, actor.id, input.organizationId);
+    // E4: service categories belong to the directory.
+    if (input.scope !== 'resource') checkAccess(org, actor, 'directory.read');
     await lockCatalogue(tx, org.id);
     const name = normalizeName(input.name) as string;
     const inserted = await tx.query<CategoryRow>(
@@ -188,10 +195,18 @@ export async function deleteCategory(
       await tx.query<CategoryRow>(`${SELECT_CATEGORY} WHERE id = $1`, [id])
     )[0];
     if (!unlocked) throw categoryNotFound();
+    let membership: Membership;
     try {
-      await requireMembership(tx, actor.id, unlocked.organization_id);
+      membership = await requireMembership(
+        tx,
+        actor.id,
+        unlocked.organization_id,
+      );
     } catch {
       throw categoryNotFound();
+    }
+    if (unlocked.scope !== 'resource') {
+      checkAccess(membership, actor, 'directory.read');
     }
     const orgId = unlocked.organization_id;
     await lockCatalogue(tx, orgId);

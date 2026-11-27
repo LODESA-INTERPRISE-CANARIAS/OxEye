@@ -1,10 +1,10 @@
 import {expect, test} from '@playwright/test';
 import {openWorkspaceWithDefaultProject} from '../helpers';
 import {
-  LOGIN_USERS,
   PASSWORD,
   SESSION_KEY,
   TOKEN,
+  loginAs,
   mockApi,
   signIn,
   storedSession,
@@ -33,9 +33,9 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     await expect(app).toBeVisible();
     await expect(page).toHaveURL(/#logistica$/);
     await expect(menu).toHaveAttribute('inert', '');
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
 
-    // The gate's «Volver a OxEye» closes the module and gives focus back.
+    // The gate's «Volver a Ox Eye» closes the module and gives focus back.
     await page.locator('#lx-gate-exit').click();
     await expect(app).toHaveCount(0);
     await expect(menu).toBeVisible();
@@ -44,15 +44,13 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     expect(new URL(page.url()).hash).toBe('');
   });
 
-  test('«Volver a OxEye» from the workspace keeps the session for the next visit', async ({
+  test('«Volver a Ox Eye» from the workspace keeps the session for the next visit', async ({
     page,
   }) => {
     await mockApi(page);
     await page.goto('/');
     await page.locator('#game-logistics').click();
-    await page.locator('.lx-person[data-name="Elvis"]').click();
-    await page.locator('#lx-login-password').fill(PASSWORD);
-    await page.locator('#lx-login-submit').click();
+    await loginAs(page, 'Elvis');
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
 
     await page.locator('#lx-back-to-oxeye').click();
@@ -69,7 +67,7 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     await mockApi(page);
     await page.goto('/#logistica');
     await expect(page.locator('#logistics-app')).toBeVisible();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     await expect(page.locator('#game-menu')).toHaveAttribute('inert', '');
   });
 
@@ -102,7 +100,7 @@ test.describe('Gestor logístico · historial y hash', () => {
     const before = await historyLength(page);
 
     await page.locator('#game-logistics').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     await expect(page).toHaveURL(/\/#logistica$/);
     expect(await historyLength(page)).toBe(before + 1);
 
@@ -127,14 +125,14 @@ test.describe('Gestor logístico · historial y hash', () => {
     await mockApi(page);
     await page.goto('/');
     await page.locator('#game-logistics').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     await page.locator('#lx-gate-exit').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
     await expect.poll(() => new URL(page.url()).hash).toBe('');
 
     await page.goForward();
     await expect(page).toHaveURL(/#logistica$/);
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     // And Back closes it again.
     await page.goBack();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
@@ -146,7 +144,7 @@ test.describe('Gestor logístico · historial y hash', () => {
   }) => {
     await mockApi(page);
     await page.goto('/#logistica');
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     const before = await historyLength(page);
     await page.locator('#lx-gate-exit').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
@@ -214,7 +212,7 @@ test.describe('Gestor logístico · servidor no disponible', () => {
     api.health = 'ok';
     await page.locator('#lx-retry').click();
     await expect(gate).toHaveCount(0);
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
   });
 
   test('database down says so instead of a generic error', async ({page}) => {
@@ -225,57 +223,64 @@ test.describe('Gestor logístico · servidor no disponible', () => {
     );
     api.health = 'ok';
     await page.locator('#lx-retry').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
   });
 });
 
 test.describe('Gestor logístico · acceso', () => {
-  test('lists the five people, rejects a wrong password and signs in', async ({
+  test('asks for username and password, with a neutral error, and signs in', async ({
     page,
   }) => {
     const api = await mockApi(page);
     await page.goto('/#logistica');
 
-    const people = page.locator('#lx-login-users .lx-person');
-    await expect(people).toHaveCount(5);
-    for (const u of LOGIN_USERS) {
-      await expect(
-        page.locator(`.lx-person[data-name="${u.displayName}"]`),
-      ).toContainText(u.role === 'guest' ? 'Solo lectura' : 'Equipo');
-    }
-
-    await page.locator('.lx-person[data-name="Elvis"]').click();
-    await expect(page.locator('#lx-login-name')).toHaveText('Elvis');
+    // E4: no list of people anywhere.
+    await expect(page.locator('.lx-person')).toHaveCount(0);
+    expect(api.requests.some(r => r.path === '/auth/users')).toBe(false);
+    const username = page.locator('#lx-login-username');
     const password = page.locator('#lx-login-password');
-    await expect(password).toBeFocused();
+    await expect(username).toBeFocused();
+    await expect(username).toHaveAttribute('autocomplete', 'username');
+    await expect(password).toHaveAttribute('autocomplete', 'current-password');
 
-    // Empty password: inline error, no request.
+    // Nothing typed: inline errors, no request.
+    await page.locator('#lx-login-submit').click();
+    await expect(page.locator('#lx-login-username-error')).toHaveText(
+      'Escribe tu nombre de usuario.',
+    );
+    await username.fill('elvis');
     await page.locator('#lx-login-submit').click();
     await expect(page.locator('#lx-login-password-error')).toHaveText(
       'Escribe tu contraseña.',
     );
     expect(api.calls('POST', '/auth/login')).toHaveLength(0);
 
-    // Wrong password: 401 → specific error, the name stays selected.
+    // Wrong password: the same message as an unknown user.
     await password.fill('incorrecta');
     await page.locator('#lx-login-submit').click();
-    await expect(page.locator('#lx-login-password-error')).toContainText(
-      'La contraseña no es correcta',
-    );
-    await expect(page.locator('#lx-login-name')).toHaveText('Elvis');
+    const neutral = 'El usuario o la contraseña no son correctos';
+    await expect(page.locator('#lx-login-error')).toContainText(neutral);
     await expect(password).toHaveValue('');
     await expect(password).toBeFocused();
-    await expect(password).toHaveAttribute('aria-invalid', 'true');
-
-    // Typing clears the error.
+    await expect(username).toHaveValue('elvis');
+    await username.fill('nadie');
     await password.fill(PASSWORD);
-    await expect(page.locator('#lx-login-password-error')).toHaveCount(0);
+    await page.locator('#lx-login-submit').click();
+    await expect(page.locator('#lx-login-error')).toContainText(neutral);
+
+    // Typing clears the error; the username is any letter case.
+    await username.fill('elvis');
+    await expect(page.locator('#lx-login-error')).toHaveCount(0);
+    await password.fill(PASSWORD);
     await page.locator('#lx-login-submit').click();
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
 
     const logins = api.calls('POST', '/auth/login');
-    expect(logins).toHaveLength(2);
-    expect(logins[1].body).toEqual({displayName: 'Elvis', password: PASSWORD});
+    expect(logins).toHaveLength(3);
+    expect(logins[2].body).toMatchObject({
+      username: 'elvis',
+      password: PASSWORD,
+    });
     // Data calls carry the bearer token.
     await expect
       .poll(() => api.calls('GET', /\/events$/).length)
@@ -285,16 +290,27 @@ test.describe('Gestor logístico · acceso', () => {
     );
   });
 
-  test('«Cambiar» goes back to the people list', async ({page}) => {
-    await mockApi(page);
+  test('«¿Has olvidado tu contraseña?» always answers the same', async ({
+    page,
+  }) => {
+    const api = await mockApi(page);
     await page.goto('/#logistica');
-    await page.locator('.lx-person[data-name="Dailos"]').click();
-    await expect(page.locator('#lx-login-name')).toHaveText('Dailos');
-    await page.locator('#lx-login-change').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await page.locator('#lx-login-username').fill('Yeray');
+    await page.locator('#lx-login-forgot').click();
+    // The username typed so far comes along.
+    await expect(page.locator('#lx-recovery-username')).toHaveValue('Yeray');
+    await page.locator('#lx-recovery-submit').click();
+    await expect(page.locator('#lx-recovery-sent')).toContainText(
+      'Revisa tu correo',
+    );
+    expect(api.calls('POST', '/auth/recovery')[0]?.body).toEqual({
+      username: 'Yeray',
+    });
+    await page.locator('#lx-recovery-done').click();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
   });
 
-  test('the session survives a reload and logout returns to the people list', async ({
+  test('the session survives a reload and logout returns to the login', async ({
     page,
   }) => {
     const api = await mockApi(page);
@@ -312,7 +328,7 @@ test.describe('Gestor logístico · acceso', () => {
     );
 
     await page.locator('#lx-logout').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(await storedSession(page)).toBeNull();
     await expect.poll(() => api.calls('POST', '/auth/logout').length).toBe(1);
     expect(api.calls('POST', '/auth/logout')[0].authorization).toBe(
@@ -321,7 +337,7 @@ test.describe('Gestor logístico · acceso', () => {
 
     // A reload after logout does not bring the session back.
     await page.reload();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
   });
 });
 
@@ -340,13 +356,11 @@ test.describe('Gestor logístico · sesión caducada', () => {
     await expect(page.locator('#lx-session-notice')).toHaveText(
       'Tu sesión ha caducado. Vuelve a entrar para seguir.',
     );
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(await storedSession(page)).toBeNull();
 
     // Signing in again clears the notice and shows the data.
-    await page.locator('.lx-person[data-name="Elvis"]').click();
-    await page.locator('#lx-login-password').fill(PASSWORD);
-    await page.locator('#lx-login-submit').click();
+    await loginAs(page, 'Elvis');
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
     await expect(page.locator('#lx-session-notice')).toHaveCount(0);
     await expect(page.locator('[data-event-id="e1"]')).toBeVisible();
@@ -362,7 +376,7 @@ test.describe('Gestor logístico · sesión caducada', () => {
     await expect(page.locator('#lx-session-notice')).toContainText(
       'Tu sesión ha caducado',
     );
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(await storedSession(page)).toBeNull();
   });
 
@@ -381,7 +395,7 @@ test.describe('Gestor logístico · sesión caducada', () => {
       );
     }, SESSION_KEY);
     await page.goto('/#logistica');
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(api.calls('GET', '/me')).toHaveLength(0);
   });
 });

@@ -16,6 +16,12 @@
  * - Entries are tied to the user and organization that made them; the device
  *   clears them on logout and on switching organization.
  * - `label` is a record name or `noteLabel`, never note text or observations.
+ *
+ * Revisión 1 · E3: a material photo (`media`) queues as a create only (its
+ * device id makes the replay safe). Making a photo main or removing it needs
+ * the server. The resized image (base64, under ~550 KB) lives only in the
+ * entry until it is sent, and at most MEDIA_QUEUE_MAX photos wait on one
+ * device, so the outbox stays small.
  */
 import type {Role, Uuid} from './contracts.ts';
 import {sameValue} from './merge.ts';
@@ -28,7 +34,8 @@ export type OutboxEntity =
   | 'offer'
   | 'warehouse'
   | 'resource'
-  | 'note';
+  | 'note'
+  | 'media';
 
 export const OUTBOX_ENTITIES: readonly OutboxEntity[] = [
   'event',
@@ -39,7 +46,11 @@ export const OUTBOX_ENTITIES: readonly OutboxEntity[] = [
   'warehouse',
   'resource',
   'note',
+  'media',
 ];
+
+/** Photos waiting on one device at most (about 10 MB of resized images). */
+export const MEDIA_QUEUE_MAX = 20;
 
 export type OutboxOp = 'create' | 'update';
 
@@ -93,13 +104,15 @@ export interface OutboxEntry {
 /** The version every record has right after its create. */
 export const CREATED_VERSION = 1;
 
-/** Members queue creates and updates of the outbox types; guests never. */
+/**
+ * Members queue creates and updates of the outbox types (photos: creates
+ * only); guests never.
+ */
 export function canQueue(role: Role, entity: string, op: string): boolean {
-  return (
-    role === 'member' &&
-    (OUTBOX_ENTITIES as readonly string[]).includes(entity) &&
-    (op === 'create' || op === 'update')
-  );
+  if (role !== 'member') return false;
+  if (!(OUTBOX_ENTITIES as readonly string[]).includes(entity)) return false;
+  if (entity === 'media') return op === 'create';
+  return op === 'create' || op === 'update';
 }
 
 const UNRESOLVED: ReadonlySet<OutboxStatus> = new Set([
@@ -108,6 +121,26 @@ const UNRESOLVED: ReadonlySet<OutboxStatus> = new Set([
   'conflict',
   'rejected',
 ]);
+
+/**
+ * Photos still on this device (waiting, being sent, or refused and not yet
+ * discarded), oldest first; only those of one record when `ownerId` is given.
+ */
+export function queuedMedia(
+  entries: readonly OutboxEntry[],
+  ownerId?: Uuid,
+): OutboxEntry[] {
+  return entries
+    .filter(
+      e =>
+        e.entity === 'media' &&
+        UNRESOLVED.has(e.status) &&
+        (ownerId === undefined ||
+          String(e.input.ownerId ?? '').toLowerCase() ===
+            ownerId.toLowerCase()),
+    )
+    .sort((a, b) => a.seq - b.seq);
+}
 
 /** Entries of this user and organization only, in replay order. */
 export function entriesFor(
@@ -336,6 +369,7 @@ export const OUTBOX_ENTITY_NOUN: Record<OutboxEntity, string> = {
   warehouse: 'almacén',
   resource: 'recurso',
   note: 'nota',
+  media: 'foto',
 };
 
 const NEW_WORD: Record<OutboxEntity, string> = {
@@ -347,6 +381,7 @@ const NEW_WORD: Record<OutboxEntity, string> = {
   warehouse: 'Nuevo almacén',
   resource: 'Nuevo recurso',
   note: 'Nueva nota',
+  media: 'Nueva foto',
 };
 
 /**
@@ -375,6 +410,7 @@ const ARTICLE: Record<OutboxEntity, string> = {
   warehouse: 'el',
   resource: 'el',
   note: 'la',
+  media: 'la',
 };
 
 function findLastIndex<T>(list: readonly T[], test: (v: T) => boolean) {

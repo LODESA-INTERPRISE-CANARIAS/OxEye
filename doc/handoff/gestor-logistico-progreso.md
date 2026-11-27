@@ -17,6 +17,8 @@ This file is the map; the log is the detail.
 | 5 Seguimiento + Órdenes de trabajo | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · seguimiento, hipótesis y órdenes de trabajo` |
 | 6 Sin cobertura + Cierre de jornada | Done, reviewed, audited, QA green | `FEAT: Gestor logístico · sin cobertura y cierre de jornada` |
 
+**Revisión 1 (Yeray meeting, 2026-11-27).** E1–E7 and the mock-ups are done on `feat/revision-1`. The plan is `doc/specs/2026-11-27-revision-1.md`; its execution log `doc/specs/2026-11-27-revision-1.log.md` has every decision, the scope extensions and the demo-safe commit. It adds migrations `0007`–`0012` (additive) and `nodemailer@10.6.1`. Yeray reviews the mock-ups (`#logistica/maquetas`, DEV only) and the ten adopted answers at the end.
+
 All six milestones of the plan are delivered. What comes next is the user's call (pilot on the external server, the Elvis demo on 2026-12-02, ideas for later below).
 
 Branch: `feat/gestor-logistico`, published by the user.
@@ -89,7 +91,7 @@ Node 26 runs TypeScript directly. Stack: Hono, zod, postgres.js. PGlite runs the
 
 ### `src/logistics/`
 A lazy module opened from `GameMenu.tsx`.
-- Deep links: `#logistica`, `#logistica/<space>`, `#logistica/calendario/YYYY-MM-DD`.
+- Deep links: `#logistica`, `#logistica/<space>`, `#logistica/calendario/YYYY-MM-DD`. Revisión 1: `#logistica[/<space>[/YYYY-MM-DD]][/ficha/<evento|tarea|persona|empresa|oferta|almacen|recurso|nota|lugar>/<id>]` (each sheet has its own address; parsing in `shell/route.ts`, history in `shell/historyNav.ts`, open-sheet registry in `ui/Sheet.tsx`), and `#logistica/maquetas` in development builds only. Back closes the top sheet; a dirty form asks first.
 - Store: write epochs, a version-aware merge that keeps object identity, and the unsaved-form rescue (`lib/rescue.ts`).
 - Plan: `common/usePlan.ts` is a cached selector.
 - Screens: `hoy/` (+ `NotesCard.tsx`), `calendar/`, `events/`, `tasks/TaskSheet.tsx` (+ `TaskContactField.tsx`, `TaskResourcesField.tsx`), `contacts/` (Personas / Empresas y entidades, reach-out confirmation, share), `catalog/` (offers, comparison, category picker with «Gestionar»), `inventory/` (Inventarios: Propios / Contratados, resource and warehouse sheets), `notes/` (note sheet, `RefPicker`), `common/RecordNotes.tsx` and `common/RecordHistory.tsx` (in every record sheet), `search/` (universal search, venue sheet), `shell/AddMenu.tsx` (grouped «Captura rápida» / «Planificación», with a fallback where the Popover API is missing), `closing/` (Cierre de jornada, M6).
@@ -132,7 +134,7 @@ A lazy module opened from `GameMenu.tsx`.
 - The backend will live on an external server; the choice is pending.
 - Only the name is required. Everything else can be «Pendiente de verificar».
 - Every record carries source, verification, author and time.
-- Certainty grammar: confirmed is solid, planned is an outline, hypothesis is hatched, pending is dotted.
+- Certainty grammar: confirmed is solid, planned is an outline, hypothesis is a dashed accent line with a soft tint and a visible «Hipótesis» label (Revisión 1 replaced the diagonal hatch, hard to read in full sun), pending is dotted.
 - A task's event is optional. Companies are created by name. Multi-day uses `endDate`.
 - PDFs come from the browser's «Guardar como PDF».
 
@@ -226,6 +228,13 @@ Carried from M6 (review, audit, QA, visual):
 `npm run equipo` (branch `chore/acceso-equipo-tunel`) starts the API on loopback, a production build on `127.0.0.1:4173` and a Cloudflare quick tunnel, and prints the `https://….trycloudflare.com/#logistica` address. Pieces: `equipo:api`, `equipo:web`, `equipo:tunel`. Guide: `server/README.md` «Probar con el equipo desde fuera». Testing only; not for the Elvis demo.
 
 ## Pending with the user
+- Revisión 1, before the field day:
+  - Stop the API, then run `npm --prefix server run db:migrate` (0007–0012) and `npm --prefix server run db:seed`. The seed prints Fabián's password once, plus the demo budget.
+  - Fill in the SMTP keys in `server/.env`.
+  - For `npm run equipo`, try `TRUST_PROXY=1`, so the limits see each outside client's IP instead of one shared key. Not verified: check that two phones on mobile data are limited separately.
+  - Have Yeray review the mock-ups and the adopted answers.
+  - Get the supplier privacy text reviewed by a lawyer.
+  - Try the touch long-press on a real phone.
 - Choose the external server. Then update the ADR and the deployment settings: `TRUST_PROXY`, `API_BIND`, `NODE_ENV=production`, `CORS_ORIGINS` and a real password.
 - Install the protected fix in `.claude/skills/oxeye-invariants/SKILL.md`, line 57: the anchor `src/db/schema.ts` becomes `src/db/repository.ts`.
 - Decide whether the first names in `server/src/seed/seed.ts` stay in the public repository.

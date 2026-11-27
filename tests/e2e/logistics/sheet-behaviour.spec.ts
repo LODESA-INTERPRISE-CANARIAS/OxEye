@@ -40,7 +40,7 @@ async function expireOnSave(page: Page, api: MockApi) {
   await expect(page.locator('#lx-session-notice')).toContainText(
     'Tu sesión ha caducado',
   );
-  await expect(page.locator('#lx-login-users')).toBeVisible();
+  await expect(page.locator('#lx-login-form')).toBeVisible();
   await expect(sheet(page)).toHaveCount(0);
 }
 
@@ -89,7 +89,7 @@ test.describe('Gestor logístico · rescate tras caducar la sesión', () => {
     await page.locator('#lx-event-name').fill('Escrito sin guardar');
     api.sessionExpired = true;
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(api.calls('POST', '/events')).toHaveLength(0);
 
     await signInAgain(page, 'Elvis');

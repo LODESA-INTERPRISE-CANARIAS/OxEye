@@ -777,7 +777,7 @@ test.describe('Gestor logístico · sin cobertura · la copia del dispositivo', 
 
     await page.locator('#lx-logout').click();
     await page.locator('#lx-leave-discard').click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     await expect
       .poll(async () => {
         const dump = await deviceDump(page);
@@ -811,7 +811,7 @@ test.describe('Gestor logístico · sin cobertura · la copia del dispositivo', 
     // The session expires: the device keeps Elvis's copy for Elvis.
     api.sessionExpired = true;
     await chip(page).click();
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(
       (await cachedLists(page)).some(r => r.key.startsWith('u-elvis|')),
     ).toBe(true);

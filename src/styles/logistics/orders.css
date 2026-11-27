@@ -240,8 +240,12 @@
   justify-items: start;
 }
 
-/* Certainty grammar: confirmed times solid, planned ones outlined. */
+/* Certainty grammar: confirmed times solid, planned ones outlined.
+   A long time («07:00 → jue 3 dic, 22:30») wraps inside the pill, after the
+   arrow or the comma (the builder glues the rest with no-break spaces), so
+   it never runs over the task title next to it (CAP2). */
 :is(.lx, .lx-print-root) .lx-order__time {
+  max-width: 100%;
   padding: 2px 8px;
   border-radius: 6px;
   border: 1.5px solid var(--ord-heading);
@@ -249,7 +253,9 @@
   color: var(--ord-paper);
   font-size: 13.5px;
   font-weight: 700;
-  white-space: nowrap;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 :is(.lx, .lx-print-root) .lx-order__time.is-planned {
@@ -460,9 +466,23 @@
   fill: CanvasText;
 }
 
+/* Every printed page says where it comes from, which page it is and that
+   Ox Eye does not certify. `--lx-print-foot` («Generado por Ox Eye · 2 dic
+   2026, 18:30») is set while printing (`shell/usePrintTitle.ts`). Browsers
+   without page-margin boxes skip this; the page's own footer still says it. */
 @page lx-order {
   size: A4;
-  margin: 14mm 14mm 16mm;
+  margin: 14mm 14mm 18mm;
+
+  @bottom-center {
+    content: var(--lx-print-foot, 'Generado por Ox Eye') ' · página '
+      counter(page) ' de ' counter(pages)
+      ' · Ox Eye ayuda a decidir; no certifica.';
+    font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif;
+    font-size: 8pt;
+    font-variant-numeric: tabular-nums;
+    color: GrayText;
+  }
 }
 
 @media print {

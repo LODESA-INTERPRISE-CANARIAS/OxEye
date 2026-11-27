@@ -1,7 +1,7 @@
 /**
  * «¿Y si se retrasa?» inside a task sheet: the entry to the hypothesis sheet
- * for this task, and its open (saved, not applied) hypotheses as hatched
- * chips. Computed on the saved plan, never on unsaved edits.
+ * for this task, and its open (saved, not applied) hypotheses as dashed,
+ * labelled chips. Computed on the saved plan, never on unsaved edits.
  */
 import React, {useMemo, useState} from 'react';
 import type {Task} from '../../../shared/logistics/contracts.ts';
@@ -10,6 +10,7 @@ import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, HelpTip, Icon} from '../ui';
 import {canDelay} from './day';
 import {HypothesisSheet, type HypothesisStart} from './HypothesisSheet';
+import {HypothesisTag} from './HypothesisTag';
 import {hypothesisChipLabel} from './text';
 
 export const TaskWhatIf: React.FC<{
@@ -74,7 +75,8 @@ export const TaskWhatIf: React.FC<{
                 id={`lx-task-hypo-${h.id}`}
                 onClick={() => setStart({kind: 'saved', hypothesis: h})}
               >
-                {hypothesisChipLabel(h, today, timeZone)}
+                <HypothesisTag />{' '}
+                <span>{hypothesisChipLabel(h, today, timeZone)}</span>
               </button>
             </li>
           ))}

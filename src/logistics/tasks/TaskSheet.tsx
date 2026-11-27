@@ -39,7 +39,7 @@ import {
   TASK_KINDS,
   TASK_STATUSES,
 } from '../../../shared/logistics/rules.ts';
-import {findCycle} from '../../../shared/logistics/schedule.ts';
+import {dependencyPath} from '../../../shared/logistics/schedule.ts';
 import {
   DEFAULT_TIMEZONE,
   eachDate,
@@ -56,7 +56,9 @@ import {
   WarningList,
   warningsSummary,
 } from '../common/WarningList';
-import {usePlan} from '../common/usePlan';
+import {usePlan, type AcceptedWarning} from '../common/usePlan';
+import {splitAccepted} from '../../../shared/logistics/acceptance.ts';
+import {PhotoThumb} from '../inventory/PhotoThumb';
 import {VerificationChip, DemoChip} from '../events/EventChips';
 import {
   HypothesisSheet,
@@ -106,6 +108,7 @@ import {
   TASK_STATUS_LABEL,
 } from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
+import {cycleText} from './cycle-text';
 import {subsoilAfterMerge} from './subsoil';
 import {SubsoilReviewField, SubsoilReviewValue} from './SubsoilReview';
 import {TaskContactField} from './TaskContactField';
@@ -114,6 +117,7 @@ import {Value} from '../contacts/DirectoryParts';
 import {ReachOut} from '../contacts/ReachOut';
 import {LoadNoteTip} from '../inventory/ResourceParts';
 import {useActions} from '../common/actions';
+import {RenewalMark} from '../offers/RenewalMark';
 import {
   Button,
   Chip,
@@ -473,6 +477,9 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
   const events = useLogisticsStore(s => s.events);
   const plan = usePlan();
   const warnings = plan.byTask.get(task.id) ?? [];
+  const accepted = plan.accepted.filter(a =>
+    a.warning.taskIds.includes(task.id),
+  );
   const event = events.find(e => e.id === task.eventId);
   const {date} = recordSlot(task);
   const deps = task.dependsOn
@@ -502,6 +509,7 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
       }
     >
       <ReadOnlyNotice />
+      <RenewalMark taskId={task.id} />
       <dl className="lx-detail">
         <div>
           <dt>Tipo</dt>
@@ -561,7 +569,7 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
           </div>
         )}
         <div>
-          <dt>Empieza cuando termine</dt>
+          <dt>Depende de que termine</dt>
           <dd>
             {deps.length
               ? deps.map(d => `«${d.title}»`).join(', ')
@@ -586,8 +594,12 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
         </div>
       </dl>
       <TaskResourcesView ids={task.resourceIds ?? []} />
-      {warnings.length > 0 && (
-        <TaskWarnings warnings={warnings} selfId={task.id} />
+      {(warnings.length > 0 || accepted.length > 0) && (
+        <TaskWarnings
+          warnings={warnings}
+          accepted={accepted}
+          selfId={task.id}
+        />
       )}
       <TaskWhatIf task={task} />
       <RecordNotes
@@ -644,6 +656,7 @@ const TaskContactView: React.FC<{contact: {id: string; name: string}}> = ({
 /** The resources a task counts on, each opening its card. */
 const TaskResourcesView: React.FC<{ids: string[]}> = ({ids}) => {
   const all = useLogisticsStore(s => s.resources);
+  const categories = useLogisticsStore(s => s.categories);
   const {openResource} = useActions();
   const list = ids
     .map(id => all.find(r => r.id === id))
@@ -668,11 +681,28 @@ const TaskResourcesView: React.FC<{ids: string[]}> = ({ids}) => {
               className="lx-linkrow"
               onClick={() => openResource(r)}
             >
-              <Icon
-                name={r.ownership === 'owned' ? 'warehouse' : 'building'}
-                size={18}
+              {/* The material's main photo, or its category's icon. */}
+              <PhotoThumb
+                resource={r}
+                categoryName={
+                  categories.find(c => c.id === r.categoryId)?.name ?? null
+                }
+                size="xs"
               />
-              <span className="lx-linkrow__title">{r.name}</span>
+              <span className="lx-linkrow__title">
+                {r.name}
+                {(r.ownership === 'owned' ? r.warehouse : r.company) && (
+                  <span className="lx-linkrow__sub">
+                    <Icon
+                      name={r.ownership === 'owned' ? 'warehouse' : 'building'}
+                      size={13}
+                    />
+                    {r.ownership === 'owned'
+                      ? r.warehouse?.name
+                      : r.company?.name}
+                  </span>
+                )}
+              </span>
               <span className="lx-linkrow__meta lx-num">
                 {quantityLabel(r)}
               </span>
@@ -694,8 +724,9 @@ const TaskResourcesView: React.FC<{ids: string[]}> = ({ids}) => {
 
 const TaskWarnings: React.FC<{
   warnings: ReturnType<typeof planWarnings>;
+  accepted: AcceptedWarning[];
   selfId: string;
-}> = ({warnings, selfId}) => (
+}> = ({warnings, accepted, selfId}) => (
   <section
     className="lx-subsection"
     id="lx-task-warnings"
@@ -705,7 +736,12 @@ const TaskWarnings: React.FC<{
       Avisos para esta tarea
       <HelpTip label="avisos">{WARNINGS_HELP}</HelpTip>
     </h3>
-    <WarningList warnings={warnings} selfId={selfId} />
+    <WarningList
+      warnings={warnings}
+      selfId={selfId}
+      accepted={accepted}
+      id="lx-task-warnings-list"
+    />
   </section>
 );
 
@@ -885,7 +921,10 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
   const liveResources = (list: string[]) =>
     knownResources ? list.filter(id => knownResources.has(id)) : list;
 
-  const warnings = useMemo(() => {
+  // Revisión 1: conflicts the team kept («Mantener ambas») are listed apart
+  // with their reason while the draft still matches what was accepted.
+  const acceptances = useLogisticsStore(s => s.acceptances);
+  const {open: warnings, accepted} = useMemo(() => {
     const draft: PlanTask = {
       id: selfId,
       title: values.title.trim() || 'Esta tarea',
@@ -905,9 +944,13 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       heavyLoad: fromHeavy(values.heavy),
       resourceIds: values.resourceIds,
     };
-    return planWarnings([...others, draft], events, resources).filter(w =>
+    const plan = [...others, draft];
+    const all = planWarnings(plan, events, resources).filter(w =>
       w.taskIds.includes(selfId),
     );
+    return acceptances.length && base
+      ? splitAccepted(all, acceptances, plan)
+      : {open: all, accepted: []};
   }, [
     values,
     draftSlot,
@@ -919,6 +962,8 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     venues,
     companies,
     selfId,
+    acceptances,
+    base,
   ]);
 
   const draftDays = useMemo(() => {
@@ -943,7 +988,11 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
     [others, values.dependsOn, values.eventId, draftDays],
   );
 
-  /** Candidates that would close a loop (they already wait for this task). */
+  /**
+   * Candidates that would close a loop (they already wait for this task,
+   * directly or through others), each with the sentence that names the
+   * chain with the real task titles.
+   */
   const blocked = useMemo(() => {
     const graph = others.map(t => ({
       id: t.id,
@@ -953,21 +1002,16 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
       lane: null,
       dependsOn: t.dependsOn,
     }));
-    const out = new Set<string>();
+    const titles = new Map(others.map(t => [t.id, t.title]));
+    const out = new Map<string, string>();
     for (const c of candidates) {
       if (values.dependsOn.includes(c.id)) continue;
-      const cycle = findCycle([
-        ...graph,
-        {
-          id: selfId,
-          label: '',
-          startsAt: null,
-          endsAt: null,
-          lane: null,
-          dependsOn: [...values.dependsOn, c.id],
-        },
-      ]);
-      if (cycle?.includes(selfId)) out.add(c.id);
+      const path = dependencyPath(graph, c.id, selfId);
+      if (!path) continue;
+      out.set(
+        c.id,
+        cycleText(path.slice(0, -1).map(id => titles.get(id) ?? 'otra tarea')),
+      );
     }
     return out;
   }, [others, candidates, values.dependsOn, selfId]);
@@ -1369,6 +1413,7 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
           void submit(false);
         }}
       >
+        {base && <RenewalMark taskId={base.id} />}
         {merge && (
           <MergeNotice<FormValues>
             idPrefix="lx-task"
@@ -1621,9 +1666,9 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
 
         <fieldset className="lx-deps" id="lx-task-deps">
           <legend className="lx-field__label lx-segmented__legend">
-            Empieza cuando termine…
+            Esta tarea depende de que termine:
             <span className="lx-field__optional">{' '}· opcional</span>
-            <HelpTip label="empieza cuando termine">
+            <HelpTip label="depende de que termine">
               Marca las tareas que tienen que terminar antes de que esta pueda
               empezar. Por ejemplo, el montaje del escenario no puede empezar
               hasta que el camión llegue y descargue. Si esta tarea está puesta
@@ -1694,7 +1739,7 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
                     </label>
                     {isBlocked && (
                       <p className="lx-deps__why" id={`${cid}-why`}>
-                        No se puede: «{c.title}» ya espera a que termine esta.
+                        {blocked.get(c.id)}
                       </p>
                     )}
                   </li>
@@ -1728,17 +1773,26 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
           <p className="lx-visually-hidden" role="status">
             {warningsSummary(warnings)}
           </p>
-          {warnings.length ? (
-            <WarningList warnings={warnings} selfId={selfId} />
-          ) : (
+          {warnings.length === 0 && (
             <p className="lx-muted lx-warnings__none">
-              <Icon name="check" size={16} /> Sin avisos con lo que hay
-              registrado ahora.
+              <Icon name="check" size={16} />{' '}
+              {accepted.length
+                ? 'Sin avisos abiertos: los conflictos que quedan están aceptados.'
+                : 'Sin avisos con lo que hay registrado ahora.'}
             </p>
+          )}
+          {(warnings.length > 0 || accepted.length > 0) && (
+            <WarningList
+              warnings={warnings}
+              selfId={selfId}
+              accepted={accepted}
+              id="lx-task-warnings-list"
+            />
           )}
         </section>
 
         <QualityFields
+          title="Calidad de la tarea"
           idPrefix="lx-task"
           source={values.source}
           verification={values.verification}

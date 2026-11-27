@@ -69,6 +69,15 @@ export const FIELD_LABEL: Readonly<Record<string, string>> = {
   resolved: 'resuelta',
   source: 'origen',
   verification: 'verificación',
+  // Revisión 1 · E2–E3.
+  acronym: 'siglas',
+  openingHours: 'horario',
+  answer: 'respuesta',
+  media: 'fotos',
+  // Revisión 1 · E5 (names only: amounts never reach the history).
+  tax: 'impuesto',
+  concept: 'concepto',
+  amount: 'importe',
 };
 
 /** «hora de inicio, empresa y estado»; unknown names are left out. */
@@ -86,6 +95,21 @@ export function describeChange(
   if (entry.action === 'delete') return 'Lo borró';
   const what = changedFieldsLabel(entry.changedFields);
   return what ? `Cambió ${what}` : 'Lo guardó sin cambios visibles';
+}
+
+/**
+ * Safety audit: who signed a change, «Dailos (soporte: Elvis)» when an
+ * administrator made it in a support session on Dailos's account, or just
+ * «Dailos». For `ActivityEntry` (`user`, `supportBy`) and accepted conflicts
+ * (`acceptedBy`, `acceptedBySupport`).
+ */
+export function signatureLabel(
+  user: {displayName: string},
+  supportBy?: {displayName: string} | null,
+): string {
+  return supportBy
+    ? `${user.displayName} (soporte: ${supportBy.displayName})`
+    : user.displayName;
 }
 
 /**

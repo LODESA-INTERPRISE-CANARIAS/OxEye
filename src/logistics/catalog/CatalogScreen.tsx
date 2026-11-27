@@ -3,14 +3,18 @@
  * category (built-in order, then the organization's own, then «Sin
  * categoría»), with category chips (a horizontal strip on phones) and a
  * search field. Unknown prices say so; withheld prices (guests) say who sees
- * them; unknown extras show as «+ transporte pendiente».
+ * them; unknown extras show as «+ transporte pendiente». A category with at
+ * least two comparable offers has «Comparar» next to its name. E5: prices
+ * are before tax; each row adds its estimate with tax when it is known.
  */
 import React, {useMemo, useState} from 'react';
 import {
   pendingExtras,
+  perUnitLabel,
   priceLabel,
 } from '../../../shared/logistics/catalogue.ts';
 import type {Offer} from '../../../shared/logistics/contracts.ts';
+import {TAX_ESTIMATE_LABEL} from '../../../shared/logistics/rules.ts';
 import {universalSearch} from '../../../shared/logistics/search.ts';
 import {useActions} from '../common/actions';
 import {serviceCategories} from '../lib/directory';
@@ -20,6 +24,7 @@ import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
   EmptyState,
+  HelpTip,
   Icon,
   LoadError,
   Pending,
@@ -27,6 +32,15 @@ import {
   SkeletonRows,
   Withheld,
 } from '../ui';
+import {estimateLine} from '../budget/tax';
+import {
+  COMPARE_HELP,
+  categoriesWithComparison,
+  compareCategory,
+} from './compare';
+import {ApartList, RankedList} from './CompareParts';
+import {useExpiredOffers} from './useExpiredOffers';
+import {ContractingSpace} from '../offers/ContractingSpace';
 
 const NONE = '__none__';
 
@@ -42,7 +56,12 @@ export function extrasHint(offer: Offer): string | null {
   return `+ ${listText(extras)} ${extras.length === 1 ? 'pendiente' : 'pendientes'}`;
 }
 
-export const CatalogScreen: React.FC = () => {
+/** E6–E7: the offers list is the first view of the contracting tabs. */
+export const CatalogScreen: React.FC = () => (
+  <ContractingSpace offers={<CatalogOffers />} />
+);
+
+const CatalogOffers: React.FC = () => {
   const offers = useLogisticsStore(s => s.offers);
   const categories = useLogisticsStore(s => s.categories);
   const state = useLogisticsStore(s => s.offersState);
@@ -51,7 +70,17 @@ export const CatalogScreen: React.FC = () => {
   const {canWrite, openOffer, addOffer} = useActions();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  /** The category whose comparison is open under its name. */
+  const [comparing, setComparing] = useState<string | null>(null);
   const q = query.trim();
+  // Over every offer, as in the offer sheet: a search narrows the list, not
+  // what an offer is compared with.
+  // E6: an offer whose terms expired is never ranked.
+  const expired = useExpiredOffers();
+  const comparable = useMemo(
+    () => categoriesWithComparison(offers, {expired}),
+    [offers, expired],
+  );
 
   const service = useMemo(() => serviceCategories(categories), [categories]);
   const counts = useMemo(() => {
@@ -162,10 +191,39 @@ export const CatalogScreen: React.FC = () => {
         aria-labelledby={`lx-catgroup-${g.id}`}
         data-category-id={g.id}
       >
-        <h3 className="lx-catgroup__title" id={`lx-catgroup-${g.id}`}>
-          {g.name}
-          <span className="lx-count lx-num">{g.items.length}</span>
-        </h3>
+        <div className="lx-catgroup__head">
+          <h3 className="lx-catgroup__title" id={`lx-catgroup-${g.id}`}>
+            {g.name}
+            <span className="lx-count lx-num">{g.items.length}</span>
+          </h3>
+          {comparable.has(g.id) && (
+            <Button
+              size="sm"
+              variant={comparing === g.id ? 'primary' : 'secondary'}
+              icon={comparing === g.id ? 'close' : 'scale'}
+              id={`lx-catgroup-compare-${g.id}`}
+              aria-expanded={comparing === g.id}
+              aria-controls={`lx-catcompare-${g.id}`}
+              aria-label={
+                comparing === g.id
+                  ? `Ocultar la comparación de ${g.name}`
+                  : `Comparar las ofertas de ${g.name}`
+              }
+              onClick={() => setComparing(comparing === g.id ? null : g.id)}
+            >
+              {comparing === g.id ? 'Ocultar' : 'Comparar'}
+            </Button>
+          )}
+        </div>
+        {comparing === g.id && comparable.has(g.id) && (
+          <CategoryCompare
+            categoryId={g.id}
+            categoryName={g.name}
+            offers={offers}
+            expired={expired}
+            onShow={openOffer}
+          />
+        )}
         <ul className="lx-offerlist">
           {g.items.map(o => (
             <li key={o.id}>
@@ -246,12 +304,71 @@ export const CatalogScreen: React.FC = () => {
   );
 };
 
+/**
+ * «Comparar» for one category, opened under its name without entering an
+ * offer: each like-for-like group ranked with medals, the rest listed apart
+ * with the reason. Tapping an offer opens it.
+ */
+const CategoryCompare: React.FC<{
+  categoryId: string;
+  categoryName: string;
+  offers: Offer[];
+  expired: ReadonlySet<string>;
+  onShow: (offer: Offer) => void;
+}> = ({categoryId, categoryName, offers, expired, onShow}) => {
+  const {groups, apart} = useMemo(
+    () => compareCategory(categoryId, offers, {expired}),
+    [categoryId, offers, expired],
+  );
+  const id = `lx-catcompare-${categoryId}`;
+  return (
+    <section className="lx-catcompare" id={id} aria-labelledby={`${id}-title`}>
+      <h4 className="lx-catcompare__title" id={`${id}-title`}>
+        <Icon name="scale" size={18} />
+        Comparar · {categoryName}
+        <HelpTip label="comparar">{COMPARE_HELP}</HelpTip>
+      </h4>
+      {groups.map(g => (
+        <div className="lx-catcompare__group" key={g.key}>
+          <p className="lx-catcompare__scope lx-num">
+            <strong>€ / {perUnitLabel(g.peers[0])}</strong> · con el impuesto de
+            cada una · estimación · la más barata primero
+          </p>
+          <RankedList
+            peers={g.peers}
+            estimates={g.estimates}
+            ranks={g.ranks}
+            onShow={onShow}
+          />
+        </div>
+      ))}
+      <ApartList
+        items={apart}
+        title="No se ordenan"
+        onShow={onShow}
+        id={`${id}-apart`}
+      />
+    </section>
+  );
+};
+
 export const OfferRow: React.FC<{
   offer: Offer;
   onOpen: (offer: Offer) => void;
 }> = ({offer, onOpen}) => {
   const price = priceLabel(offer);
   const extras = extrasHint(offer);
+  // E5: one short line on how the price reads with tax.
+  const line = offer.restricted ? null : estimateLine(offer);
+  const taxHint = !line
+    ? null
+    : line.kind === 'estimate'
+      ? `≈ ${line.amount} con impuestos · ${TAX_ESTIMATE_LABEL}`
+      : line.kind === 'included'
+        ? 'impuestos incluidos'
+        : offer.vatIncluded === null
+          ? 'impuestos sin verificar'
+          : 'sin impuestos';
   return (
     <button
       type="button"
@@ -277,6 +394,11 @@ export const OfferRow: React.FC<{
             <Pending>Precio pendiente de verificar</Pending>
           )}
         </span>
+        {taxHint && (
+          <span className="lx-offerrow__tax lx-num" data-offer-tax>
+            {taxHint}
+          </span>
+        )}
         {extras && <span className="lx-offerrow__extras">{extras}</span>}
       </span>
       <Icon name="chevronRight" size={18} className="lx-offerrow__chev" />

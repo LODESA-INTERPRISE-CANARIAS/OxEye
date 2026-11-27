@@ -10,6 +10,7 @@ import {
   today,
   type MockApi,
 } from './mock-api';
+import {expectValue} from './controls';
 
 /**
  * Gestor logístico, milestone 1: creating and editing events, the version
@@ -159,7 +160,7 @@ test.describe('Gestor logístico · crear evento', () => {
     await expect(sheet(page)).toBeVisible();
     await expect(name).toHaveValue('');
     await expect(name).toBeFocused();
-    await expect(page.locator('#lx-event-date')).toHaveValue(tomorrow);
+    await expectValue(page, 'lx-event-date', tomorrow);
     expect(lastCreateBody(api).name).toBe('Vallas lado norte');
 
     // Typing the next one hides the notice; «Guardar» then closes.
@@ -219,7 +220,7 @@ test.describe('Gestor logístico · crear evento', () => {
     await expect(page.locator('#lx-session-notice')).toContainText(
       'Tu sesión ha caducado',
     );
-    await expect(page.locator('#lx-login-users')).toBeVisible();
+    await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(api.calls('POST', '/events')).toHaveLength(1);
     expect(api.events.some(e => e.name === 'Guardado tras caducar')).toBe(
       false,

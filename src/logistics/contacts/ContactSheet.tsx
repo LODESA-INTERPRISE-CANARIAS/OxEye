@@ -957,6 +957,7 @@ const ContactForm: React.FC<{
         </Field>
 
         <QualityFields
+          title="Calidad del contacto"
           idPrefix="lx-contact"
           source={values.source}
           verification={values.verification}

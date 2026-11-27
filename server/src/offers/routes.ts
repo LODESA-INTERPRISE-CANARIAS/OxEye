@@ -1,7 +1,7 @@
 import type {Hono, MiddlewareHandler} from 'hono';
 import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
-import {requireMembership} from '../organizations/service.ts';
+import {requireAccess} from '../organizations/service.ts';
 import {parseVersionParam} from '../records/schemas.ts';
 import {createOfferSchema, updateOfferSchema} from './schemas.ts';
 import {createOffer, deleteOffer, listOffers, updateOffer} from './service.ts';
@@ -14,7 +14,13 @@ export function registerOfferRoutes(
 ): void {
   api.get('/organizations/:orgId/offers', auth, async c => {
     const user = c.get('user');
-    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
+    // E4: Catálogo needs `directory.read` (never the guest account).
+    const org = await requireAccess(
+      deps.db,
+      user,
+      c.req.param('orgId'),
+      'directory.read',
+    );
     const body: ListResponse<Offer> = {
       items: await listOffers(deps.db, org.id, user),
     };

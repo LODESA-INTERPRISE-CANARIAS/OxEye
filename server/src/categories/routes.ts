@@ -1,7 +1,7 @@
 import type {Hono, MiddlewareHandler} from 'hono';
 import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
-import {requireMembership} from '../organizations/service.ts';
+import {hasAccess, requireMembership} from '../organizations/service.ts';
 import {createCategorySchema} from './schemas.ts';
 import {createCategory, deleteCategory, listCategories} from './service.ts';
 import type {
@@ -15,13 +15,14 @@ export function registerCategoryRoutes(
   auth: MiddlewareHandler<AppEnv>,
 ): void {
   api.get('/organizations/:orgId/categories', auth, async c => {
-    const org = await requireMembership(
-      deps.db,
-      c.get('user').id,
-      c.req.param('orgId'),
-    );
+    const user = c.get('user');
+    const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
+    // E4: without the directory only the inventory's categories are listed.
+    const all = await listCategories(deps.db, org.id);
     const body: ListResponse<Category> = {
-      items: await listCategories(deps.db, org.id),
+      items: hasAccess(org, user, 'directory.read')
+        ? all
+        : all.filter(cat => cat.scope === 'resource'),
     };
     return c.json(body);
   });

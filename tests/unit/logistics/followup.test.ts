@@ -1,7 +1,9 @@
 import {describe, expect, it} from 'vitest';
 import {
   planWarnings,
+  ROUTES_NO_LONGER_COINCIDES,
   ROUTES_REMINDER,
+  UNSOLVED_BY_MOVING,
   type PlanEvent,
   type PlanTask,
 } from '../../../shared/logistics/conflicts';
@@ -275,6 +277,129 @@ describe('follow-up · delay analysis', () => {
     expect(routes?.detail).toBe(ROUTES_REMINDER);
     expect(routes?.detail).toMatch(/Carpa Amarilla/);
     expect(a.newWarnings).toContainEqual(routes);
+  });
+
+  it('every moved vehicle, load-bearing or heavy task gets the routes reminder, inside the event or not', () => {
+    // 10 min: nothing reaches the event window, both moved tasks still get it.
+    const a = analyzeDelay({
+      tasks: plan(),
+      events: [evento],
+      rootId: 'camion',
+      minutes: 10,
+    });
+    expect(a.routeReminders.map(w => w.key)).toEqual([
+      'routes-moved:camion',
+      'routes-moved:descarga',
+    ]);
+    for (const w of a.routeReminders) expect(w.detail).toBe(ROUTES_REMINDER);
+    // An activity without heavy load is not a routes check.
+    const feria = analyzeDelay({
+      tasks: plan(),
+      events: [evento],
+      rootId: 'feria',
+      minutes: 10,
+    });
+    expect(feria.routeReminders).toEqual([]);
+    // A known heavy load of any kind is.
+    const heavy = analyzeDelay({
+      tasks: [timed('tanque', '09:00', '09:30', {heavyLoad: true})],
+      rootId: 'tanque',
+      minutes: 15,
+    });
+    expect(heavy.routeReminders.map(w => w.key)).toEqual([
+      'routes-moved:tanque',
+    ]);
+  });
+
+  it('delaying out of the event never «clears» the routes: it is relabelled and kept', () => {
+    // «descarga» runs into the event (11:00–11:30 → 12:15–12:45 with 75 min).
+    const into = analyzeDelay({
+      tasks: plan(),
+      events: [evento],
+      rootId: 'camion',
+      minutes: 75,
+    });
+    expect(into.routeReminders.map(w => w.key)).toContain('routes:descarga');
+    // A long delay pushes «camion» past the event's end (20:00).
+    const late = [
+      timed('camion', '19:30', '19:50', {
+        kind: 'delivery',
+        eventId: evento.id,
+        venue: adelantado,
+      }),
+    ];
+    expect(planWarnings(late, [evento]).map(w => w.key)).toContain(
+      'routes:camion',
+    );
+    const out = analyzeDelay({
+      tasks: late,
+      events: [evento],
+      rootId: 'camion',
+      minutes: 60,
+    });
+    expect(out.clearedWarnings).toEqual([]);
+    expect(out.routeReminders).toEqual([
+      expect.objectContaining({
+        key: 'routes-moved:camion',
+        kind: 'route_window',
+        title: `«camion»: ${ROUTES_NO_LONGER_COINCIDES}`,
+        detail: ROUTES_REMINDER,
+      }),
+    ]);
+    // Heavy-load reminders never appear among the cleared ones either.
+    for (const a of [into, out]) {
+      expect(a.clearedWarnings.some(w => UNSOLVED_BY_MOVING.has(w.kind))).toBe(
+        false,
+      );
+    }
+  });
+
+  it('keeps the subsoil reminder of every moved heavy or unknown load, never as cleared', () => {
+    const tasks = [
+      timed('escenario', '09:00', '11:00', {kind: 'assembly', heavyLoad: true}),
+      timed('generador', '11:00', '12:00', {
+        kind: 'delivery',
+        heavyLoad: null,
+        dependsOn: ['escenario'],
+      }),
+      timed('revisado', '12:00', '13:00', {
+        kind: 'assembly',
+        heavyLoad: true,
+        subsoilReview: {at: at('08:00'), by: {id: 'u1', displayName: 'Ana'}},
+        dependsOn: ['generador'],
+      }),
+      // Not moved: its reminder is not repeated here.
+      timed('lastre', '15:00', '16:00', {kind: 'assembly', heavyLoad: true}),
+    ];
+    const a = analyzeDelay({tasks, rootId: 'escenario', minutes: 30});
+    expect(a.impact.shifted.map(s => s.id)).toEqual([
+      'escenario',
+      'generador',
+      'revisado',
+    ]);
+    // A declared review stays valid: a delay changes the time, not the place.
+    expect(a.subsoilReminders.map(w => w.key)).toEqual([
+      'heavy:escenario',
+      'heavy-unknown:generador',
+    ]);
+    for (const w of a.subsoilReminders) {
+      expect(w.kind === 'heavy_load' || w.kind === 'heavy_load_unknown').toBe(
+        true,
+      );
+    }
+    expect(
+      a.subsoilReminders.find(w => w.key === 'heavy:escenario')?.detail,
+    ).toContain('500 kg/m²');
+    expect(a.clearedWarnings.some(w => UNSOLVED_BY_MOVING.has(w.kind))).toBe(
+      false,
+    );
+    // A light task moving has none.
+    const light = analyzeDelay({
+      tasks: [timed('mesas', '09:00', '10:00', {kind: 'other'})],
+      rootId: 'mesas',
+      minutes: 30,
+    });
+    expect(light.subsoilReminders).toEqual([]);
   });
 
   it('reports the margin left before the event, negative when it runs into it', () => {

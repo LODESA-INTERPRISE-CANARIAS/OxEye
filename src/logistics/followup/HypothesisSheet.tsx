@@ -1,7 +1,7 @@
 /**
  * «¿Y si…?»: what happens to the plan if a task starts later or takes
  * longer. Everything shown is computed by `analyzeDelay` (shared) on the
- * plan in the store, inside a hatched panel labelled «Hipótesis: no cambia
+ * plan in the store, inside a dashed panel labelled «Hipótesis: no cambia
  * el plan». Nothing is written until a member confirms «Aplicar al plan»,
  * and then only times move (plus «Con retraso» if ticked); the server
  * recomputes the shift and refuses it if the plan changed in between.
@@ -40,7 +40,7 @@ import {useActions} from '../common/actions';
 import {TaskStatusChip} from '../common/TaskChips';
 import {WarningList} from '../common/WarningList';
 import {instantShort} from '../lib/format';
-import {taskZone} from '../lib/tasks';
+import {subsoilMovedHelp, taskZone} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -845,6 +845,13 @@ const MovedRow: React.FC<{
   );
 };
 
+/** Same wording as the move sheet: the reminder is fixed, never a «safe» verdict. */
+const HYPOTHESIS_ROUTES_HELP =
+  'El Gestor no conoce el trazado de las rutas de emergencia (A, acceso de vehículos; B, sanitarios a pie; C, evacuación en camilla) ni el de la Carpa Amarilla. Este recordatorio aparece siempre que la hipótesis mueve una tarea con vehículos o carga: revisa la nueva hora en el simulador. No indica que la nueva hora sea segura.';
+
+/** Built from SUBSOIL_THRESHOLD_NOTE: indicative, never a certified limit. */
+const HYPOTHESIS_SUBSOIL_HELP = subsoilMovedHelp('Retrasar la tarea');
+
 const Block: React.FC<{
   id: string;
   title: string;
@@ -975,8 +982,19 @@ const Results: React.FC<{
           id="lx-hypo-routes"
           title="Rutas de emergencia y Carpa Amarilla"
           className="lx-hypo-routes"
+          help={HYPOTHESIS_ROUTES_HELP}
         >
           <WarningList warnings={analysis.routeReminders} />
+        </Block>
+      )}
+      {analysis.subsoilReminders.length > 0 && (
+        <Block
+          id="lx-hypo-subsoil"
+          title="Subsuelo"
+          className="lx-hypo-routes"
+          help={HYPOTHESIS_SUBSOIL_HELP}
+        >
+          <WarningList warnings={analysis.subsoilReminders} />
         </Block>
       )}
 
@@ -1083,6 +1101,15 @@ const ConfirmStep: React.FC<{
             Rutas de emergencia y Carpa Amarilla
           </p>
           <WarningList warnings={analysis.routeReminders} />
+        </div>
+      )}
+      {analysis.subsoilReminders.length > 0 && (
+        <div
+          className="lx-hypo-block lx-hypo-routes"
+          id="lx-hypo-confirm-subsoil"
+        >
+          <p className="lx-hypo-block__title">Subsuelo</p>
+          <WarningList warnings={analysis.subsoilReminders} />
         </div>
       )}
       <p className="lx-hypo-confirm__keep" id="lx-hypo-confirm-keep">

@@ -1,0 +1,31 @@
+import {z} from 'zod';
+import type {Hono, MiddlewareHandler} from 'hono';
+import type {AppEnv, Deps} from '../http/env.ts';
+import {jsonBody} from '../http/validate.ts';
+import {acronym, versionField} from '../records/schemas.ts';
+import {updateOrganization} from './service.ts';
+
+/** OrganizationInput (Revisión 1 · E2): only the acronym is editable. */
+const updateOrganizationSchema = z.object({
+  version: versionField('los datos de la organización'),
+  acronym,
+});
+
+/** Organization settings (members only; guests get 403 from auth). */
+export function registerOrganizationRoutes(
+  api: Hono<AppEnv>,
+  deps: Deps,
+  auth: MiddlewareHandler<AppEnv>,
+): void {
+  api.patch('/organizations/:orgId', auth, async c => {
+    const input = await jsonBody(c, updateOrganizationSchema);
+    const org = await updateOrganization(
+      deps.db,
+      c.get('user'),
+      c.req.param('orgId'),
+      input,
+      deps.now(),
+    );
+    return c.json(org);
+  });
+}

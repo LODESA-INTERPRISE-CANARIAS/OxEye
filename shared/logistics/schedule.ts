@@ -122,6 +122,44 @@ export function findCycle(items: ScheduleItem[]): Uuid[] | null {
 }
 
 /**
+ * Shortest chain of finish-to-start links from `fromId` to `toId`, following
+ * `dependsOn` (each item waits for the next one): `[fromId, …, toId]`, or
+ * null when `fromId` does not wait for `toId`, directly or through others.
+ * Making `toId` wait for `fromId` would close a loop exactly when this is not
+ * null, and the chain is the loop to explain to the user. Ids that are not
+ * among `items` (deleted tasks) are skipped.
+ */
+export function dependencyPath(
+  items: ScheduleItem[],
+  fromId: Uuid,
+  toId: Uuid,
+): Uuid[] | null {
+  if (fromId === toId) return [fromId];
+  const deps = new Map(items.map(i => [i.id, i.dependsOn]));
+  const previous = new Map<Uuid, Uuid>([[fromId, fromId]]);
+  const queue: Uuid[] = [fromId];
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const next of deps.get(id) ?? []) {
+      if (previous.has(next) || (!deps.has(next) && next !== toId)) continue;
+      previous.set(next, id);
+      if (next === toId) {
+        const path: Uuid[] = [toId];
+        let at = id;
+        while (at !== fromId) {
+          path.push(at);
+          at = previous.get(at)!;
+        }
+        path.push(fromId);
+        return path.reverse();
+      }
+      queue.push(next);
+    }
+  }
+  return null;
+}
+
+/**
  * Minutes between the latest end of an item's predecessors and its start.
  * Null if the item or every predecessor lacks times. Negative means the plan
  * already violates the dependency.
@@ -144,9 +182,12 @@ export function slackMinutes(items: ScheduleItem[], id: Uuid): number | null {
 export interface ShiftedItem {
   id: Uuid;
   label: string;
-  /** Minutes the start moves later (0 for the root of an `extend`). */
+  /**
+   * Minutes the start moves later (0 for the root of an `extend`; negative
+   * for the root of an earlier move, E2).
+   */
   deltaMinutes: number;
-  /** Minutes the end moves later (> 0). */
+  /** Minutes the end moves later (> 0; negative for an earlier move). */
   endDeltaMinutes: number;
   startsAt: IsoInstant;
   endsAt: IsoInstant;
@@ -315,4 +356,59 @@ export function simulateDelay(
   );
 
   return {rootId, delayMinutes, shifted, absorbed, newOverlaps, unknown};
+}
+
+/**
+ * E2: the effect of moving `rootId` by `minutes` (signed), for a calendar
+ * drag or a conflict exit. Later (> 0) is exactly a `shift` delay
+ * (`simulateDelay`): successors that run out of slack move too. Earlier
+ * (< 0) moves only the root: its successors are never pulled earlier (their
+ * slack grows), and a predecessor it now starts before shows up as a plan
+ * warning, not as a move. A fixed or cancelled root, an unknown root and
+ * zero minutes move nothing; fixed items never move. `delayMinutes` of the
+ * result is the signed `minutes`. Pure.
+ */
+export function simulateMove(
+  items: ScheduleItem[],
+  rootId: Uuid,
+  minutes: number,
+): DelayImpact {
+  const root = items.find(i => i.id === rootId);
+  const empty: DelayImpact = {
+    rootId,
+    delayMinutes: minutes,
+    shifted: [],
+    absorbed: [],
+    newOverlaps: [],
+    unknown: [],
+  };
+  if (!root || root.fixed || root.cancelled || !Number.isFinite(minutes)) {
+    return empty;
+  }
+  if (minutes === 0) return empty;
+  if (!scheduled(root)) return {...empty, unknown: [rootId]};
+  if (minutes > 0) return simulateDelay(items, rootId, minutes, 'shift');
+
+  const startsAt = iso(toMs(root.startsAt) + minutes * MIN);
+  const endsAt = iso(toMs(root.endsAt) + minutes * MIN);
+  const hypothetical = items.map(it =>
+    it.id === rootId ? {...it, startsAt, endsAt} : it,
+  );
+  const key = (o: Overlap) => [o.a, o.b].sort().join('|') + '@' + o.lane;
+  const before = new Set(findOverlaps(items).map(key));
+  return {
+    ...empty,
+    shifted: [
+      {
+        id: rootId,
+        label: root.label,
+        deltaMinutes: minutes,
+        endDeltaMinutes: minutes,
+        startsAt,
+        endsAt,
+        slackBefore: slackMinutes(items, rootId),
+      },
+    ],
+    newOverlaps: findOverlaps(hypothetical).filter(o => !before.has(key(o))),
+  };
 }

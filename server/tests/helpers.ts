@@ -5,16 +5,17 @@
  */
 import {createApp} from '../src/app.ts';
 import type {AppOptions} from '../src/app.ts';
+import {NO_MAIL} from '../src/config.ts';
 import type {Config} from '../src/config.ts';
 import type {Db} from '../src/db/db.ts';
 import {migrate} from '../src/db/migrate.ts';
 import {createPgliteDb} from '../src/db/pglite.ts';
+import {createMemoryTransport} from '../src/mail/transport.ts';
+import type {MailMessage} from '../src/mail/transport.ts';
+import type {OrgRecord} from '../src/organizations/service.ts';
 import {seed} from '../src/seed/seed.ts';
 import type {SeedResult} from '../src/seed/seed.ts';
-import type {
-  LoginResponse,
-  Organization,
-} from '../../shared/logistics/contracts.ts';
+import type {LoginResponse} from '../../shared/logistics/contracts.ts';
 
 export const TEST_ORIGIN = 'http://localhost:5173';
 
@@ -27,6 +28,7 @@ export const testConfig: Config = {
   nodeEnv: 'test',
   migrateOnStart: false,
   trustProxyHops: 0,
+  mail: NO_MAIL,
 };
 
 export const passwordFor = (name: string) => `pw-${name.toLowerCase()}-1234`;
@@ -65,8 +67,10 @@ export interface Harness {
   db: Db;
   app: App;
   clock: Clock;
-  org: Organization;
+  org: OrgRecord;
   seeded: SeedResult;
+  /** E4: account e-mails "sent" by `app` (nothing leaves the test). */
+  mail: MailMessage[];
   request: (
     method: string,
     path: string,
@@ -83,12 +87,14 @@ export interface Harness {
 export async function createHarness(): Promise<Harness> {
   const clock = createClock();
   const {db, seeded} = await createSeededDb(clock);
+  const transport = createMemoryTransport();
   const newApp = (overrides: Partial<AppOptions> = {}) =>
     createApp({
       db,
       config: testConfig,
       now: clock.now,
       clientIp: c => c.req.header('x-test-ip') ?? '10.0.0.1',
+      mail: transport,
       ...overrides,
     });
   const app = newApp();
@@ -109,7 +115,7 @@ export async function createHarness(): Promise<Harness> {
 
   const login: Harness['login'] = async (displayName, ip) => {
     const res = await request('POST', '/auth/login', {
-      body: {displayName, password: passwordFor(displayName)},
+      body: {username: displayName, password: passwordFor(displayName)},
       headers: ip ? {'x-test-ip': ip} : {},
     });
     if (res.status !== 200) {
@@ -124,6 +130,7 @@ export async function createHarness(): Promise<Harness> {
     clock,
     org: seeded.organization,
     seeded,
+    mail: transport.sent,
     request,
     login,
     newApp,

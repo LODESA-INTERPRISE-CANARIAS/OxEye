@@ -3,9 +3,21 @@ import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
 import {requireMembership} from '../organizations/service.ts';
 import {parseVersionParam} from '../records/schemas.ts';
-import {createNoteSchema, updateNoteSchema} from './schemas.ts';
-import {createNote, deleteNote, listNotes, updateNote} from './service.ts';
-import type {ListResponse, Note} from '../../../shared/logistics/contracts.ts';
+import {viewerIn} from '../records/redact.ts';
+import {answerSchema, createNoteSchema, updateNoteSchema} from './schemas.ts';
+import {
+  createAnswer,
+  createNote,
+  deleteNote,
+  listAnswers,
+  listNotes,
+  updateNote,
+} from './service.ts';
+import type {
+  ListResponse,
+  Note,
+  NoteAnswer,
+} from '../../../shared/logistics/contracts.ts';
 
 export function registerNoteRoutes(
   api: Hono<AppEnv>,
@@ -16,7 +28,7 @@ export function registerNoteRoutes(
     const user = c.get('user');
     const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
     const body: ListResponse<Note> = {
-      items: await listNotes(deps.db, org.id, user),
+      items: await listNotes(deps.db, org.id, viewerIn(user, org)),
     };
     return c.json(body);
   });
@@ -37,6 +49,27 @@ export function registerNoteRoutes(
       deps.now(),
     );
     return c.json(note);
+  });
+
+  // Revisión 1 · E3: answers to open questions (guests read them without
+  // the text; writing gets 403 from auth).
+  api.get('/notes/:id/answers', auth, async c => {
+    const body: ListResponse<NoteAnswer> = {
+      items: await listAnswers(deps.db, c.get('user'), c.req.param('id')),
+    };
+    return c.json(body);
+  });
+
+  api.post('/notes/:id/answers', auth, async c => {
+    const input = await jsonBody(c, answerSchema);
+    const answer = await createAnswer(
+      deps.db,
+      c.get('user'),
+      c.req.param('id'),
+      input,
+      deps.now(),
+    );
+    return c.json(answer, 201);
   });
 
   api.delete('/notes/:id', auth, async c => {

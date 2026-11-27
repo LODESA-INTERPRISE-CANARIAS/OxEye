@@ -14,6 +14,15 @@ import {
   isValidAmount,
   PHONE_MAX,
 } from '../../../shared/logistics/rules.ts';
+import {
+  ACRONYM_MAX,
+  acronymProblem,
+} from '../../../shared/logistics/acronym.ts';
+import {
+  OPENING_HOURS_INVALID,
+  openingHoursProblem,
+} from '../../../shared/logistics/move.ts';
+import type {OpeningHours} from '../../../shared/logistics/contracts.ts';
 
 export const NAME_MAX = 200;
 export const NOTES_MAX = 5000;
@@ -103,6 +112,52 @@ export const verification = oneOf(
   ['draft', 'to_verify', 'validated'],
   'Verificación no válida: usa borrador, por verificar o validado.',
 ).optional();
+
+/**
+ * Revisión 1 · E2: an acronym as edited («SCLL», «A.M.»); blank becomes null
+ * (the UI then proposes one). Same rule as the forms (`acronymProblem`).
+ */
+export const acronym = z
+  .string({error: 'Debe ser un texto.'})
+  .max(100, {error: `Como mucho ${ACRONYM_MAX} caracteres.`})
+  .transform(v => v.trim())
+  .superRefine((v, ctx) => {
+    const problem = acronymProblem(v);
+    if (problem) ctx.addIssue({code: 'custom', message: problem});
+  })
+  .transform(v => (v === '' ? null : v))
+  .nullable()
+  .optional();
+
+/**
+ * Revisión 1 · E2: daily opening hours {opensAt, closesAt} (HH:MM, opening
+ * before closing) or null when not known. Any problem is reported on the
+ * field itself (`openingHoursProblem`).
+ */
+export const openingHours = z
+  .unknown()
+  .transform((value, ctx): OpeningHours | null | undefined => {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const shape = z
+      .object({opensAt: z.string(), closesAt: z.string()})
+      .safeParse(value);
+    if (!shape.success) {
+      ctx.addIssue({code: 'custom', message: OPENING_HOURS_INVALID});
+      return z.NEVER;
+    }
+    const hours = {
+      opensAt: shape.data.opensAt,
+      closesAt: shape.data.closesAt,
+    };
+    const problem = openingHoursProblem(hours);
+    if (problem) {
+      ctx.addIssue({code: 'custom', message: problem});
+      return z.NEVER;
+    }
+    return hours;
+  })
+  .optional();
 
 const VERSION_INT = 'La versión debe ser un número entero.';
 

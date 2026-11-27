@@ -14,6 +14,7 @@ import {
   versionField,
 } from '../records/schemas.ts';
 import {deviceIdField} from '../records/device-id.ts';
+import {taxField} from '../budget/tax.ts';
 import {CUSTOM_UNIT_MAX, PRICE_UNITS} from '../../../shared/logistics/rules.ts';
 
 const unit = oneOf(
@@ -40,6 +41,8 @@ const common = {
     })
     .nullable()
     .optional(),
+  // Revisión 1 · E5: the offer's own tax (null = inherit the company's).
+  tax: taxField,
   source,
   verification,
 };

@@ -1,7 +1,7 @@
 /**
  * Chips with OxEye's visual grammar for the certainty of data:
- * confirmed = solid, planned = outlined, hypothesis = diagonal hatch,
- * pending = dotted marker («Pendiente de verificar»).
+ * confirmed = solid, planned = outlined, hypothesis = dashed line with a soft
+ * tint and its own label, pending = dotted marker («Pendiente de verificar»).
  */
 import React from 'react';
 import {Icon} from './icons';
@@ -21,7 +21,8 @@ export const CERTAINTY_LABEL: Record<Certainty, string> = {
 export const CERTAINTY_HELP: Record<Certainty, string> = {
   confirmed: 'Relleno: dato confirmado.',
   planned: 'Contorno: previsto, aún sin confirmar.',
-  hypothesis: 'Rayado: hipótesis de trabajo; no cambia el plan real.',
+  hypothesis:
+    'Borde discontinuo y tono suave: hipótesis de trabajo; no cambia el plan real.',
   pending: 'Punteado: falta comprobarlo con la fuente.',
 };
 

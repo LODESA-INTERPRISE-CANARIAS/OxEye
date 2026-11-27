@@ -183,16 +183,11 @@
   color: var(--lx-heading);
 }
 
-/* Hypothesis: diagonal hatch */
+/* Hypothesis: dashed line and soft tint (readable in full sun); the chip's
+   text says what it is («Hipótesis», «Aún por evaluar»). */
 .lx .lx-chip--hypothesis {
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      var(--lx-hatch-color) 0 2px,
-      transparent 2px 6px
-    ),
-    var(--lx-surface);
-  border-color: color-mix(in srgb, var(--chip-c) 60%, transparent);
+  background: color-mix(in srgb, var(--chip-c) 10%, var(--lx-surface));
+  border: 1.5px dashed var(--chip-c);
   color: var(--lx-heading);
 }
 
@@ -350,6 +345,10 @@
 /* ============================================================ fields */
 .lx .lx-field {
   display: grid;
+  /* Fields in a row stay level: one with a hint or error only grows below. */
+  align-content: start;
+  /* One column no wider than the field: a long value cuts with «…». */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
 }

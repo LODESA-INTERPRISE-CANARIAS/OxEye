@@ -57,7 +57,15 @@ export function isLoadBearing(kind: TaskKind): boolean {
   return LOAD_BEARING_KINDS.has(kind);
 }
 
-export const HEAVY_LOAD_HELP = `Escenarios, generadores, depósitos de agua o lastres pesan mucho sobre el suelo. Si la respuesta es «Sí», revisa el subsuelo en el simulador de OxEye (análisis de rayos X): ${SUBSOIL_THRESHOLD_NOTE} «No lo sé» queda como pendiente de verificar; nunca se da por ligera.`;
+export const HEAVY_LOAD_HELP = `Escenarios, generadores, depósitos de agua o lastres pesan mucho sobre el suelo. Si la respuesta es «Sí», revisa el subsuelo en el simulador de Ox Eye (análisis de rayos X): ${SUBSOIL_THRESHOLD_NOTE} «No lo sé» queda como pendiente de verificar; nunca se da por ligera.`;
+
+/**
+ * `?` help of the «Subsuelo» block of a change-of-times preview (a move, a
+ * «¿Y si…?»): `change` is what the person is doing, e.g. «Mover la tarea».
+ */
+export function subsoilMovedHelp(change: string): string {
+  return `Las cargas pesadas siguen necesitando la revisión del subsuelo en el simulador. ${SUBSOIL_THRESHOLD_NOTE} ${change} no cambia la carga ni la revisión declarada.`;
+}
 
 /** Local slot of a task or event, as forms and labels show it. */
 export interface RecordSlot {

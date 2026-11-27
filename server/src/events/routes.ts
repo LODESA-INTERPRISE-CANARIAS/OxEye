@@ -2,6 +2,7 @@ import type {Hono, MiddlewareHandler} from 'hono';
 import type {AppEnv, Deps} from '../http/env.ts';
 import {jsonBody} from '../http/validate.ts';
 import {requireMembership} from '../organizations/service.ts';
+import {viewerIn} from '../records/redact.ts';
 import {createEventSchema, updateEventSchema} from './schemas.ts';
 import {createEvent, listEvents, updateEvent} from './service.ts';
 import type {
@@ -18,7 +19,7 @@ export function registerEventRoutes(
     const user = c.get('user');
     const org = await requireMembership(deps.db, user.id, c.req.param('orgId'));
     const body: ListResponse<LogisticsEvent> = {
-      items: await listEvents(deps.db, org.id, user),
+      items: await listEvents(deps.db, org.id, viewerIn(user, org)),
     };
     return c.json(body);
   });

@@ -4,10 +4,12 @@
  */
 import type {Queryable} from '../db/db.ts';
 import {toIso} from '../db/db.ts';
+import {supportByFor} from '../http/acting.ts';
 import type {
   ActivityAction,
   ActivityEntry,
   ChangesResponse,
+  MoveOrigin,
 } from '../../../shared/logistics/contracts.ts';
 
 export interface ActivityInput {
@@ -20,8 +22,15 @@ export interface ActivityInput {
   changedFields?: string[];
   at: Date;
   isDemo?: boolean;
+  /** Revisión 1 · E2: the confirmed move that wrote this task update. */
+  origin?: MoveOrigin;
 }
 
+/**
+ * Safety audit: a row signed by the account of a support session also keeps
+ * the administrator behind it (`support_by`, from the request; see
+ * http/acting.ts), so no caller can forget it.
+ */
 export async function appendActivity(
   db: Queryable,
   entry: ActivityInput,
@@ -29,8 +38,8 @@ export async function appendActivity(
   await db.query(
     `INSERT INTO activity_log
        (organization_id, user_id, entity_type, entity_id, entity_label, action,
-        changed_fields, at, is_demo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::timestamptz, $9)`,
+        changed_fields, at, is_demo, move_origin, support_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::timestamptz, $9, $10, $11)`,
     [
       entry.organizationId,
       entry.userId,
@@ -41,6 +50,8 @@ export async function appendActivity(
       JSON.stringify(entry.changedFields ?? []),
       entry.at.toISOString(),
       entry.isDemo ?? false,
+      entry.origin ?? null,
+      supportByFor(entry.userId),
     ],
   );
 }
@@ -49,12 +60,15 @@ interface ActivityRow {
   id: string;
   user_id: string;
   display_name: string;
+  support_by: string | null;
+  support_by_name: string | null;
   entity_type: string;
   entity_id: string;
   entity_label: string;
   action: ActivityAction;
   changed_fields: unknown;
   at: unknown;
+  move_origin: MoveOrigin | null;
 }
 
 export const ACTIVITY_DEFAULT_LIMIT = 20;
@@ -73,9 +87,24 @@ export const HISTORY_ENTITY_TYPES = [
   'resource',
   'note',
   'hypothesis',
+  // Revisión 1 · E5 (only with `budget.read`).
+  'budget',
+  'expense',
 ] as const;
 
 export type HistoryEntityType = (typeof HISTORY_ENTITY_TYPES)[number];
+
+/** E4: entries hidden from viewers without `directory.read` (people, suppliers, prices). */
+export const DIRECTORY_ENTITY_TYPES = [
+  'company',
+  'contact',
+  'offer',
+  // Revisión 1 · E6–E7: quote requests, proposals and offer terms.
+  'quote_request',
+  'proposal',
+  'offer_settings',
+  'offer_renewal',
+] as const;
 
 /** A `from` ≤ at < `to` window of the log (M6, the day close). */
 export interface ActivityRange {
@@ -93,15 +122,20 @@ export async function listActivity(
   limit = ACTIVITY_DEFAULT_LIMIT,
   entity: {type: HistoryEntityType; id: string} | null = null,
   range: ActivityRange | null = null,
+  /** E4: entity types this viewer may not see (the directory without `directory.read`). */
+  excludeTypes: readonly string[] = [],
 ): Promise<ActivityEntry[]> {
   const rows = await db.query<ActivityRow>(
     `SELECT a.id, a.user_id, u.display_name, a.entity_type, a.entity_id,
-            a.entity_label, a.action, a.changed_fields, a.at
+            a.entity_label, a.action, a.changed_fields, a.at, a.move_origin,
+            a.support_by, su.display_name AS support_by_name
        FROM activity_log a JOIN users u ON u.id = a.user_id
+       LEFT JOIN users su ON su.id = a.support_by
       WHERE a.organization_id = $1
         AND ($3::text IS NULL OR (a.entity_type = $3 AND a.entity_id = $4::uuid))
         AND ($5::timestamptz IS NULL OR a.at >= $5::timestamptz)
         AND ($6::timestamptz IS NULL OR a.at < $6::timestamptz)
+        AND NOT (a.entity_type IN (SELECT jsonb_array_elements_text($7::jsonb)))
       ORDER BY a.at DESC, a.seq DESC
       LIMIT $2`,
     [
@@ -111,6 +145,7 @@ export async function listActivity(
       entity?.id ?? null,
       range?.from.toISOString() ?? null,
       range?.to.toISOString() ?? null,
+      JSON.stringify(excludeTypes),
     ],
   );
   return rows.map(r => ({
@@ -122,6 +157,10 @@ export async function listActivity(
     action: r.action,
     changedFields: parseFields(r.changed_fields),
     at: toIso(r.at),
+    ...(r.move_origin ? {origin: r.move_origin} : {}),
+    ...(r.support_by && r.support_by_name !== null
+      ? {supportBy: {id: r.support_by, displayName: r.support_by_name}}
+      : {}),
   }));
 }
 

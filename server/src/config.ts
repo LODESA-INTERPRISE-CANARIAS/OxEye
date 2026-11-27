@@ -25,7 +25,47 @@ export interface Config {
    * right (see http/client-ip.ts).
    */
   trustProxyHops: number;
+  /** E4: account e-mails (recovery, verification). */
+  mail: MailConfig;
 }
+
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  /** TLS from the start (port 465); false = STARTTLS (port 587). */
+  secure: boolean;
+  user: string | null;
+  pass: string | null;
+}
+
+export interface MailConfig {
+  /** Null: no SMTP; e-mails go to the console transport (never sent). */
+  smtp: SmtpConfig | null;
+  /** «Ox Eye <cuenta@example.org>»; required with SMTP. */
+  from: string | null;
+  /**
+   * Project inbox for recovery links of accounts without a verified
+   * personal e-mail. Never written in the repository, never revealed in a
+   * response or a log.
+   */
+  recoveryFallback: string | null;
+  /** Web address the links point to; else the request Origin (if allowed). */
+  publicAppUrl: string | null;
+  /**
+   * Without SMTP, write whole messages (with their links) to the server log.
+   * Only when NODE_ENV=development is set explicitly: a server started
+   * without NODE_ENV never prints a usable reset link.
+   */
+  printLinks: boolean;
+}
+
+export const NO_MAIL: MailConfig = {
+  smtp: null,
+  from: null,
+  recoveryFallback: null,
+  publicAppUrl: null,
+  printLinks: false,
+};
 
 /** Upper bound for TRUST_PROXY; a real deployment has one or two proxies. */
 export const MAX_TRUST_PROXY_HOPS = 5;
@@ -81,6 +121,28 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
   MIGRATE_ON_START: bool,
   TRUST_PROXY: proxyHops,
+  SMTP_HOST: z.string().trim().optional(),
+  SMTP_PORT: z
+    .string()
+    .trim()
+    .regex(/^\d*$/, {error: 'SMTP_PORT debe ser un número (465 o 587)'})
+    .optional()
+    .transform(v => (v ? Number(v) : undefined))
+    .refine(v => v === undefined || (v >= 1 && v <= 65535), {
+      error: 'SMTP_PORT debe estar entre 1 y 65535',
+    }),
+  SMTP_SECURE: z.enum(['true', 'false', '1', '0', '']).optional(),
+  SMTP_USER: z.string().trim().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().trim().optional(),
+  RECOVERY_FALLBACK_EMAIL: z
+    .string()
+    .trim()
+    .refine(v => v === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), {
+      error: 'RECOVERY_FALLBACK_EMAIL debe ser una dirección de correo',
+    })
+    .optional(),
+  PUBLIC_APP_URL: z.string().trim().optional(),
 });
 
 export class ConfigError extends Error {
@@ -126,6 +188,48 @@ export function loadConfig(
     nodeEnv,
     migrateOnStart: e.MIGRATE_ON_START,
     trustProxyHops: e.TRUST_PROXY,
+    mail: mailConfig(e),
+  };
+}
+
+function mailConfig(e: z.output<typeof envSchema>): MailConfig {
+  const host = e.SMTP_HOST || null;
+  const from = e.MAIL_FROM || null;
+  if (host && !from) {
+    throw new ConfigError(
+      'Configuración no válida: con SMTP_HOST hace falta MAIL_FROM (por ejemplo «Ox Eye <cuenta@example.org>»).',
+    );
+  }
+  let publicAppUrl: string | null = null;
+  if (e.PUBLIC_APP_URL) {
+    const url = e.PUBLIC_APP_URL.replace(/\/+$/, '');
+    if (!/^https?:\/\/[^\s]+$/.test(url)) {
+      throw new ConfigError(
+        `PUBLIC_APP_URL no es una dirección web válida: «${url}». Usa por ejemplo https://equipo.example.org/logistica`,
+      );
+    }
+    publicAppUrl = url;
+  }
+  const secureRaw = e.SMTP_SECURE;
+  const port = e.SMTP_PORT;
+  const secure =
+    secureRaw === undefined || secureRaw === ''
+      ? (port ?? 465) === 465
+      : secureRaw === 'true' || secureRaw === '1';
+  return {
+    smtp: host
+      ? {
+          host,
+          port: port ?? (secure ? 465 : 587),
+          secure,
+          user: e.SMTP_USER || null,
+          pass: e.SMTP_PASS || null,
+        }
+      : null,
+    from,
+    recoveryFallback: e.RECOVERY_FALLBACK_EMAIL || null,
+    publicAppUrl,
+    printLinks: e.NODE_ENV === 'development',
   };
 }
 

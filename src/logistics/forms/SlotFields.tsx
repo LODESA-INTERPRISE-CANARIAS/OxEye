@@ -6,7 +6,24 @@ import React from 'react';
 import {MAX_SPAN_DAYS} from '../../../shared/logistics/rules.ts';
 import {addDays, daysBetween} from '../../../shared/logistics/time.ts';
 import {zoneHoursNote} from '../lib/format';
-import {Field, HelpTip, Input, describedBy} from '../ui';
+import {
+  DateField,
+  Field,
+  HelpTip,
+  TimeField,
+  describedBy,
+  type TimeSuggestion,
+} from '../ui';
+import {addMinutes} from '../ui/controls';
+
+/** «+1 h · 10:30» chips for the end time once the start is known. */
+function durationChips(start: string): TimeSuggestion[] {
+  if (!start) return [];
+  return [60, 120, 240].map(m => ({
+    value: addMinutes(start, m),
+    label: `+${m / 60} h`,
+  }));
+}
 
 export interface SlotValues {
   date: string;
@@ -94,14 +111,14 @@ export const SlotFields: React.FC<{
           optional
           error={errors.date}
         >
-          <Input
+          <DateField
             id={id('date')}
             name={id('date')}
-            type="date"
+            timeZone={zone}
             value={values.date}
             invalid={!!errors.date}
             aria-describedby={describedBy(id('date'), {error: errors.date})}
-            onChange={e => onChange('date', e.target.value)}
+            onChange={v => onChange('date', v)}
           />
         </Field>
         <Field
@@ -110,17 +127,16 @@ export const SlotFields: React.FC<{
           optional
           error={errors.startTime}
         >
-          <Input
+          <TimeField
             id={id('start')}
             name={id('start')}
-            type="time"
-            className="lx-num"
+            timeZone={zone}
             value={values.startTime}
             invalid={!!errors.startTime}
             aria-describedby={describedBy(id('start'), {
               error: errors.startTime,
             })}
-            onChange={e => onChange('startTime', e.target.value)}
+            onChange={v => onChange('startTime', v)}
           />
         </Field>
         <Field
@@ -130,18 +146,18 @@ export const SlotFields: React.FC<{
           error={errors.endTime}
           hint={endsNextDay ? 'Termina al día siguiente.' : undefined}
         >
-          <Input
+          <TimeField
             id={id('end')}
             name={id('end')}
-            type="time"
-            className="lx-num"
+            timeZone={zone}
             value={values.endTime}
+            suggestions={durationChips(values.startTime)}
             invalid={!!errors.endTime}
             aria-describedby={describedBy(id('end'), {
               error: errors.endTime,
               hint: endsNextDay,
             })}
-            onChange={e => onChange('endTime', e.target.value)}
+            onChange={v => onChange('endTime', v)}
           />
         </Field>
       </div>
@@ -172,10 +188,10 @@ export const SlotFields: React.FC<{
           hint="La hora de fin es la de ese día."
           className="lx-slot__enddate"
         >
-          <Input
+          <DateField
             id={id('enddate')}
             name={id('enddate')}
-            type="date"
+            timeZone={zone}
             min={values.date ? addDays(values.date, 1) : undefined}
             value={values.endDate}
             invalid={!!errors.endDate}
@@ -183,7 +199,7 @@ export const SlotFields: React.FC<{
               error: errors.endDate,
               hint: true,
             })}
-            onChange={e => onChange('endDate', e.target.value)}
+            onChange={v => onChange('endDate', v)}
           />
         </Field>
       )}

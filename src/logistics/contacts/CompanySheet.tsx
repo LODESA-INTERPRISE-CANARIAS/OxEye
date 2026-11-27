@@ -6,6 +6,8 @@
  * - Kind: proveedor, organismo público, asociación u otra entidad.
  * - Categories (several) with «+ Nueva categoría».
  * - The responsible person is always one of its own people.
+ * - E5: the tax it charges (IGIC, IVA, otro, ninguno, sin saber, or nothing
+ *   said), «por verificar» until confirmed; its offers inherit it.
  * - A name already used by another company is refused by the server (409
  *   DUPLICATE): the sheet offers «Abrir la existente»; look-alikes are
  *   flagged while typing.
@@ -64,6 +66,7 @@ import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
   Field,
+  HelpTip,
   Icon,
   Input,
   Segmented,
@@ -73,6 +76,17 @@ import {
   Withheld,
   describedBy,
 } from '../ui';
+import {
+  EMPTY_TAX_DRAFT,
+  rescuedTaxDraft,
+  taxDraftOf,
+  taxFieldError,
+  taxProblem,
+  taxToSend,
+  type TaxDraft,
+} from '../budget/tax';
+import {TaxField} from '../budget/TaxField';
+import {TaxTag} from '../budget/TaxParts';
 import {
   GoneNotice,
   KindChip,
@@ -109,6 +123,8 @@ interface FormValues {
   website: string;
   notes: string;
   mainContactId: string;
+  /** E5: the tax it charges; regime '' = nobody said. */
+  tax: TaxDraft;
   source: DataSource | null;
   verification: Verification;
 }
@@ -122,6 +138,7 @@ const EMPTY: FormValues = {
   website: '',
   notes: '',
   mainContactId: '',
+  tax: EMPTY_TAX_DRAFT,
   source: null,
   verification: 'draft',
 };
@@ -135,6 +152,8 @@ const toValues = (c: Company): FormValues => ({
   website: c.website ?? '',
   notes: c.notes ?? '',
   mainContactId: c.mainContactId ?? '',
+  // `?? null`: a server not yet on E5 sends no tax.
+  tax: taxDraftOf(c.tax ?? null),
   source: c.source,
   verification: c.verification,
 });
@@ -160,6 +179,8 @@ function fromRescue(raw: RescuedValues, fallback: FormValues): FormValues {
   ) {
     out.categoryIds = raw.categoryIds as string[];
   }
+  const tax = rescuedTaxDraft(raw.tax);
+  if (tax) out.tax = tax;
   if (raw.source === null) out.source = null;
   else if (typeof raw.source === 'string' && raw.source in SOURCE_LABEL) {
     out.source = raw.source as DataSource;
@@ -182,6 +203,11 @@ const SERVER_FIELD: Partial<Record<string, keyof FormValues>> = {
   website: 'website',
   notes: 'notes',
   mainContactId: 'mainContactId',
+  tax: 'tax',
+  'tax.regime': 'tax',
+  'tax.name': 'tax',
+  'tax.ratePercent': 'tax',
+  'tax.verification': 'tax',
   source: 'source',
   verification: 'verification',
 };
@@ -215,6 +241,8 @@ function validate(v: FormValues): FormErrors<FormValues> {
   if (v.categoryIds.length > MAX_CATEGORIES_PER_COMPANY) {
     e.categoryIds = `Como mucho ${MAX_CATEGORIES_PER_COMPANY} categorías.`;
   }
+  const tax = taxProblem(v.tax);
+  if (tax) e.tax = tax.message;
   return e;
 }
 
@@ -423,6 +451,19 @@ const CompanyView: React.FC<{
             <dt>Categorías</dt>
             <dd>
               <Value value={cats.length ? cats.join(', ') : null} />
+            </dd>
+          </div>
+          <div>
+            <dt className="lx-detail__term">
+              Impuesto
+              <HelpTip label="impuesto de la empresa">
+                El impuesto que aplica esta empresa a sus precios. Sus ofertas
+                lo usan salvo que tengan uno propio. Los precios se apuntan sin
+                impuestos y la cifra con impuestos es siempre una estimación.
+              </HelpTip>
+            </dt>
+            <dd id="lx-company-tax-view">
+              {w ? <Withheld /> : <TaxTag tax={company.tax ?? null} />}
             </dd>
           </div>
           <div>
@@ -707,6 +748,7 @@ const CompanyForm: React.FC<{
     website: nullIfEmpty(v.website),
     notes: nullIfEmpty(v.notes),
     mainContactId: v.mainContactId || null,
+    tax: taxToSend(v.tax),
     source: v.source,
     verification: v.verification,
   });
@@ -743,6 +785,7 @@ const CompanyForm: React.FC<{
         'website',
         'notes',
         'mainContactId',
+        'tax',
         'source',
         'verification',
       ] as const;
@@ -1102,7 +1145,25 @@ const CompanyForm: React.FC<{
           />
         </Field>
 
+        <TaxField
+          id="lx-company-tax"
+          legend="Impuesto que aplica"
+          value={values.tax}
+          onChange={v => change('tax', v)}
+          emptyLabel="Sin indicar"
+          emptyHint="Nadie lo ha dicho todavía"
+          error={taxFieldError(values.tax, errors.tax)}
+        />
+        {offerCount > 0 && (
+          <p className="lx-form__note" id="lx-company-tax-offers">
+            {offerCount === 1
+              ? 'Su oferta lo usa salvo que tenga un impuesto propio.'
+              : `Sus ${offerCount} ofertas lo usan salvo las que tengan un impuesto propio.`}
+          </p>
+        )}
+
         <QualityFields
+          title="Calidad de la empresa"
           idPrefix="lx-company"
           source={values.source}
           verification={values.verification}

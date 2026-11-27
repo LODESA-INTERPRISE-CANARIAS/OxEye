@@ -18,7 +18,6 @@ import {useActions} from '../common/actions';
 import {useMediaQuery} from '../common/useMediaQuery';
 import {useNow} from '../common/useNow';
 import {usePlan} from '../common/usePlan';
-import {warningsSummary} from '../common/WarningList';
 import {monthOf, nowMinutes, shiftMonth} from '../lib/calendar';
 import {sortEvents} from '../lib/events';
 import {
@@ -38,14 +37,18 @@ import {
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
+  DateField,
   EmptyState,
   HelpTip,
   Icon,
   IconButton,
   LoadError,
+  SelectField,
   SkeletonRows,
+  type SelectOption,
 } from '../ui';
 import {DayView} from './DayView';
+import {DayWarnings} from './DayWarnings';
 import {MonthView} from './MonthView';
 import {clampHour, HOUR_MAX, HOUR_MIN} from './Timeline';
 
@@ -85,7 +88,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   onDay,
   onTimelineChange,
 }) => {
-  const {today, timeZone, canWrite, addTask} = useActions();
+  const {today, timeZone, canWrite, addTask, openTask} = useActions();
   const events = useLogisticsStore(s => s.events);
   const tasks = useLogisticsStore(s => s.tasks);
   const eventsState = useLogisticsStore(s => s.eventsState);
@@ -183,6 +186,22 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   );
 
   const sortedEvents = useMemo(() => sortEvents(events), [events]);
+  const filterOptions = useMemo<SelectOption[]>(
+    () => [
+      {value: 'all', label: 'Todos los eventos'},
+      {value: 'none', label: 'Tareas sin evento'},
+      ...sortedEvents.map(e => {
+        const d = recordDate(e);
+        return {
+          value: e.id,
+          label: e.name,
+          hint: d ? dayMonthShort(d) : undefined,
+          group: 'Eventos',
+        };
+      }),
+    ],
+    [sortedEvents],
+  );
   const now = day ? nowMinutes(day, timeZone) : null;
 
   const title = day ? longDate(day) : monthTitle(cursor.year, cursor.month);
@@ -190,7 +209,6 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     ? [
         dayEvents.length ? plural(dayEvents.length, 'evento', 'eventos') : '',
         plural(dayTasks.length, 'tarea', 'tareas'),
-        dayWarnings.length ? warningsSummary(dayWarnings) : '',
       ]
         .filter(Boolean)
         .join(' · ')
@@ -242,6 +260,11 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
               // The short form fits a phone; the long one is read out.
               <>
                 <span className="lx-calbar__title-long">{title}</span>
+                {/* Without the weekday (the date field shows it): room for
+                    the warnings pill on mid-size screens. */}
+                <span className="lx-calbar__title-mid" aria-hidden="true">
+                  {title.replace(/^[^,]+,\s*/, '')}
+                </span>
                 <span className="lx-calbar__title-short" aria-hidden="true">
                   {shortDate(day)}
                 </span>
@@ -271,45 +294,51 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
             Hoy
           </Button>
           {day && (
-            <label className="lx-calbar__date">
-              <span className="lx-visually-hidden">Ir a la fecha</span>
-              <input
-                type="date"
-                className="lx-input lx-calbar__dateinput"
+            <div className="lx-calbar__date">
+              <DateField
                 id="lx-cal-date"
+                className="lx-calbar__dateinput"
+                aria-label="Ir a la fecha"
                 value={day}
-                onChange={e => {
-                  if (isLocalDate(e.target.value)) onDay(e.target.value);
+                today={today}
+                timeZone={timeZone}
+                clearable={false}
+                onChange={v => {
+                  if (isLocalDate(v)) onDay(v);
                 }}
               />
-            </label>
+            </div>
+          )}
+          {day && (
+            <DayWarnings
+              dayName={title}
+              warnings={dayWarnings}
+              accepted={plan.acceptedByDay.get(day) ?? []}
+              tasksById={plan.tasksById}
+              onOpenTask={openTask}
+            />
           )}
         </div>
 
         <div className="lx-calbar__tools">
-          <label className="lx-calbar__filter">
-            <span className="lx-visually-hidden">Filtrar por evento</span>
+          <div
+            className="lx-calbar__filter"
+            data-filtered={activeFilter !== 'all' || undefined}
+          >
             <Icon name="calendar" size={16} />
-            <select
+            <SelectField
               id="lx-cal-filter"
               className="lx-calbar__select"
+              aria-label="Filtrar por evento"
+              title={
+                filterOptions.find(o => o.value === activeFilter)?.label ??
+                undefined
+              }
               value={activeFilter}
-              onChange={e => setFilter(e.target.value)}
-            >
-              <option value="all">Todos los eventos</option>
-              <option value="none">Tareas sin evento</option>
-              {sortedEvents.map(e => {
-                const d = recordDate(e);
-                return (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                    {d ? ` · ${dayMonthShort(d)}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-            <Icon name="chevronDown" size={16} />
-          </label>
+              onChange={setFilter}
+              options={filterOptions}
+            />
+          </div>
           {timeline && (
             <div
               className="lx-calbar__zoom"
@@ -332,10 +361,12 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 disabled={hour >= HOUR_MAX}
                 onClick={() => setHour(hour * ZOOM_STEP)}
               />
-              <HelpTip label="la escala de horas">
+              <HelpTip label="la escala de horas y las columnas">
                 Cambia la altura de cada hora para ver más detalle o más horas a
                 la vez. En pantallas táctiles, también pellizcando con dos dedos
-                sobre el plan.
+                sobre el plan. Cada lugar es una columna: arrastra su borde
+                derecho para ensancharla o estrecharla, y contráela a sus siglas
+                con el botón de su cabecera. Este dispositivo lo recuerda.
               </HelpTip>
             </div>
           )}

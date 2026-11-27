@@ -423,6 +423,47 @@
   color: var(--lx-heading);
 }
 
+/* Category name, its count and «Comparar» on one line. */
+.lx .lx-catgroup__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+/* «Comparar» of a whole category, under its name. */
+.lx .lx-catcompare {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-radius: var(--lx-radius);
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.lx .lx-catcompare__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.lx .lx-catcompare__group {
+  display: grid;
+  gap: 6px;
+}
+
+.lx .lx-catcompare__scope {
+  font-size: 13.5px;
+  color: var(--lx-muted);
+}
+
+.lx .lx-catcompare__scope strong {
+  color: var(--lx-heading);
+}
+
 .lx .lx-offerlist {
   display: grid;
   gap: 6px;
@@ -1069,6 +1110,69 @@
   outline-offset: 2px;
 }
 
+/*
+ * «Gestionar»: the organization's own categories turn soft red with a ×
+ * in their corner (a real button, 44 px of target around a small disc);
+ * built-ins keep their look.
+ */
+.lx .lx-catpick.is-managing .lx-catpick__chips {
+  row-gap: 14px;
+  padding-top: 6px;
+}
+
+.lx .lx-catpick__chip.is-removable label,
+.lx .lx-catpick__chip.is-removable input:hover + label,
+.lx .lx-catpick__chip.is-removable input:checked + label {
+  background: var(--lx-danger-soft);
+  border-color: color-mix(in srgb, var(--lx-danger) 55%, var(--lx-surface));
+  color: var(--lx-heading);
+  padding-right: 22px;
+}
+
+.lx .lx-catpick__remove {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--lx-surface);
+  background: var(--lx-danger);
+  color: var(--lx-on-danger);
+  cursor: pointer;
+}
+
+/* The disc is small; the target around it is not. */
+.lx .lx-catpick__remove::before {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+}
+
+.lx .lx-catpick__remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lx-danger) 82%, var(--lx-heading));
+}
+
+.lx .lx-catpick__remove:focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
+}
+
+.lx .lx-catpick__remove:disabled {
+  background: var(--lx-surface-3);
+  color: var(--lx-muted);
+  cursor: not-allowed;
+}
+
+.lx .lx-catpick__remove[aria-expanded='true'] {
+  box-shadow: 0 0 0 3px var(--lx-danger-soft);
+}
+
 .lx .lx-catpick__new {
   display: flex;
   flex-wrap: wrap;
@@ -1163,7 +1267,7 @@
   --lx-btn-border: var(--lx-line);
   --lx-btn-bg-hover: var(--lx-surface-2);
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   grid-template-areas:
     'pos name price'
     'pos bar bar';
@@ -1190,9 +1294,56 @@
 
 .lx .lx-compare__pos {
   grid-area: pos;
+  justify-self: center;
   font-weight: 700;
   color: var(--lx-muted);
   text-align: center;
+}
+
+/*
+ * Medals for the three cheapest. Metal colours mean the same in every
+ * palette, so they are fixed here rather than taken from the palette (whose
+ * «gold» is cyan or terracotta in some); dark figures on the disc and a
+ * darker rim keep them legible on light and dark surfaces. The position is
+ * also said in words («1.º, oro») for screen readers.
+ */
+.lx {
+  --lx-medal-gold: #e5b73b;
+  --lx-medal-gold-rim: #a87a12;
+  --lx-medal-silver: #c9ced4;
+  --lx-medal-silver-rim: #858d96;
+  --lx-medal-bronze: #d08c55;
+  --lx-medal-bronze-rim: #8f5526;
+  --lx-medal-ink: #1f1a10;
+}
+
+.lx .lx-medal {
+  --medal: var(--lx-medal-gold);
+  --medal-rim: var(--lx-medal-gold-rim);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    color-mix(in srgb, var(--medal) 55%, #fff) 0 18%,
+    var(--medal) 60%
+  );
+  border: 2px solid var(--medal-rim);
+  color: var(--lx-medal-ink);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.lx .lx-medal--silver {
+  --medal: var(--lx-medal-silver);
+  --medal-rim: var(--lx-medal-silver-rim);
+}
+
+.lx .lx-medal--bronze {
+  --medal: var(--lx-medal-bronze);
+  --medal-rim: var(--lx-medal-bronze-rim);
 }
 
 .lx .lx-compare__name {

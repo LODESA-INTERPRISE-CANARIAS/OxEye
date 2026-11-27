@@ -5,8 +5,10 @@
 import {z} from 'zod';
 import {optionalText, requiredText, uuid} from '../http/validate.ts';
 import {
+  acronym,
   NAME_MAX,
   NOTES_MAX,
+  openingHours,
   source,
   verification,
   versionField,
@@ -17,6 +19,9 @@ import {ADDRESS_MAX} from '../../../shared/logistics/rules.ts';
 const common = {
   address: optionalText(ADDRESS_MAX),
   notes: optionalText(NOTES_MAX),
+  // Revisión 1 · E2.
+  acronym,
+  openingHours,
   source,
   verification,
 };

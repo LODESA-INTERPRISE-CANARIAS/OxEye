@@ -12,8 +12,10 @@ import React, {useCallback, useEffect, useId, useRef, useState} from 'react';
 import type {ActivityEntry} from '../../../shared/logistics/contracts.ts';
 import {describeChange} from '../../../shared/logistics/history.ts';
 import {DEFAULT_TIMEZONE, utcToLocal} from '../../../shared/logistics/time.ts';
+import {Signature} from '../account/Signature';
+import {UserAvatar} from '../account/UserAvatar';
 import {errorMessage} from '../api/client';
-import {initials, longDate, relativeTime} from '../lib/format';
+import {longDate, relativeTime} from '../lib/format';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon, SkeletonRows} from '../ui';
 
@@ -166,11 +168,13 @@ const HistoryRow: React.FC<{entry: ActivityEntry; timeZone: string}> = ({
   const timeId = useId();
   return (
     <li className="lx-history__item">
-      <span className="lx-avatar lx-avatar--sm" aria-hidden="true">
-        {initials(entry.user.displayName)}
-      </span>
+      <UserAvatar
+        name={entry.user.displayName}
+        userId={entry.user.id}
+        size="sm"
+      />
       <p className="lx-history__text">
-        <strong>{entry.user.displayName}</strong>{' '}
+        <Signature user={entry.user} supportBy={entry.supportBy} />{' '}
         <span>{describeChange(entry)}</span>
       </p>
       <button

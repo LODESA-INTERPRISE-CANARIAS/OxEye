@@ -6,6 +6,7 @@
 import type {Context} from 'hono';
 import type {ContentfulStatusCode} from 'hono/utils/http-status';
 import {AppError} from '../errors.ts';
+import {logPath} from './log-path.ts';
 import type {
   ApiErrorBody,
   ApiErrorCode,
@@ -39,7 +40,7 @@ export function handleError(
   const code = (e as {code?: unknown}).code;
   // Driver errors may carry row values in `detail`: log only name, code and message.
   log(
-    `Error interno en ${c.req.method} ${c.req.path}: ${e.name}${typeof code === 'string' ? ` [${code}]` : ''}: ${e.message}`,
+    `Error interno en ${c.req.method} ${logPath(c.req.path)}:${e.name}${typeof code === 'string' ? ` [${code}]` : ''}: ${e.message}`,
   );
   const body: ApiErrorBody = {
     code: 'INTERNAL',
