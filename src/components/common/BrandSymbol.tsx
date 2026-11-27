@@ -112,12 +112,23 @@ export const BrandSymbol: React.FC<BrandSymbolProps> = ({
       <g className="ox-symbol__mark" fill="currentColor">
         <g mask={`url(#${p}m)`}>
           <g mask={`url(#${p}k)`}>
-            <path d={BRAND_SWIRL_A} clipPath={`url(#${p}h1)`} />
-            <path d={BRAND_SWIRL_B} clipPath={`url(#${p}h2)`} />
+            {/* Hooks for optional motion (loading screen). */}
+            <g className="ox-symbol__swirl">
+              <path d={BRAND_SWIRL_A} clipPath={`url(#${p}h1)`} />
+              <path d={BRAND_SWIRL_B} clipPath={`url(#${p}h2)`} />
+            </g>
           </g>
-          <path d={BRAND_FRAME} fillRule="evenodd" />
+          <path
+            className="ox-symbol__frame"
+            d={BRAND_FRAME}
+            fillRule="evenodd"
+          />
         </g>
-        <circle {...BRAND_IRIS} mask={`url(#${p}i)`} />
+        <circle
+          className="ox-symbol__iris"
+          {...BRAND_IRIS}
+          mask={`url(#${p}i)`}
+        />
       </g>
     </svg>
   );

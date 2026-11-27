@@ -18,8 +18,8 @@ export const GateLayout: React.FC<{
       <div className="lx-brand">
         <EyeMark size={36} />
         <div className="lx-brand__text">
-          <strong>Gestor logístico</strong>
-          <span>OxEye</span>
+          <strong>OxEye</strong>
+          <span>Gestor logístico</span>
         </div>
       </div>
       <button

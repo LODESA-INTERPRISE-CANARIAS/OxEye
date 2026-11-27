@@ -115,8 +115,8 @@ export const Shell: React.FC<ShellProps> = ({
         <div className="lx-brand">
           <EyeMark size={38} />
           <div className="lx-brand__text">
-            <strong>Gestor logístico</strong>
-            <span>OxEye</span>
+            <strong>OxEye</strong>
+            <span>Gestor logístico</span>
           </div>
         </div>
         <OrgSelector onOpen={() => setOrgOpen(true)} />
@@ -171,7 +171,7 @@ export const Shell: React.FC<ShellProps> = ({
         <div className="lx-mainbar">
           <div className="lx-topbar">
             <EyeMark size={32} />
-            <span className="lx-topbar__title">Gestor logístico</span>
+            <span className="lx-topbar__title">OxEye</span>
             <SyncChip compact id="lx-sync-chip-phone" />
             <button
               type="button"

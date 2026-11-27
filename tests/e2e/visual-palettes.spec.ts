@@ -103,4 +103,16 @@ test.describe('Revisión visual por paleta', () => {
     });
     await mark.screenshot({path: `${OUT}/logistics-symbol-large.png`});
   });
+
+  test('logistics loading', async ({page}) => {
+    // Hold the lazy module so the loading layer stays on screen.
+    await page.route(/logistics\/LogisticsApp/, () => new Promise(() => {}));
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await page.goto('/#logistica');
+    await expect(page.locator('#logistics-loading')).toBeVisible();
+    await expect(page.locator('#logistics-loading .lx-boot__title')).toHaveText(
+      'OxEye',
+    );
+    await captureAll(page, 'logistics-loading');
+  });
 });
