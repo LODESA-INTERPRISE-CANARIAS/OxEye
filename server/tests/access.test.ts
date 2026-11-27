@@ -430,7 +430,7 @@ describe('recovery and verification e-mails', () => {
     expect(sent[0]?.text).toContain(
       `${TEST_ORIGIN}/#logistica/cuenta/restablecer/`,
     );
-    expect(sent[0]?.text).toContain('Ox Eye');
+    expect(sent[0]?.text).toContain('OxEye');
     expect(sent[0]?.text).not.toMatch(/pw-|contraseña: /);
 
     // Single use, and every session of the account ends.

@@ -35,7 +35,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
   {
     id: 'oxeye',
     code: '01',
-    name: 'Ox Eye',
+    name: 'OxEye',
     dark: false,
     swatches: ['#F7F6FA', '#E7E3EF', '#24202C', '#57367B', '#B59AD5'],
     colors: {

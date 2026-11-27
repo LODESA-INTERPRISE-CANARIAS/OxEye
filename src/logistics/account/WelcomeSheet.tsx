@@ -131,7 +131,7 @@ export const WelcomeSheet: React.FC<{onClose: () => void}> = ({onClose}) => {
           <p className="lx-acct-lead">
             {profile.data.sharedAccount
               ? 'Es una cuenta compartida por varias personas del equipo: su nombre, su foto y su contraseña los pone administración.'
-              : 'Así te verá el equipo en tareas, notas e historial. Todo es opcional y se cambia luego en «Tu espacio en Ox Eye».'}
+              : 'Así te verá el equipo en tareas, notas e historial. Todo es opcional y se cambia luego en «Tu espacio en OxEye».'}
           </p>
           <ProfileEditor
             key={profile.data.version}

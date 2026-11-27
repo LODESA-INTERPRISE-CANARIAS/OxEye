@@ -355,7 +355,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     const copy = page.locator('body > .lx-print-root .lx-order');
     await expect(copy).toHaveCount(1);
     await expect(copy).toContainText('Montaje del escenario Demo');
-    await expect(copy).toContainText('Generada por Elvis desde Ox Eye');
+    await expect(copy).toContainText('Generada por Elvis desde OxEye');
     await expect(page.locator('body > .lx-print-root')).toHaveAttribute(
       'aria-hidden',
       'true',

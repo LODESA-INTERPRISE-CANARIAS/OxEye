@@ -1,5 +1,5 @@
 /**
- * «Renovaciones» (Revisión 1 · E6): Ox Eye creates a renegotiation task
+ * «Renovaciones» (Revisión 1 · E6): OxEye creates a renegotiation task
  * before an offer can no longer be accepted, so nobody plans an event on a
  * price that no longer holds. The task is assigned to whoever approved the
  * offer (administrators may change it). Expired offers stay as history and
@@ -116,7 +116,7 @@ export const RenewalsView: React.FC = () => {
         title="Nada por renegociar"
         id="lx-renewals-empty"
       >
-        Cuando a una oferta le queden menos días que el aviso, Ox Eye creará
+        Cuando a una oferta le queden menos días que el aviso, OxEye creará
         aquí la tarea de renegociarla.
       </EmptyState>
     );
@@ -160,7 +160,7 @@ export const RenewalsView: React.FC = () => {
               </div>
               <div className="lx-renewal__foot">
                 <span className="lx-signed">
-                  <EyeMark size={18} /> Generada por Ox Eye ·{' '}
+                  <EyeMark size={18} /> Generada por OxEye ·{' '}
                   <span className="lx-num">
                     {instantShort(r.generatedAt, timeZone)}
                   </span>
@@ -415,7 +415,7 @@ const SettingsCard: React.FC<{isAdmin: boolean}> = ({isAdmin}) => {
           Avisos de renovación
         </h2>
         <p>
-          Ox Eye revisa las ofertas cada día y crea una tarea cuando a una le
+          OxEye revisa las ofertas cada día y crea una tarea cuando a una le
           quedan menos días que este aviso, asignada a quien la aprobó.
         </p>
       </div>

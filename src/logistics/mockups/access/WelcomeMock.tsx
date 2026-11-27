@@ -51,7 +51,7 @@ export const WelcomeMock: React.FC<{
             Bienvenido a tu espacio, {me.displayName}
           </h1>
           <p className="lx-gate__lead">
-            Ox Eye ahora tiene cuentas personales. Tu usuario sigue siendo{' '}
+            OxEye ahora tiene cuentas personales. Tu usuario sigue siendo{' '}
             <strong>{me.username}</strong> y todo lo que has registrado sigue
             firmado con tu nombre.
           </p>

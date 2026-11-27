@@ -1,7 +1,7 @@
 /**
  * F1 · The supplier's mobile form, reached from a personal link. On a phone
  * it fills the screen; on a desktop it sits in a phone frame next to notes
- * for the reviewer (mode, link, what reaches Ox Eye).
+ * for the reviewer (mode, link, what reaches OxEye).
  */
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Chip, EyeMark, Icon, Segmented} from '../../ui';
@@ -296,14 +296,14 @@ const SfHead: React.FC<{children?: React.ReactNode}> = ({children}) => (
     <div className="lx-mk-sf__brand">
       <EyeMark size={26} />
       <span>
-        <strong>Ox Eye</strong> · {ORG_SHORT}
+        <strong>OxEye</strong> · {ORG_SHORT}
       </span>
     </div>
     {children}
   </header>
 );
 
-/** What would reach Ox Eye right now, for the reviewer next to the phone. */
+/** What would reach OxEye right now, for the reviewer next to the phone. */
 const Captured: React.FC<{draft: Draft; mode: Mode}> = ({draft, mode}) => {
   const until = validityUntil(draft);
   const rows: [string, string][] = [
@@ -336,7 +336,7 @@ const Captured: React.FC<{draft: Draft; mode: Mode}> = ({draft, mode}) => {
   ];
   return (
     <div className="lx-mk-captured">
-      <p className="lx-eyebrow">Lo que llegará a Ox Eye</p>
+      <p className="lx-eyebrow">Lo que llegará a OxEye</p>
       <dl>
         {rows.map(([k, v]) => (
           <div key={k}>

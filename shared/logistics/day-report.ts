@@ -933,6 +933,6 @@ export function dayReportText(report: DayReport, dateLabel: string): string {
       `Próximos días: ${plural(report.nextTasks.length, 'tarea prevista', 'tareas previstas')}.`,
     );
   }
-  out.push('Resumen generado con Ox Eye. Ayuda a decidir; no certifica.');
+  out.push('Resumen generado con OxEye. Ayuda a decidir; no certifica.');
   return out.join('\n');
 }

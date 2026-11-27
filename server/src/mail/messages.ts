@@ -1,5 +1,5 @@
 /**
- * Texts of the account e-mails: plain Spanish, plain text, signed «Ox Eye».
+ * Texts of the account e-mails: plain Spanish, plain text, signed «OxEye».
  * They carry a link, never a password, and say what to do if the message
  * was not expected.
  */
@@ -10,7 +10,7 @@ import {
 import type {MailMessage} from './transport.ts';
 
 const SIGNATURE =
-  '\n—\nOx Eye · Gestor logístico\nEste mensaje se ha enviado automáticamente; no hace falta responder.';
+  '\n—\nOxEye · Gestor logístico\nEste mensaje se ha enviado automáticamente; no hace falta responder.';
 
 /** Reset link to the account's own verified address. */
 export function resetMessage(
@@ -20,11 +20,11 @@ export function resetMessage(
 ): MailMessage {
   return {
     to,
-    subject: 'Ox Eye · Restablecer tu contraseña',
+    subject: 'OxEye · Restablecer tu contraseña',
     text: [
       `Hola, ${displayName}:`,
       '',
-      'Alguien ha pedido restablecer la contraseña de tu cuenta del Gestor logístico de Ox Eye.',
+      'Alguien ha pedido restablecer la contraseña de tu cuenta del Gestor logístico de OxEye.',
       `Si has sido tú, abre este enlace en los próximos ${RESET_LINK_MINUTES} minutos y elige una contraseña nueva:`,
       '',
       url,
@@ -46,7 +46,7 @@ export function fallbackResetMessage(
 ): MailMessage {
   return {
     to,
-    subject: `Ox Eye · Enlace para restablecer la contraseña de «${username}»`,
+    subject: `OxEye · Enlace para restablecer la contraseña de «${username}»`,
     text: [
       `Se ha pedido restablecer la contraseña del usuario «${username}», que no tiene un correo de recuperación verificado.`,
       '',
@@ -67,11 +67,11 @@ export function verifyMessage(
 ): MailMessage {
   return {
     to,
-    subject: 'Ox Eye · Confirma tu correo de recuperación',
+    subject: 'OxEye · Confirma tu correo de recuperación',
     text: [
       `Hola, ${displayName}:`,
       '',
-      'Has indicado esta dirección para recuperar tu contraseña del Gestor logístico de Ox Eye.',
+      'Has indicado esta dirección para recuperar tu contraseña del Gestor logístico de OxEye.',
       `Para confirmarla, abre este enlace en las próximas ${EMAIL_LINK_HOURS} horas:`,
       '',
       url,

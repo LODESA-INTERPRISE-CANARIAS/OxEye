@@ -44,11 +44,11 @@ export interface WorkOrderFieldInfo {
 }
 
 /**
- * Said under any free text that goes out of Ox Eye (work-order notes, the
+ * Said under any free text that goes out of OxEye (work-order notes, the
  * message of a request for quotes).
  */
 export const LEAVES_OX_EYE_NOTE =
-  'Sale de Ox Eye: que no lleve datos de salud, de personas atendidas ni casos de Punto Violeta.';
+  'Sale de OxEye: que no lleve datos de salud, de personas atendidas ni casos de Punto Violeta.';
 
 export const WORK_ORDER_FIELDS: readonly WorkOrderFieldInfo[] = [
   {
@@ -405,7 +405,7 @@ export function workOrderText(order: WorkOrder): string {
   });
   if (order.routesNote) lines.push(order.routesNote, '');
   lines.push(
-    `Enviada por ${order.generatedBy} desde Ox Eye · ${order.generatedAt}.`,
+    `Enviada por ${order.generatedBy} desde OxEye · ${order.generatedAt}.`,
     order.footer,
   );
   return lines.join('\n');

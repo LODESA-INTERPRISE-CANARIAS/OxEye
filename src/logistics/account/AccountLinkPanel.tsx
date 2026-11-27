@@ -228,7 +228,7 @@ const VerifyPanel: React.FC<AccountLinkPanelProps> = ({
         hideTitle={hideTitle}
         message={state.message}
         onDone={onDone}
-        hint="Pide uno nuevo desde «Tu espacio en Ox Eye» › Seguridad › Correo de recuperación."
+        hint="Pide uno nuevo desde «Tu espacio en OxEye» › Seguridad › Correo de recuperación."
       />
     ) : (
       <div className="lx-gate__status" id="lx-verify-error" role="alert">

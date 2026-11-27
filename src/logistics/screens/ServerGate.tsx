@@ -83,7 +83,7 @@ export const ServerGate: React.FC<{onExit: () => void}> = ({onExit}) => {
         </span>
         <h1 className="lx-gate__title">Falta conectar el servidor</h1>
         <p className="lx-gate__lead">
-          Esta copia de Ox Eye no sabe dónde está el servidor del Gestor
+          Esta copia de OxEye no sabe dónde está el servidor del Gestor
           logístico, así que no puede guardar ni mostrar datos.
         </p>
         <p className="lx-muted">
@@ -93,7 +93,7 @@ export const ServerGate: React.FC<{onExit: () => void}> = ({onExit}) => {
         </p>
         <div className="lx-gate__actions">
           <Button variant="primary" size="lg" icon="back" onClick={onExit}>
-            Volver a Ox Eye
+            Volver a OxEye
           </Button>
         </div>
       </GateLayout>

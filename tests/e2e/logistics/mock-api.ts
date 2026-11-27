@@ -2462,7 +2462,7 @@ export async function mockApi(
       if (!category) return error(route, 404, 'NOT_FOUND', 'No encontrado');
       if (category.builtIn) {
         return validation(route, {
-          id: 'Las categorías que trae Ox Eye no se pueden borrar.',
+          id: 'Las categorías que trae OxEye no se pueden borrar.',
         });
       }
       const id = category.id as string;

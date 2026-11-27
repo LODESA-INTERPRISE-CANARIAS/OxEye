@@ -513,7 +513,7 @@ export const Icon: React.FC<IconProps> = ({
 );
 
 /**
- * Ox Eye symbol, drawn with palette variables. On a tile by default; at
+ * OxEye symbol, drawn with palette variables. On a tile by default; at
  * 20 px or less it drops the tile (the fine swirl would vanish inside it).
  */
 export const EyeMark: React.FC<{

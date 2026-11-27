@@ -44,7 +44,7 @@ const SupplierRoot: React.FC = () => {
           <EyeMark size={30} />
           <div className="lx-supplier__brand">
             <strong>Petición de presupuesto</strong>
-            <span>con Ox Eye</span>
+            <span>con OxEye</span>
           </div>
         </header>
         <main className="lx-supplier__card">

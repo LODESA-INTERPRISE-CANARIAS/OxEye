@@ -1,5 +1,5 @@
 /**
- * The Ox Eye symbol as an inline SVG. Shared brand primitive for the
+ * The OxEye symbol as an inline SVG. Shared brand primitive for the
  * simulation and the Logistics Manager; geometry lives in
  * `src/data/brandSymbol.ts`.
  *

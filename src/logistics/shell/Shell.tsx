@@ -116,7 +116,7 @@ export const Shell: React.FC<ShellProps> = ({
           <EyeMark size={38} />
           <div className="lx-brand__text">
             <strong>Gestor logístico</strong>
-            <span>Ox Eye</span>
+            <span>OxEye</span>
           </div>
         </div>
         <OrgSelector onOpen={() => setOrgOpen(true)} />
@@ -162,7 +162,7 @@ export const Shell: React.FC<ShellProps> = ({
           onClick={onExit}
         >
           <Icon name="back" size={20} />
-          <span>Volver a Ox Eye</span>
+          <span>Volver a OxEye</span>
         </button>
       </aside>
 
@@ -342,7 +342,7 @@ export const Shell: React.FC<ShellProps> = ({
             </Button>
           )}
           <Button block size="lg" icon="back" onClick={onExit}>
-            Volver a Ox Eye
+            Volver a OxEye
           </Button>
           <Button
             block

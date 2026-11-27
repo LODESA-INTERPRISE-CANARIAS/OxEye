@@ -131,7 +131,7 @@ test.describe('Gestor logístico · impresión en A4', () => {
       'LL_Ficha-de-trabajo_Nova-Staff-Demo_2026-12-02_10-30',
     );
     expect(await footProperty(page)).toContain(
-      'Generado por Ox Eye · 2 dic 2026, 10:30',
+      'Generado por OxEye · 2 dic 2026, 10:30',
     );
     await page.screenshot({
       path: 'test-results/visual/logistics-print-work-order.png',

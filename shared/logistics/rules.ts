@@ -314,7 +314,7 @@ export function isValidDelay(value: number): boolean {
  */
 export const SUBSOIL_REVIEW_LABEL = 'Subsuelo revisado en el simulador';
 export const SUBSOIL_REVIEW_NOTE =
-  'Marca declarada por quien hizo la revisión en el simulador (análisis de rayos X). Ox Eye no la comprueba y no certifica el suelo. Se borra si cambian el lugar, la carga pesada o los recursos de la tarea.';
+  'Marca declarada por quien hizo la revisión en el simulador (análisis de rayos X). OxEye no la comprueba y no certifica el suelo. Se borra si cambian el lugar, la carga pesada o los recursos de la tarea.';
 
 // ---------------------------------------------------------------- M6: offline and day close
 

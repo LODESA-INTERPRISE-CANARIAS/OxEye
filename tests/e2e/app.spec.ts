@@ -8,7 +8,7 @@ async function enterWorkspaceFromLaunchMenu(page: Page): Promise<void> {
   // 1. Launch screen should be visible
   const gameMenu = page.locator('#game-menu');
   await expect(gameMenu).toBeVisible();
-  await expect(gameMenu.locator('h1')).toHaveText('Ox Eye');
+  await expect(gameMenu.locator('h1')).toHaveText('OxEye');
 
   // 2. Save the default session («Salir»), reload and click "Continuar" to
   // enter the workspace («Continuar» is disabled until a project is saved)

@@ -162,7 +162,7 @@ export const SupplierApp: React.FC<{link: SupplierLink}> = ({link}) => {
   }, [ended, view.state, link]);
 
   useEffect(() => {
-    document.title = 'Presupuesto · Ox Eye';
+    document.title = 'Presupuesto · OxEye';
   }, []);
 
   const organization =
@@ -379,7 +379,7 @@ export const SupplierApp: React.FC<{link: SupplierLink}> = ({link}) => {
         <EyeMark size={30} />
         <div className="lx-supplier__brand">
           <strong>{organization || 'Petición de presupuesto'}</strong>
-          <span>con Ox Eye</span>
+          <span>con OxEye</span>
         </div>
       </header>
       <main className="lx-supplier__card">{content}</main>

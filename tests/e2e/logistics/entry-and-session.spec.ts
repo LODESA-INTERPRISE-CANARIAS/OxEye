@@ -35,7 +35,7 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     await expect(menu).toHaveAttribute('inert', '');
     await expect(page.locator('#lx-login-form')).toBeVisible();
 
-    // The gate's «Volver a Ox Eye» closes the module and gives focus back.
+    // The gate's «Volver a OxEye» closes the module and gives focus back.
     await page.locator('#lx-gate-exit').click();
     await expect(app).toHaveCount(0);
     await expect(menu).toBeVisible();
@@ -44,7 +44,7 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     expect(new URL(page.url()).hash).toBe('');
   });
 
-  test('«Volver a Ox Eye» from the workspace keeps the session for the next visit', async ({
+  test('«Volver a OxEye» from the workspace keeps the session for the next visit', async ({
     page,
   }) => {
     await mockApi(page);

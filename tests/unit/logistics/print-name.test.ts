@@ -100,10 +100,10 @@ describe('printFileName', () => {
 });
 
 describe('printFooterLead', () => {
-  it('names Ox Eye and the moment of printing', () => {
+  it('names OxEye and the moment of printing', () => {
     expect(printFooterLead('2 dic 2026, 18:30')).toBe(
-      'Generado por Ox Eye · 2 dic 2026, 18:30',
+      'Generado por OxEye · 2 dic 2026, 18:30',
     );
-    expect(printFooterLead(null)).toBe('Generado por Ox Eye');
+    expect(printFooterLead(null)).toBe('Generado por OxEye');
   });
 });

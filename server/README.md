@@ -38,7 +38,7 @@ npm --prefix server run db:seed             # organización, 6 usuarios y datos 
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
-`db:seed` imprime **una sola vez** la contraseña de cada usuario nuevo (Elvis, Dailos, Yeray, Equipo, Invitado y Fabián) con sus roles. Apúntalas: no se guardan en claro en ningún sitio. Las personales son **provisionales**: cada persona la cambia en «Tu espacio en Ox Eye» al entrar. Las de **Equipo** e **Invitado** son cuentas compartidas: nadie que las use puede cambiarlas; solo administración o desarrollo, desde «Usuarios». Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras y cierra las sesiones abiertas; también puede hacerlo una persona de administración o desarrollo desde «Usuarios», cuenta por cuenta.
+`db:seed` imprime **una sola vez** la contraseña de cada usuario nuevo (Elvis, Dailos, Yeray, Equipo, Invitado y Fabián) con sus roles. Apúntalas: no se guardan en claro en ningún sitio. Las personales son **provisionales**: cada persona la cambia en «Tu espacio en OxEye» al entrar. Las de **Equipo** e **Invitado** son cuentas compartidas: nadie que las use puede cambiarlas; solo administración o desarrollo, desde «Usuarios». Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras y cierra las sesiones abiertas; también puede hacerlo una persona de administración o desarrollo desde «Usuarios», cuenta por cuenta.
 
 Comprobación: `http://localhost:8787/api/health` responde `{"status":"ok","database":"ok","version":"0.1.0"}`.
 
@@ -79,14 +79,14 @@ Mientras la contraseña sea provisional, presupuesto, aprobación de ofertas, us
 
 **Sesión de soporte**: una persona de administración puede entrar como otra cuenta durante 5 a 30 minutos, repitiendo su contraseña y con un motivo. La cuenta lo ve en su historial de seguridad y en sus sesiones y puede cerrarla; en soporte no se llega a la contraseña, el correo, las sesiones, el perfil ni la administración. **Ver como Invitado** abre durante 30 minutos exactamente lo que ve Invitado.
 
-**Correo**: «¿Olvidaste tu contraseña?» manda un enlace de un solo uso, válido 30 minutos, al correo personal verificado de la cuenta o, si no tiene, al buzón del proyecto (`RECOVERY_FALLBACK_EMAIL`). La respuesta es siempre la misma, exista o no la cuenta. Restablecer cierra todas las sesiones de esa cuenta. Los correos son texto en español, firmados «Ox Eye», y nunca llevan una contraseña.
+**Correo**: «¿Olvidaste tu contraseña?» manda un enlace de un solo uso, válido 30 minutos, al correo personal verificado de la cuenta o, si no tiene, al buzón del proyecto (`RECOVERY_FALLBACK_EMAIL`). La respuesta es siempre la misma, exista o no la cuenta. Restablecer cierra todas las sesiones de esa cuenta. Los correos son texto en español, firmados «OxEye», y nunca llevan una contraseña.
 
 Sin `SMTP_HOST` no se envía nada: en desarrollo el enlace aparece en la consola de la API; en producción solo «Correo pendiente para y•••@… (SMTP sin configurar)». Desde «Usuarios», el enlace para restablecer se muestra en pantalla para pasarlo en mano.
 
 **Enviar con Gmail (contraseña de aplicación)**
 
 1. Con la cuenta de Google del proyecto, activa la verificación en dos pasos: <https://myaccount.google.com/security>.
-2. Crea una contraseña de aplicación en <https://myaccount.google.com/apppasswords> (nombre, por ejemplo, «Ox Eye»). Google muestra 16 letras una sola vez.
+2. Crea una contraseña de aplicación en <https://myaccount.google.com/apppasswords> (nombre, por ejemplo, «OxEye»). Google muestra 16 letras una sola vez.
 3. En `server/.env` (nunca en el repositorio):
    ```
    SMTP_HOST=smtp.gmail.com
@@ -94,7 +94,7 @@ Sin `SMTP_HOST` no se envía nada: en desarrollo el enlace aparece en la consola
    SMTP_SECURE=true
    SMTP_USER=<la cuenta de Gmail>
    SMTP_PASS=<las 16 letras, sin espacios>
-   MAIL_FROM=Ox Eye <la cuenta de Gmail>
+   MAIL_FROM=OxEye <la cuenta de Gmail>
    RECOVERY_FALLBACK_EMAIL=<buzón del proyecto>
    PUBLIC_APP_URL=<dirección de la web, sin #logistica>
    ```

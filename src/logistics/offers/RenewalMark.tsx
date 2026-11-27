@@ -1,6 +1,6 @@
 /**
- * «Generada por Ox Eye · renegociación de …» (Revisión 1 · E6): the mark of a
- * task that Ox Eye created because an offer is about to expire, with a link
+ * «Generada por OxEye · renegociación de …» (Revisión 1 · E6): the mark of a
+ * task that OxEye created because an offer is about to expire, with a link
  * to that offer. Only members who read the directory have renewals (guests
  * get 403), so for anyone else it renders nothing and asks for nothing.
  */
@@ -28,7 +28,7 @@ export const RenewalMark: React.FC<{taskId: string}> = ({taskId}) => {
     <p className="lx-signed lx-renewalmark" id="lx-task-renewal">
       <EyeMark size={18} />
       <span>
-        Generada por Ox Eye · renegociación de{' '}
+        Generada por OxEye · renegociación de{' '}
         {offer ? (
           <button
             type="button"

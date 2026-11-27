@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
       <a
         className="brand"
         href="./"
-        aria-label="Ox Eye, inicio"
+        aria-label="OxEye, inicio"
         onClick={e => {
           e.preventDefault();
           onPauseSimulation();

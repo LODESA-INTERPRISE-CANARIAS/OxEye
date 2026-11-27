@@ -136,7 +136,7 @@ export const ObjectivesDialog: React.FC<ObjectivesDialogProps> = ({
         <div>
           <h2>¿Qué quieres conseguir con este evento?</h2>
           <p className="small-note">
-            Selecciona tus prioridades. Ox Eye las utilizará para calcular
+            Selecciona tus prioridades. OxEye las utilizará para calcular
             recursos, organizar actividades, diseñar el recinto y comparar alternativas.
           </p>
         </div>

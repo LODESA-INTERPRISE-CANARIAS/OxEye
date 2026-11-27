@@ -172,13 +172,13 @@ test.describe('Gestor logístico · E4 · bienvenida', () => {
   });
 });
 
-test.describe('Gestor logístico · E4 · Tu espacio en Ox Eye', () => {
+test.describe('Gestor logístico · E4 · Tu espacio en OxEye', () => {
   test('profile, recovery e-mail, sessions and own history', async ({page}) => {
     const api = await mockApi(page);
     await signIn(page, 'Dailos');
     await page.locator('#lx-user-open').click();
     const profile = sheet(page, 'lx-profile-sheet');
-    await expect(profile).toContainText('Tu espacio en Ox Eye');
+    await expect(profile).toContainText('Tu espacio en OxEye');
     await expect(profile).toContainText('Usuario para entrar: Dailos');
 
     // A name already taken is said on the field.

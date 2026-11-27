@@ -302,6 +302,6 @@ describe('the printed page', () => {
     expect(html).toContain('Terminó sin revisión del subsuelo declarada');
     expect(html).not.toMatch(/verificada/i);
     expect(html).toContain('<strong>Hipótesis</strong>');
-    expect(html).toContain('Ox Eye ayuda a decidir; no certifica.');
+    expect(html).toContain('OxEye ayuda a decidir; no certifica.');
   });
 });

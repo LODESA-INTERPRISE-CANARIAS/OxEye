@@ -176,7 +176,7 @@ export function MockShell<T extends string>({
           <EyeMark size={38} />
           <div className="lx-brand__text">
             <strong>Gestor logístico</strong>
-            <span>Ox Eye</span>
+            <span>OxEye</span>
           </div>
         </div>
         <div className="lx-org">
@@ -261,7 +261,7 @@ export const MockGate: React.FC<{
         <EyeMark size={36} />
         <div className="lx-brand__text">
           <strong>Gestor logístico</strong>
-          <span>Ox Eye</span>
+          <span>OxEye</span>
         </div>
       </div>
       <button

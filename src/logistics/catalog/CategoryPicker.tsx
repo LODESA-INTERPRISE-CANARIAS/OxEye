@@ -375,7 +375,7 @@ export const CategoryPicker: React.FC<{
             <p className="lx-muted lx-catmanage__intro">
               Toca la <span aria-hidden="true">×</span>
               <span className="lx-visually-hidden">cruz</span> de una categoría
-              vuestra (en rojo) para borrarla. Las que trae Ox Eye no se pueden
+              vuestra (en rojo) para borrarla. Las que trae OxEye no se pueden
               borrar.
             </p>
           )}

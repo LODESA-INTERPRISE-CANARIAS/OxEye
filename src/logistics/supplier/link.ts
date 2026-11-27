@@ -106,14 +106,14 @@ function isReload(): boolean {
 if (typeof window !== 'undefined') {
   // The copy in this tab brings the form back only on a real reload, or
   // while there are answers not yet sent; and only on the Gestor's root
-  // address (where the token was taken off). Opening Ox Eye again in this
-  // tab otherwise opens Ox Eye, never a form that was already finished.
+  // address (where the token was taken off). Opening OxEye again in this
+  // tab otherwise opens OxEye, never a form that was already finished.
   if (!capture(window.location.hash) && window.location.hash === '#logistica') {
     const copy = remembered();
     if (copy && (isReload() || hasDraft(copy.token))) pending = copy;
     else if (copy) remember(null);
   }
-  // A supplier link pasted into a tab where Ox Eye is already open: start
+  // A supplier link pasted into a tab where OxEye is already open: start
   // the page again so only the supplier's form is mounted (main.tsx), never
   // on top of the hub, the map or the Gestor.
   window.addEventListener(

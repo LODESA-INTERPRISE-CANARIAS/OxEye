@@ -16,7 +16,7 @@ import {maskEmail} from '../../../shared/logistics/account.ts';
 export interface MailMessage {
   to: string;
   subject: string;
-  /** Plain text, Spanish, signed «Ox Eye». */
+  /** Plain text, Spanish, signed «OxEye». */
   text: string;
 }
 

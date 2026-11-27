@@ -1342,7 +1342,7 @@ async function seedDemoCatalogue(
 
 /**
  * The «Sistema» author (inactive, cannot log in). E6 renegotiation tasks are
- * written by it; the UI shows them as «Generada por Ox Eye» (OfferRenewal).
+ * written by it; the UI shows them as «Generada por OxEye» (OfferRenewal).
  */
 export async function ensureSystemUser(
   tx: Queryable,

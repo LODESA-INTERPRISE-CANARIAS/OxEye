@@ -175,7 +175,7 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
   });
 
-  test('«Volver a Ox Eye» after moving around returns to the hub', async ({
+  test('«Volver a OxEye» after moving around returns to the hub', async ({
     page,
   }) => {
     await mockApi(page, followData());

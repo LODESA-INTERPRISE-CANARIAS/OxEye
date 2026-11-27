@@ -1,7 +1,7 @@
 /**
  * The own profile (Revisión 1 · E4): photo, display name, a short bio and
  * the accent of the initials. The username, used to sign in, never changes.
- * Used by «Tu espacio en Ox Eye» and the first-login welcome.
+ * Used by «Tu espacio en OxEye» and the first-login welcome.
  */
 import React, {useRef, useState} from 'react';
 import {BIO_MAX, DISPLAY_NAME_MAX} from '../../../shared/logistics/account.ts';

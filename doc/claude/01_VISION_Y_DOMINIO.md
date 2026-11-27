@@ -46,7 +46,7 @@ Estética editorial/cartográfica (`Georgia` para títulos editoriales + `Inter`
 
 | ID | Nombre | Modo | Carácter |
 | :--- | :--- | :---: | :--- |
-| `oxeye` | **Ox Eye** *(por defecto)* | Claro | Púrpura editorial profundo y lavanda suave. |
+| `oxeye` | **OxEye** *(por defecto)* | Claro | Púrpura editorial profundo y lavanda suave. |
 | `atlas` | **Atlas** | Claro | Cartografía técnica azul petróleo y cian oceánico. |
 | `noctis` | **Noctis** | Oscuro | Modo oscuro de alto contraste para análisis nocturno. |
 | `territorio` | **Territorio** | Claro | Papel cálido, verde bosque y ocre topográfico clásico. |

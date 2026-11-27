@@ -161,7 +161,7 @@ export const NewPasswordForm: React.FC<{
         </label>
       </span>
       <p className="lx-mk-privacy-line">
-        <Icon name="lock" size={15} /> Ox Eye no guarda tu contraseña, solo una
+        <Icon name="lock" size={15} /> OxEye no guarda tu contraseña, solo una
         huella que no se puede revertir: nadie, ni los administradores, puede
         leerla.
       </p>

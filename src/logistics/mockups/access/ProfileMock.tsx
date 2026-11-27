@@ -1,5 +1,5 @@
 /**
- * F2 · «Tu espacio en Ox Eye»: the personal profile. Photo, visible name,
+ * F2 · «Tu espacio en OxEye»: the personal profile. Photo, visible name,
  * short description and appearance; recovery e-mail with its state; own
  * security (password, open sessions, security history, support sessions on
  * the account) and own activity.
@@ -121,8 +121,8 @@ export const ProfileMock: React.FC<{
         nav={nav}
         active={tab}
         onNav={id => (id === 'usuarios' ? onUsers() : setTab(id))}
-        title="Tu espacio en Ox Eye"
-        subtitle="Cómo te ven los demás, cómo ves tú Ox Eye y quién entra en tu cuenta"
+        title="Tu espacio en OxEye"
+        subtitle="Cómo te ven los demás, cómo ves tú OxEye y quién entra en tu cuenta"
         user={{
           name: me.displayName,
           role: me.roles.map(r => ROLE_LABEL[r]).join(' · '),
@@ -157,7 +157,7 @@ export const ProfileMock: React.FC<{
               </Chip>
             </div>
           </div>
-          <div className="lx-mk-hero__seen" aria-label="Así apareces en Ox Eye">
+          <div className="lx-mk-hero__seen" aria-label="Así apareces en OxEye">
             <p className="lx-eyebrow">Así apareces</p>
             <span className="lx-mk-seen">
               <span className="lx-mk-seen__task">Montaje de carpas</span>
@@ -292,7 +292,7 @@ export const ProfileMock: React.FC<{
                 Apariencia
               </h2>
               <p className="lx-mk-card-lead">
-                Cómo ves Ox Eye en tus dispositivos. No cambia lo que ven los
+                Cómo ves OxEye en tus dispositivos. No cambia lo que ven los
                 demás.
               </p>
               <fieldset className="lx-mk-palettes">
@@ -494,7 +494,7 @@ export const ProfileMock: React.FC<{
           <div className="lx-mk-cols" id="mk-profile-actividad">
             <section className="lx-card" aria-labelledby="mk-a-week">
               <h2 className="lx-card__title" id="mk-a-week">
-                Tu semana en Ox Eye
+                Tu semana en OxEye
               </h2>
               <div className="lx-mk-tiles lx-num">
                 <p>

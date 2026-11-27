@@ -101,13 +101,13 @@ La base funciona: los cinco espacios, el calendario por lugar, los avisos, «¿Y
 - **Preguntas abiertas** que se responden dentro de la nota, con autor, una respuesta vigente y cierre por quien preguntó.
 - **Imágenes** en la ficha del material. «Gestionar» categorías con las propias en rojo y una ×.
 - **Precios e impuestos.** Impuesto por empresa (IGIC, IVA, otro, ninguno, sin saber) con porcentaje; precio sin impuestos y estimación con impuestos; comparativa justa entre impuestos distintos; medallas en los tres primeros; botón «Comparar» junto a la categoría.
-- **PDF** con la marca **Ox Eye** y nombres que se entienden sin abrirlos (`SCLL_Cierre-de-jornada_2026-12-02_18-30.pdf`), sin textos solapados.
+- **PDF** con la marca **OxEye** y nombres que se entienden sin abrirlos (`SCLL_Cierre-de-jornada_2026-12-02_18-30.pdf`), sin textos solapados.
 - **Quién ve qué.** Administradores (Yeray, Elvis, Dailos y Fabián) ven presupuesto y gastos del evento; el equipo no. El Invitado deja de entrar en Contactos y Catálogo. Se cumple en el servidor, no solo escondiendo pantallas.
 - **Navegar hacia atrás** con las flechas del navegador y el gesto del móvil.
 
 ### Decisiones tomadas
 
-- La marca es **Ox Eye** en todo lo que lee una persona; «OxEye» solo en lo técnico; «Ojo de Buey» desaparece del producto (el identificador del formato de proyecto `ojo-de-buey` se conserva para que los proyectos guardados sigan abriéndose).
+- La marca se escribe **OxEye** (una sola palabra), tanto en lo que lee una persona como en lo técnico; «Ojo de Buey» desaparece del producto (el identificador del formato de proyecto `ojo-de-buey` se conserva para que los proyectos guardados sigan abriéndose).
 - Un solo modelo de roles por organización, sumables en una cuenta: administrador, desarrollador (también ve presupuestos; se puede retirar), equipo (cuenta compartida «Equipo») e invitado (solo lectura). Los usuarios del piloto pasan a ser seis con Fabián.
 - El desarrollador y el administrador pueden poner una contraseña provisional a cualquier cuenta sin ver nunca la actual; el usuario la cambia antes de ver información sensible.
 - La recuperación de contraseña llega al correo personal verificado del usuario o, si no tiene, al buzón del proyecto. Las solicitudes de presupuesto a proveedores se siguen enviando a mano desde el correo de quien usa la aplicación.

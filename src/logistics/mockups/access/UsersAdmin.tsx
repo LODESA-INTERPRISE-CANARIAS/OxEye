@@ -535,7 +535,7 @@ export const UsersAdmin: React.FC<{
     >
       <Icon name="lock" size={18} />
       <span>
-        <strong>Estás viendo Ox Eye como Invitado</strong> · solo lectura, sin
+        <strong>Estás viendo OxEye como Invitado</strong> · solo lectura, sin
         Contactos ni Catálogo
       </span>
       <Button size="sm" onClick={() => setGuest(false)}>
@@ -733,7 +733,7 @@ export const UsersAdmin: React.FC<{
           support
             ? 'Ves su cuenta con sus permisos, durante poco tiempo y con registro'
             : guest
-              ? 'Así ve Ox Eye la cuenta Invitado'
+              ? 'Así ve OxEye la cuenta Invitado'
               : view === 'roles'
                 ? 'Lo que ve y hace cada rol en la organización'
                 : 'Administradores y desarrolladores'

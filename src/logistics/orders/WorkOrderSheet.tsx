@@ -13,7 +13,7 @@
  * the print stylesheet in `orders.css` shows only that copy while this sheet
  * is open. Nothing changes for the simulator's own printing. While it
  * prints, the page title names the saved PDF (`usePrintTitle`) and the page
- * margin carries «Generado por Ox Eye · fecha · página N de M».
+ * margin carries «Generado por OxEye · fecha · página N de M».
  */
 import React, {useMemo, useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -65,7 +65,7 @@ export const WorkOrderSheet: React.FC<{
   const resources = useLogisticsStore(s => s.resources);
   const warehouses = useLogisticsStore(s => s.warehouses);
   const contacts = useLogisticsStore(s => s.contacts);
-  const me = useLogisticsStore(s => s.session?.user.displayName ?? 'Ox Eye');
+  const me = useLogisticsStore(s => s.session?.user.displayName ?? 'OxEye');
   const role = useLogisticsStore(s => s.session?.user.role ?? 'guest');
   const organization = useLogisticsStore(
     s => s.organizations.find(o => o.id === s.orgId) ?? null,

@@ -460,7 +460,7 @@
 }
 
 /* Every printed page says where it comes from, which page it is and that
-   Ox Eye does not certify. `--lx-print-foot` («Generado por Ox Eye · 2 dic
+   OxEye does not certify. `--lx-print-foot` («Generado por OxEye · 2 dic
    2026, 18:30») is set while printing (`shell/usePrintTitle.ts`). Browsers
    without page-margin boxes skip this; the page's own footer still says it. */
 @page lx-order {
@@ -468,9 +468,9 @@
   margin: 14mm 14mm 18mm;
 
   @bottom-center {
-    content: var(--lx-print-foot, 'Generado por Ox Eye') ' · página '
+    content: var(--lx-print-foot, 'Generado por OxEye') ' · página '
       counter(page) ' de ' counter(pages)
-      ' · Ox Eye ayuda a decidir; no certifica.';
+      ' · OxEye ayuda a decidir; no certifica.';
     font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif;
     font-size: 8pt;
     font-variant-numeric: tabular-nums;

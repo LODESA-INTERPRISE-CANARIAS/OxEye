@@ -1,5 +1,5 @@
 /**
- * Which account sheet is open (Revisión 1 · E4): «Tu espacio en Ox Eye»
+ * Which account sheet is open (Revisión 1 · E4): «Tu espacio en OxEye»
  * (profile, security, activity) or «Usuarios» (administration). A small
  * store of its own, so any entry point (sidebar, phone account sheet,
  * banners, «Sin acceso» notices) opens them without passing callbacks.

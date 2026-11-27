@@ -390,7 +390,7 @@
  *   `contact` and `task` for what an approval or a renewal writes; all are
  *   directory types (hidden without `directory.read`). Renegotiation tasks
  *   are ordinary tasks without event written by «Sistema»; their
- *   `OfferRenewal` is the «Generada por Ox Eye» mark.
+ *   `OfferRenewal` is the «Generada por OxEye» mark.
  *
  * Guests (role `guest`, a shared login) never receive contact details,
  * prices or free-text observations: the server sends those fields as null and
@@ -2229,9 +2229,9 @@ export interface OfferSettingsResponse {
 }
 
 /**
- * A renegotiation task Ox Eye generated before an offer version expires.
+ * A renegotiation task OxEye generated before an offer version expires.
  * The task itself is an ordinary task without event (company = the offer's);
- * this record is its «Generada por Ox Eye» mark and holds the assignee.
+ * this record is its «Generada por OxEye» mark and holds the assignee.
  */
 export interface OfferRenewal {
   id: Uuid;

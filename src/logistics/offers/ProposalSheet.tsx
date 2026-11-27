@@ -518,7 +518,7 @@ export const ProposalSheet: React.FC<{
             <Icon name="check" size={18} />
             <span>
               Quedará firmada por ti. Los gastos ya apuntados conservan su
-              precio. Antes de que venza, Ox Eye creará la tarea de
+              precio. Antes de que venza, OxEye creará la tarea de
               renegociarla.
             </span>
           </p>

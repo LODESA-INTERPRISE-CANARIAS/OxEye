@@ -251,7 +251,7 @@ export const IncidentAnalysisPanel: React.FC<IncidentAnalysisPanelProps> = ({
       )
       .join('');
     w.document.write(
-      `<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>Ficha ${code} — Ox Eye</title>` +
+      `<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>Ficha ${code} — OxEye</title>` +
         '<style>body{font-family:system-ui,sans-serif;padding:24px;color:#1e293b}h1{margin:0 0 6px}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}svg{max-width:100%;max-height:280px;border:1px solid #cbd5e1;border-radius:8px}.note{font-size:11px;color:#475569}</style></head><body>' +
         `<h1>${code} · ${catMeta.label} (${sevMeta.label})</h1>` +
         `<p><b>Instante de captura:</b> ${globalCurrentClock} (${formatRelativeTime(
