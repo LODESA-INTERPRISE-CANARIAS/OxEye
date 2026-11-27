@@ -18,7 +18,6 @@ import {useActions} from '../common/actions';
 import {useMediaQuery} from '../common/useMediaQuery';
 import {useNow} from '../common/useNow';
 import {usePlan} from '../common/usePlan';
-import {warningsSummary} from '../common/WarningList';
 import {monthOf, nowMinutes, shiftMonth} from '../lib/calendar';
 import {sortEvents} from '../lib/events';
 import {
@@ -49,6 +48,7 @@ import {
   type SelectOption,
 } from '../ui';
 import {DayView} from './DayView';
+import {DayWarnings} from './DayWarnings';
 import {MonthView} from './MonthView';
 import {clampHour, HOUR_MAX, HOUR_MIN} from './Timeline';
 
@@ -88,7 +88,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   onDay,
   onTimelineChange,
 }) => {
-  const {today, timeZone, canWrite, addTask} = useActions();
+  const {today, timeZone, canWrite, addTask, openTask} = useActions();
   const events = useLogisticsStore(s => s.events);
   const tasks = useLogisticsStore(s => s.tasks);
   const eventsState = useLogisticsStore(s => s.eventsState);
@@ -209,7 +209,6 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     ? [
         dayEvents.length ? plural(dayEvents.length, 'evento', 'eventos') : '',
         plural(dayTasks.length, 'tarea', 'tareas'),
-        dayWarnings.length ? warningsSummary(dayWarnings) : '',
       ]
         .filter(Boolean)
         .join(' · ')
@@ -261,6 +260,11 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
               // The short form fits a phone; the long one is read out.
               <>
                 <span className="lx-calbar__title-long">{title}</span>
+                {/* Without the weekday (the date field shows it): room for
+                    the warnings pill on mid-size screens. */}
+                <span className="lx-calbar__title-mid" aria-hidden="true">
+                  {title.replace(/^[^,]+,\s*/, '')}
+                </span>
                 <span className="lx-calbar__title-short" aria-hidden="true">
                   {shortDate(day)}
                 </span>
@@ -304,6 +308,15 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 }}
               />
             </div>
+          )}
+          {day && (
+            <DayWarnings
+              dayName={title}
+              warnings={dayWarnings}
+              accepted={plan.acceptedByDay.get(day) ?? []}
+              tasksById={plan.tasksById}
+              onOpenTask={openTask}
+            />
           )}
         </div>
 

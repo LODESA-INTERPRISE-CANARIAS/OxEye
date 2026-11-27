@@ -30,7 +30,15 @@ export const VenueWarnings: React.FC<{
   accepted?: AcceptedWarning[];
   /** `restoreFocus`: put focus back on the badge (Escape, close button). */
   onClose: (restoreFocus: boolean) => void;
+  /** Small heading over the name; the day's panel says «Avisos del día». */
+  eyebrow?: string;
+  id?: string;
+  /** Accessible name of the panel. */
+  label?: string;
 }> = ({
+  eyebrow = 'Avisos del lugar',
+  id = 'lx-tl-warnpop',
+  label,
   name,
   warnings,
   anchor,
@@ -95,14 +103,14 @@ export const VenueWarnings: React.FC<{
       ref={ref}
       className={`lx-tl-warnpop${conflicts ? ' has-conflict' : ''}`}
       role="dialog"
-      aria-label={`Avisos de ${name}`}
+      aria-label={label ?? `Avisos de ${name}`}
       tabIndex={-1}
       style={box}
-      id="lx-tl-warnpop"
+      id={id}
     >
       <div className="lx-tl-warnpop__head">
         <div className="lx-tl-warnpop__title">
-          <span className="lx-eyebrow">Avisos del lugar</span>
+          <span className="lx-eyebrow">{eyebrow}</span>
           <strong>{name}</strong>
           <span className="lx-tl-warnpop__summary lx-num">
             {warnings.length || !accepted?.length

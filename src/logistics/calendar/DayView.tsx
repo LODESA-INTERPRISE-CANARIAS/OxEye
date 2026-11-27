@@ -15,7 +15,6 @@ import {useActions} from '../common/actions';
 import {TaskRow} from '../common/TaskRow';
 import {TimeWindow} from '../common/TimeWindow';
 import {usePlan} from '../common/usePlan';
-import {WarningList, warningsSummary} from '../common/WarningList';
 import {StatusChip} from '../events/EventChips';
 import {spanOnDate, venueColumns} from '../lib/calendar';
 import {recordDate} from '../lib/tasks';
@@ -63,7 +62,6 @@ export const DayView: React.FC<{
       ),
     [timed, events, date],
   );
-  const conflicts = warnings.filter(w => w.severity === 'conflict').length;
   const {acceptedByDay} = usePlan();
   const accepted = useMemo(
     () => acceptedByDay.get(date) ?? [],
@@ -131,33 +129,7 @@ export const DayView: React.FC<{
           </section>
         )}
 
-        {(warnings.length > 0 || accepted.length > 0) && (
-          // Closed by default: the timeline is the main content and already
-          // outlines the blocks in conflict; the summary line stays visible.
-          <details
-            className={`lx-disclosure lx-day__warnings${conflicts ? ' has-conflict' : ''}`}
-            id="lx-day-warnings"
-          >
-            <summary>
-              <Icon name={conflicts ? 'alert' : 'bell'} size={18} />
-              Avisos del día ·{' '}
-              {[
-                warnings.length ? warningsSummary(warnings) : '',
-                accepted.length
-                  ? `${accepted.length} ${accepted.length === 1 ? 'aceptado' : 'aceptados'}`
-                  : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </summary>
-            <WarningList
-              warnings={warnings}
-              accepted={accepted}
-              tasksById={tasksById}
-              onOpenTask={openTask}
-            />
-          </details>
-        )}
+        {/* The day's warnings live in the calendar bar (DayWarnings). */}
       </div>
 
       {timed.length === 0 && !columns.length ? (

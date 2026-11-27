@@ -210,10 +210,8 @@ test.describe('Gestor logístico · cambios firmados en soporte', () => {
       ],
     });
     await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await page.locator('#lx-day-warnings-toggle').click();
     const box = page.locator('#lx-day-warnings');
-    if (!(await box.evaluate(d => (d as HTMLDetailsElement).open))) {
-      await box.locator('summary').click();
-    }
     await expect(box.locator('.lx-warning--accepted')).toContainText(
       'Dailos (soporte: Elvis)',
     );

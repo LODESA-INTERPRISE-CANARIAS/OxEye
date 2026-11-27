@@ -71,6 +71,27 @@
   color: var(--lx-heading);
 }
 
+.lx .lx-calbar__title-mid {
+  display: none;
+}
+
+/* Mid-size screens with the day's warnings pill: the date without its
+   weekday, so the bar stays on one line (the long one is still read out). */
+@media (min-width: 900px) and (max-width: 1799px) {
+  .lx .lx-calbar:has(.lx-daywarn) .lx-calbar__title-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .lx .lx-calbar:has(.lx-daywarn) .lx-calbar__title-mid {
+    display: inline;
+  }
+}
+
 .lx .lx-calbar__title-short {
   display: none;
 }
@@ -567,23 +588,78 @@
   color: var(--lx-muted);
 }
 
-.lx .lx-day__warnings {
-  margin-top: 0;
-}
-
-.lx .lx-day__warnings summary {
-  display: flex;
+/*
+ * The day's warnings: a pill in the bar, next to the date. Reddish with a
+ * conflict; quiet with reminders only. Opens the warnings panel.
+ */
+.lx .lx-daywarn {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-height: 38px;
+  margin-left: 4px;
+  padding: 0 10px 0 12px;
+  /* Through the shared button variables, so hover never clears them. */
+  --lx-btn-bg: var(--lx-surface-2);
+  --lx-btn-bg-hover: var(--lx-surface-2);
+  --lx-btn-border-w: 1px;
+  --lx-btn-border: var(--lx-line-strong);
+  --lx-btn-border-hover: var(--lx-muted);
+  border-radius: 999px;
+  color: var(--lx-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  flex: none;
 }
 
-.lx .lx-day__warnings.has-conflict {
-  border-color: var(--lx-danger);
-  background: var(--lx-danger-soft);
-}
-
-.lx .lx-day__warnings.has-conflict summary .lx-icon {
+.lx .lx-daywarn.has-conflict {
+  --lx-btn-bg: var(--lx-danger-soft);
+  --lx-btn-bg-hover: color-mix(
+    in srgb,
+    var(--lx-danger) 18%,
+    var(--lx-surface)
+  );
+  --lx-btn-border: color-mix(in srgb, var(--lx-danger) 45%, transparent);
+  --lx-btn-border-hover: var(--lx-danger);
   color: var(--lx-danger);
+}
+
+.lx .lx-daywarn:focus-visible {
+  outline: 2px solid var(--lx-accent);
+  outline-offset: 2px;
+}
+
+.lx .lx-daywarn[aria-expanded='true'] .lx-daywarn__chevron {
+  transform: rotate(180deg);
+}
+
+.lx .lx-daywarn__part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Reminders beside a conflict: same pill, softer. */
+.lx .lx-daywarn.has-conflict .lx-daywarn__part--soft {
+  padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--lx-danger) 30%, transparent);
+  font-weight: 500;
+  color: var(--lx-ink);
+}
+
+.lx .lx-daywarn__bell {
+  color: var(--lx-muted);
+}
+
+/* Narrow bars: the numbers and their icons say it (the label is read out). */
+@media (max-width: 1799px) {
+  .lx .lx-daywarn__word,
+  .lx .lx-daywarn__chevron {
+    display: none;
+  }
 }
 
 .lx .lx-day__untimed {

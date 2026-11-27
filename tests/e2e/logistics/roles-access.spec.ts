@@ -45,13 +45,14 @@ test.describe('Gestor logístico · E4 · Invitado', () => {
 
     await page.locator('#lx-nav-contactos').click();
     const locked = page.locator('#lx-contactos-noaccess');
-    await expect(locked).toContainText('Contactos: sin acceso');
+    await expect(locked).toContainText('Solo para el equipo');
+    await expect(locked.getByRole('heading')).toHaveText('Contactos');
     await expect(locked).toContainText('contienen datos de personas y precios');
     await expect(page.locator('#lx-space-contactos')).toHaveCount(0);
     await page.locator('#lx-nav-catalogo').click();
-    await expect(page.locator('#lx-catalogo-noaccess')).toContainText(
-      'Catálogo: sin acceso',
-    );
+    await expect(
+      page.locator('#lx-catalogo-noaccess').getByRole('heading'),
+    ).toHaveText('Catálogo');
 
     // The lists were never asked for.
     expect(

@@ -569,7 +569,7 @@ const TaskView: React.FC<{task: Task; onClose: () => void}> = ({
           </div>
         )}
         <div>
-          <dt>Empieza cuando termine</dt>
+          <dt>Depende de que termine</dt>
           <dd>
             {deps.length
               ? deps.map(d => `«${d.title}»`).join(', ')
@@ -1666,9 +1666,9 @@ const TaskForm: React.FC<TaskFormProps> = ({mode, onClose, onDirty}) => {
 
         <fieldset className="lx-deps" id="lx-task-deps">
           <legend className="lx-field__label lx-segmented__legend">
-            Empieza cuando termine…
+            Esta tarea depende de que termine:
             <span className="lx-field__optional">{' '}· opcional</span>
-            <HelpTip label="empieza cuando termine">
+            <HelpTip label="depende de que termine">
               Marca las tareas que tienen que terminar antes de que esta pueda
               empezar. Por ejemplo, el montaje del escenario no puede empezar
               hasta que el camión llegue y descargue. Si esta tarea está puesta

@@ -97,6 +97,51 @@ test.describe('Gestor logístico · Calendario, columnas por lugar', () => {
     expect(await prefs(page)).toBeNull();
   });
 
+  test('the last column, narrowed by hand, snaps back to fill the plan when dragged to its edge', async ({
+    page,
+  }) => {
+    await page.setViewportSize({width: 1280, height: 900});
+    await openDay(page);
+    const last = page.locator('#lx-timeline .lx-tl__head[data-col]').last();
+    const key = (await last.getAttribute('data-col'))!;
+    const first = page.locator('#lx-timeline .lx-tl__head[data-col]').first();
+    const firstKey = (await first.getAttribute('data-col'))!;
+    const drag = async (dx: number, k = key) => {
+      const b = (await page.locator(`[data-col-resize="${k}"]`).boundingBox())!;
+      const x = b.x + b.width / 2;
+      const y = b.y + b.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + dx, y, {steps: 6});
+      await page.mouse.up();
+    };
+    // Every column sized by hand: an empty band is left on the right.
+    await drag(-100, firstKey);
+    await drag(-200);
+    await expect
+      .poll(async () => JSON.parse((await prefs(page)) ?? '{}')[key]?.width)
+      .toBeTruthy();
+    const firstWidth = await widthOf(first);
+
+    // To the plan's right edge: automatic again, the others untouched.
+    await drag(400);
+    await expect
+      .poll(async () => JSON.parse((await prefs(page)) ?? '{}')[key])
+      .toBeUndefined();
+    expect(JSON.parse((await prefs(page))!)[firstKey]?.width).toBeTruthy();
+    const scroller = page.locator('.lx-tl__scroller');
+    const edge = await scroller.evaluate(
+      el => el.getBoundingClientRect().left + el.clientLeft + el.clientWidth,
+    );
+    await expect
+      .poll(async () => {
+        const b = (await last.boundingBox())!;
+        return Math.abs(b.x + b.width - edge);
+      })
+      .toBeLessThan(3);
+    expect(Math.abs((await widthOf(first)) - firstWidth)).toBeLessThan(2);
+  });
+
   test('a venue folds to its acronym, its blocks stay as markers, and it unfolds', async ({
     page,
   }) => {
@@ -155,8 +200,8 @@ test.describe('Gestor logístico · Calendario, columnas por lugar', () => {
   }) => {
     await page.setViewportSize({width: 1440, height: 900});
     await openDay(page, fiveVenueData());
-    // The day's general list stays.
-    await expect(page.locator('#lx-day-warnings')).toBeVisible();
+    // The day's general list stays, as the pill in the bar.
+    await expect(page.locator('#lx-day-warnings-toggle')).toBeVisible();
 
     const cristo = head(page, 'v1').locator('.lx-tl__warnbadge');
     await expect(cristo).toHaveText('5');

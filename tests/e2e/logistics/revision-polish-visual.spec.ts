@@ -251,6 +251,23 @@ test.describe('Gestor logístico · revisión 1 · capturas', () => {
     await capture(page, 'hypothesis-sheet-phone');
   });
 
+  test('calendar day: the warnings pill and its panel', async ({page}) => {
+    await page.setViewportSize({width: 1680, height: 1000});
+    await mockApi(page, planData());
+    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    const pill = page.locator('#lx-day-warnings-toggle');
+    await expect(pill).toHaveClass(/has-conflict/);
+    await capture(page, 'day-warnings-pill', {palettes: ['oxeye', 'noctis']});
+    await pill.click();
+    await expect(page.locator('#lx-day-warnings')).toBeVisible();
+    await capture(page, 'day-warnings-open', {
+      palettes: ['oxeye', 'noctis', 'territorio'],
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#lx-day-warnings')).toHaveCount(0);
+    await expect(pill).toBeFocused();
+  });
+
   test('task sheet: the chain that would close a loop', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, planData());

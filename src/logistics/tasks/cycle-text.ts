@@ -6,14 +6,15 @@
 
 /**
  * `chain`: titles from the candidate to the last task before the one being
- * edited (the `dependencyPath` without its last id). «No se puede: «Montaje
+ * edited (the `dependencyPath` without its last id). ««Montaje
  * de escenario» ya depende de «Entrega de vallas», que a su vez depende de
  * esta tarea.»
  */
 export function cycleText(chain: readonly string[]): string {
   const [first, next, ...rest] = chain.map(t => `«${t}»`);
-  if (!first) return 'No se puede: crearía un círculo de dependencias.';
-  if (!next) return `No se puede: ${first} ya depende de esta tarea.`;
+  // The disabled checkbox already says «no»: the text only says why.
+  if (!first) return 'Crearía un círculo de dependencias.';
+  if (!next) return `${first} ya depende de esta tarea.`;
   const links = rest.map(t => `, que depende de ${t}`).join('');
-  return `No se puede: ${first} ya depende de ${next}${links}, que a su vez depende de esta tarea.`;
+  return `${first} ya depende de ${next}${links}, que a su vez depende de esta tarea.`;
 }

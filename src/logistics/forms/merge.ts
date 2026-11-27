@@ -148,7 +148,7 @@ export const MERGE_FIELD_LABEL: Record<string, string> = {
   status: 'Estado',
   heavy: 'Carga pesada',
   subsoilReviewed: 'Subsuelo revisado en el simulador',
-  dependsOn: 'Empieza cuando termine',
+  dependsOn: 'Depende de que termine',
   resourceIds: 'Recursos',
   notes: 'Observaciones',
   source: 'Origen del dato',

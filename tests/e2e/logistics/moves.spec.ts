@@ -65,8 +65,8 @@ async function scrollTo(page: Page, hour: number) {
 
 async function openDayWarnings(page: Page) {
   const box = page.locator('#lx-day-warnings');
-  if (!(await box.evaluate(d => (d as HTMLDetailsElement).open))) {
-    await box.locator('summary').click();
+  if (!(await box.isVisible())) {
+    await page.locator('#lx-day-warnings-toggle').click();
   }
   return box;
 }
@@ -361,7 +361,13 @@ test.describe('Gestor logístico · salidas de un conflicto', () => {
       '«El sonido entra por la calle lateral.»',
     );
     await expect(accepted).toContainText('Elvis');
-    await expect(box.locator('summary')).toContainText('1 aceptado');
+    await expect(box.locator('.lx-tl-warnpop__summary')).toContainText(
+      '1 conflicto aceptado',
+    );
+    await expect(page.locator('#lx-day-warnings-toggle')).toHaveAttribute(
+      'aria-label',
+      /1 conflicto aceptado/,
+    );
 
     // Moving one of the tasks reopens it by itself.
     await scrollTo(page, 11);

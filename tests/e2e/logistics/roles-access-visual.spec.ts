@@ -126,6 +126,18 @@ test.describe('Gestor logístico · E4 · revisión visual', () => {
     await capture(page, 'noaccess-phone');
   });
 
+  test('guest: Contactos locked, on desktop', async ({page}) => {
+    await page.setViewportSize({width: 1440, height: 900});
+    await mockApi(page);
+    await signIn(page, 'Invitado', '#logistica/contactos');
+    const locked = page.locator('#lx-contactos-noaccess');
+    await expect(locked).toContainText('Solo para el equipo');
+    await expect(locked).toContainText('Lo que el equipo hace aquí');
+    await capture(page, 'noaccess-desktop');
+    await locked.getByRole('button', {name: 'Ir a Hoy'}).click();
+    await expect(page).toHaveURL(/#logistica\/?$/);
+  });
+
   test('phone account sheet and reset link', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page);

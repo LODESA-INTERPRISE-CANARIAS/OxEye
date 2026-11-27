@@ -1081,6 +1081,39 @@ button.lx-event__task {
   color: var(--lx-accent);
 }
 
+/* A space locked for this user: the same card, with a lock on the icon. */
+.lx .lx-placeholder__icon {
+  position: relative;
+}
+
+.lx .lx-placeholder__lock {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--lx-heading);
+  color: var(--lx-surface);
+  border: 2px solid var(--lx-surface);
+}
+
+.lx .lx-placeholder__text {
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--lx-ink);
+}
+
+.lx .lx-placeholder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 4px;
+}
+
 /* ============================================================ responsive */
 @media (max-width: 1239px) {
   .lx .lx-hoy__grid {

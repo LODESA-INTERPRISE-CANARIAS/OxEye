@@ -11,6 +11,9 @@ import {plural} from '../lib/format';
 import {Icon} from '../ui';
 import {COLUMN} from './layout';
 
+/** How close to the plan's right edge a dragged column snaps to automatic. */
+const SNAP_PX = 12;
+
 export interface EventFrame {
   id: string;
   name: string;
@@ -123,7 +126,18 @@ const ResizeHandle: React.FC<{
   onDraft: VenueHeaderProps['onDraftWidth'];
   onCommit: VenueHeaderProps['onWidth'];
 }> = ({colKey, name, width, maxWidth, measure, onDraft, onCommit}) => {
-  const drag = useRef<{x: number; w: number; last: number} | null>(null);
+  /**
+   * `fill`: the width at which the column's right edge meets the plan's
+   * visible right edge. Dragged that far, the column snaps back to automatic
+   * (it fills the rest again); the other columns keep their widths.
+   */
+  const drag = useRef<{
+    x: number;
+    w: number;
+    last: number;
+    fill: number | null;
+    snap: boolean;
+  } | null>(null);
   const clamp = (w: number) =>
     Math.round(Math.min(maxWidth, Math.max(COLUMN.min, w)));
 
@@ -131,7 +145,8 @@ const ResizeHandle: React.FC<{
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    if (commit && Math.abs(d.last - d.w) >= 1) onCommit(colKey, d.last);
+    if (commit && d.snap) onCommit(colKey, null);
+    else if (commit && Math.abs(d.last - d.w) >= 1) onCommit(colKey, d.last);
     else onDraft(colKey, null);
   };
 
@@ -162,7 +177,7 @@ const ResizeHandle: React.FC<{
       aria-valuemax={maxWidth}
       aria-valuenow={width}
       aria-valuetext={width ? `${width} píxeles` : 'Ancho automático'}
-      title="Arrastra para cambiar el ancho; doble clic para volver al automático"
+      title="Arrastra para cambiar el ancho; llévala hasta el borde derecho o haz doble clic para volver al automático"
       data-col-resize={colKey}
       onKeyDown={onKeyDown}
       onPointerDown={e => {
@@ -171,12 +186,26 @@ const ResizeHandle: React.FC<{
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         const w = width ?? measure();
-        drag.current = {x: e.clientX, w, last: w};
+        drag.current = {x: e.clientX, w, last: w, fill: null, snap: false};
+        // Only a column sized by hand can snap back to automatic.
+        const scroller = e.currentTarget.closest('.lx-tl__scroller');
+        const head = e.currentTarget.closest('.lx-tl__head');
+        if (width !== undefined && scroller && head) {
+          const s = scroller.getBoundingClientRect();
+          const visibleRight =
+            s.left + scroller.clientLeft + scroller.clientWidth;
+          const room = visibleRight - head.getBoundingClientRect().right;
+          if (room > 0) drag.current.fill = w + room;
+        }
       }}
       onPointerMove={e => {
         const d = drag.current;
         if (!d) return;
-        const next = clamp(d.w + e.clientX - d.x);
+        const raw = d.w + e.clientX - d.x;
+        d.snap = d.fill !== null && raw >= d.fill - SNAP_PX;
+        const next = d.snap
+          ? Math.round(Math.min(COLUMN.max, d.fill!))
+          : clamp(raw);
         if (next === d.last) return;
         d.last = next;
         onDraft(colKey, next);

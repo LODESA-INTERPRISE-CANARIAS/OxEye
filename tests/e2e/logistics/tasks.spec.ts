@@ -533,10 +533,10 @@ test.describe('Gestor logístico · «Empieza cuando termine…»', () => {
     await expect(t3).toBeDisabled();
     // The reason names the real chain with the tasks' titles.
     await expect(page.locator('#lx-task-dep-t2-why')).toHaveText(
-      'No se puede: «Instalación de sonido» ya depende de esta tarea.',
+      '«Instalación de sonido» ya depende de esta tarea.',
     );
     await expect(page.locator('#lx-task-dep-t3-why')).toHaveText(
-      'No se puede: «Entrega de vallas» ya depende de «Instalación de sonido», que a su vez depende de esta tarea.',
+      '«Entrega de vallas» ya depende de «Instalación de sonido», que a su vez depende de esta tarea.',
     );
     await expect(t2).toHaveAttribute('aria-describedby', 'lx-task-dep-t2-why');
     await expect(t3).toHaveAttribute('aria-describedby', 'lx-task-dep-t3-why');

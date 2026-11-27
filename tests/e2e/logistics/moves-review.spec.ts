@@ -80,10 +80,9 @@ async function lift(page: Page, id: string, presses: number) {
 
 async function warnings(page: Page) {
   const box = page.locator('#lx-day-warnings');
-  if (!(await box.evaluate(d => (d as HTMLDetailsElement).open))) {
-    await box.locator('summary').click();
+  if (!(await box.isVisible())) {
+    await page.locator('#lx-day-warnings-toggle').click();
   }
-  await box.scrollIntoViewIfNeeded();
   return box;
 }
 

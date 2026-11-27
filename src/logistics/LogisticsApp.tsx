@@ -110,6 +110,26 @@ const MockupsApp = import.meta.env.DEV
   ? React.lazy(() => import('./mockups/MockupsApp'))
   : null;
 
+/** What a locked space is for, so a guest still learns what it holds. */
+const LOCKED_ABOUT = {
+  contactos: {
+    icon: 'contacts' as const,
+    lines: [
+      'Personas y empresas con cargo, teléfono, correo y notas.',
+      'Llamar, escribir por WhatsApp o enviar un correo tras confirmar.',
+      'Compartir una ficha de contacto solo con los datos que se elijan.',
+    ],
+  },
+  catalogo: {
+    icon: 'catalog' as const,
+    lines: [
+      'Ofertas de proveedores con precio, unidad y condiciones.',
+      'Comparar ofertas de la misma categoría.',
+      'Costes de transporte, montaje y mantenimiento por separado.',
+    ],
+  },
+};
+
 const MISSING_SHEET =
   'No se encuentra esa ficha: puede que se haya borrado o que no tengas acceso.';
 
@@ -1233,6 +1253,8 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
               permission="directory.read"
               what="Contactos"
               id="lx-contactos-noaccess"
+              about={LOCKED_ABOUT.contactos}
+              onGoToday={() => goTo('hoy')}
             />
           )
         ) : space === 'catalogo' ? (
@@ -1243,6 +1265,8 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
               permission="directory.read"
               what="Catálogo"
               id="lx-catalogo-noaccess"
+              about={LOCKED_ABOUT.catalogo}
+              onGoToday={() => goTo('hoy')}
             />
           )
         ) : space === 'inventarios' ? (
