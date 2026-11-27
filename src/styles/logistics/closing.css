@@ -1063,20 +1063,13 @@
   display: none;
 }
 
-.lx-day-root .lx-eyemark__bg {
-  fill: CanvasText;
+/* Ink symbol on paper: no filled tile, symbol in the text colour. */
+.lx-day-root svg.lx-eyemark.ox-symbol {
+  color: CanvasText;
 }
 
-.lx-day-root .lx-eyemark__lid {
-  stroke: Canvas;
-}
-
-.lx-day-root .lx-eyemark__iris {
-  fill: Canvas;
-}
-
-.lx-day-root .lx-eyemark__pupil {
-  fill: CanvasText;
+.lx-day-root svg.lx-eyemark .ox-symbol__tile {
+  fill: none;
 }
 
 /* Same page footer as a work order (orders.css): origin, page and the

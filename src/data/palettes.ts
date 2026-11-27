@@ -3,6 +3,7 @@
  * Paletas de color predefinidas y no personalizables para la interfaz de Ojo de Buey (OxEye).
  */
 import type {PaletteId} from '../types';
+import {brandSymbolSvg} from './brandSymbol';
 
 /** Definición de una paleta de color predefinida. */
 export interface ColorPaletteDefinition {
@@ -131,7 +132,7 @@ export const COLOR_PALETTES: readonly ColorPaletteDefinition[] = [
 
 export const DEFAULT_PALETTE_ID: PaletteId = 'oxeye';
 
-const VALID_PALETTE_IDS = new Set<string>(COLOR_PALETTES.map((p) => p.id));
+const VALID_PALETTE_IDS = new Set<string>(COLOR_PALETTES.map(p => p.id));
 
 /** Valida un identificador de paleta y devuelve `'oxeye'` si no pertenece al catálogo oficial. */
 export function normalizePaletteId(raw: unknown): PaletteId {
@@ -142,10 +143,10 @@ export function normalizePaletteId(raw: unknown): PaletteId {
 
 /** Devuelve los colores del emblema Ojo de Buey para una paleta dada. */
 export function getPaletteLogoColors(
-  palette: PaletteId
+  palette: PaletteId,
 ): ColorPaletteDefinition['logo'] {
   const id = normalizePaletteId(palette);
-  return (COLOR_PALETTES.find((p) => p.id === id) || COLOR_PALETTES[0]).logo;
+  return (COLOR_PALETTES.find(p => p.id === id) || COLOR_PALETTES[0]).logo;
 }
 
 /** Aplica la paleta seleccionada al elemento raíz del documento (`data-palette`) y actualiza el favicon. */
@@ -154,7 +155,7 @@ export function applyPalette(palette: PaletteId): void {
   const id = normalizePaletteId(palette);
   document.documentElement.dataset.palette = id;
   const logo = getPaletteLogoColors(id);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="19" fill="${logo.bg}"/><path d="M9 32Q32 6 55 32Q32 58 9 32Z" fill="none" stroke="${logo.eye}" stroke-width="3"/><circle cx="32" cy="32" r="11" fill="${logo.eye}"/><circle cx="32" cy="32" r="4" fill="${logo.pupil}"/></svg>`;
+  const svg = brandSymbolSvg({color: logo.eye, tile: logo.bg});
   const iconEl = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (iconEl) {
     iconEl.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;

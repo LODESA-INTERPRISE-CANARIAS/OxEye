@@ -450,20 +450,13 @@
   display: none;
 }
 
-.lx-print-root .lx-eyemark__bg {
-  fill: CanvasText;
+/* Ink symbol on paper: no filled tile, symbol in the text colour. */
+.lx-print-root svg.lx-eyemark.ox-symbol {
+  color: CanvasText;
 }
 
-.lx-print-root .lx-eyemark__lid {
-  stroke: Canvas;
-}
-
-.lx-print-root .lx-eyemark__iris {
-  fill: Canvas;
-}
-
-.lx-print-root .lx-eyemark__pupil {
-  fill: CanvasText;
+.lx-print-root svg.lx-eyemark .ox-symbol__tile {
+  fill: none;
 }
 
 /* Every printed page says where it comes from, which page it is and that

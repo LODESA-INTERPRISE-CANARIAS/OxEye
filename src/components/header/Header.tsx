@@ -1,5 +1,6 @@
 import React, {useRef} from 'react';
 import {MAPS_DATA} from '../../data/geodata';
+import {BrandSymbol} from '../common/BrandSymbol';
 import {getPaletteLogoColors} from '../../data/palettes';
 import {downloadFile, parseImportedProject} from '../../db/repository';
 import {useProjectStore} from '../../store/useProjectStore';
@@ -18,17 +19,17 @@ export const Header: React.FC<HeaderProps> = ({
   onPauseSimulation,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const project = useProjectStore((s) => s.project);
-  const paletteId = useProjectStore((s) => s.preferences.palette);
+  const project = useProjectStore(s => s.project);
+  const paletteId = useProjectStore(s => s.preferences.palette);
   const logoColors = getPaletteLogoColors(paletteId);
-  const panel = useProjectStore((s) => s.panel);
-  const onboardingStage = useProjectStore((s) => s.onboardingStage);
-  const saveStatusText = useProjectStore((s) => s.saveStatusText);
-  const setMenuOpen = useProjectStore((s) => s.setMenuOpen);
-  const setActiveModal = useProjectStore((s) => s.setActiveModal);
-  const save = useProjectStore((s) => s.save);
-  const showToast = useProjectStore((s) => s.showToast);
-  const replaceProject = useProjectStore((s) => s.replaceProject);
+  const panel = useProjectStore(s => s.panel);
+  const onboardingStage = useProjectStore(s => s.onboardingStage);
+  const saveStatusText = useProjectStore(s => s.saveStatusText);
+  const setMenuOpen = useProjectStore(s => s.setMenuOpen);
+  const setActiveModal = useProjectStore(s => s.setActiveModal);
+  const save = useProjectStore(s => s.save);
+  const showToast = useProjectStore(s => s.showToast);
+  const replaceProject = useProjectStore(s => s.replaceProject);
 
   const isSimulate = panel === 'simulate';
   const isLockedPerimeter = onboardingStage === 'perimeter';
@@ -64,27 +65,18 @@ export const Header: React.FC<HeaderProps> = ({
         className="brand"
         href="./"
         aria-label="Ox Eye, inicio"
-        onClick={(e) => {
+        onClick={e => {
           e.preventDefault();
           onPauseSimulation();
           setMenuOpen(true);
         }}
       >
-        <svg
+        <BrandSymbol
+          size={40}
           className="brand-logo"
-          viewBox="0 0 64 64"
-          aria-hidden="true"
-        >
-          <rect width="64" height="64" rx="19" fill={logoColors.bg} />
-          <path
-            d="M9 32Q32 6 55 32Q32 58 9 32Z"
-            fill="none"
-            stroke={logoColors.eye}
-            strokeWidth="3"
-          />
-          <circle cx="32" cy="32" r="11" fill={logoColors.eye} />
-          <circle cx="32" cy="32" r="4" fill={logoColors.pupil} />
-        </svg>
+          color={logoColors.eye}
+          tileColor={logoColors.bg}
+        />
         <span>
           OJO DE BUEY<small>ESPACIO PARA ANTICIPARSE</small>
         </span>

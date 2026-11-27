@@ -4,26 +4,11 @@
  * to load (e.g. no coverage). Kept tiny so the simulator bundle barely grows.
  */
 import React from 'react';
+import {BrandSymbol} from '../components/common/BrandSymbol';
 import '../styles/logistics/loading.css';
 
 const Mark: React.FC = () => (
-  <svg
-    width="44"
-    height="44"
-    viewBox="0 0 64 64"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <rect width="64" height="64" rx="19" className="lx-boot__mark-bg" />
-    <path
-      d="M9 32Q32 6 55 32Q32 58 9 32Z"
-      fill="none"
-      className="lx-boot__mark-lid"
-      strokeWidth="3"
-    />
-    <circle cx="32" cy="32" r="11" className="lx-boot__mark-iris" />
-    <circle cx="32" cy="32" r="4" className="lx-boot__mark-bg" />
-  </svg>
+  <BrandSymbol size={44} className="lx-boot__mark" />
 );
 
 export const LogisticsLoading: React.FC = () => (
