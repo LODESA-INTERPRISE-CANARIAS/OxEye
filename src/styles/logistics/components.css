@@ -961,20 +961,18 @@
   flex-shrink: 0;
 }
 
-.lx .lx-eyemark__bg {
+/* Symbol on an accent tile; the iris highlight is a hole showing the tile. */
+.lx .lx-eyemark.ox-symbol--tile {
+  color: var(--lx-on-accent);
+}
+
+.lx .lx-eyemark .ox-symbol__tile {
   fill: var(--lx-accent);
 }
 
-.lx .lx-eyemark__lid {
-  stroke: var(--lx-on-accent);
-}
-
-.lx .lx-eyemark__iris {
-  fill: var(--lx-on-accent);
-}
-
-.lx .lx-eyemark__pupil {
-  fill: var(--lx-accent);
+/* Small inline marks: the symbol alone, in the accent colour. */
+.lx .lx-eyemark.ox-symbol--glyph {
+  color: var(--lx-accent);
 }
 
 .lx .lx-contours {

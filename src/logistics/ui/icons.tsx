@@ -3,6 +3,7 @@
  * inherit `currentColor`, so they follow every palette.
  */
 import React from 'react';
+import {BrandSymbol} from '../../components/common/BrandSymbol';
 
 export type IconName =
   | 'today'
@@ -511,29 +512,20 @@ export const Icon: React.FC<IconProps> = ({
   </svg>
 );
 
-/** OxEye eye mark, drawn with palette variables. */
-export const EyeMark: React.FC<{size?: number; className?: string}> = ({
-  size = 36,
-  className,
-}) => (
-  <svg
+/**
+ * Ox Eye symbol, drawn with palette variables. On a tile by default; at
+ * 20 px or less it drops the tile (the fine swirl would vanish inside it).
+ */
+export const EyeMark: React.FC<{
+  size?: number;
+  className?: string;
+  variant?: 'tile' | 'glyph';
+}> = ({size = 36, className, variant}) => (
+  <BrandSymbol
+    size={size}
+    variant={variant ?? (size <= 20 ? 'glyph' : 'tile')}
     className={['lx-eyemark', className].filter(Boolean).join(' ')}
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <rect width="64" height="64" rx="19" className="lx-eyemark__bg" />
-    <path
-      d="M9 32Q32 6 55 32Q32 58 9 32Z"
-      fill="none"
-      className="lx-eyemark__lid"
-      strokeWidth="3"
-    />
-    <circle cx="32" cy="32" r="11" className="lx-eyemark__iris" />
-    <circle cx="32" cy="32" r="4" className="lx-eyemark__pupil" />
-  </svg>
+  />
 );
 
 /**

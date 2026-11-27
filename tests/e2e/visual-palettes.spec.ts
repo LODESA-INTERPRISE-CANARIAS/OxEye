@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {mockApi, signIn} from './logistics/mock-api';
 
 /**
  * Visual review harness: captures key screens in all six palettes so that
@@ -81,5 +82,25 @@ test.describe('Revisión visual por paleta', () => {
   test('workspace', async ({page}) => {
     await createProject(page);
     await captureAll(page, 'workspace');
+  });
+
+  test('logistics', async ({page}) => {
+    await mockApi(page);
+    await signIn(page);
+    const brand = page.locator('.lx-sidebar .lx-brand');
+    await expect(brand).toBeVisible();
+    for (const id of PALETTES) {
+      await applyPalette(page, id);
+      await page.screenshot({path: `${OUT}/logistics-${id}.png`});
+      // Close-up of the brand block, to judge the symbol at its real size.
+      await brand.screenshot({path: `${OUT}/logistics-brand-${id}.png`});
+    }
+    // The symbol blown up, to check its geometry against the supplied SVG.
+    const mark = page.locator('.lx-sidebar .lx-eyemark');
+    await mark.evaluate(el => {
+      el.setAttribute('width', '320');
+      el.setAttribute('height', '320');
+    });
+    await mark.screenshot({path: `${OUT}/logistics-symbol-large.png`});
   });
 });

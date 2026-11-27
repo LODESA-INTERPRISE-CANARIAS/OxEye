@@ -21,16 +21,12 @@
   animation: lx-boot-pulse 1.6s ease-in-out infinite;
 }
 
-.lx-boot__mark-bg {
+.lx-boot__mark {
+  color: var(--on-accent);
+}
+
+.lx-boot__mark .ox-symbol__tile {
   fill: var(--purple);
-}
-
-.lx-boot__mark-lid {
-  stroke: var(--on-accent);
-}
-
-.lx-boot__mark-iris {
-  fill: var(--on-accent);
 }
 
 .lx-boot__title {
