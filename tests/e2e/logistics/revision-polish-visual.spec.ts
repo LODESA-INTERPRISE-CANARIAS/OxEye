@@ -164,6 +164,40 @@ test.describe('Gestor logístico · revisión 1 · capturas', () => {
     await capture(page, 'hoy-activity-phone');
   });
 
+  // One or two upcoming events fill the row with a richer card; three keep
+  // the regular one. The day column never leaves a gap under it.
+  for (const n of [1, 2, 3]) {
+    test(`Hoy with ${n} upcoming event(s)`, async ({page}) => {
+      await page.setViewportSize(DESKTOP);
+      const data = hoyData();
+      const extra = ['e8', 'e9', 'e10'];
+      const keep = new Set(extra.slice(0, n));
+      data.events = data.events.filter(
+        e => (e.date ?? '') <= DAY || keep.has(String(e.id)),
+      );
+      await mockApi(page, data);
+      await signIn(page);
+      const cards = page.locator('#lx-upcoming article');
+      await expect(cards).toHaveCount(n);
+      if (n < 3) {
+        await expect(cards.first()).toHaveAttribute(
+          'data-size',
+          n === 1 ? 'full' : 'half',
+        );
+        await expect(cards.first()).toContainText('Próximas tareas');
+      } else {
+        await expect(cards.first()).not.toHaveAttribute('data-size', /.+/);
+      }
+      await page.locator('#lx-upcoming').scrollIntoViewIfNeeded();
+      await capture(page, `hoy-upcoming-${n}`, {
+        palettes: ['oxeye', 'noctis'],
+      });
+      await page.setViewportSize(PHONE);
+      await page.locator('#lx-upcoming').scrollIntoViewIfNeeded();
+      await capture(page, `hoy-upcoming-${n}-phone`, {palettes: ['oxeye']});
+    });
+  }
+
   test('catalogue «Comparar» and «Gestionar»', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     // E5: offers rank by their estimate with tax, so their companies need one.

@@ -114,7 +114,7 @@ const columns = (page: Page, selector: string) =>
     .evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
 
 test.describe('Gestor logístico · Hoy · «Próximos eventos»', () => {
-  test('across the whole width, up to four columns, with what each event needs', async ({
+  test('in the day column, three per row, with what each event needs', async ({
     page,
   }) => {
     await page.setViewportSize(WIDE);
@@ -125,11 +125,12 @@ test.describe('Gestor logístico · Hoy · «Próximos eventos»', () => {
       'Próximos eventos',
     );
     await expect(page.locator('#lx-upcoming-title .lx-count')).toHaveText('9');
-    // Full width: as wide as the day and the side column together.
-    const grid = await page.locator('.lx-hoy__grid').boundingBox();
+    // It lives in the day column (so the side column never leaves a gap)
+    // and fills it with three cards per row.
+    const col = await page.locator('.lx-hoy__col--main').boundingBox();
     const box = await section.boundingBox();
-    expect(Math.round(box!.width)).toBe(Math.round(grid!.width));
-    expect(await columns(page, '#lx-upcoming .lx-event-grid')).toBe(4);
+    expect(Math.round(box!.width)).toBe(Math.round(col!.width));
+    expect(await columns(page, '#lx-upcoming .lx-event-grid')).toBe(3);
     // Eight shown, the rest one tap away.
     await expect(section.locator('article')).toHaveCount(8);
     await expect(page.locator('#lx-upcoming-more')).toContainText('Y 1 más.');

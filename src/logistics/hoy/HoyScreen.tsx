@@ -8,7 +8,10 @@
  * month and the activity. Narrower screens stack everything in that order.
  */
 import React, {useMemo} from 'react';
-import type {LogisticsEvent} from '../../../shared/logistics/contracts.ts';
+import type {
+  LogisticsEvent,
+  Task,
+} from '../../../shared/logistics/contracts.ts';
 import {useActions} from '../common/actions';
 import {useMediaQuery} from '../common/useMediaQuery';
 import {usePlan} from '../common/usePlan';
@@ -89,7 +92,7 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
   const tasksError = useLogisticsStore(s => s.tasksError);
   const refresh = useLogisticsStore(s => s.refresh);
   const hasOrg = useLogisticsStore(s => !!s.orgId);
-  const {addTask, openDay} = useActions();
+  const {addTask, openDay, openTask} = useActions();
   const plan = usePlan();
   // Same breakpoint as the single-column layout in screens.css.
   const phone = useMediaQuery('(max-width: 599px)');
@@ -109,6 +112,19 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
     () => summarizeEvents(tasks, plan.warnings),
     [tasks, plan],
   );
+  // Each event's open tasks in time order, for the wider upcoming cards.
+  const openTasksOf = useMemo(() => {
+    const out = new Map<string, Task[]>();
+    for (const t of sortTasks(tasks)) {
+      if (!t.eventId || t.status === 'done' || t.status === 'cancelled') {
+        continue;
+      }
+      const list = out.get(t.eventId) ?? [];
+      list.push(t);
+      out.set(t.eventId, list);
+    }
+    return out;
+  }, [tasks]);
   const contacts = useLogisticsStore(s => s.contacts);
   const companies = useLogisticsStore(s => s.companies);
   const offers = useLogisticsStore(s => s.offers);
@@ -164,7 +180,11 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
    * Today's cards keep the short form (the day's tasks and warnings follow
    * right below); upcoming and undated ones say what the event needs.
    */
-  const card = (event: LogisticsEvent, showDate: boolean) => (
+  const card = (
+    event: LogisticsEvent,
+    showDate: boolean,
+    size?: 'full' | 'half',
+  ) => (
     <EventCard
       key={event.id}
       event={event}
@@ -177,9 +197,22 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
           ? (summaries.get(event.id) ?? emptySummary())
           : undefined
       }
+      size={size}
+      nextTasks={size ? openTasksOf.get(event.id) : undefined}
+      onOpenTask={openTask}
       onOpen={onOpenEvent}
     />
   );
+  // One or two upcoming events use the whole row with a richer card; three
+  // or more keep the regular one (never on a portrait phone).
+  const shownUpcoming = upcoming.slice(0, maxUpcoming);
+  const upcomingSize: 'full' | 'half' | undefined = phone
+    ? undefined
+    : shownUpcoming.length === 1
+      ? 'full'
+      : shownUpcoming.length === 2
+        ? 'half'
+        : undefined;
 
   // Nothing will load without an organization (`refresh` has nothing to ask
   // for), so say why instead of showing a skeleton forever.
@@ -198,139 +231,159 @@ export const HoyScreen: React.FC<HoyScreenProps> = ({
     <div className="lx-hoy" id="lx-space-hoy">
       {demoCount > 0 && <DemoNotice counts={demo} canWrite={canWrite} />}
       <div className="lx-hoy__grid">
-        <div className="lx-hoy__main">
-          <Section
-            id="lx-today"
-            title={<>Hoy · {shortDate(today)}</>}
-            count={loading || failed ? undefined : todayEvents.length}
-          >
-            {loading ? (
-              <CardsSkeleton />
-            ) : failed ? (
-              <LoadError message={error ?? ''} onRetry={() => void refresh()} />
-            ) : nothingToday && tasksState !== 'error' ? (
-              <EmptyState
-                icon="today"
-                title="Hoy no hay nada registrado"
-                id="lx-today-empty"
-                action={
-                  canWrite && (
-                    <div className="lx-empty__actions">
-                      <Button variant="primary" icon="plus" onClick={onAdd}>
-                        Añadir evento
-                      </Button>
-                      <Button
-                        icon="task"
-                        id="lx-today-empty-add-task"
-                        onClick={() => addTask({date: today})}
-                      >
-                        Añadir tarea
-                      </Button>
+        {/* Two independent columns on a wide screen, so a long notes card
+            never leaves a gap under the day (CSS orders them on a phone). */}
+        <div className="lx-hoy__col lx-hoy__col--main">
+          <div className="lx-hoy__main">
+            <Section
+              id="lx-today"
+              title={<>Hoy · {shortDate(today)}</>}
+              count={loading || failed ? undefined : todayEvents.length}
+            >
+              {loading ? (
+                <CardsSkeleton />
+              ) : failed ? (
+                <LoadError
+                  message={error ?? ''}
+                  onRetry={() => void refresh()}
+                />
+              ) : nothingToday && tasksState !== 'error' ? (
+                <EmptyState
+                  icon="today"
+                  title="Hoy no hay nada registrado"
+                  id="lx-today-empty"
+                  action={
+                    canWrite && (
+                      <div className="lx-empty__actions">
+                        <Button variant="primary" icon="plus" onClick={onAdd}>
+                          Añadir evento
+                        </Button>
+                        <Button
+                          icon="task"
+                          id="lx-today-empty-add-task"
+                          onClick={() => addTask({date: today})}
+                        >
+                          Añadir tarea
+                        </Button>
+                      </div>
+                    )
+                  }
+                >
+                  {canWrite
+                    ? 'Apunta lo que sepas ahora; podrás completarlo después.'
+                    : 'Cuando el equipo registre algo para hoy, aparecerá aquí.'}
+                </EmptyState>
+              ) : (
+                <>
+                  {todayEvents.length > 0 ? (
+                    <div className="lx-event-grid">
+                      {todayEvents.map(e => card(e, false))}
                     </div>
-                  )
-                }
-              >
-                {canWrite
-                  ? 'Apunta lo que sepas ahora; podrás completarlo después.'
-                  : 'Cuando el equipo registre algo para hoy, aparecerá aquí.'}
-              </EmptyState>
-            ) : (
-              <>
-                {todayEvents.length > 0 ? (
-                  <div className="lx-event-grid">
-                    {todayEvents.map(e => card(e, false))}
-                  </div>
-                ) : (
-                  nothingToday && (
-                    <p className="lx-muted" id="lx-today-empty">
-                      Hoy no hay eventos registrados.
-                    </p>
-                  )
-                )}
-                {(todayTasks.length > 0 || tasksState === 'error') && (
-                  <TodayTasks
-                    tasks={todayTasks}
-                    plan={plan}
-                    state={tasksState}
-                    error={tasksError}
-                    onRetry={() => void refresh()}
-                  />
-                )}
-              </>
-            )}
-          </Section>
+                  ) : (
+                    nothingToday && (
+                      <p className="lx-muted" id="lx-today-empty">
+                        Hoy no hay eventos registrados.
+                      </p>
+                    )
+                  )}
+                  {(todayTasks.length > 0 || tasksState === 'error') && (
+                    <TodayTasks
+                      tasks={todayTasks}
+                      plan={plan}
+                      state={tasksState}
+                      error={tasksError}
+                      onRetry={() => void refresh()}
+                    />
+                  )}
+                </>
+              )}
+            </Section>
 
-          {/* Only with tasks today: «sin avisos» means something then. */}
-          {!loading && !failed && tasksReady && todayTasks.length > 0 && (
-            <WarningsCard plan={plan} />
+            {/* Only with tasks today: «sin avisos» means something then. */}
+            {!loading && !failed && tasksReady && todayTasks.length > 0 && (
+              <WarningsCard plan={plan} />
+            )}
+          </div>
+
+          {!loading && !failed && (
+            <Section
+              id="lx-upcoming"
+              title="Próximos eventos"
+              count={upcoming.length}
+              className="lx-hoy__wide"
+            >
+              {upcoming.length ? (
+                <>
+                  <div
+                    className="lx-event-grid lx-event-grid--upcoming"
+                    data-count={Math.min(shownUpcoming.length, 3)}
+                  >
+                    {shownUpcoming.map(e => card(e, true, upcomingSize))}
+                  </div>
+                  {upcoming.length > maxUpcoming && (
+                    <p className="lx-section__more" id="lx-upcoming-more">
+                      <span className="lx-muted">
+                        Y {upcoming.length - maxUpcoming} más.
+                      </span>{' '}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon="month"
+                        onClick={() =>
+                          openDay(upcoming[maxUpcoming].date ?? today)
+                        }
+                      >
+                        Verlos en el calendario
+                      </Button>
+                    </p>
+                  )}
+                </>
+              ) : (
+                <EmptyState
+                  compact
+                  icon="calendar"
+                  title="Sin eventos próximos"
+                >
+                  Los eventos con fecha posterior a hoy aparecerán aquí.
+                </EmptyState>
+              )}
+            </Section>
+          )}
+
+          {!loading && !failed && (
+            <div className="lx-hoy__rest">
+              {undated.length > 0 && (
+                <Section
+                  id="lx-undated"
+                  title="Sin fecha"
+                  count={undated.length}
+                >
+                  <div className="lx-event-grid">
+                    {undated.map(e => card(e, true))}
+                  </div>
+                </Section>
+              )}
+              <VerifiedCard
+                events={events}
+                tasks={tasks}
+                canWrite={canWrite}
+                onOpenEvent={onOpenEvent}
+              />
+            </div>
           )}
         </div>
 
-        {/* Right after the day (beside it on a wide screen): on site it is
+        <div className="lx-hoy__col lx-hoy__col--side">
+          {/* Right after the day (beside it on a wide screen): on site it is
             the first thing to check and to write. */}
-        <div className="lx-hoy__notes">
-          <NotesCard />
-        </div>
-
-        {!loading && !failed && (
-          <Section
-            id="lx-upcoming"
-            title="Próximos eventos"
-            count={upcoming.length}
-            className="lx-hoy__wide"
-          >
-            {upcoming.length ? (
-              <>
-                <div className="lx-event-grid lx-event-grid--upcoming">
-                  {upcoming.slice(0, maxUpcoming).map(e => card(e, true))}
-                </div>
-                {upcoming.length > maxUpcoming && (
-                  <p className="lx-section__more" id="lx-upcoming-more">
-                    <span className="lx-muted">
-                      Y {upcoming.length - maxUpcoming} más.
-                    </span>{' '}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon="month"
-                      onClick={() =>
-                        openDay(upcoming[maxUpcoming].date ?? today)
-                      }
-                    >
-                      Verlos en el calendario
-                    </Button>
-                  </p>
-                )}
-              </>
-            ) : (
-              <EmptyState compact icon="calendar" title="Sin eventos próximos">
-                Los eventos con fecha posterior a hoy aparecerán aquí.
-              </EmptyState>
-            )}
-          </Section>
-        )}
-
-        {!loading && !failed && (
-          <div className="lx-hoy__rest">
-            {undated.length > 0 && (
-              <Section id="lx-undated" title="Sin fecha" count={undated.length}>
-                <div className="lx-event-grid">
-                  {undated.map(e => card(e, true))}
-                </div>
-              </Section>
-            )}
-            <VerifiedCard
-              events={events}
-              tasks={tasks}
-              canWrite={canWrite}
-              onOpenEvent={onOpenEvent}
-            />
+          <div className="lx-hoy__notes">
+            <NotesCard />
           </div>
-        )}
 
-        <div className="lx-hoy__side">
-          <MiniCalendar today={today} plan={plan} onOpenEvent={onOpenEvent} />
-          <ActivityCard timeZone={timeZone} />
+          <div className="lx-hoy__side">
+            <MiniCalendar today={today} plan={plan} onOpenEvent={onOpenEvent} />
+            <ActivityCard timeZone={timeZone} />
+          </div>
         </div>
       </div>
     </div>
