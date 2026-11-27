@@ -345,6 +345,8 @@
 /* ============================================================ fields */
 .lx .lx-field {
   display: grid;
+  /* Fields in a row stay level: one with a hint or error only grows below. */
+  align-content: start;
   gap: 6px;
   min-width: 0;
 }
