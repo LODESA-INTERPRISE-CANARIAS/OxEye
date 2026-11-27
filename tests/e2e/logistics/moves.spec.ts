@@ -460,7 +460,13 @@ test.describe('Gestor logístico · siglas y horario de un lugar', () => {
     );
 
     await page.locator('#lx-venue-edit').click();
-    await expect(page.locator('#lx-venue-acronym-input')).toHaveValue('P.C.');
+    // The proposal is only a placeholder: saving the hours alone never
+    // stores it as the venue's own acronym.
+    await expect(page.locator('#lx-venue-acronym-input')).toHaveValue('');
+    await expect(page.locator('#lx-venue-acronym-input')).toHaveAttribute(
+      'placeholder',
+      'P.C.',
+    );
     await page.locator('#lx-venue-acronym-input').fill('PL CR');
     await page.locator('#lx-venue-opens').fill('08:00');
     await page.locator('#lx-venue-save').click();

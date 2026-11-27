@@ -86,7 +86,7 @@ export function offersData(): MockOptions {
     companies: [
       makeCompany(carpas.id, carpas.name, {
         tax: IGIC,
-        email: 'ventas@carpasdemo.es',
+        email: 'ventas@carpasdemo.example.org',
         categoryIds: [CARPAS],
       }),
       makeCompany(norte.id, norte.name, {categoryIds: [CARPAS]}),
@@ -158,7 +158,7 @@ export function offersData(): MockOptions {
             name: 'Carpas Demo',
             contactName: 'Nayra',
             phone: '922 000 000',
-            email: 'ventas@carpasdemo.es',
+            email: 'ventas@carpasdemo.example.org',
           },
           products: [
             {
@@ -193,7 +193,7 @@ export function offersData(): MockOptions {
       makeProposal(
         'p2',
         {
-          company: {name: 'Toldos Sur', email: 'info@toldos.example'},
+          company: {name: 'Toldos Sur', email: 'info@toldos.example.org'},
           products: [
             {
               key: 'a',

@@ -174,8 +174,10 @@ import {
  * `server/src/media` (photos on `resource.media` with their base64 `data`,
  * device-id replay, at most MEDIA_PER_RECORD, first one main).
  *
- * Guests are withheld `MOCK_WITHHELD`, a hand-written copy of the shared
- * `WITHHELD_FROM_GUESTS` (equality asserted in `mock-contract.spec.ts`).
+ * Guests, and members without `directory.read`, are withheld
+ * `MOCK_WITHHELD`, a hand-written copy of the shared `WITHHELD_FROM_GUESTS`
+ * (equality asserted in `mock-contract.spec.ts`), as `withholdFor` does
+ * with its `directory` argument.
  *
  * Only `/api/*` is intercepted: Vite module URLs such as
  * `/src/logistics/api/client.ts` must reach the dev server.
@@ -1565,6 +1567,13 @@ export async function mockApi(
    * record it as `supportBy` / `acceptedBySupport`.
    */
   let writingAsSupport: {id: string; displayName: string} | null = null;
+  /**
+   * Safety audit: whether the viewer of the request being handled may read
+   * the directory (`mayReadDirectory`). Records are withheld like
+   * `withholdFor(kind, record, role, directory)`: for guests and for members
+   * without `directory.read` alike.
+   */
+  let viewerDirectory = true;
   const supportInfo = (s: NonNullable<typeof support>) => ({
     kind: s.kind,
     by: s.by,
@@ -2102,8 +2111,9 @@ export async function mockApi(
     kind: keyof typeof WITHHELD,
     record: Json,
     role: string,
+    directory: boolean = viewerDirectory,
   ): Json => {
-    if (!isGuest(role)) return {...record, restricted: false};
+    if (!isGuest(role) && directory) return {...record, restricted: false};
     // M6: a server bug that forgets the withholding (the device cache must
     // still never store a withheld value for a guest).
     if (state.leakToGuests) return {...record, restricted: true};
@@ -2120,7 +2130,7 @@ export async function mockApi(
     }
     // Same as `NESTED` in redaction.ts: a note's answer is withheld with it.
     if (kind === 'note' && out.answer && typeof out.answer === 'object') {
-      out.answer = redact('answer', out.answer as Json, role);
+      out.answer = redact('answer', out.answer as Json, role, false);
     }
     return out;
   };
@@ -5534,6 +5544,9 @@ export async function mockApi(
         viaSupport && support
           ? e4User(e4Account(support.username)!, supportInfo(support))
           : e4User(own);
+      viewerDirectory =
+        user.role !== 'guest' &&
+        orgsFor(user)[0]!.permissions.includes('directory.read');
       const isWrite = method !== 'GET';
       if (isWrite && user.role === 'guest' && path !== '/auth/logout') {
         return error(route, 403, 'FORBIDDEN', 'Solo lectura.');

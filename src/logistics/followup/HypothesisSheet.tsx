@@ -40,7 +40,7 @@ import {useActions} from '../common/actions';
 import {TaskStatusChip} from '../common/TaskChips';
 import {WarningList} from '../common/WarningList';
 import {instantShort} from '../lib/format';
-import {taskZone} from '../lib/tasks';
+import {subsoilMovedHelp, taskZone} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -849,6 +849,9 @@ const MovedRow: React.FC<{
 const HYPOTHESIS_ROUTES_HELP =
   'El Gestor no conoce el trazado de las rutas de emergencia (A, acceso de vehículos; B, sanitarios a pie; C, evacuación en camilla) ni el de la Carpa Amarilla. Este recordatorio aparece siempre que la hipótesis mueve una tarea con vehículos o carga: revisa la nueva hora en el simulador. No indica que la nueva hora sea segura.';
 
+/** Built from SUBSOIL_THRESHOLD_NOTE: indicative, never a certified limit. */
+const HYPOTHESIS_SUBSOIL_HELP = subsoilMovedHelp('Retrasar la tarea');
+
 const Block: React.FC<{
   id: string;
   title: string;
@@ -984,6 +987,16 @@ const Results: React.FC<{
           <WarningList warnings={analysis.routeReminders} />
         </Block>
       )}
+      {analysis.subsoilReminders.length > 0 && (
+        <Block
+          id="lx-hypo-subsoil"
+          title="Subsuelo"
+          className="lx-hypo-routes"
+          help={HYPOTHESIS_SUBSOIL_HELP}
+        >
+          <WarningList warnings={analysis.subsoilReminders} />
+        </Block>
+      )}
 
       {fresh.length > 0 && (
         <Block id="lx-hypo-new" title="Avisos nuevos">
@@ -1088,6 +1101,15 @@ const ConfirmStep: React.FC<{
             Rutas de emergencia y Carpa Amarilla
           </p>
           <WarningList warnings={analysis.routeReminders} />
+        </div>
+      )}
+      {analysis.subsoilReminders.length > 0 && (
+        <div
+          className="lx-hypo-block lx-hypo-routes"
+          id="lx-hypo-confirm-subsoil"
+        >
+          <p className="lx-hypo-block__title">Subsuelo</p>
+          <WarningList warnings={analysis.subsoilReminders} />
         </div>
       )}
       <p className="lx-hypo-confirm__keep" id="lx-hypo-confirm-keep">

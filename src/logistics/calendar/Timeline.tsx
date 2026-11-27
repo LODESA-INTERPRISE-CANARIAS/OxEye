@@ -595,6 +595,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                 none={!c.id}
                 taskCount={c.tasks.length}
                 warnings={perColumnWarnings[ci]}
+                accepted={perColumnAccepted[ci]?.length ?? 0}
                 frames={frames[ci]}
                 collapsed={!!prefs[key]?.collapsed}
                 width={effectivePrefs[ci]?.width}
@@ -755,18 +756,19 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
         </>
       )}
-      {openWarnings && panelWarnings.length > 0 && (
-        <VenueWarnings
-          name={columns[panelIndex].name}
-          warnings={panelWarnings}
-          accepted={panelAccepted}
-          anchor={openWarnings.anchor}
-          tasksById={tasksById}
-          onOpenTask={onOpenTask}
-          onMove={request => flow.open(request)}
-          onClose={closePanel}
-        />
-      )}
+      {openWarnings &&
+        (panelWarnings.length > 0 || panelAccepted.length > 0) && (
+          <VenueWarnings
+            name={columns[panelIndex].name}
+            warnings={panelWarnings}
+            accepted={panelAccepted}
+            anchor={openWarnings.anchor}
+            tasksById={tasksById}
+            onOpenTask={onOpenTask}
+            onMove={request => flow.open(request)}
+            onClose={closePanel}
+          />
+        )}
     </div>
   );
 };

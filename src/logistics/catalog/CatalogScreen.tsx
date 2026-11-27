@@ -14,6 +14,7 @@ import {
   priceLabel,
 } from '../../../shared/logistics/catalogue.ts';
 import type {Offer} from '../../../shared/logistics/contracts.ts';
+import {TAX_ESTIMATE_LABEL} from '../../../shared/logistics/rules.ts';
 import {universalSearch} from '../../../shared/logistics/search.ts';
 import {useActions} from '../common/actions';
 import {serviceCategories} from '../lib/directory';
@@ -38,6 +39,7 @@ import {
   compareCategory,
 } from './compare';
 import {ApartList, RankedList} from './CompareParts';
+import {useExpiredOffers} from './useExpiredOffers';
 import {ContractingSpace} from '../offers/ContractingSpace';
 
 const NONE = '__none__';
@@ -73,7 +75,12 @@ const CatalogOffers: React.FC = () => {
   const q = query.trim();
   // Over every offer, as in the offer sheet: a search narrows the list, not
   // what an offer is compared with.
-  const comparable = useMemo(() => categoriesWithComparison(offers), [offers]);
+  // E6: an offer whose terms expired is never ranked.
+  const expired = useExpiredOffers();
+  const comparable = useMemo(
+    () => categoriesWithComparison(offers, {expired}),
+    [offers, expired],
+  );
 
   const service = useMemo(() => serviceCategories(categories), [categories]);
   const counts = useMemo(() => {
@@ -213,6 +220,7 @@ const CatalogOffers: React.FC = () => {
             categoryId={g.id}
             categoryName={g.name}
             offers={offers}
+            expired={expired}
             onShow={openOffer}
           />
         )}
@@ -305,11 +313,12 @@ const CategoryCompare: React.FC<{
   categoryId: string;
   categoryName: string;
   offers: Offer[];
+  expired: ReadonlySet<string>;
   onShow: (offer: Offer) => void;
-}> = ({categoryId, categoryName, offers, onShow}) => {
+}> = ({categoryId, categoryName, offers, expired, onShow}) => {
   const {groups, apart} = useMemo(
-    () => compareCategory(categoryId, offers),
-    [categoryId, offers],
+    () => compareCategory(categoryId, offers, {expired}),
+    [categoryId, offers, expired],
   );
   const id = `lx-catcompare-${categoryId}`;
   return (
@@ -325,7 +334,12 @@ const CategoryCompare: React.FC<{
             <strong>€ / {perUnitLabel(g.peers[0])}</strong> · con el impuesto de
             cada una · estimación · la más barata primero
           </p>
-          <RankedList peers={g.peers} estimates={g.estimates} onShow={onShow} />
+          <RankedList
+            peers={g.peers}
+            estimates={g.estimates}
+            ranks={g.ranks}
+            onShow={onShow}
+          />
         </div>
       ))}
       <ApartList
@@ -349,7 +363,7 @@ export const OfferRow: React.FC<{
   const taxHint = !line
     ? null
     : line.kind === 'estimate'
-      ? `≈ ${line.amount} con impuestos`
+      ? `≈ ${line.amount} con impuestos · ${TAX_ESTIMATE_LABEL}`
       : line.kind === 'included'
         ? 'impuestos incluidos'
         : offer.vatIncluded === null

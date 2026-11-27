@@ -16,7 +16,10 @@ import {
   type ApartReason,
 } from '../../../shared/logistics/catalogue.ts';
 import type {Offer} from '../../../shared/logistics/contracts.ts';
-import type {PriceEstimate} from '../../../shared/logistics/money.ts';
+import {
+  roundCents,
+  type PriceEstimate,
+} from '../../../shared/logistics/money.ts';
 import {TAX_ESTIMATE_LABEL} from '../../../shared/logistics/rules.ts';
 import {taxText} from '../budget/tax';
 import {Icon} from '../ui';
@@ -59,11 +62,13 @@ function basisText(offer: Offer, e: PriceEstimate): string {
 export const RankedList: React.FC<{
   peers: Offer[];
   estimates: Readonly<Record<string, PriceEstimate>>;
+  /** Dense positions by id: equal estimates share a position and medal. */
+  ranks: Readonly<Record<string, number>>;
   /** The offer being viewed (offer sheet): a marker, not a link. */
   selfId?: string;
   onShow: (offer: Offer) => void;
   id?: string;
-}> = ({peers, estimates, selfId, onShow, id}) => {
+}> = ({peers, estimates, ranks, selfId, onShow, id}) => {
   const value = (o: Offer) => estimates[o.id]?.withTax ?? 0;
   const max = Math.max(...peers.map(value), 0);
   const best = peers.length ? value(peers[0]) : 0;
@@ -73,14 +78,15 @@ export const RankedList: React.FC<{
         const self = p.id === selfId;
         const e = estimates[p.id];
         const v = value(p);
+        const position = ranks[p.id] ?? i + 1;
         const width = max > 0 ? Math.max(4, (v / max) * 100) : 0;
-        const diff = v - best;
+        const diff = roundCents(v - best);
         return (
           <li
             key={p.id}
             className={self ? 'is-self' : ''}
             data-offer-id={p.id}
-            data-position={i + 1}
+            data-position={position}
           >
             <button
               type="button"
@@ -89,7 +95,7 @@ export const RankedList: React.FC<{
               aria-current={self ? 'true' : undefined}
               onClick={() => onShow(p)}
             >
-              <RankBadge position={i + 1} />
+              <RankBadge position={position} />
               <span className="lx-compare__name">
                 <strong>{self ? 'Esta oferta' : p.name}</strong>
                 <span className="lx-muted">{p.company.name}</span>
@@ -102,9 +108,9 @@ export const RankedList: React.FC<{
                   {perUnit(v, p)}
                 </span>
                 <span className="lx-compare__tax">
-                  {i === 0
+                  {diff <= 0
                     ? `con impuestos · ${TAX_ESTIMATE_LABEL}`
-                    : `+${formatEuros(Math.round(diff * 100) / 100)} · ${TAX_ESTIMATE_LABEL}`}
+                    : `+${formatEuros(diff)} · ${TAX_ESTIMATE_LABEL}`}
                 </span>
               </span>
               <span className="lx-compare__bar" aria-hidden="true">

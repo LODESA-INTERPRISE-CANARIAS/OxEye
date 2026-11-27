@@ -83,10 +83,7 @@ import {
   type OutboxEntry,
   type OutboxOp,
 } from '../../../shared/logistics/outbox.ts';
-import {
-  withholdFor,
-  type WithheldKind,
-} from '../../../shared/logistics/redaction.ts';
+import {mayReadDirectory} from '../../../shared/logistics/redaction.ts';
 import {
   ACTIVITY_RANGE_MAX,
   RECENT_SEARCHES_KEPT,
@@ -103,6 +100,7 @@ import {
 import {DEFAULT_TIMEZONE} from '../../../shared/logistics/time.ts';
 import {can} from '../../../shared/logistics/permissions.ts';
 import {orgPermissions} from '../account/access';
+import {forDevice, fromDevice} from './device-copy';
 import {
   ApiError,
   errorMessage,
@@ -215,6 +213,12 @@ interface StoredSession {
   user: SessionUser;
 }
 
+/**
+ * The session (token included) stays in localStorage by design: reopening
+ * the Gestor without coverage depends on it. During a support session the
+ * administrator's own token is never here, only in sessionStorage
+ * (`SUPPORT_KEY`).
+ */
 const SESSION_KEY = 'oxeye.logistics.session.v1';
 const ORG_KEY = 'oxeye.logistics.org.v1';
 /** E4: the own session kept aside during a support session. */
@@ -2027,7 +2031,8 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
       notes: arr(l.notes),
       hypotheses: arr(l.hypotheses),
       acceptances: arr(l.acceptances),
-      activity: arr(l.activity),
+      // Budget entries never rest on the device; an older copy may hold some.
+      activity: fromDevice('activity', arr<ActivityEntry>(l.activity)),
       eventsState: 'ready',
       tasksState: 'ready',
       companiesState: 'ready',
@@ -3953,20 +3958,7 @@ export const useLogisticsStore = create<LogisticsState>()((set, get) => {
 });
 
 // ---------------------------------------------------------------- device copy
-
-/** Guests' copies go through the same withholding as the server's. */
-const WITHHELD_KIND: Partial<Record<SyncList, WithheldKind>> = {
-  events: 'event',
-  tasks: 'task',
-  contacts: 'contact',
-  companies: 'company',
-  offers: 'offer',
-  warehouses: 'warehouse',
-  resources: 'resource',
-  notes: 'note',
-  hypotheses: 'hypothesis',
-  acceptances: 'acceptance',
-};
+// Redaction of what is saved lives in `device-copy.ts` (pure, unit-tested).
 
 /** A list is kept once it has really loaded (never an empty placeholder). */
 const LOADED_BY: Record<SyncList, keyof LogisticsState> = {
@@ -4002,16 +3994,22 @@ async function flushDeviceCopy(gen: number): Promise<void> {
   if (device.wipePending()) return;
   const {id: userId, role} = s.session.user;
   const orgId = s.orgId;
+  // Redacted exactly as the API does for this viewer: role and directory.
+  const directory = mayReadDirectory(
+    role,
+    orgPermissions(
+      s.organizations.find(o => o.id === orgId),
+      role,
+    ),
+  );
   for (const list of lists) {
     if (gen !== persistGen) return;
     if (s[LOADED_BY[list]] !== 'ready') continue;
-    const kind = WITHHELD_KIND[list];
-    const items = s[list] as object[];
     await device.saveList(
       userId,
       orgId,
       list,
-      kind ? items.map(r => withholdFor(kind, r, role)) : items,
+      forDevice(list, s[list] as object[], role, directory),
     );
   }
   if (writeSession && gen === persistGen) {

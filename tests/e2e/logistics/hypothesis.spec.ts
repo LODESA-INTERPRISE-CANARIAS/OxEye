@@ -164,7 +164,34 @@ test.describe('Gestor logístico · ¿Y si…? · explorar', () => {
     );
     await expect(routes).toContainText('Carpa Amarilla');
     await expect(routes).not.toContainText('Entrega de vallas Demo');
+    // Montaje's subsoil review is declared: no subsoil reminder.
+    await expect(page.locator('#lx-hypo-subsoil')).toHaveCount(0);
     await expect(page.locator('#lx-hypo-new')).toHaveCount(0);
+  });
+
+  test('a heavy load without a declared review keeps its subsoil reminder, up to the confirmation', async ({
+    page,
+  }) => {
+    const tasks = followTasks().map(t =>
+      t.id === 'h1' ? {...t, subsoilReview: null} : t,
+    );
+    await mockApi(page, followData({tasks}));
+    await signIn(page);
+    await delayH1(page, 30);
+    const subsoil = page.locator('#lx-hypo-subsoil');
+    await expect(subsoil).toContainText(
+      'Carga pesada en «Montaje del escenario Demo»',
+    );
+    await expect(subsoil).toContainText('500 kg/m²');
+    // Its help says the threshold is indicative, never certified.
+    await expect(subsoil.locator('[popover]')).toContainText(
+      'umbral orientativo de revisión, no un límite certificado',
+    );
+    await expect(page.locator('#lx-hypo-cleared')).toHaveCount(0);
+    await page.locator('#lx-hypo-apply').click();
+    await expect(page.locator('#lx-hypo-confirm-subsoil')).toContainText(
+      'Carga pesada en «Montaje del escenario Demo»',
+    );
   });
 
   test('2 h: the delivery runs into the event — routes A/B/C and Carpa Amarilla', async ({

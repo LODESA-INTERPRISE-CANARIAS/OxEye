@@ -13,7 +13,8 @@ import {useAccess} from '../account/useAccess';
 import {useActions} from '../common/actions';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon, type IconName} from '../ui';
-import {useProposals, useRenewals} from './data';
+import {utcToLocal} from '../../../shared/logistics/time.ts';
+import {refreshOffersData, useProposals, useRenewals} from './data';
 import {InboxView} from './InboxView';
 import {RenewalsView} from './RenewalsView';
 import {RequestSheet, type RequestPrefill} from './RequestSheet';
@@ -47,6 +48,41 @@ export const ContractingSpace: React.FC<{offers: React.ReactNode}> = ({
   const enabled = member && access.can('directory.read');
   if (!enabled) return <>{offers}</>;
   return <Tabs offers={offers} />;
+};
+
+/**
+ * «Actualizar»: what companies answered and the state of each link change on
+ * the server; the lists also reload by themselves (view opened, tab back in
+ * view, a sync), this is for when someone is waiting for an answer.
+ */
+const Refresh: React.FC = () => {
+  const {timeZone} = useActions();
+  // Only the user's own refresh spins; quiet reloads stay quiet.
+  const [refreshing, setRefreshing] = useState(false);
+  const [at, setAt] = useState<string | null>(null);
+  const run = () => {
+    setRefreshing(true);
+    void refreshOffersData().then(() => {
+      setRefreshing(false);
+      setAt(utcToLocal(new Date().toISOString(), timeZone).time);
+    });
+  };
+  return (
+    <span className="lx-contracting__refresh">
+      <span className="lx-field__hint lx-num" role="status">
+        {at && !refreshing ? `Actualizado a las ${at}` : ''}
+      </span>
+      <Button
+        variant="ghost"
+        icon="refresh"
+        id="lx-contracting-refresh"
+        busy={refreshing}
+        onClick={run}
+      >
+        Actualizar
+      </Button>
+    </span>
+  );
 };
 
 const Tabs: React.FC<{offers: React.ReactNode}> = ({offers}) => {
@@ -127,16 +163,19 @@ const Tabs: React.FC<{offers: React.ReactNode}> = ({offers}) => {
             </button>
           ))}
         </div>
-        {canWrite && (
-          <Button
-            variant={view === 'requests' ? 'primary' : 'secondary'}
-            icon="send"
-            id="lx-request-new"
-            onClick={() => setRequest({seq: Date.now(), prefill: null})}
-          >
-            Pedir presupuesto
-          </Button>
-        )}
+        <div className="lx-contracting__actions">
+          {view !== 'offers' && <Refresh />}
+          {canWrite && (
+            <Button
+              variant={view === 'requests' ? 'primary' : 'secondary'}
+              icon="send"
+              id="lx-request-new"
+              onClick={() => setRequest({seq: Date.now(), prefill: null})}
+            >
+              Pedir presupuesto
+            </Button>
+          )}
+        </div>
       </div>
       <div
         role="tabpanel"

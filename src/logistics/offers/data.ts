@@ -6,7 +6,7 @@
  * that shows the same list shares one copy, so a decision taken in a sheet
  * shows everywhere at once.
  */
-import {useCallback, useEffect, useSyncExternalStore} from 'react';
+import {useCallback, useEffect, useState, useSyncExternalStore} from 'react';
 import type {
   ListResponse,
   OfferRenewal,
@@ -32,6 +32,10 @@ export interface Resource<T> {
 interface Entry {
   value: Resource<unknown>;
   pending: Promise<void> | null;
+  /** How to read it again («Actualizar», quiet reloads). */
+  loader: (() => Promise<unknown>) | null;
+  /** When the server last answered, to avoid asking twice in a row. */
+  loadedAt: number;
 }
 
 const entries = new Map<string, Entry>();
@@ -43,11 +47,25 @@ const LOADING: Resource<unknown> = {
   unsupported: false,
 };
 
-function publish(key: string, value: Resource<unknown>): void {
-  const entry = entries.get(key) ?? {value, pending: null};
-  entry.value = value;
-  entries.set(key, entry);
+/** A quiet reload within this time of the last answer is skipped. */
+const FRESH_MS = 4000;
+
+function entryOf(key: string): Entry {
+  let entry = entries.get(key);
+  if (!entry) {
+    entry = {value: LOADING, pending: null, loader: null, loadedAt: 0};
+    entries.set(key, entry);
+  }
+  return entry;
+}
+
+function notify(): void {
   for (const l of listeners) l();
+}
+
+function publish(key: string, value: Resource<unknown>): void {
+  entryOf(key).value = value;
+  notify();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -57,22 +75,47 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-function load<T>(key: string, loader: () => Promise<T>, force = false): void {
-  const entry = entries.get(key);
-  if (entry?.pending) return;
-  if (entry && !force && entry.value.state !== 'error') return;
-  const previous = entry?.value as Resource<T> | undefined;
+/**
+ * - `quiet`: first read, or a reload that keeps what is on screen; skipped
+ *   when the last answer is very recent, and a failure with data on screen
+ *   changes nothing (the next trigger tries again).
+ * - `force`: the user asked («Actualizar», «Reintentar»); errors show.
+ */
+function load<T>(
+  key: string,
+  loader: () => Promise<T>,
+  mode: 'quiet' | 'force' = 'quiet',
+): Promise<void> {
+  const known = entries.get(key);
+  if (known?.pending) return known.pending;
+  if (
+    mode === 'quiet' &&
+    known &&
+    known.value.state === 'ready' &&
+    Date.now() - known.loadedAt < FRESH_MS
+  ) {
+    return Promise.resolve();
+  }
+  const entry = entryOf(key);
+  entry.loader = loader;
+  const previous = known?.value as Resource<T> | undefined;
   // A reload keeps what is on screen; only the first load shows skeletons.
   if (!previous || previous.data === null) publish(key, LOADING);
   const pending = loader().then(
     data => {
-      const e = entries.get(key);
-      if (e) e.pending = null;
+      // Signed out or another organization while reading: drop the answer.
+      if (entries.get(key) !== entry) return;
+      entry.pending = null;
+      entry.loadedAt = Date.now();
       publish(key, {state: 'ready', data, error: null, unsupported: false});
     },
     err => {
-      const e = entries.get(key);
-      if (e) e.pending = null;
+      if (entries.get(key) !== entry) return;
+      entry.pending = null;
+      if (mode === 'quiet' && previous && previous.data !== null) {
+        notify();
+        return;
+      }
       publish(key, {
         state: 'error',
         data: previous?.data ?? null,
@@ -81,15 +124,49 @@ function load<T>(key: string, loader: () => Promise<T>, force = false): void {
       });
     },
   );
-  const e = entries.get(key) ?? {value: LOADING, pending: null};
-  e.pending = pending;
-  entries.set(key, e);
+  entry.pending = pending;
+  notify();
+  return pending;
 }
 
 /** Forgets everything (sign-out, organization change). */
 export function resetOffersData(): void {
   entries.clear();
-  for (const l of listeners) l();
+  notify();
+}
+
+/**
+ * «Actualizar»: reads again every list already read in the open session and
+ * organization. Resolves when all have answered (or failed).
+ */
+export function refreshOffersData(): Promise<void> {
+  const prefix = keyOf('');
+  if (!prefix) return Promise.resolve();
+  const jobs: Promise<void>[] = [];
+  for (const [key, entry] of entries) {
+    if (key.startsWith(prefix) && entry.loader) {
+      jobs.push(load(key, entry.loader, 'force'));
+    }
+  }
+  return Promise.all(jobs).then(() => undefined);
+}
+
+// Sign-out, expiry, another person or another organization: nothing of the
+// previous one stays in memory. (Subscribed here, as media-cache does, so the
+// store never imports this module back.)
+let owner = sessionOwner(useLogisticsStore.getState());
+useLogisticsStore.subscribe(s => {
+  const next = sessionOwner(s);
+  if (next === owner) return;
+  owner = next;
+  resetOffersData();
+});
+
+function sessionOwner(s: {
+  session: {token: string} | null;
+  orgId: string | null;
+}): string {
+  return `${s.session?.token ?? ''}:${s.orgId ?? ''}`;
 }
 
 /** Replaces a loaded list in place (after a write the server answered). */
@@ -127,18 +204,34 @@ function useResource<T>(
   // Per session and organization: another sign-in never sees this copy.
   const key = token && orgId ? `${token}:${orgId}:${name}` : '';
   const active = !!key && enabled && member;
+  // Read again, quietly, when the view opens, when the tab comes back into
+  // view, and when another person's change or a sync came in: proposals and
+  // link states change on the server without this device doing anything.
+  const activity = useLogisticsStore(s => s.activity);
+  const lastSyncAt = useLogisticsStore(s => s.lastSyncAt);
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setShown(n => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [active]);
   useEffect(() => {
     if (active && online && token && orgId) {
-      load(key, () => loader(token, orgId));
+      void load(key, () => loader(token, orgId));
     }
     // `loader` is a stable module function per call site.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, online, key, token, orgId]);
+  }, [active, online, key, token, orgId, activity, lastSyncAt, shown]);
   const value = useSyncExternalStore(subscribe, () =>
     key ? entries.get(key)?.value : undefined,
   ) as Resource<T> | undefined;
   const reload = useCallback(() => {
-    if (active && token && orgId) load(key, () => loader(token, orgId), true);
+    if (active && token && orgId) {
+      void load(key, () => loader(token, orgId), 'force');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, key, token, orgId]);
   return {...((active && value) || (LOADING as Resource<T>)), reload, key};

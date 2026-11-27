@@ -43,6 +43,13 @@ export interface WorkOrderFieldInfo {
   membersOnly: boolean;
 }
 
+/**
+ * Said under any free text that goes out of Ox Eye (work-order notes, the
+ * message of a request for quotes).
+ */
+export const LEAVES_OX_EYE_NOTE =
+  'Sale de Ox Eye: que no lleve datos de salud, de personas atendidas ni casos de Punto Violeta.';
+
 export const WORK_ORDER_FIELDS: readonly WorkOrderFieldInfo[] = [
   {
     id: 'schedule',
@@ -103,7 +110,7 @@ export const WORK_ORDER_FIELDS: readonly WorkOrderFieldInfo[] = [
   {
     id: 'observations',
     label: 'Observaciones de la tarea',
-    hint: 'Texto libre del equipo: léelo antes de enviarlo. Sale de Ox Eye: que no lleve datos de salud, de personas atendidas ni casos de Punto Violeta.',
+    hint: `Texto libre del equipo: léelo antes de enviarlo. ${LEAVES_OX_EYE_NOTE}`,
     defaultOn: false,
     membersOnly: true,
   },

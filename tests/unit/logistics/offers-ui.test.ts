@@ -22,7 +22,10 @@ import {
   validityOf,
 } from '../../../src/logistics/offers/format';
 import {candidatesFor} from '../../../src/logistics/offers/NeedCompare';
-import {eventNeedDates} from '../../../src/logistics/catalog/terms/NeedCost';
+import {
+  eventNeedDates,
+  needOfDraft,
+} from '../../../src/logistics/catalog/terms/NeedCost';
 import {
   allProblems,
   draftKeyOf,
@@ -205,8 +208,10 @@ describe('sharing a personal link by hand', () => {
     expect(body).toContain('Hola, Carpas Demo:');
     expect(body).toContain(m.url);
     expect(body).toContain('Elvis');
-    const href = mailtoHref('ventas@carpas.es', m);
-    expect(href.startsWith('mailto:ventas%40carpas.es?subject=')).toBe(true);
+    const href = mailtoHref('ventas@carpas.example.org', m);
+    expect(href.startsWith('mailto:ventas%40carpas.example.org?subject=')).toBe(
+      true,
+    );
     expect(mailtoHref(null, m).startsWith('mailto:?subject=')).toBe(true);
   });
 });
@@ -369,6 +374,14 @@ describe('dates of a need from an event', () => {
     expect(eventNeedDates(events, TODAY, 'missing')?.eventId).toBe('a');
     expect(eventNeedDates([], TODAY)).toBeNull();
     expect(eventNeedDates([ev('past', '2026-10-01')], TODAY)).toBeNull();
+  });
+
+  it('gives no need while the hours per day are typed but not valid', () => {
+    const d = {quantity: '2', days: '3', hours: '', from: '', to: ''};
+    expect(needOfDraft(d)?.hoursPerDay).toBeNull();
+    expect(needOfDraft({...d, hours: '8'})?.hoursPerDay).toBe(8);
+    expect(needOfDraft({...d, hours: '30'})).toBeNull();
+    expect(needOfDraft({...d, hours: 'ocho'})).toBeNull();
   });
 });
 

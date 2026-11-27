@@ -40,6 +40,31 @@ export function clampDrag(
   return Math.min(hi, Math.max(lo, minutes)) || 0;
 }
 
+/** Why a task that runs past midnight does not follow the drag. */
+export const CROSSES_DAY_MESSAGE =
+  'Esta tarea pasa de un día a otro: en el calendario solo se mueve sin salir de su día. Cambia sus horas desde la ficha.';
+
+/**
+ * Why the drag was cut short, when the cut comes from the task crossing
+ * midnight (the part drawn touches the day's edge); null otherwise, as the
+ * block then visibly stops at the edge of its day.
+ */
+export function dragLimit(
+  span: {
+    start: number;
+    end: number;
+    continuesBefore?: boolean;
+    continuesAfter?: boolean;
+  },
+  minutes: number,
+): string | null {
+  if (!minutes || clampDrag(span, minutes) === minutes) return null;
+  const crosses =
+    (minutes < 0 && span.continuesBefore) ||
+    (minutes > 0 && span.continuesAfter);
+  return crosses ? CROSSES_DAY_MESSAGE : null;
+}
+
 /** The task's window moved by `minutes`, or null without both times. */
 export function shiftedWindow(
   task: Pick<Task, 'startsAt' | 'endsAt'>,

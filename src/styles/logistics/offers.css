@@ -20,6 +20,16 @@
   gap: 10px 14px;
 }
 
+.lx .lx-contracting__actions,
+.lx .lx-contracting__refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
 .lx .lx-contracting__tabs {
   overflow-x: auto;
   scrollbar-width: none;
@@ -1243,8 +1253,12 @@
 
 /* ============================================================ small screens */
 @media (max-width: 640px) {
-  .lx .lx-contracting__bar > .lx-btn {
+  .lx .lx-contracting__actions {
     width: 100%;
+  }
+
+  .lx .lx-contracting__actions > .lx-btn {
+    flex: 1;
     justify-content: center;
   }
 

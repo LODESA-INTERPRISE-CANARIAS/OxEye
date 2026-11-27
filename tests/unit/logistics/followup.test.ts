@@ -354,6 +354,54 @@ describe('follow-up · delay analysis', () => {
     }
   });
 
+  it('keeps the subsoil reminder of every moved heavy or unknown load, never as cleared', () => {
+    const tasks = [
+      timed('escenario', '09:00', '11:00', {kind: 'assembly', heavyLoad: true}),
+      timed('generador', '11:00', '12:00', {
+        kind: 'delivery',
+        heavyLoad: null,
+        dependsOn: ['escenario'],
+      }),
+      timed('revisado', '12:00', '13:00', {
+        kind: 'assembly',
+        heavyLoad: true,
+        subsoilReview: {at: at('08:00'), by: {id: 'u1', displayName: 'Ana'}},
+        dependsOn: ['generador'],
+      }),
+      // Not moved: its reminder is not repeated here.
+      timed('lastre', '15:00', '16:00', {kind: 'assembly', heavyLoad: true}),
+    ];
+    const a = analyzeDelay({tasks, rootId: 'escenario', minutes: 30});
+    expect(a.impact.shifted.map(s => s.id)).toEqual([
+      'escenario',
+      'generador',
+      'revisado',
+    ]);
+    // A declared review stays valid: a delay changes the time, not the place.
+    expect(a.subsoilReminders.map(w => w.key)).toEqual([
+      'heavy:escenario',
+      'heavy-unknown:generador',
+    ]);
+    for (const w of a.subsoilReminders) {
+      expect(w.kind === 'heavy_load' || w.kind === 'heavy_load_unknown').toBe(
+        true,
+      );
+    }
+    expect(
+      a.subsoilReminders.find(w => w.key === 'heavy:escenario')?.detail,
+    ).toContain('500 kg/m²');
+    expect(a.clearedWarnings.some(w => UNSOLVED_BY_MOVING.has(w.kind))).toBe(
+      false,
+    );
+    // A light task moving has none.
+    const light = analyzeDelay({
+      tasks: [timed('mesas', '09:00', '10:00', {kind: 'other'})],
+      rootId: 'mesas',
+      minutes: 30,
+    });
+    expect(light.subsoilReminders).toEqual([]);
+  });
+
   it('reports the margin left before the event, negative when it runs into it', () => {
     const a = analyzeDelay({
       tasks: plan(),

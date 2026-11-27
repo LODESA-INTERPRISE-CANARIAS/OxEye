@@ -1340,12 +1340,13 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.locator('#lx-tab-contactos').click();
     await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
     await capture(page, 'guest-contacts-phone');
-    await page.locator('#lx-account-button').click();
-    await expect(page.locator('#lx-account-catalogo')).toHaveCount(0);
-    await page.keyboard.press('Escape');
     await goToHash(page, '#logistica/catalogo');
     await expect(page.locator('#lx-catalogo-noaccess')).toBeVisible();
     await capture(page, 'guest-catalog-phone');
+    // Last, so closing the sheet never races the address change above.
+    await page.locator('#lx-account-button').click();
+    await expect(page.locator('#lx-account-sheet')).toBeVisible();
+    await expect(page.locator('#lx-account-catalogo')).toHaveCount(0);
   });
 });
 

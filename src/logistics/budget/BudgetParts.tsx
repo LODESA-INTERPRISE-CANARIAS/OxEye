@@ -82,6 +82,14 @@ export const BudgetRibbon: React.FC<{
   );
 };
 
+/** «≈ 770,40 € estimación»: a legend figure, with tax, said as an estimate. */
+const LegendFigure: React.FC<{amount: number}> = ({amount}) => (
+  <dd>
+    ≈ {formatEuros(amount)}{' '}
+    <span className="lx-ribbonlegend__est">{TAX_ESTIMATE_LABEL}</span>
+  </dd>
+);
+
 /** Confirmed, planned and left (or over), each with its swatch. */
 export const BudgetLegend: React.FC<{summary: BudgetSummary; id?: string}> = ({
   summary,
@@ -93,14 +101,14 @@ export const BudgetLegend: React.FC<{summary: BudgetSummary; id?: string}> = ({
         <span className="lx-ribbonlegend__swatch" aria-hidden="true" />
         {EXPENSE_STATUS_LABEL.confirmed}
       </dt>
-      <dd>≈ {formatEuros(summary.confirmed.withTax)}</dd>
+      <LegendFigure amount={summary.confirmed.withTax} />
     </div>
     <div data-part="planned">
       <dt>
         <span className="lx-ribbonlegend__swatch" aria-hidden="true" />
         {EXPENSE_STATUS_LABEL.planned}
       </dt>
-      <dd>≈ {formatEuros(summary.planned.withTax)}</dd>
+      <LegendFigure amount={summary.planned.withTax} />
     </div>
     {summary.remaining !== null && (
       <div data-part={summary.remaining < 0 ? 'over' : 'free'}>
@@ -108,7 +116,7 @@ export const BudgetLegend: React.FC<{summary: BudgetSummary; id?: string}> = ({
           <span className="lx-ribbonlegend__swatch" aria-hidden="true" />
           {summary.remaining < 0 ? 'Por encima' : 'Libre'}
         </dt>
-        <dd>≈ {formatEuros(Math.abs(summary.remaining))}</dd>
+        <LegendFigure amount={Math.abs(summary.remaining)} />
       </div>
     )}
   </dl>

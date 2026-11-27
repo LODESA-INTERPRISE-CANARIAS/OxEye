@@ -15,7 +15,6 @@ import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {windowsFor} from '../../../shared/logistics/acceptance.ts';
 import {
   planWarnings,
-  SUBSOIL_THRESHOLD_NOTE,
   type PlanWarning,
 } from '../../../shared/logistics/conflicts.ts';
 import type {
@@ -40,7 +39,7 @@ import {errorMessage, isApiError} from '../api/client';
 import {useActions} from '../common/actions';
 import {WarningItems} from '../common/WarningItem';
 import {slotText} from '../followup/text';
-import {taskZone} from '../lib/tasks';
+import {subsoilMovedHelp, taskZone} from '../lib/tasks';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {
   Button,
@@ -58,7 +57,10 @@ import type {MoveRequest} from './useMoveFlow';
 export const ROUTES_HELP =
   'El Gestor no conoce el trazado de las rutas de emergencia (A, acceso de vehículos; B, sanitarios a pie; C, evacuación en camilla) ni el de la Carpa Amarilla. Este recordatorio aparece siempre que se mueve una tarea con vehículos o carga: revisa la nueva hora en el simulador. No indica que la nueva hora sea segura.';
 
-export const SUBSOIL_HELP = `Las cargas pesadas siguen necesitando la revisión del subsuelo en el simulador. ${SUBSOIL_THRESHOLD_NOTE} Mover la tarea no cambia la carga ni la revisión declarada.`;
+export const SUBSOIL_HELP = subsoilMovedHelp('Mover la tarea');
+
+const CONFLICT_GONE =
+  'Este conflicto ya no aparece en el plan: no hace falta este cambio. No se ha movido nada.';
 
 const PLAN_CHANGED =
   'El plan ha cambiado desde que abriste esta vista previa: vuelve a calcular y revisa el cambio antes de confirmarlo. No se ha movido nada.';
@@ -246,15 +248,30 @@ const MovePreview: React.FC<{
   const cleared = analysis?.clearedWarnings.filter(notCheck) ?? [];
   const tz = root ? taskZone(root) : undefined;
 
+  // A conflict exit only makes sense while the conflict is still there (the
+  // plan may have changed, e.g. after «Volver a calcular»).
+  const warningKey = request.warningKey ?? null;
+  const conflictGone = useMemo(
+    () =>
+      origin !== 'calendar' &&
+      !!warningKey &&
+      !planWarnings(snap.tasks, snap.events, snap.resources).some(
+        w => w.key === warningKey,
+      ),
+    [origin, warningKey, snap],
+  );
+
   const refusal = !root
     ? 'Esta tarea ya no está en el plan.'
-    : blocker
-      ? MOVE_BLOCKED[blocker]
-      : !rootShift
-        ? 'Con este cambio no se movería nada.'
-        : rootOutside && venue?.openingHours
-          ? `${outsideHoursMessage(venue.name, venue.openingHours)} Elige otra hora.`
-          : null;
+    : conflictGone
+      ? CONFLICT_GONE
+      : blocker
+        ? MOVE_BLOCKED[blocker]
+        : !rootShift
+          ? 'Con este cambio no se movería nada.'
+          : rootOutside && venue?.openingHours
+            ? `${outsideHoursMessage(venue.name, venue.openingHours)} Elige otra hora.`
+            : null;
 
   const confirm = async () => {
     if (!analysis || !root || refusal || busy || stale) return;
@@ -341,38 +358,51 @@ const MovePreview: React.FC<{
         </>
       }
       footer={
-        <>
-          <Button
-            variant="ghost"
-            onClick={() => onDone(false)}
-            id="lx-move-cancel"
-            disabled={busy}
-          >
-            Cancelar
-          </Button>
-          <span className="lx-sheet__foot-spacer" />
-          <Button
-            variant="primary"
-            icon="check"
-            busy={busy}
-            onClick={() => void confirm()}
-            disabled={!canConfirm}
-            id="lx-move-confirm"
-            aria-describedby={
-              refusal
-                ? 'lx-move-refusal'
-                : noServer
-                  ? 'lx-move-offline'
-                  : undefined
-            }
-          >
-            {busy
-              ? 'Guardando…'
-              : n > 1
-                ? `Confirmar cambio · ${n} tareas`
-                : 'Confirmar cambio'}
-          </Button>
-        </>
+        conflictGone ? (
+          <>
+            <span className="lx-sheet__foot-spacer" />
+            <Button
+              variant="primary"
+              onClick={() => onDone(false)}
+              id="lx-move-cancel"
+            >
+              Cerrar
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => onDone(false)}
+              id="lx-move-cancel"
+              disabled={busy}
+            >
+              Cancelar
+            </Button>
+            <span className="lx-sheet__foot-spacer" />
+            <Button
+              variant="primary"
+              icon="check"
+              busy={busy}
+              onClick={() => void confirm()}
+              disabled={!canConfirm}
+              id="lx-move-confirm"
+              aria-describedby={
+                refusal
+                  ? 'lx-move-refusal'
+                  : noServer
+                    ? 'lx-move-offline'
+                    : undefined
+              }
+            >
+              {busy
+                ? 'Guardando…'
+                : n > 1
+                  ? `Confirmar cambio · ${n} tareas`
+                  : 'Confirmar cambio'}
+            </Button>
+          </>
+        )
       }
     >
       <div className="lx-move">
@@ -456,16 +486,22 @@ const MovePreview: React.FC<{
           </div>
         )}
 
-        {refusal && (
-          <p
-            className="lx-notice lx-notice--error"
-            id="lx-move-refusal"
-            role="alert"
-          >
-            <Icon name="alert" size={16} />
-            {refusal}
-          </p>
-        )}
+        {refusal &&
+          (conflictGone ? (
+            <p className="lx-notice" id="lx-move-refusal" role="status">
+              <Icon name="check" size={16} />
+              {refusal}
+            </p>
+          ) : (
+            <p
+              className="lx-notice lx-notice--error"
+              id="lx-move-refusal"
+              role="alert"
+            >
+              <Icon name="alert" size={16} />
+              {refusal}
+            </p>
+          ))}
 
         {analysis && !refusal && (
           <>

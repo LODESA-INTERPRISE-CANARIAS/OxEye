@@ -25,7 +25,14 @@ import React, {
 import type {OpeningHours, Task} from '../../../shared/logistics/contracts.ts';
 import {MOVE_BLOCKED, moveBlocker} from '../../../shared/logistics/move.ts';
 import type {TimelineBlock} from '../lib/calendar';
-import {clampDrag, dragMinutes, dragRefusal, edgeSpeed} from '../moves/drag';
+import {
+  CROSSES_DAY_MESSAGE,
+  clampDrag,
+  dragLimit,
+  dragMinutes,
+  dragRefusal,
+  edgeSpeed,
+} from '../moves/drag';
 
 export const LIFT_MS = 500;
 /** Movement that turns a press into a scroll before the block lifts. */
@@ -37,6 +44,8 @@ export interface DragView {
   minutes: number;
   /** Why this time is refused (outside opening hours), or null. */
   refused: string | null;
+  /** Why the block does not follow (it runs past midnight), or null. */
+  limit: string | null;
   keyboard: boolean;
   /** Released: the preview is open and the block waits at its new time. */
   pending: boolean;
@@ -98,6 +107,7 @@ export function useBlockDrag(opts: BlockDragOptions) {
         taskId: block.task.id,
         minutes: m,
         refused: dragRefusal(block.task, m, placeOf(block.task), timeZone),
+        limit: m ? null : dragLimit(block.span, minutes),
         keyboard,
         pending: false,
       };
@@ -114,6 +124,7 @@ export function useBlockDrag(opts: BlockDragOptions) {
         cur.taskId === next.taskId &&
         cur.minutes === next.minutes &&
         cur.refused === next.refused &&
+        cur.limit === next.limit &&
         cur.keyboard === next.keyboard &&
         cur.pending === next.pending)
     ) {
@@ -184,6 +195,12 @@ export function useBlockDrag(opts: BlockDragOptions) {
       optsRef.current.onExplain(MOVE_BLOCKED[blocker]);
       return;
     }
+    // A middle day of a task running over several days cannot move at all.
+    if (p.block.span.continuesBefore && p.block.span.continuesAfter) {
+      endPress();
+      optsRef.current.onExplain(CROSSES_DAY_MESSAGE);
+      return;
+    }
     try {
       p.el.setPointerCapture(p.pointerId);
     } catch {
@@ -202,6 +219,8 @@ export function useBlockDrag(opts: BlockDragOptions) {
       if (!lifted || !p) return;
       const d = dragRef.current;
       if (cancelled || !d || !d.minutes) {
+        // Held still is nothing; pulled against midnight says why.
+        if (!cancelled && d?.limit) optsRef.current.onExplain(d.limit);
         show(null);
         return;
       }
@@ -285,7 +304,12 @@ export function useBlockDrag(opts: BlockDragOptions) {
             return;
           }
           const step = (e.shiftKey ? 30 : 5) * (e.key === 'ArrowUp' ? -1 : 1);
-          show(evaluate(block, (mine ? d.minutes : 0) + step, true));
+          const next = evaluate(block, (mine ? d.minutes : 0) + step, true);
+          // The keyboard says it at once: the block would not move.
+          if (next.limit && next.minutes === (mine ? d.minutes : 0)) {
+            optsRef.current.onExplain(next.limit);
+          }
+          show(next);
           return;
         }
         if (!mine) return;

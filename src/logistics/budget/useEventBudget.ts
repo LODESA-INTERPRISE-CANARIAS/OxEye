@@ -61,6 +61,8 @@ export function useEventBudget(
   const quiet = useRef(false);
   const status = useRef<BudgetLoad['status']>('loading');
   const wrote = useRef(false);
+  /** Writes applied locally so far; a load started before one is stale. */
+  const writes = useRef(0);
   const [self] = useState<Listener>(() => force => {
     if (!force && status.current === 'ready') return;
     quiet.current = true;
@@ -110,10 +112,22 @@ export function useEventBudget(
       return;
     }
     if (!silent) setLoad(s => ({status: 'loading', data: s.data}));
+    // A write applied while this request was in flight is newer than its
+    // answer: the answer is dropped and a quiet reload asks again.
+    const startedAt = writes.current;
+    const stale = () => {
+      if (writes.current === startedAt) return false;
+      quiet.current = true;
+      setRound(r => r + 1);
+      return true;
+    };
     budgetApi.get(eventId).then(
-      data => alive && setLoad({status: 'ready', data}),
+      data => {
+        if (!alive || stale()) return;
+        setLoad({status: 'ready', data});
+      },
       (err: unknown) => {
-        if (!alive) return;
+        if (!alive || stale()) return;
         if (isOfflineError(err)) {
           setLoad(s => ({
             status: 'offline',
@@ -158,10 +172,12 @@ export function useEventBudget(
   const reload = useCallback(() => setRound(r => r + 1), []);
   const putBudget = useCallback((budget: EventBudget) => {
     wrote.current = true;
+    writes.current += 1;
     setLoad(s => (s.data ? {status: 'ready', data: {...s.data, budget}} : s));
   }, []);
   const putExpense = useCallback((expense: Expense) => {
     wrote.current = true;
+    writes.current += 1;
     setLoad(s => {
       if (!s.data) return s;
       const list = s.data.expenses;
@@ -175,6 +191,7 @@ export function useEventBudget(
   }, []);
   const dropExpense = useCallback((id: string) => {
     wrote.current = true;
+    writes.current += 1;
     setLoad(s =>
       s.data
         ? {

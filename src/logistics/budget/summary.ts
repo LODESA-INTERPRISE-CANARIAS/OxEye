@@ -14,6 +14,7 @@ import {
 import type {
   BudgetSummary,
   Expense,
+  ExpenseTotals,
   OfferSnapshot,
 } from '../../../shared/logistics/contracts.ts';
 import {withTax} from '../../../shared/logistics/money.ts';
@@ -191,6 +192,33 @@ export function snapshotText(
       taxText(s.tax, {inherited: s.taxInherited}),
     ].join(' · '),
   };
+}
+
+/**
+ * What a group subtotal leaves out, so its figures are never read as
+ * complete. An expense without amount is in neither sum; one with an
+ * unknown tax is in the sum before tax but not in the estimate with tax.
+ * Null when the group is complete.
+ */
+export function groupGapText(
+  t: Pick<ExpenseTotals, 'unknownAmount' | 'unknownTax'>,
+): string | null {
+  const parts: string[] = [];
+  if (t.unknownAmount) {
+    parts.push(
+      t.unknownAmount === 1
+        ? '1 gasto sin importe no entra en las sumas'
+        : `${t.unknownAmount} gastos sin importe no entran en las sumas`,
+    );
+  }
+  if (t.unknownTax) {
+    parts.push(
+      t.unknownTax === 1
+        ? '1 gasto con impuesto desconocido no entra en la estimación con impuestos'
+        : `${t.unknownTax} gastos con impuesto desconocido no entran en la estimación con impuestos`,
+    );
+  }
+  return parts.length ? `${parts.join('; ')}.` : null;
 }
 
 /** «3 gastos · 1 confirmado». */

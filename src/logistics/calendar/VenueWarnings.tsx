@@ -12,6 +12,7 @@ import type {AcceptedWarning} from '../common/usePlan';
 import {WarningList, warningsSummary} from '../common/WarningList';
 import type {MoveRequest} from '../moves/useMoveFlow';
 import {IconButton} from '../ui';
+import {acceptedText} from './VenueHeader';
 
 const GAP = 6;
 const EDGE = 8;
@@ -104,7 +105,10 @@ export const VenueWarnings: React.FC<{
           <span className="lx-eyebrow">Avisos del lugar</span>
           <strong>{name}</strong>
           <span className="lx-tl-warnpop__summary lx-num">
-            {warningsSummary(warnings)}
+            {warnings.length || !accepted?.length
+              ? warningsSummary(warnings)
+              : 'Sin avisos abiertos'}
+            {accepted?.length ? ` · ${acceptedText(accepted.length)}` : ''}
           </span>
         </div>
         <IconButton

@@ -8,6 +8,7 @@ import {budgetSummary} from '../../../shared/logistics/money';
 import {
   caveatsOf,
   expenseEstimate,
+  groupGapText,
   headlineOf,
   ribbonOf,
   snapshotText,
@@ -253,5 +254,16 @@ describe('Presupuesto · the budget at a glance', () => {
     expect(t.what).toContain('«Carpa 3x3» · Carpas Demo');
     expect(t.what).toContain('sin impuestos');
     expect(t.what).toContain('IGIC 7 % de la empresa');
+  });
+
+  it('a group subtotal says what it leaves out', () => {
+    expect(groupGapText({unknownAmount: 0, unknownTax: 0})).toBeNull();
+    expect(groupGapText({unknownAmount: 1, unknownTax: 0})).toBe(
+      '1 gasto sin importe no entra en las sumas.',
+    );
+    expect(groupGapText({unknownAmount: 0, unknownTax: 2})).toBe(
+      '2 gastos con impuesto desconocido no entran en la estimación con impuestos.',
+    );
+    expect(groupGapText({unknownAmount: 2, unknownTax: 1})).toContain('; ');
   });
 });

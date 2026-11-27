@@ -49,11 +49,13 @@ test.describe('E6 · offer terms in the offer sheet', () => {
     await expect(page.locator('#lx-offer-need-breakdown')).toContainText(
       'Transporte',
     );
-    // Changing the dates drops the note: they are the user's now.
+    // «Hasta» follows the days, so the two never disagree; the dates are no
+    // longer the event's, so the note goes.
     await page.locator('#lx-offer-need-days').fill('2');
-    await expect(page.locator('#lx-offer-need-event')).toBeVisible();
-    await page.locator('#lx-offer-need-from').fill(addDays(today, 40));
-    await page.locator('#lx-offer-need-from').press('Tab');
+    // The date field shows dd/mm/aaaa.
+    await expect(page.locator('#lx-offer-need-to')).toHaveValue(
+      addDays(today, 1).split('-').reverse().join('/'),
+    );
     await expect(page.locator('#lx-offer-need-event')).toHaveCount(0);
 
     // History loads when opened: both versions, newest first.
@@ -132,7 +134,7 @@ test.describe('E7 · asking for quotes', () => {
     const mail = first.locator('[data-action="mail"]');
     await expect(mail).toHaveAttribute(
       'href',
-      /^mailto:ventas%40carpasdemo\.es\?subject=/,
+      /^mailto:ventas%40carpasdemo\.example\.org\?subject=/,
     );
     // The server never mails anyone: the request carries no address or message.
     const [created] = mock.calls('POST', '/quote-requests');
@@ -142,7 +144,16 @@ test.describe('E7 · asking for quotes', () => {
       linkDays: 7,
     });
 
+    // Links not yet prepared are shown only this once: closing asks first.
     await page.locator('#lx-request-done').click();
+    await expect(page.locator('#lx-request-leave')).toContainText(
+      'Faltan 2 enlaces por preparar',
+    );
+    await page.locator('#lx-request-leave-keep').click();
+    await expect(links).toHaveCount(2);
+    await page.locator('#lx-request-done').click();
+    await page.locator('#lx-request-leave-confirm').click();
+    await expect(page.locator('#lx-request-sheet')).toHaveCount(0);
     await expect(page.locator('#lx-ctab-requests')).toHaveAttribute(
       'aria-selected',
       'true',
@@ -210,6 +221,26 @@ test.describe('E7 · asking for quotes', () => {
 });
 
 test.describe('E7 · received proposals', () => {
+  test('«Actualizar» brings what companies sent in the meantime', async ({
+    page,
+  }) => {
+    const mock = await mockApi(page, offersData());
+    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await openTab(page, 'inbox');
+    await expect(page.locator('[data-proposal-id="p2"]')).toBeVisible();
+    // A company answers while the inbox is open.
+    mock.proposals.push({...mock.proposals[1], id: 'p9'});
+    await expect(page.locator('[data-proposal-id="p9"]')).toHaveCount(0);
+    await page.locator('#lx-contracting-refresh').click();
+    await expect(page.locator('[data-proposal-id="p9"]')).toBeVisible();
+    await expect(
+      page.locator('#lx-ctab-inbox .lx-segtabs__count'),
+    ).toContainText('3');
+    await expect(page.locator('.lx-contracting__refresh')).toContainText(
+      'Actualizado a las',
+    );
+  });
+
   test('an administrator approves one into the catalogue', async ({page}) => {
     const mock = await mockApi(page, offersData());
     await signIn(page, 'Elvis', '#logistica/catalogo');

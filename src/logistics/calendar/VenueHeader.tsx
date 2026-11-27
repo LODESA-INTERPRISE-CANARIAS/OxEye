@@ -30,6 +30,8 @@ export interface VenueHeaderProps {
   none: boolean;
   taskCount: number;
   warnings: PlanWarning[];
+  /** How many of the venue's conflicts were accepted (listed apart). */
+  accepted?: number;
   frames: EventFrame[];
   collapsed: boolean;
   /** Width chosen by hand, if any. */
@@ -70,24 +72,39 @@ export function warningsLabel(name: string, warnings: PlanWarning[]): string {
   return `Avisos de ${name}: ${warningsSummary(warnings)}`;
 }
 
+export function acceptedText(accepted: number): string {
+  return `${accepted} ${accepted === 1 ? 'conflicto aceptado' : 'conflictos aceptados'}`;
+}
+
 const WarningBadge: React.FC<{
   colKey: string;
   name: string;
   warnings: PlanWarning[];
+  /** Accepted conflicts: with nothing open, the badge still opens them. */
+  accepted: number;
   onOpen: VenueHeaderProps['onOpenWarnings'];
-}> = ({colKey, name, warnings, onOpen}) => {
+}> = ({colKey, name, warnings, accepted, onOpen}) => {
   const conflicts = warnings.filter(w => w.severity === 'conflict').length;
+  const onlyAccepted = warnings.length === 0;
+  const summary = onlyAccepted
+    ? acceptedText(accepted)
+    : warningsSummary(warnings);
   return (
     <button
       type="button"
-      className={`lx-tl__warnbadge${conflicts ? ' has-conflict' : ''}`}
+      className={`lx-tl__warnbadge${conflicts ? ' has-conflict' : ''}${onlyAccepted ? ' is-accepted' : ''}`}
       aria-haspopup="dialog"
-      aria-label={`${warningsLabel(name, warnings)}. Ver avisos.`}
-      title={warningsSummary(warnings)}
+      aria-label={`Avisos de ${name}: ${summary}. Ver avisos.`}
+      title={summary}
       onClick={e => onOpen(colKey, e.currentTarget)}
     >
-      <Icon name={conflicts ? 'alert' : 'bell'} size={14} />
-      <span className="lx-num">{warnings.length}</span>
+      <Icon
+        name={conflicts ? 'alert' : onlyAccepted ? 'check' : 'bell'}
+        size={14}
+      />
+      <span className="lx-num">
+        {onlyAccepted ? accepted : warnings.length}
+      </span>
     </button>
   );
 };
@@ -181,6 +198,7 @@ export const VenueHeader: React.FC<VenueHeaderProps> = props => {
     none,
     taskCount,
     warnings,
+    accepted = 0,
     frames,
     collapsed,
     width,
@@ -253,11 +271,12 @@ export const VenueHeader: React.FC<VenueHeaderProps> = props => {
       </div>
       <div className="lx-tl__head-meta">
         <span className="lx-tl__count lx-num">{count}</span>
-        {warnings.length > 0 && (
+        {(warnings.length > 0 || accepted > 0) && (
           <WarningBadge
             colKey={colKey}
             name={name}
             warnings={warnings}
+            accepted={accepted}
             onOpen={onOpenWarnings}
           />
         )}

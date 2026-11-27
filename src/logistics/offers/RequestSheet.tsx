@@ -24,6 +24,7 @@ import {
   QUOTE_UNIT_MAX,
 } from '../../../shared/logistics/proposals.ts';
 import {addDays, daysBetween} from '../../../shared/logistics/time.ts';
+import {LEAVES_OX_EYE_NOTE} from '../../../shared/logistics/work-order.ts';
 import {errorMessage, isApiError} from '../api/client';
 import {offersApi} from '../api/offers';
 import {useActions} from '../common/actions';
@@ -162,6 +163,8 @@ export const RequestSheet: React.FC<{
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [created, setCreated] = useState<QuoteRequestCreated | null>(null);
+  const [shared, setShared] = useState(0);
+  const [leaving, setLeaving] = useState(false);
   const set = (patch: Partial<Values>) => {
     setValues(v => ({...v, ...patch}));
     setErrors(e => {
@@ -255,10 +258,17 @@ export const RequestSheet: React.FC<{
   const title = prefill?.renegotiate ? 'Renegociar' : 'Pedir presupuesto';
 
   if (created) {
+    // The links are shown only this once: closing with some not yet sent
+    // asks first.
+    const missing = created.links.length - shared;
+    const requestClose = () => {
+      if (missing > 0 && !leaving) setLeaving(true);
+      else onClose();
+    };
     return (
       <Sheet
         open
-        onClose={onClose}
+        onClose={requestClose}
         id="lx-request-sheet"
         eyebrow="Solicitud creada"
         title={created.request.need.title}
@@ -268,12 +278,50 @@ export const RequestSheet: React.FC<{
           </span>
         }
         footer={
-          <>
-            <span className="lx-sheet__foot-spacer" />
-            <Button variant="primary" id="lx-request-done" onClick={onClose}>
-              Hecho
-            </Button>
-          </>
+          leaving && missing > 0 ? (
+            <div
+              className="lx-confirm-strip"
+              role="alertdialog"
+              aria-labelledby="lx-request-leave-text"
+              id="lx-request-leave"
+            >
+              <p id="lx-request-leave-text">
+                {missing === 1
+                  ? 'Falta 1 enlace por preparar.'
+                  : `Faltan ${missing} enlaces por preparar.`}{' '}
+                No se vuelven a ver: después habría que renovarlos desde
+                «Solicitudes».
+              </p>
+              <div className="lx-confirm-strip__actions">
+                <Button
+                  variant="primary"
+                  id="lx-request-leave-keep"
+                  onClick={() => setLeaving(false)}
+                  autoFocus
+                >
+                  Seguir compartiendo
+                </Button>
+                <Button
+                  variant="ghost"
+                  id="lx-request-leave-confirm"
+                  onClick={onClose}
+                >
+                  Cerrar igualmente
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <span className="lx-sheet__foot-spacer" />
+              <Button
+                variant="primary"
+                id="lx-request-done"
+                onClick={requestClose}
+              >
+                Hecho
+              </Button>
+            </>
+          )
         }
       >
         <ShareLinks
@@ -281,6 +329,7 @@ export const RequestSheet: React.FC<{
           need={created.request.need}
           timeZone={timeZone}
           idPrefix="lx-request-created"
+          onShared={setShared}
         />
       </Sheet>
     );
@@ -468,7 +517,7 @@ export const RequestSheet: React.FC<{
             id="lx-qr-note"
             label="Mensaje para las empresas"
             optional
-            hint="Lo ven arriba del formulario. No pongas datos de personas."
+            hint={`Lo ven las empresas arriba del formulario. ${LEAVES_OX_EYE_NOTE}`}
             error={err('note')}
           >
             <Textarea

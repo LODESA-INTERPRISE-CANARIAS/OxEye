@@ -61,6 +61,8 @@ export const TaxField: React.FC<TaxFieldProps> = ({
   const hasRate = regime === 'igic' || regime === 'iva' || regime === 'other';
   const err = (field: 'name' | 'rate' | 'regime') =>
     error?.field === field ? error.message : undefined;
+  // The note under an empty rate; the input only points at it while shown.
+  const rateNote = hasRate && !value.rate.trim() && !err('rate');
   return (
     <fieldset className="lx-taxfield" id={`${id}-group`} disabled={disabled}>
       <legend className="lx-field__label lx-taxfield__legend">
@@ -126,7 +128,7 @@ export const TaxField: React.FC<TaxFieldProps> = ({
                 invalid={!!err('rate')}
                 aria-describedby={
                   describedBy(`${id}-rate`, {error: err('rate')}) ??
-                  `${id}-rate-note`
+                  (rateNote ? `${id}-rate-note` : undefined)
                 }
                 placeholder="Sin saber"
                 autoComplete="off"
@@ -140,7 +142,7 @@ export const TaxField: React.FC<TaxFieldProps> = ({
         )}
         {regime === 'none' && <p className="lx-taxfield__fixed lx-num">0 %</p>}
       </div>
-      {hasRate && !value.rate.trim() && !err('rate') && (
+      {rateNote && (
         <p className="lx-field__hint" id={`${id}-rate-note`}>
           Sin porcentaje no se calcula la estimación con impuestos.
         </p>

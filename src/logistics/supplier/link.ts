@@ -11,7 +11,8 @@
  *   history or show over a shoulder;
  * - a copy stays in this tab's session storage, so a reload (or a dropped
  *   connection) brings the supplier back to the same form. It is cleared
- *   when the form is done or left.
+ *   when the form is done or left, or reaches an end (gone, declined,
+ *   already answered, too many attempts).
  *
  * The form works signed out, before and instead of the login: a supplier
  * never sees the Gestor.
@@ -80,15 +81,48 @@ function capture(hash: string): boolean {
   return true;
 }
 
-if (typeof window !== 'undefined') {
-  // A reload of this tab: only while the address is still the Gestor's root
-  // (the token was taken off it), never over another Gestor address.
-  if (!capture(window.location.hash) && window.location.hash === '#logistica') {
-    pending = remembered();
+/** The answers a supplier typed and has not sent yet (SupplierApp). */
+export const SUPPLIER_DRAFT_KEY = 'oxeye.logistics.supplier.draft.v1';
+
+function hasDraft(token: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(SUPPLIER_DRAFT_KEY);
+    return !!raw && (JSON.parse(raw) as {token?: string}).token === token;
+  } catch {
+    return false;
   }
-  window.addEventListener('hashchange', () => capture(window.location.hash), {
-    capture: true,
-  });
+}
+
+function isReload(): boolean {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as
+      PerformanceNavigationTiming | undefined;
+    return nav?.type === 'reload';
+  } catch {
+    return false;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  // The copy in this tab brings the form back only on a real reload, or
+  // while there are answers not yet sent; and only on the Gestor's root
+  // address (where the token was taken off). Opening Ox Eye again in this
+  // tab otherwise opens Ox Eye, never a form that was already finished.
+  if (!capture(window.location.hash) && window.location.hash === '#logistica') {
+    const copy = remembered();
+    if (copy && (isReload() || hasDraft(copy.token))) pending = copy;
+    else if (copy) remember(null);
+  }
+  // A supplier link pasted into a tab where Ox Eye is already open: start
+  // the page again so only the supplier's form is mounted (main.tsx), never
+  // on top of the hub, the map or the Gestor.
+  window.addEventListener(
+    'hashchange',
+    () => {
+      if (capture(window.location.hash)) window.location.reload();
+    },
+    {capture: true},
+  );
 }
 
 /** The supplier link being shown, if any. */
@@ -96,11 +130,25 @@ export function pendingSupplierLink(): SupplierLink | null {
   return pending;
 }
 
-/** Done with it (sent, declined or left). */
+/** Done with it (sent, declined or left): the page leaves the form. */
 export function clearSupplierLink(): void {
   pending = null;
   remember(null);
   notify();
+}
+
+/**
+ * The form reached an end it cannot leave (link gone, declined, already
+ * answered, paused for too many attempts): the page keeps showing that end,
+ * but this tab no longer comes back to it on its own.
+ */
+export function releaseSupplierLink(): void {
+  remember(null);
+}
+
+/** The form opened again (after a pause): a reload brings it back again. */
+export function keepSupplierLink(link: SupplierLink): void {
+  if (pending?.token === link.token) remember(link);
 }
 
 export function subscribeSupplierLink(listener: () => void): () => void {

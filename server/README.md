@@ -38,7 +38,7 @@ npm --prefix server run db:seed             # organización, 6 usuarios y datos 
 npm --prefix server run dev                 # API en http://localhost:8787
 ```
 
-`db:seed` imprime **una sola vez** la contraseña de cada usuario nuevo (Elvis, Dailos, Yeray, Equipo, Invitado y Fabián) con sus roles. Apúntalas: no se guardan en claro en ningún sitio. Son **provisionales**: cada persona la cambia en «Mi cuenta» al entrar. Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras (provisionales) y cierra las sesiones abiertas; también puede hacerlo una persona de administración o desarrollo desde «Usuarios», cuenta por cuenta.
+`db:seed` imprime **una sola vez** la contraseña de cada usuario nuevo (Elvis, Dailos, Yeray, Equipo, Invitado y Fabián) con sus roles. Apúntalas: no se guardan en claro en ningún sitio. Las personales son **provisionales**: cada persona la cambia en «Tu espacio en Ox Eye» al entrar. Las de **Equipo** e **Invitado** son cuentas compartidas: nadie que las use puede cambiarlas; solo administración o desarrollo, desde «Usuarios». Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras y cierra las sesiones abiertas; también puede hacerlo una persona de administración o desarrollo desde «Usuarios», cuenta por cuenta.
 
 Comprobación: `http://localhost:8787/api/health` responde `{"status":"ok","database":"ok","version":"0.1.0"}`.
 

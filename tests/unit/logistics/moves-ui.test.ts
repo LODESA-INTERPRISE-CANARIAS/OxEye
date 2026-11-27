@@ -13,8 +13,10 @@ import {
 } from '../../../src/logistics/calendar/DependencyLinks';
 import {buildPlan} from '../../../src/logistics/common/usePlan';
 import {
+  CROSSES_DAY_MESSAGE,
   clampDrag,
   closedBands,
+  dragLimit,
   dragMinutes,
   dragRefusal,
   edgeSpeed,
@@ -213,6 +215,19 @@ describe('calendar drag sums', () => {
     expect(clampDrag(span, 25)).toBe(25);
     // A start off the 5-minute grid never gives a non-step move.
     expect(clampDrag({start: 3, end: 63}, -60)).toBe(0);
+  });
+
+  it('says why a task running past midnight does not follow the drag', () => {
+    // 22:00 → 02:00: the part on its first day ends at midnight.
+    const first = {start: 22 * 60, end: 1440, continuesAfter: true};
+    expect(dragLimit(first, 30)).toBe(CROSSES_DAY_MESSAGE);
+    expect(dragLimit(first, -30)).toBeNull();
+    const last = {start: 0, end: 120, continuesBefore: true};
+    expect(dragLimit(last, -30)).toBe(CROSSES_DAY_MESSAGE);
+    expect(dragLimit(last, 30)).toBeNull();
+    // A task ending exactly at midnight simply stops at the edge.
+    expect(dragLimit({start: 22 * 60, end: 1440}, 30)).toBeNull();
+    expect(dragLimit(first, 0)).toBeNull();
   });
 
   it('refuses a window outside known opening hours, never unknown ones', () => {

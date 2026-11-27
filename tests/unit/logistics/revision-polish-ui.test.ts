@@ -8,12 +8,13 @@ const IGIC: TaxInfo = {
   ratePercent: 7,
   verification: 'to_verify',
 };
+import {compareOffer} from '../../../shared/logistics/catalogue';
 import {
-  APART_REASON_LABEL,
+  apartReasonText,
   categoriesWithComparison,
   compareCategory,
+  expiredOfferIds,
   positionLabel,
-  vatText,
 } from '../../../src/logistics/catalog/compare';
 import {
   mergeActivity,
@@ -230,15 +231,75 @@ describe('Catálogo · «Comparar» for a whole category', () => {
     ).toBe(0);
   });
 
-  it('says the medal in words and the taxes as declared', () => {
+  it('says the medal in words and why an offer is apart', () => {
     expect(positionLabel(1)).toBe('1.º, oro');
     expect(positionLabel(2)).toBe('2.º, plata');
     expect(positionLabel(3)).toBe('3.º, bronce');
     expect(positionLabel(4)).toBe('4.º');
-    expect(vatText(true)).toBe('Impuestos incluidos');
-    expect(vatText(false)).toBe('Sin impuestos');
-    expect(vatText(null)).toBe('Impuestos sin verificar');
-    // E5: an offer apart says why, the tax one in plain words.
-    expect(APART_REASON_LABEL.tax).toBe('sin impuesto conocido');
+    // E5–E6: an offer apart says why, in plain words.
+    expect(apartReasonText('tax', {tax: null} as never)).toBe(
+      'La empresa no tiene impuesto indicado.',
+    );
+    expect(apartReasonText('expired')).toMatch(/^Caducada/);
+  });
+
+  it('E6: an expired offer is never ranked nor given a medal; it goes apart', () => {
+    // o2 is the cheapest, but its terms expired.
+    const expired = new Set(['o2']);
+    const {groups, apart} = compareCategory('carpas', offers, {expired});
+    expect(groups[0]?.peers.map(p => p.id)).toEqual(['o1', 'o5', 'o6']);
+    expect(groups[0]?.ranks.o1).toBe(1);
+    expect(apart.find(a => a.offer.id === 'o2')?.reason).toBe('expired');
+    // The offer sheet agrees with the category view.
+    const own = compareOffer(offers[1]!, offers, {expired})!;
+    expect(own.position).toBeNull();
+    expect(own.peers.map(p => p.id)).not.toContain('o2');
+    const peer = compareOffer(offers[0]!, offers, {expired})!;
+    expect(peer.position).toBe(1);
+    expect(peer.expired.map(p => p.id)).toEqual(['o2']);
+    // Without versions (before E6) every offer counts as current.
+    expect(compareCategory('carpas', offers).groups[0]?.peers[0]?.id).toBe(
+      'o2',
+    );
+    // Only two current offers left in a category: one expired drops it.
+    expect(
+      categoriesWithComparison(
+        [offer('a', {price: 10}), offer('b', {price: 12})],
+        {expired: new Set(['a'])},
+      ).size,
+    ).toBe(0);
+  });
+
+  it('equal estimates share a position and medal (dense ranking)', () => {
+    const tied = [
+      offer('a', {price: 100}),
+      offer('b', {price: 100}),
+      offer('c', {price: 120}),
+    ];
+    const {groups} = compareCategory('carpas', tied);
+    expect(groups[0]?.ranks).toEqual({a: 1, b: 1, c: 2});
+    expect(compareOffer(tied[1]!, tied)!.position).toBe(1);
+    expect(compareOffer(tied[2]!, tied)!.position).toBe(2);
+  });
+
+  it('E6: expired offers come from the current versions; none without versions', () => {
+    const version = (
+      offerId: string,
+      status: string,
+      acceptUntil: string | null,
+    ) => ({offerId, status, terms: {acceptUntil}}) as never;
+    const today = '2026-12-02';
+    expect([
+      ...expiredOfferIds(
+        [
+          version('a', 'current', '2026-12-01'),
+          version('b', 'current', '2026-12-02'),
+          version('c', 'expired', null),
+          version('d', 'current', null),
+        ],
+        today,
+      ),
+    ]).toEqual(['a', 'c']);
+    expect(expiredOfferIds(null, today).size).toBe(0);
   });
 });

@@ -893,6 +893,13 @@
   color: var(--lx-on-danger);
 }
 
+/* Only accepted conflicts: quiet, but still opens the venue's panel. */
+.lx .lx-tl__warnbadge.is-accepted {
+  --lx-btn-bg: var(--lx-surface);
+  border-style: dashed;
+  color: var(--lx-muted);
+}
+
 /* Event frames held at the venue: hours first, so they never get cut. */
 .lx .lx-tl__frame {
   display: flex;

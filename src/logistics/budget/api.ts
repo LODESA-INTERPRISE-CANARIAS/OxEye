@@ -7,13 +7,11 @@
  * which expires the session the usual way (rescue, login screen).
  */
 import type {
-  BudgetSummary,
   EventBudget,
   EventBudgetInput,
   EventBudgetResponse,
   Expense,
   ExpenseInput,
-  ListResponse,
 } from '../../../shared/logistics/contracts.ts';
 import {ApiError, apiRequest, isApiError} from '../api/client';
 import {NEEDS_CONNECTION, useLogisticsStore} from '../store/useLogisticsStore';
@@ -69,11 +67,6 @@ export const budgetApi = {
       'PUT',
       `/events/${encodeURIComponent(eventId)}/budget`,
       input,
-    ),
-  list: (orgId: string) =>
-    call<ListResponse<BudgetSummary>>(
-      'GET',
-      `/organizations/${encodeURIComponent(orgId)}/budgets`,
     ),
   createExpense: (input: ExpenseInput) =>
     call<Expense>('POST', '/expenses', input),

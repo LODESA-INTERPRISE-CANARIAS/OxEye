@@ -150,6 +150,11 @@ export interface DelayAnalysis<T extends PlanTask = PlanTask> {
    * window or not (`movedSafety`).
    */
   routeReminders: PlanWarning[];
+  /**
+   * Heavy-load (subsoil) reminders of moved tasks under the hypothesis, new
+   * or not; never cleared by a delay (`movedSafety`).
+   */
+  subsoilReminders: PlanWarning[];
   /** Events whose preparation the delay eats into, tightest first. */
   eventMargins: EventMargin[];
 }
@@ -190,8 +195,13 @@ export function analyzeDelay<T extends PlanTask>(input: {
     else if ((w.minutes ?? 0) > (old.minutes ?? 0)) worsened.push(w);
   }
   // Routes A/B/C and Carpa Amarilla for every moved vehicle, load-bearing or
-  // heavy task; a delay never «clears» a route or heavy-load reminder.
-  const {routeReminders, cleared: clearedWarnings} = movedSafety({
+  // heavy task, and the subsoil reminder of every moved heavy or unknown
+  // load; a delay never «clears» a route or heavy-load reminder.
+  const {
+    routeReminders,
+    subsoilReminders,
+    cleared: clearedWarnings,
+  } = movedSafety({
     after: hypothetical,
     movedIds: moved,
     afterWarnings: after,
@@ -228,6 +238,7 @@ export function analyzeDelay<T extends PlanTask>(input: {
     worsened,
     clearedWarnings,
     routeReminders,
+    subsoilReminders,
     eventMargins: [...margins.values()].sort((a, b) => a.after - b.after),
   };
 }

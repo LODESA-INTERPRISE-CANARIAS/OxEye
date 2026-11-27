@@ -7,12 +7,14 @@
  * The address shared is this Gestor's own (`shareableUrl`); a Gestor opened
  * as localhost warns that such a link only works on this computer.
  */
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import type {
   IssuedQuoteLink,
   QuoteNeed,
 } from '../../../shared/logistics/contracts.ts';
 import {utcToLocal} from '../../../shared/logistics/time.ts';
+// Falls back to the old copy on plain http (the Gestor opened over the LAN).
+import {canShareText, copyText} from '../lib/clipboard';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Button, Icon} from '../ui';
 import {
@@ -24,18 +26,6 @@ import {
   shareableUrl,
   type LinkMessage,
 } from './format';
-
-export async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export const canShare = () =>
-  typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
 /** The address to share for a link the server issued. */
 export function urlToShare(serverUrl: string): string {
@@ -58,7 +48,9 @@ export const ShareLinks: React.FC<{
   need: QuoteNeed;
   timeZone: string;
   idPrefix: string;
-}> = ({links, need, timeZone, idPrefix}) => {
+  /** How many links are marked «Preparado» (to warn before closing). */
+  onShared?: (count: number) => void;
+}> = ({links, need, timeZone, idPrefix, onShared}) => {
   const toast = useLogisticsStore(s => s.toast);
   const organization = useLogisticsStore(
     s => s.organizations.find(o => o.id === s.orgId)?.name ?? '',
@@ -66,6 +58,8 @@ export const ShareLinks: React.FC<{
   const sender = useLogisticsStore(s => s.session?.user.displayName ?? '');
   const [done, setDone] = useState<Record<string, true>>({});
   const mark = (id: string) => setDone(d => ({...d, [id]: true}));
+  const shared = Object.keys(done).length;
+  useEffect(() => onShared?.(shared), [shared, onShared]);
 
   const messageOf = (l: IssuedQuoteLink): LinkMessage => ({
     organization,
@@ -134,7 +128,7 @@ export const ShareLinks: React.FC<{
                 >
                   Copiar enlace
                 </Button>
-                {canShare() && (
+                {canShareText(linkMessage(msg).body) && (
                   <Button
                     size="sm"
                     icon="share"

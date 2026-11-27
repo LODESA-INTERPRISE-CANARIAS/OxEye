@@ -4,6 +4,7 @@ import {
   PROVISIONAL_PASSWORD,
   RESET_TOKEN,
   SUPPORT_TOKEN,
+  TOKEN,
   VERIFY_TOKEN,
   loginAs,
   makeCompany,
@@ -200,10 +201,10 @@ test.describe('Gestor logístico · E4 · Tu espacio en Ox Eye', () => {
     await page.locator('#lx-profile-email-input').fill('no-es-correo');
     await page.locator('#lx-profile-email-send').click();
     await expect(page.locator('#lx-profile-email-input-error')).toBeVisible();
-    await page.locator('#lx-profile-email-input').fill('dailos@nuevo.es');
+    await page.locator('#lx-profile-email-input').fill('dailos@example.org');
     await page.locator('#lx-profile-email-send').click();
     await expect(page.locator('#lx-profile-email-pending')).toContainText(
-      'd•••@nuevo.es',
+      'd•••@example.org',
     );
 
     const sessions = page.locator('#lx-profile-sessions');
@@ -334,7 +335,12 @@ test.describe('Gestor logístico · E4 · soporte y ver como Invitado', () => {
     const stored = await page.evaluate(() =>
       sessionStorage.getItem('oxeye.logistics.support-return.v1'),
     );
-    expect(stored).toContain('test-token');
+    expect(stored).toContain(TOKEN);
+    // localStorage holds only the support session (needed to reopen
+    // without coverage), never the administrator's own token.
+    const local = await page.evaluate(() => JSON.stringify({...localStorage}));
+    expect(local).not.toContain(TOKEN);
+    expect(local).toContain(SUPPORT_TOKEN);
 
     await page.locator('#lx-support-end').click();
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');

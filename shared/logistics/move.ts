@@ -205,7 +205,6 @@ export function analyzeMove<T extends PlanTask>(input: {
     if (!old) newWarnings.push(w);
     else if ((w.minutes ?? 0) > (old.minutes ?? 0)) worsened.push(w);
   }
-  const touchesMoved = (w: PlanWarning) => w.taskIds.some(id => moved.has(id));
   const hoursById = new Map(venues.map(v => [v.id, v.openingHours]));
   const outsideHours = after
     .filter(
@@ -230,11 +229,7 @@ export function analyzeMove<T extends PlanTask>(input: {
     worsened,
     clearedWarnings: safety.cleared,
     routeReminders: safety.routeReminders,
-    subsoilReminders: afterWarnings.filter(
-      w =>
-        (w.kind === 'heavy_load' || w.kind === 'heavy_load_unknown') &&
-        touchesMoved(w),
-    ),
+    subsoilReminders: safety.subsoilReminders,
     outsideHours,
   };
 }

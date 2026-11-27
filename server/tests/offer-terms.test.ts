@@ -181,7 +181,7 @@ function proposal(over: Record<string, unknown> = {}) {
       name: 'Carpas Norte',
       contactName: 'Lucía Pérez',
       phone: '922000111',
-      email: 'lucia@carpasnorte.es',
+      email: 'lucia@carpasnorte.example.org',
     },
     products: [
       {
@@ -1211,7 +1211,7 @@ describe('offer settings and the open form', () => {
         company: {
           name: 'Escenarios Nuevos',
           phone: '922111222',
-          email: 'hola@escenarios.es',
+          email: 'hola@escenarios.example.org',
         },
       }),
     );
@@ -1228,7 +1228,10 @@ describe('offer settings and the open form', () => {
       'SELECT phone, email FROM companies WHERE id = $1',
       [approved.offers[0]!.company.id],
     );
-    expect(created).toEqual({phone: '922111222', email: 'hola@escenarios.es'});
+    expect(created).toEqual({
+      phone: '922111222',
+      email: 'hola@escenarios.example.org',
+    });
 
     const rotated = await ok<OfferSettingsResponse>(
       await patch(admin, {version: 2, rotateOpenLink: true}),

@@ -42,8 +42,10 @@ interface Draft {
   closesAt: string;
 }
 
+// Empty unless the venue has its own acronym: the proposal is only shown, so
+// saving the hours never stores today's proposal as if someone chose it.
 const draftOf = (venue: Venue): Draft => ({
-  acronym: venue.acronym ?? proposeAcronym(venue.name, {dotted: true}) ?? '',
+  acronym: venue.acronym ?? '',
   opensAt: venue.openingHours?.opensAt ?? '',
   closesAt: venue.openingHours?.closesAt ?? '',
 });
@@ -201,11 +203,12 @@ export const VenueDetails: React.FC<{venue: Venue}> = ({venue}) => {
             label="Siglas"
             optional
             error={errors.acronym}
-            hint={`Se ven cuando la columna del lugar está contraída en el calendario.${proposal ? ` Propuesta: ${proposal}` : ''}`}
+            hint={`Se ven cuando la columna del lugar está contraída en el calendario.${proposal ? ` Vacío = la propuesta, ${proposal}.` : ''}`}
           >
             <Input
               id="lx-venue-acronym-input"
               value={draft.acronym}
+              placeholder={proposal ?? undefined}
               maxLength={ACRONYM_MAX + 4}
               autoComplete="off"
               spellCheck={false}

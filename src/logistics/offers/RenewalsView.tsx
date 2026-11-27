@@ -47,7 +47,8 @@ import {
 } from './data';
 import {dayYear, priceText, VERSION_STATUS_LABEL} from './format';
 import {RequestSheet, type RequestPrefill} from './RequestSheet';
-import {copyText, LocalLinkWarning, urlToShare} from './ShareLinks';
+import {copyText} from '../lib/clipboard';
+import {LocalLinkWarning, urlToShare} from './ShareLinks';
 
 export const RenewalsView: React.FC = () => {
   const {today, timeZone, canWrite, openTask, openOffer} = useActions();

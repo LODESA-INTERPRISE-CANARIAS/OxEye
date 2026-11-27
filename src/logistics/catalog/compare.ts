@@ -8,7 +8,12 @@
  * only words it for the screens.
  */
 import type {ApartReason} from '../../../shared/logistics/catalogue.ts';
+import type {
+  LocalDate,
+  OfferVersion,
+} from '../../../shared/logistics/contracts.ts';
 import type {PriceEstimate} from '../../../shared/logistics/money.ts';
+import {validityOf} from '../offers/format';
 
 export {
   categoriesWithComparison,
@@ -17,15 +22,34 @@ export {
 export type {
   ApartReason,
   CategoryComparison,
+  CompareOptions,
   RankedGroup,
 } from '../../../shared/logistics/catalogue.ts';
 
-export const APART_REASON_LABEL: Record<ApartReason, string> = {
-  price: 'sin precio',
-  tax: 'sin impuesto conocido',
-  unit: 'unidad sin concretar',
-  alone: 'ninguna otra igual',
-};
+const NONE: ReadonlySet<string> = new Set();
+
+/**
+ * E6: ids of the offers whose current version can no longer be accepted
+ * (marked expired, or its «se puede aceptar hasta» has passed). An offer
+ * without versions (recorded before E6) is not in the list: it counts as
+ * current.
+ */
+export function expiredOfferIds(
+  versions: readonly OfferVersion[] | null | undefined,
+  today: LocalDate,
+): ReadonlySet<string> {
+  if (!versions?.length) return NONE;
+  const out = new Set<string>();
+  for (const v of versions) {
+    if (
+      v.status === 'expired' ||
+      validityOf(v.terms.acceptUntil, today).kind === 'expired'
+    ) {
+      out.add(v.offerId);
+    }
+  }
+  return out;
+}
 
 /** Why an offer is not ranked, in a full sentence (lists apart). */
 export function apartReasonText(
@@ -33,6 +57,8 @@ export function apartReasonText(
   estimate?: PriceEstimate,
 ): string {
   switch (reason) {
+    case 'expired':
+      return 'Caducada: ya no se puede aceptar con estas condiciones.';
     case 'price':
       return 'Sin precio: no se puede situar.';
     case 'unit':
@@ -50,14 +76,7 @@ export function apartReasonText(
 
 /** The `?` of «Comparar», in the offer sheet and in the catalogue. */
 export const COMPARE_HELP =
-  'Solo se comparan ofertas de la misma categoría y la misma unidad (€/día con €/día, nunca con €/metro). Se ordenan por el precio por unidad con impuestos, usando el impuesto de cada oferta (el suyo o, si no tiene, el de su empresa): así un precio con IGIC y otro con IVA se comparan de forma justa. Esa cifra es una estimación. Transporte, montaje y mantenimiento van aparte. Las ofertas sin precio o sin impuesto conocido se listan aparte y no se ordenan: sumarles un impuesto que nadie ha indicado sería inventar. Las medallas solo dicen cuál es más barata por unidad, no cuál conviene más.';
-
-/** Taxes as an old offer declares them, never assumed. */
-export function vatText(vatIncluded: boolean | null): string {
-  if (vatIncluded === true) return 'Impuestos incluidos';
-  if (vatIncluded === false) return 'Sin impuestos';
-  return 'Impuestos sin verificar';
-}
+  'Solo se comparan ofertas de la misma categoría y la misma unidad (€/día con €/día, nunca con €/metro). Se ordenan por el precio por unidad con impuestos, usando el impuesto de cada oferta (el suyo o, si no tiene, el de su empresa): así un precio con IGIC y otro con IVA se comparan de forma justa. Esa cifra es una estimación. Transporte, montaje y mantenimiento van aparte. Las ofertas sin precio o sin impuesto conocido se listan aparte y no se ordenan: sumarles un impuesto que nadie ha indicado sería inventar. Las caducadas también van aparte: ya no se pueden aceptar tal cual. Dos ofertas que cuestan lo mismo comparten puesto. Las medallas solo dicen cuál es más barata por unidad, no cuál conviene más.';
 
 /** «1.º, oro» … for the medals; plain «4.º» after the podium. */
 export function positionLabel(position: number): string {

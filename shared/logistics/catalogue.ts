@@ -168,8 +168,13 @@ export interface Comparison<T> {
    * their tax. Includes this offer when it is ranked.
    */
   peers: T[];
-  /** 1-based position of the offer among `peers`; null when it is not ranked. */
+  /**
+   * 1-based position of the offer among `peers` (dense: equal estimates share
+   * it); null when it is not ranked.
+   */
   position: number | null;
+  /** Dense position of every ranked peer, by id (ties share a position). */
+  ranks: Readonly<Record<string, number>>;
   /**
    * The estimate of every offer of the group (this one included), by id:
    * before tax, with tax («estimación»), the tax used and whether it is
@@ -187,6 +192,20 @@ export interface Comparison<T> {
   otherTax: T[];
   /** Same category and unit, price unknown: listed apart, never ranked. */
   unpriced: T[];
+  /**
+   * Same category and unit, but its current terms can no longer be accepted
+   * (`CompareOptions.expired`): listed apart, never ranked.
+   */
+  expired: T[];
+}
+
+/** What the caller knows beyond the offers themselves. */
+export interface CompareOptions {
+  /**
+   * Ids of offers whose current version has expired (E6). They are never
+   * ranked nor given a medal; an offer without versions counts as current.
+   */
+  expired?: ReadonlySet<string>;
 }
 
 const byName = <T extends Pick<Offer, 'name'>>(a: T, b: T) =>
@@ -201,10 +220,35 @@ function byEstimate<T extends Comparable>(
       (estimates[b.id]?.withTax as number) || byName(a, b);
 }
 
+/**
+ * Dense positions over peers already sorted by estimate: equal estimates
+ * (to the cent) share a position, the next one follows (1, 1, 2).
+ */
+function denseRanks<T extends Comparable>(
+  peers: readonly T[],
+  estimates: Readonly<Record<string, PriceEstimate>>,
+): Record<string, number> {
+  const ranks: Record<string, number> = {};
+  let rank = 0;
+  let last: number | null = null;
+  for (const p of peers) {
+    const value = estimates[p.id]?.withTax ?? null;
+    if (rank === 0 || value !== last) rank += 1;
+    last = value;
+    ranks[p.id] = rank;
+  }
+  return ranks;
+}
+
 /** Ranks one like-for-like group (same comparison key). */
-function rankGroup<T extends Comparable>(same: readonly T[]) {
+function rankGroup<T extends Comparable>(
+  all: readonly T[],
+  opts: CompareOptions = {},
+) {
+  const isExpired = (o: T) => !!opts.expired?.has(o.id);
+  const same = all.filter(o => !isExpired(o));
   const estimates: Record<string, PriceEstimate> = {};
-  for (const o of same) estimates[o.id] = priceEstimate(o);
+  for (const o of all) estimates[o.id] = priceEstimate(o);
   const peers = same
     .filter(o => estimates[o.id]?.withTax !== null)
     .sort(byEstimate(estimates));
@@ -212,7 +256,9 @@ function rankGroup<T extends Comparable>(same: readonly T[]) {
     .filter(o => o.price !== null && estimates[o.id]?.withTax === null)
     .sort(byName);
   const unpriced = same.filter(o => o.price === null);
-  return {estimates, peers, unknownTax, unpriced};
+  const expired = all.filter(isExpired).sort(byName);
+  const ranks = denseRanks(peers, estimates);
+  return {estimates, peers, ranks, unknownTax, unpriced, expired};
 }
 
 /**
@@ -226,22 +272,27 @@ function rankGroup<T extends Comparable>(same: readonly T[]) {
 export function compareOffer<T extends Comparable>(
   offer: T,
   offers: readonly T[],
+  opts: CompareOptions = {},
 ): Comparison<T> | null {
   const key = comparisonKey(offer);
   if (!key) return null;
   const same = offers.filter(o => comparisonKey(o) === key);
   if (!same.some(o => o.id === offer.id)) same.push(offer);
-  const {estimates, peers, unknownTax, unpriced} = rankGroup(same);
+  const {estimates, peers, ranks, unknownTax, unpriced, expired} = rankGroup(
+    same,
+    opts,
+  );
   const others = (list: T[]) => list.filter(o => o.id !== offer.id);
-  const index = peers.findIndex(o => o.id === offer.id);
   const apart = others(unknownTax);
   return {
     peers,
-    position: index >= 0 ? index + 1 : null,
+    position: ranks[offer.id] ?? null,
+    ranks,
     estimates,
     unknownTax: apart,
     otherTax: apart,
     unpriced: others(unpriced),
+    expired: others(expired),
   };
 }
 
@@ -250,11 +301,13 @@ export interface RankedGroup<T> {
   key: string;
   /** Cheapest first by the estimate with tax (ties by name), at least two. */
   peers: T[];
+  /** Dense position of every peer, by id (ties share a position). */
+  ranks: Readonly<Record<string, number>>;
   estimates: Readonly<Record<string, PriceEstimate>>;
 }
 
 /** Why an offer of the category is not in any ranked group. */
-export type ApartReason = 'price' | 'tax' | 'unit' | 'alone';
+export type ApartReason = 'price' | 'tax' | 'unit' | 'alone' | 'expired';
 
 export interface CategoryComparison<T> {
   groups: RankedGroup<T>[];
@@ -266,11 +319,13 @@ export interface CategoryComparison<T> {
  * «Comparar» for a whole category: one ranked group per unit (carpas por
  * día, carpas por unidad), never ranked across groups; the rest apart with
  * the reason (`price` unknown, `tax` = the price with tax cannot be
- * estimated, `unit` not concrete, `alone` = nothing like it to rank with).
+ * estimated, `unit` not concrete, `alone` = nothing like it to rank with,
+ * `expired` = its current terms can no longer be accepted).
  */
 export function compareCategory<T extends Comparable>(
   categoryId: string,
   offers: readonly T[],
+  opts: CompareOptions = {},
 ): CategoryComparison<T> {
   const inCategory = offers.filter(o => o.categoryId === categoryId);
   const byKey = new Map<string, T[]>();
@@ -282,10 +337,15 @@ export function compareCategory<T extends Comparable>(
   const ranked = new Set<string>();
   const estimates: Record<string, PriceEstimate> = {};
   for (const [key, same] of byKey) {
-    const group = rankGroup(same);
+    const group = rankGroup(same, opts);
     Object.assign(estimates, group.estimates);
     if (group.peers.length < 2) continue;
-    groups.push({key, peers: group.peers, estimates: group.estimates});
+    groups.push({
+      key,
+      peers: group.peers,
+      ranks: group.ranks,
+      estimates: group.estimates,
+    });
     for (const p of group.peers) ranked.add(p.id);
   }
   groups.sort(
@@ -295,8 +355,9 @@ export function compareCategory<T extends Comparable>(
     .filter(o => !ranked.has(o.id))
     .map(offer => {
       const estimate = estimates[offer.id] ?? priceEstimate(offer);
-      const reason: ApartReason =
-        offer.price === null
+      const reason: ApartReason = opts.expired?.has(offer.id)
+        ? 'expired'
+        : offer.price === null
           ? 'price'
           : !comparisonKey(offer)
             ? 'unit'
@@ -311,13 +372,14 @@ export function compareCategory<T extends Comparable>(
 /** Categories where «Comparar» has something to rank. */
 export function categoriesWithComparison<T extends Comparable>(
   offers: readonly T[],
+  opts: CompareOptions = {},
 ): Set<string> {
   const out = new Set<string>();
   const ids = new Set(
     offers.map(o => o.categoryId).filter((x): x is string => !!x),
   );
   for (const id of ids) {
-    if (compareCategory(id, offers).groups.length) out.add(id);
+    if (compareCategory(id, offers, opts).groups.length) out.add(id);
   }
   return out;
 }

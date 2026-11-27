@@ -12,7 +12,7 @@
  * The answers are kept in this tab while the form is open, so a reload or a
  * dropped connection loses nothing; they are forgotten once sent.
  */
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import type {
   PublicOpenForm,
   PublicQuoteRequest,
@@ -30,10 +30,16 @@ import {
   type ProposalDraft,
   type Problems,
 } from './draft';
-import {clearSupplierLink, type SupplierLink} from './link';
+import {
+  SUPPLIER_DRAFT_KEY,
+  clearSupplierLink,
+  keepSupplierLink,
+  releaseSupplierLink,
+  type SupplierLink,
+} from './link';
 import {ProposalForm} from './ProposalForm';
 
-const DRAFT_KEY = 'oxeye.logistics.supplier.draft.v1';
+const DRAFT_KEY = SUPPLIER_DRAFT_KEY;
 
 type Loaded =
   | {kind: 'request'; data: PublicQuoteRequest}
@@ -123,9 +129,37 @@ export const SupplierApp: React.FC<{link: SupplierLink}> = ({link}) => {
     void load();
   }, [load]);
 
+  // Kept only once the supplier typed something: a form merely opened is not
+  // a reason to bring this tab back to it (supplier/link.ts).
+  const edited = useRef(draft !== null);
+  const editDraft = useCallback((next: ProposalDraft) => {
+    edited.current = true;
+    setDraft(next);
+  }, []);
   useEffect(() => {
-    if (draft) writeDraft(link.token, draft);
+    if (draft && edited.current) writeDraft(link.token, draft);
   }, [draft, link.token]);
+
+  // An end the form cannot leave: this tab stops coming back to it. Answers
+  // typed before a pause for too many attempts stay, for the same link.
+  const used =
+    view.state === 'ready' &&
+    view.loaded.kind === 'request' &&
+    view.loaded.data.status !== 'open';
+  const ended =
+    used ||
+    view.state === 'gone' ||
+    view.state === 'declined' ||
+    view.state === 'sent' ||
+    view.state === 'limited';
+  useEffect(() => {
+    if (!ended) {
+      if (view.state === 'ready') keepSupplierLink(link);
+      return;
+    }
+    releaseSupplierLink();
+    if (view.state !== 'limited') writeDraft(link.token, null);
+  }, [ended, view.state, link]);
 
   useEffect(() => {
     document.title = 'Presupuesto · Ox Eye';
@@ -320,7 +354,7 @@ export const SupplierApp: React.FC<{link: SupplierLink}> = ({link}) => {
           <ProposalForm
             mode={link.kind}
             draft={draft}
-            onDraft={setDraft}
+            onDraft={editDraft}
             today={today}
             intro={
               loaded.kind === 'request' ? (

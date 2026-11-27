@@ -22,6 +22,7 @@ import type {
   Offer,
 } from '../../../shared/logistics/contracts.ts';
 import {budgetSummary} from '../../../shared/logistics/money.ts';
+import {TAX_ESTIMATE_LABEL} from '../../../shared/logistics/rules.ts';
 import {useAccess} from '../account/useAccess';
 import {errorMessage, isApiError} from '../api/client';
 import {euroProblem, eurosForInput, parseEuros} from '../lib/directory';
@@ -50,7 +51,7 @@ import {
 } from './BudgetParts';
 import {ExpenseSheet, type ExpenseSheetMode} from './ExpenseSheet';
 import {OfferPicker} from './OfferPicker';
-import {BUDGET_HELP, caveatsOf, headlineOf} from './summary';
+import {BUDGET_HELP, caveatsOf, groupGapText, headlineOf} from './summary';
 import type {EventBudgetState} from './useEventBudget';
 
 const GROUPS: ExpenseStatus[] = ['confirmed', 'planned'];
@@ -210,6 +211,7 @@ export const BudgetSheet: React.FC<{
               const list = byStatus(status);
               if (!list.length) return null;
               const totals = summary[status];
+              const gap = groupGapText(totals);
               return (
                 <div
                   className="lx-budget__group"
@@ -225,9 +227,18 @@ export const BudgetSheet: React.FC<{
                     <span>
                       {formatEuros(totals.beforeTax)} sin impuestos ·{' '}
                       <strong>≈ {formatEuros(totals.withTax)}</strong> con
-                      impuestos
+                      impuestos · {TAX_ESTIMATE_LABEL}
                     </span>
                   </p>
+                  {gap && (
+                    <p
+                      className="lx-budget__groupgap"
+                      id={`lx-budget-group-${status}-gap`}
+                    >
+                      <Icon name="alert" size={14} />
+                      {gap}
+                    </p>
+                  )}
                   <ul className="lx-expenses">
                     {list.map(x => (
                       <li key={x.id}>

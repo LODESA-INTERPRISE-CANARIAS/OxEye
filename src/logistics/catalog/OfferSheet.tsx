@@ -96,6 +96,7 @@ import {CategoryPicker} from './CategoryPicker';
 import {COMPARE_HELP} from './compare';
 import {ApartList, RankedList} from './CompareParts';
 import {OfferTermsSection} from './terms/OfferTermsSection';
+import {useExpiredOffers} from './useExpiredOffers';
 
 type RescuedValues = Record<string, unknown>;
 
@@ -538,10 +539,13 @@ const Compare: React.FC<{
   categoryName: string | undefined;
   onShow: (offer: Offer) => void;
 }> = ({offer, offers, categoryName, onShow}) => {
+  // E6: expired offers are never ranked, as in the catalogue's «Comparar».
+  const expired = useExpiredOffers();
   const comparison = useMemo(
-    () => compareOffer(offer, offers),
-    [offer, offers],
+    () => compareOffer(offer, offers, {expired}),
+    [offer, offers, expired],
   );
+  const selfExpired = expired.has(offer.id);
   const per = perUnitLabel(offer);
   let body: React.ReactNode;
   if (offer.restricted) {
@@ -559,12 +563,16 @@ const Compare: React.FC<{
       </p>
     );
   } else {
-    const {peers, position, estimates, unknownTax, unpriced} = comparison;
+    const {peers, position, ranks, estimates, unknownTax, unpriced, expired} =
+      comparison;
     const others = peers.filter(p => p.id !== offer.id);
     const ranked = peers.length >= 2;
     const own = estimates[offer.id];
-    const summary =
-      offer.price === null
+    const tied =
+      position !== null && others.some(p => ranks[p.id] === position);
+    const summary = selfExpired
+      ? 'Esta oferta está caducada: no se ordena con las demás hasta renovarla.'
+      : offer.price === null
         ? 'Esta oferta no tiene precio: no se puede situar entre las demás.'
         : own && own.withTax === null
           ? own.missing === 'treatment'
@@ -573,12 +581,14 @@ const Compare: React.FC<{
           : ranked && position
             ? `Es la ${position === 1 ? '' : `${position}.ª `}más barata de ${
                 peers.length
-              } comparables, con el impuesto de cada una (estimación).`
+              } comparables${tied ? ', empatada con otra' : ''}, con el impuesto de cada una (estimación).`
             : 'Aún no hay otra oferta con precio e impuesto conocidos: no hay con qué ordenarla.';
     body =
       others.length === 0 &&
       unknownTax.length === 0 &&
-      unpriced.length === 0 ? (
+      unpriced.length === 0 &&
+      expired.length === 0 &&
+      !selfExpired ? (
         <p className="lx-muted" id="lx-offer-compare-none">
           Aún no hay otras ofertas de {categoryName ?? 'esta categoría'} por{' '}
           {per}.
@@ -592,6 +602,7 @@ const Compare: React.FC<{
             <RankedList
               peers={peers}
               estimates={estimates}
+              ranks={ranks}
               selfId={offer.id}
               onShow={onShow}
               id="lx-offer-compare-list"
@@ -606,6 +617,16 @@ const Compare: React.FC<{
             title="Sin impuesto conocido · no se ordenan"
             onShow={onShow}
             id="lx-offer-compare-othertax"
+          />
+          <ApartList
+            items={expired.map(p => ({
+              offer: p,
+              reason: 'expired' as const,
+              estimate: estimates[p.id],
+            }))}
+            title="Caducadas · no se ordenan"
+            onShow={onShow}
+            id="lx-offer-compare-expired"
           />
           {unpriced.length > 0 && (
             <div

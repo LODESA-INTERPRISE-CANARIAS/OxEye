@@ -417,7 +417,9 @@ export function movedRoutesReminder(
  * The routes reminders and the cleared list of a change of times (a move or
  * a «¿Y si…?»): every moved task that needs a routes check gets one reminder
  * (the plan's own `route_window` while it still coincides with an event,
- * else `movedRoutesReminder`), and `cleared` loses UNSOLVED_BY_MOVING.
+ * else `movedRoutesReminder`), every heavy-load (subsoil) warning of a moved
+ * task is kept as a reminder, new or not (a change of times never changes
+ * the load or the declared review), and `cleared` loses UNSOLVED_BY_MOVING.
  */
 export function movedSafety(input: {
   /** The plan after the change. */
@@ -426,7 +428,11 @@ export function movedSafety(input: {
   afterWarnings: readonly PlanWarning[];
   /** Warnings before the change that are gone after it. */
   cleared: readonly PlanWarning[];
-}): {routeReminders: PlanWarning[]; cleared: PlanWarning[]} {
+}): {
+  routeReminders: PlanWarning[];
+  subsoilReminders: PlanWarning[];
+  cleared: PlanWarning[];
+} {
   const routeOf = (list: readonly PlanWarning[], id: string) =>
     list.find(w => w.kind === 'route_window' && w.taskIds[0] === id);
   const routeReminders: PlanWarning[] = [];
@@ -439,6 +445,11 @@ export function movedSafety(input: {
   }
   return {
     routeReminders,
+    subsoilReminders: input.afterWarnings.filter(
+      w =>
+        (w.kind === 'heavy_load' || w.kind === 'heavy_load_unknown') &&
+        w.taskIds.some(id => input.movedIds.has(id)),
+    ),
     cleared: input.cleared.filter(w => !UNSOLVED_BY_MOVING.has(w.kind)),
   };
 }

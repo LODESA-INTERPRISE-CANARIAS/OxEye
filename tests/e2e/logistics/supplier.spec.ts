@@ -103,6 +103,53 @@ test('every link that no longer works reads the same', async ({page}) => {
   await expect(page.locator('#lx-supplier-gone')).toContainText(
     'Este enlace ya no está disponible',
   );
+  // An end the form cannot leave: the tab is Ox Eye again after a reload.
+  await page.reload();
+  await expect(page.locator('#lx-login-username')).toBeVisible();
+  await expect(page.locator('#lx-supplier')).toHaveCount(0);
+});
+
+test('a reload keeps the form; Ox Eye opened again in the tab does not', async ({
+  page,
+}) => {
+  await mockApi(page, offersData());
+  await page.goto(`/#logistica/proveedor/${SUPPLIER_TOKEN}`);
+  await expect(page.locator('#lx-supplier-request')).toBeVisible();
+  // A real reload (or a dropped connection) brings the supplier back.
+  await page.reload();
+  await expect(page.locator('#lx-supplier-request')).toBeVisible();
+  // Merely opened, nothing typed: opening Ox Eye again in this tab is Ox Eye.
+  await page.goto('about:blank');
+  await page.goto('/#logistica');
+  await expect(page.locator('#lx-login-username')).toBeVisible();
+  await expect(page.locator('#lx-supplier')).toHaveCount(0);
+});
+
+test('answers not yet sent bring the tab back to the form', async ({page}) => {
+  await mockApi(page, offersData());
+  await page.goto(`/#logistica/proveedor/${SUPPLIER_TOKEN}`);
+  await choice(page, 'lx-sf-intent', 'yes');
+  await page.goto('about:blank');
+  await page.goto('/#logistica');
+  await expect(page.locator('#lx-supplier-request')).toBeVisible();
+  await expect(
+    page.locator('#lx-sf-intent .lx-choice[data-value="yes"] input'),
+  ).toBeChecked();
+});
+
+test('a supplier link pasted into an open Ox Eye tab opens only the form', async ({
+  page,
+}) => {
+  await mockApi(page, offersData());
+  await page.goto('/#logistica');
+  await expect(page.locator('#lx-login-username')).toBeVisible();
+  await page.evaluate(token => {
+    window.location.hash = `#logistica/proveedor/${token}`;
+  }, SUPPLIER_TOKEN);
+  await expect(page.locator('#lx-supplier-request')).toBeVisible();
+  await expect(page.locator('#lx-login-username')).toHaveCount(0);
+  await expect(page.locator('.app')).toHaveCount(0);
+  expect(new URL(page.url()).hash).not.toContain(SUPPLIER_TOKEN);
 });
 
 test('too many attempts pause the link for a moment', async ({page}) => {

@@ -6,9 +6,19 @@
 import React, {useMemo, useState} from 'react';
 import {priceLabel} from '../../../shared/logistics/catalogue.ts';
 import type {Offer} from '../../../shared/logistics/contracts.ts';
+import {TAX_ESTIMATE_LABEL} from '../../../shared/logistics/rules.ts';
 import {universalSearch} from '../../../shared/logistics/search.ts';
+import {useExpiredOffers} from '../catalog/useExpiredOffers';
 import {useLogisticsStore} from '../store/useLogisticsStore';
-import {Button, EmptyState, Icon, Pending, SearchInput, Sheet} from '../ui';
+import {
+  Button,
+  Chip,
+  EmptyState,
+  Icon,
+  Pending,
+  SearchInput,
+  Sheet,
+} from '../ui';
 import {estimateLine} from './tax';
 
 export const OfferPicker: React.FC<{
@@ -17,6 +27,8 @@ export const OfferPicker: React.FC<{
 }> = ({onPick, onClose}) => {
   const offers = useLogisticsStore(s => s.offers);
   const categories = useLogisticsStore(s => s.categories);
+  // E6: an offer whose terms expired can still be the source, marked as such.
+  const expired = useExpiredOffers();
   const [query, setQuery] = useState('');
   const q = query.trim();
   const list = useMemo(() => {
@@ -76,12 +88,14 @@ export const OfferPicker: React.FC<{
           {list.map(o => {
             const price = priceLabel(o);
             const line = estimateLine(o);
+            const isExpired = expired.has(o.id);
             return (
               <li key={o.id}>
                 <button
                   type="button"
-                  className="lx-offerpick__row"
+                  className={`lx-offerpick__row${isExpired ? ' is-expired' : ''}`}
                   data-offer-id={o.id}
+                  data-expired={isExpired || undefined}
                   onClick={() => onPick(o)}
                 >
                   <span className="lx-offerpick__main">
@@ -89,11 +103,23 @@ export const OfferPicker: React.FC<{
                     <span className="lx-muted">
                       <Icon name="building" size={14} /> {o.company.name}
                     </span>
+                    {isExpired && (
+                      <span className="lx-offerpick__expired">
+                        <Chip tag tone="danger" size="sm">
+                          Caducada
+                        </Chip>
+                        <span className="lx-muted">
+                          Su precio ya no se puede aceptar tal cual.
+                        </span>
+                      </span>
+                    )}
                   </span>
                   <span className="lx-offerpick__price lx-num">
                     {price ?? <Pending>Precio pendiente</Pending>}
                     {line?.kind === 'estimate' && (
-                      <small>≈ {line.amount} con impuestos</small>
+                      <small>
+                        ≈ {line.amount} con impuestos · {TAX_ESTIMATE_LABEL}
+                      </small>
                     )}
                   </span>
                   <Icon name="plus" size={18} className="lx-offerpick__add" />

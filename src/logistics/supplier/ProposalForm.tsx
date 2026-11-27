@@ -27,6 +27,7 @@ import {
   SUPPLIER_PRIVACY_TEXT,
 } from '../../../shared/logistics/proposals.ts';
 import {pickRegime, TAX_REGIME_LABEL} from '../budget/tax';
+import {dayYear} from '../offers/format';
 import {
   Button,
   Chip,
@@ -1099,7 +1100,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
             <dd>
               {draft.validity
                 ? draft.validity === 'date'
-                  ? `hasta el ${draft.validityDate || '—'}`
+                  ? `hasta el ${draft.validityDate ? dayYear(draft.validityDate) : '—'}`
                   : `durante ${VALIDITY_OPTIONS.find(o => o.value === draft.validity)?.label}`
                 : 'Sin fecha límite'}
             </dd>

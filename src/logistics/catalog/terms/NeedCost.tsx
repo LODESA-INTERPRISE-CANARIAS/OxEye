@@ -106,6 +106,8 @@ export function needOfDraft(d: NeedDraft): NeedSpec | null {
   const days = whole(d.days, MAX_NEED_DAYS);
   if (quantity === null || days === null) return null;
   const hours = d.hours.trim() ? whole(d.hours, 24) : null;
+  // Typed but not valid: no figure rather than one without the hours.
+  if (d.hours.trim() && hours === null) return null;
   return {
     quantity,
     days,
@@ -215,7 +217,7 @@ export const CostBreakdown: React.FC<{
       <p className="lx-cost__apart lx-num">
         Con compromiso de {cost.commitment.years} años:{' '}
         {cost.commitment.total !== null
-          ? `≈ ${formatEuros(cost.commitment.total)} con impuestos`
+          ? `≈ ${formatEuros(cost.commitment.total)} con impuestos (${TAX_ESTIMATE_LABEL})`
           : cost.commitment.beforeTax !== null
             ? `${formatEuros(cost.commitment.beforeTax)} sin impuestos`
             : 'sin precio de compromiso'}
@@ -258,6 +260,10 @@ export const NeedCost: React.FC<{
     whole(draft.days, MAX_NEED_DAYS) === null
       ? `Un número entero entre 1 y ${MAX_NEED_DAYS}.`
       : null;
+  const hoursError =
+    hourly && draft.hours.trim() && whole(draft.hours, 24) === null
+      ? 'Entre 1 y 24 horas.'
+      : null;
   return (
     <section
       className="lx-subsection lx-needcost"
@@ -292,16 +298,29 @@ export const NeedCost: React.FC<{
             className="lx-num"
             value={draft.days}
             invalid={!!daysError}
-            onChange={e => set({days: e.target.value})}
+            onChange={e => {
+              // With dates, «Hasta» follows the days so the two never disagree.
+              const days = whole(e.target.value, MAX_NEED_DAYS);
+              set(
+                draft.from && days !== null
+                  ? {days: e.target.value, to: addDays(draft.from, days - 1)}
+                  : {days: e.target.value},
+              );
+            }}
           />
         </Field>
         {hourly && (
-          <Field id={`${id}-hours`} label="Horas por jornada">
+          <Field
+            id={`${id}-hours`}
+            label="Horas por jornada"
+            error={hoursError}
+          >
             <Input
               id={`${id}-hours`}
               inputMode="numeric"
               className="lx-num"
               value={draft.hours}
+              invalid={!!hoursError}
               onChange={e => set({hours: e.target.value})}
             />
           </Field>
@@ -368,7 +387,11 @@ export const NeedCost: React.FC<{
       {cost ? (
         <CostBreakdown cost={cost} id={`${id}-breakdown`} />
       ) : (
-        <p className="lx-muted">Completa la cantidad y las jornadas.</p>
+        <p className="lx-muted">
+          {qtyError || daysError
+            ? 'Completa la cantidad y las jornadas.'
+            : 'Corrige las horas por jornada.'}
+        </p>
       )}
     </section>
   );
