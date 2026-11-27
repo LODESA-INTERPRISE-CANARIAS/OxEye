@@ -1,11 +1,10 @@
 /**
- * Organization card in the sidebar and the account sheet: its name and the
- * acronym that starts the name of every saved PDF («SCLL_…»). Tapping it
+ * Organization card in the sidebar and the account sheet: its name (the
+ * acronym and reference time live in the sheet). Tapping it
  * opens the «Organización» sheet. With several organizations, the Gestor's
  * own select chooses which one is open.
  */
 import React from 'react';
-import {acronymFor} from '../../../shared/logistics/acronym.ts';
 import {useLogisticsStore} from '../store/useLogisticsStore';
 import {Icon, SelectField} from '../ui';
 
@@ -18,16 +17,7 @@ export const OrgSelector: React.FC<{
   const orgId = useLogisticsStore(s => s.orgId);
   const selectOrg = useLogisticsStore(s => s.selectOrg);
   const current = organizations.find(o => o.id === orgId);
-  const acronym = current ? acronymFor(current) : '';
-  const proposed = !!current && !current.acronym?.trim();
-
-  const acronymLine = acronym && (
-    <span className="lx-org__acronym">
-      Siglas <strong className="lx-num">{acronym}</strong>
-      {proposed && <span className="lx-muted"> · propuesta</span>}
-    </span>
-  );
-
+  // The acronym lives in the «Organización» sheet only; the card stays calm.
   if (organizations.length <= 1) {
     if (!onOpen || !current) {
       return (
@@ -36,7 +26,6 @@ export const OrgSelector: React.FC<{
           <span className="lx-org__name">
             {current?.name ?? 'Sin organización'}
           </span>
-          {acronymLine}
         </div>
       );
     }
@@ -50,7 +39,6 @@ export const OrgSelector: React.FC<{
       >
         <span className="lx-org__label">Organización</span>
         <span className="lx-org__name">{current.name}</span>
-        {acronymLine}
         <Icon name="chevronRight" size={16} className="lx-org__chevron" />
       </button>
     );
@@ -77,7 +65,7 @@ export const OrgSelector: React.FC<{
           aria-haspopup="dialog"
           onClick={onOpen}
         >
-          {acronymLine}
+          <span className="lx-org__acronym">Detalles</span>
           <Icon name="chevronRight" size={16} />
         </button>
       )}

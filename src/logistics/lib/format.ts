@@ -116,17 +116,20 @@ function readableZone(timeZone: string): string {
 
 /** Subtitle note: «hora de Canarias», or the zone name elsewhere. */
 export function zoneNote(timeZone: string = DEFAULT_TIMEZONE): string {
-  return timeZone === DEFAULT_TIMEZONE
-    ? 'hora de Canarias'
-    : `hora de ${readableZone(timeZone)}`;
+  if (timeZone === DEFAULT_TIMEZONE) return 'hora de Canarias';
+  if (timeZone === PENINSULAR_TIMEZONE) return 'hora peninsular';
+  return `hora de ${readableZone(timeZone)}`;
 }
 
 /** Form note on which clock the times use: «Horas de Canarias». */
 export function zoneHoursNote(timeZone: string = DEFAULT_TIMEZONE): string {
-  return timeZone === DEFAULT_TIMEZONE
-    ? 'Horas de Canarias'
-    : `Horas en la zona ${readableZone(timeZone)}`;
+  if (timeZone === DEFAULT_TIMEZONE) return 'Horas de Canarias';
+  if (timeZone === PENINSULAR_TIMEZONE) return 'Horas peninsulares';
+  return `Horas en la zona ${readableZone(timeZone)}`;
 }
+
+/** Mainland Spain («hora peninsular»), the other reference an org can pick. */
+const PENINSULAR_TIMEZONE = 'Europe/Madrid';
 
 /** Initials for an avatar: «Elvis» → «E», «Equipo Norte» → «EN». */
 export function initials(name: string): string {

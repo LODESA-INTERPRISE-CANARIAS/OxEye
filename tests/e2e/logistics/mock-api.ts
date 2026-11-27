@@ -5606,10 +5606,33 @@ export async function mockApi(
             );
           }
         }
-        if (input.acronym === undefined || next === current.acronym) {
+        const zone = input.timezone;
+        if (
+          zone !== undefined &&
+          zone !== 'Atlantic/Canary' &&
+          zone !== 'Europe/Madrid'
+        ) {
+          return json(
+            route,
+            {
+              code: 'VALIDATION',
+              message: 'Revisa los datos marcados.',
+              fields: {
+                timezone:
+                  'Zona horaria no válida: usa Canarias (Atlantic/Canary) o Península (Europe/Madrid).',
+              },
+            },
+            400,
+          );
+        }
+        const acronymChanges =
+          input.acronym !== undefined && next !== current.acronym;
+        const zoneChanges = zone !== undefined && zone !== current.timezone;
+        if (!acronymChanges && !zoneChanges) {
           return json(route, {...current});
         }
-        current.acronym = next;
+        if (acronymChanges) current.acronym = next;
+        if (zoneChanges) current.timezone = zone;
         current.version = (current.version as number) + 1;
         return json(route, {...current});
       }

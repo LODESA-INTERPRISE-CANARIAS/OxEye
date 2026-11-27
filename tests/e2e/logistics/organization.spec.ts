@@ -27,7 +27,9 @@ test.describe('Gestor logístico · Organización', () => {
   test('a member sets the acronym; the file name follows', async ({page}) => {
     const api = await mockApi(page);
     await signIn(page);
-    await expect(page.locator('#lx-org-select')).toContainText(PROPOSAL);
+    // The sidebar card shows only the name; the acronym lives in the sheet.
+    await expect(page.locator('#lx-org-select')).toContainText(NAME);
+    await expect(page.locator('#lx-org-select')).not.toContainText('Siglas');
     await openSheet(page);
     await expect(page.locator('#lx-org-acronym-view')).toContainText(
       'propuesta a partir del nombre',
@@ -104,9 +106,81 @@ test.describe('Gestor logístico · Organización', () => {
     await page.evaluate(() =>
       document.dispatchEvent(new Event('visibilitychange')),
     );
-    await expect(page.locator('#lx-org-select')).toContainText('AYTO');
+    // The card no longer shows the acronym: read it in the sheet.
     await openSheet(page);
     await expect(page.locator('#lx-org-acronym-view')).toContainText('AYTO');
+  });
+
+  test('«Usar la propuesta» only when the acronym differs, and restores it', async ({
+    page,
+  }) => {
+    const api = await mockApi(page);
+    await signIn(page);
+    await openSheet(page);
+    const propose = page.locator('#lx-org-use-proposal');
+    // Already the proposal: nothing to restore.
+    await expect(propose).toBeDisabled();
+    await expect(propose).toContainText(PROPOSAL);
+
+    // While editing it follows the field.
+    await page.locator('#lx-org-edit').click();
+    await page.locator('#lx-org-acronym').fill('XYZ');
+    await expect(propose).toBeEnabled();
+    await propose.click();
+    await expect(page.locator('#lx-org-acronym')).toHaveValue(PROPOSAL);
+    await expect(propose).toBeDisabled();
+    await page.locator('#lx-org-cancel').click();
+
+    // A stored acronym: restoring saves at once.
+    await page.locator('#lx-org-edit').click();
+    await page.locator('#lx-org-acronym').fill('AYTO');
+    await page.locator('#lx-org-save').click();
+    await expect(page.locator('#lx-org-acronym-view')).toContainText('AYTO');
+    await expect(propose).toBeEnabled();
+    await propose.click();
+    await expect(
+      page.locator('.lx-toast', {hasText: 'Se usarán las siglas propuestas'}),
+    ).toBeVisible();
+    expect(api.calls('PATCH', `/organizations/${ORG}`).at(-1)!.body).toEqual({
+      acronym: null,
+      version: 2,
+    });
+    await expect(page.locator('#lx-org-acronym-view')).toContainText(
+      'propuesta a partir del nombre',
+    );
+    await expect(propose).toBeDisabled();
+  });
+
+  test('the reference time: Canarias by default, peninsular on choice', async ({
+    page,
+  }) => {
+    const api = await mockApi(page);
+    await signIn(page);
+    await openSheet(page);
+    const canary = page.getByRole('radio', {name: 'Hora de Canarias'});
+    const peninsular = page.getByRole('radio', {name: 'Hora peninsular'});
+    await expect(canary).toBeChecked();
+    await expect(page.locator('#lx-org-zone-note')).toContainText(
+      'los que ya existen mantienen su hora',
+    );
+
+    // Controlled by the saved value: it turns on once the server agrees.
+    await peninsular.click();
+    await expect(
+      page.locator('.lx-toast', {
+        hasText: 'Hora de referencia: hora peninsular',
+      }),
+    ).toBeVisible();
+    expect(api.calls('PATCH', `/organizations/${ORG}`).at(-1)!.body).toEqual({
+      timezone: 'Europe/Madrid',
+      version: 1,
+    });
+    await expect(peninsular).toBeChecked();
+    expect(api.organization.timezone).toBe('Europe/Madrid');
+    await sheet(page)
+      .locator('.lx-sheet__panel, [role="dialog"]')
+      .first()
+      .screenshot({path: 'test-results/visual/logistics-org-sheet.png'});
   });
 
   test('a guest reads it and cannot change it', async ({page}) => {
@@ -115,5 +189,10 @@ test.describe('Gestor logístico · Organización', () => {
     await openSheet(page);
     await expect(page.locator('#lx-org-edit')).toHaveCount(0);
     await expect(page.locator('#lx-org-readonly')).toBeVisible();
+    await expect(page.locator('#lx-org-use-proposal')).toHaveCount(0);
+    await expect(page.locator('#lx-org-timezone')).toHaveCount(0);
+    await expect(page.locator('#lx-org-timezone-view')).toHaveText(
+      'hora de Canarias',
+    );
   });
 });

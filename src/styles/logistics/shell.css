@@ -206,6 +206,22 @@
   color: var(--lx-muted);
 }
 
+.lx .lx-orgsheet__propose {
+  justify-self: start;
+  margin-top: 10px;
+}
+
+.lx .lx-orgsheet__zone {
+  margin: 0;
+  font-size: 15px;
+  color: var(--lx-heading);
+}
+
+.lx .lx-orgsheet__zonenote {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+}
+
 .lx .lx-orgsheet__example code {
   font-family: var(--lx-font);
   font-size: 13px;

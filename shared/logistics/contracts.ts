@@ -529,9 +529,22 @@ export interface Organization {
 }
 
 /** E2: only the acronym is editable from the Gestor. */
+/**
+ * Reference time zones an organization can choose («Hora de Canarias»,
+ * «Hora peninsular»). It is the zone of the events and tasks created from
+ * then on; existing ones keep the zone they were created with.
+ */
+export const ORGANIZATION_TIMEZONES = [
+  'Atlantic/Canary',
+  'Europe/Madrid',
+] as const;
+export type OrganizationTimezone = (typeof ORGANIZATION_TIMEZONES)[number];
+
 export interface OrganizationInput {
   /** 1–ACRONYM_MAX letters, digits or dots; null clears it. */
   acronym?: string | null;
+  /** One of `ORGANIZATION_TIMEZONES`. */
+  timezone?: OrganizationTimezone;
   version: number;
 }
 
