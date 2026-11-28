@@ -23,7 +23,10 @@ import {
   toOrgRecord,
 } from '../organizations/service.ts';
 import type {OrgRecord} from '../organizations/service.ts';
-import {normalizeRoles} from '../../../shared/logistics/permissions.ts';
+import {
+  isDeveloper,
+  normalizeRoles,
+} from '../../../shared/logistics/permissions.ts';
 import {findOrCreateVenue} from '../venues/service.ts';
 import {
   BUILT_IN_RESOURCE_CATEGORIES,
@@ -639,17 +642,29 @@ export async function seed(
         [org.id, userId],
       );
       // Pilot roles once per membership; afterwards only an administrator
-      // changes them (roles_set_at records it).
+      // changes them (roles_set_at records it). A developer account's roles
+      // are fixed: reasserted on every run, added to whatever it holds.
+      const developer = isDeveloper(u.roles);
       const membership = (
         await tx.query<{roles: unknown}>(
           `UPDATE organization_members
-              SET roles = CASE WHEN roles_set_at IS NULL
+              SET roles = CASE WHEN $5::boolean
+                               THEN ARRAY(SELECT r FROM unnest(ARRAY['admin', 'developer', 'team']::text[]) AS r
+                                           WHERE r = ANY(roles)
+                                              OR r IN (SELECT jsonb_array_elements_text($3::jsonb)))
+                               WHEN roles_set_at IS NULL
                                THEN ARRAY(SELECT jsonb_array_elements_text($3::jsonb))
                                ELSE roles END,
                   roles_set_at = COALESCE(roles_set_at, $4::timestamptz)
             WHERE organization_id = $1 AND user_id = $2
             RETURNING roles`,
-          [org.id, userId, JSON.stringify(u.roles), now.toISOString()],
+          [
+            org.id,
+            userId,
+            JSON.stringify(u.roles),
+            now.toISOString(),
+            developer,
+          ],
         )
       )[0];
       users.push({

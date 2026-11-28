@@ -248,18 +248,19 @@ test.describe('Gestor logístico · E4 · Usuarios', () => {
     ).toBeDisabled();
     await list.locator('[data-user="Elvis"] .lx-users__head').click();
 
-    // Dailos gets the developer role too.
+    // Dailos gets the team role too; development is never given from here.
     const dailos = list.locator('[data-user="Dailos"]');
     await dailos.locator('.lx-users__head').click();
-    await dailos.getByLabel(/Desarrollo/).check();
+    await expect(dailos.getByLabel(/Desarrollo/)).toBeDisabled();
+    await dailos.getByLabel(/^Equipo/).check();
     await expect(page.locator('.lx-toast')).toContainText(
       'Roles de Dailos guardados',
     );
     expect(api.calls('PUT', '/admin/users/u-dailos/roles')[0]?.body).toEqual({
       organizationId: '00000000-0000-4000-8000-000000000001',
-      roles: ['admin', 'developer'],
+      roles: ['admin', 'team'],
     });
-    await expect(dailos).toContainText('Administración · Desarrollo');
+    await expect(dailos).toContainText('Administración · Equipo');
 
     // Provisional password: asks first, shown once.
     await page.locator('#lx-users-pw-Dailos').click();

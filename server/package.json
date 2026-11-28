@@ -13,6 +13,7 @@
     "db:migrate": "node --env-file-if-exists=.env src/cli/migrate.ts",
     "db:seed": "node --env-file-if-exists=.env src/cli/seed.ts",
     "db:clear-demo": "node --env-file-if-exists=.env src/cli/clear-demo.ts",
+    "cuenta:recuperar": "node --env-file-if-exists=.env src/cli/recover-account.ts",
     "db:up": "docker compose -f docker-compose.yml up -d --wait db",
     "db:down": "docker compose -f docker-compose.yml down",
     "db:logs": "docker compose -f docker-compose.yml logs -f db",

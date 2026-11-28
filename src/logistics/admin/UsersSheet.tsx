@@ -21,6 +21,7 @@ import {DISPLAY_NAME_MAX} from '../../../shared/logistics/account.ts';
 import {
   ORG_ROLES,
   ROLE_LABEL,
+  isDeveloper,
   normalizeRoles,
   rolePermissions,
 } from '../../../shared/logistics/permissions.ts';
@@ -64,7 +65,7 @@ const ROLE_HELP: Record<OrgRole, string> = {
   admin:
     'Todo, incluidos roles, aprobación de ofertas, presupuestos y sesiones de soporte.',
   developer:
-    'Ve presupuestos, ayuda a entrar (contraseñas provisionales, enlaces) y ve el diagnóstico técnico.',
+    'Va siempre con administración: gestiona todas las contraseñas y ve el diagnóstico técnico. Sus roles son fijos.',
   team: 'Edita el plan y consulta Contactos y Catálogo.',
 };
 
@@ -326,7 +327,7 @@ const UserRow: React.FC<{
               </>
             )}
           </p>
-          {!guest && !me && <SupportEntry onSupport={onSupport} />}
+          {!guest && !me && <SupportEntry user={user} onSupport={onSupport} />}
         </div>
       )}
     </li>
@@ -367,10 +368,17 @@ const UnsentNotice: React.FC<{count: number}> = ({count}) => {
   );
 };
 
-const SupportEntry: React.FC<{onSupport: () => void}> = ({onSupport}) => {
+const SupportEntry: React.FC<{user: AdminUser; onSupport: () => void}> = ({
+  user,
+  onSupport,
+}) => {
   const access = useAccess();
   const unsent = useUnsent();
+  const organizations = useLogisticsStore(s => s.organizations);
   if (!access.can('support.start')) return null;
+  // Same rule as passwords: nobody enters a developer account but development
+  // (HelpIn already shows why).
+  if (outrankedBy(user, organizations)) return null;
   return (
     <div className="lx-acct-callout">
       <span className="lx-acct-callout__text">
@@ -643,39 +651,63 @@ const RolesEditor: React.FC<{
     <div className="lx-users__roles">
       {user.memberships.map(m => {
         const org = organizations.find(o => o.id === m.organizationId);
-        // Only an administrator of that organization changes roles there.
-        const editable = !!org?.roles?.includes('admin');
+        // Only an administrator of that organization changes roles there,
+        // and never those of a developer account (they are fixed).
+        const fixed = isDeveloper(m.roles);
+        const editable = !fixed && !!org?.roles?.includes('admin');
         return (
           <fieldset
             key={m.organizationId}
             className="lx-users__rolegroup"
             disabled={!editable}
             aria-busy={busy === m.organizationId || undefined}
+            aria-describedby={
+              fixed ? `${ID}-fixed-${user.id}-${m.organizationId}` : undefined
+            }
             data-org={m.organizationId}
           >
             <legend className="lx-field__label">
               Roles en {org?.name ?? 'otra organización'}
-              {!editable && (
+              {!editable && !fixed && (
                 <HelpTip label="roles">
                   Solo administración cambia los roles. Tú puedes ayudar a
                   entrar (contraseña provisional, enlace).
                 </HelpTip>
               )}
             </legend>
+            {fixed && (
+              <p
+                className="lx-muted"
+                id={`${ID}-fixed-${user.id}-${m.organizationId}`}
+              >
+                <Icon name="lock" size={16} /> Cuenta de desarrollo: sus roles
+                son fijos (administración y desarrollo) y no se cambian desde
+                aquí.
+              </p>
+            )}
             <div className="lx-users__rolechecks">
               {ORG_ROLES.map(r => {
                 const id = `${ID}-role-${user.id}-${m.organizationId}-${r}`;
                 const current = pending[m.organizationId] ?? m.roles;
                 const checked = current.includes(r);
                 const ownAdmin = me && r === 'admin' && m.roles.includes(r);
+                // Development is given by the technical team, never here.
+                const notAssignable = !fixed && r === 'developer';
+                const why = ownAdmin
+                  ? 'No puedes quitarte tu propio rol de administración.'
+                  : notAssignable
+                    ? 'Lo asigna el equipo técnico: no se da desde aquí.'
+                    : null;
                 return (
                   <span className="lx-acct-check" key={r}>
                     <input
                       type="checkbox"
                       id={id}
                       checked={checked}
-                      disabled={ownAdmin}
-                      aria-describedby={ownAdmin ? `${id}-why` : undefined}
+                      disabled={ownAdmin || notAssignable}
+                      aria-describedby={
+                        why && editable ? `${id}-why` : undefined
+                      }
                       onChange={e => {
                         if (busy === m.organizationId) return;
                         void set(
@@ -691,9 +723,9 @@ const RolesEditor: React.FC<{
                     <label htmlFor={id}>
                       <strong>{ROLE_LABEL[r]}</strong>
                       <span className="lx-muted">{ROLE_HELP[r]}</span>
-                      {ownAdmin && (
+                      {why && editable && (
                         <span className="lx-muted" id={`${id}-why`}>
-                          No puedes quitarte tu propio rol de administración.
+                          {why}
                         </span>
                       )}
                     </label>
@@ -717,10 +749,11 @@ const RolesEditor: React.FC<{
  * A role the target holds that gives what the viewer's roles do not, in the
  * same organization: then the viewer may not set their password nor send
  * them a link (the server's `requireOutranks` refuses with 403). The same
- * rule as the server: administration outranks every role; otherwise every
- * permission of the target's roles must be among the viewer's (so
- * Desarrollo still helps Equipo). Null when nothing stands in the way, or
- * when a server before E4 sends no roles (it decides).
+ * rule as the server: development outranks every account; administration
+ * every account but a developer one; otherwise every permission of the
+ * target's roles must be among the viewer's (so Desarrollo still helps
+ * Equipo). Null when nothing stands in the way, or when a server before E4
+ * sends no roles (it decides).
  */
 function outrankedBy(
   user: AdminUser,
@@ -730,6 +763,8 @@ function outrankedBy(
     const org = organizations.find(o => o.id === m.organizationId);
     if (!org || !Array.isArray(org.roles)) continue;
     const mine = normalizeRoles(org.roles);
+    if (isDeveloper(mine)) continue;
+    if (isDeveloper(m.roles)) return {role: 'developer', org: org.name};
     if (mine.includes('admin')) continue;
     const given = new Set(rolePermissions(mine));
     const missing = normalizeRoles(m.roles).find(r =>
@@ -816,9 +851,19 @@ const HelpIn: React.FC<{user: AdminUser; me: boolean}> = ({user, me}) => {
           {shared ? 'Contraseña' : 'Ayudar a entrar'}
         </p>
         <p className="lx-muted" id={`${ID}-help-blocked-${user.username}`}>
-          <Icon name="lock" size={16} /> Tiene el rol{' '}
-          {ROLE_LABEL[outranked.role]} en {outranked.org}, con permisos que tú
-          no tienes allí: su contraseña la cambia administración.
+          <Icon name="lock" size={16} />{' '}
+          {outranked.role === 'developer' ? (
+            <>
+              Es una cuenta de desarrollo: su contraseña y su acceso solo los
+              gestiona desarrollo.
+            </>
+          ) : (
+            <>
+              Tiene el rol {ROLE_LABEL[outranked.role]} en {outranked.org}, con
+              permisos que tú no tienes allí: su contraseña la cambia
+              administración.
+            </>
+          )}
         </p>
       </div>
     );

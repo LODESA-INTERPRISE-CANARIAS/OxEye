@@ -2,7 +2,7 @@
  * Revisión 1 · E5: taxes per company and offer, event budgets and expenses.
  * Migration 0010 from a 0009 database with data, tax inheritance and
  * override, old offers untouched, budget access per role (administrator,
- * developer read-only, team, guest, provisional password), snapshots that
+ * developer, team, guest, provisional password), snapshots that
  * never change, activity without amounts, `/changes` privacy, and what
  * deleting a company or the demo does to expenses.
  */
@@ -227,7 +227,7 @@ beforeAll(async () => {
       WHERE username IN ('Elvis', 'Yeray', 'Equipo')`,
   );
   await h.db.query(
-    `UPDATE organization_members SET roles = ARRAY['developer']
+    `UPDATE organization_members SET roles = ARRAY['admin', 'developer']
       WHERE user_id = $1`,
     [await userId('Yeray')],
   );
@@ -376,7 +376,7 @@ describe('taxes on companies and offers', () => {
 });
 
 describe('budget access', () => {
-  it('administrators read and edit; developers only read; team, guests and provisional passwords get 403', async () => {
+  it('administrators and developers (always administrators too) read and edit; team, guests and provisional passwords get 403', async () => {
     const path = `/events/${event.id}/budget`;
     const overview = `/organizations/${h.org.id}/budgets`;
     for (const token of [admin, developer]) {
@@ -401,7 +401,6 @@ describe('budget access', () => {
 
     const put = (token: string) =>
       h.request('PUT', path, {token, body: {amount: 100, version: 0}});
-    expect((await errorOf(await put(developer), 403)).message).toBe(edit);
     expect((await errorOf(await put(team), 403)).message).toBe(edit);
     expect((await put(guest)).status).toBe(403);
     expect((await put(provisional)).status).toBe(403);
@@ -410,7 +409,7 @@ describe('budget access', () => {
         token,
         body: {eventId: event.id, concept: 'Prueba'},
       });
-    for (const token of [developer, team, guest, provisional]) {
+    for (const token of [team, guest, provisional]) {
       expect((await expense(token)).status).toBe(403);
     }
     // Nothing was written by any of them.

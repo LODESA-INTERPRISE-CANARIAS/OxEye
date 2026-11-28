@@ -9,7 +9,13 @@ import {NO_MAIL} from '../src/config.ts';
 import type {Db} from '../src/db/db.ts';
 import {createMemoryTransport} from '../src/mail/transport.ts';
 import {RECOVERY_MAX_PER_NAME} from '../src/app.ts';
-import {createHarness, json, TEST_ORIGIN, testConfig} from './helpers.ts';
+import {
+  createHarness,
+  json,
+  passwordFor,
+  TEST_ORIGIN,
+  testConfig,
+} from './helpers.ts';
 import type {Harness} from './helpers.ts';
 import {SHARED_NO_PASSWORD, SHARED_NO_RENAME} from '../src/account/service.ts';
 import type {
@@ -44,9 +50,9 @@ beforeAll(async () => {
       )
     )[0]!.id;
   }
-  // Yeray: developer only (helps people get back in, is no administrator).
+  // Yeray: a developer account (always administration too, 0013).
   await h.db.query(
-    "UPDATE organization_members SET roles = ARRAY['developer'] WHERE user_id = $1",
+    "UPDATE organization_members SET roles = ARRAY['admin', 'developer'] WHERE user_id = $1",
     [ids.Yeray],
   );
   admin = (await h.login('Elvis')).token;
@@ -60,16 +66,10 @@ const adminCall = (token: string, userId: string, what: string) =>
   });
 
 describe('no escalation through another account’s password', () => {
-  it('a developer cannot take over an administrator, but still helps the team account', async () => {
-    for (const what of ['provisional-password', 'reset-link']) {
-      const res = await adminCall(developer, ids.Elvis!, what);
-      expect(res.status, what).toBe(403);
-      expect((await json<ApiErrorBody>(res)).message).toContain(
-        'permisos que tú no tienes',
-      );
-    }
-    // Nothing happened to the administrator's account.
-    expect((await h.request('GET', '/me', {token: admin})).status).toBe(200);
+  it('a developer manages every password of the organization, administrators included', async () => {
+    expect((await adminCall(developer, ids.Elvis!, 'reset-link')).status).toBe(
+      200,
+    );
     expect(
       (await adminCall(developer, ids.Equipo!, 'provisional-password')).status,
     ).toBe(200);
@@ -79,8 +79,41 @@ describe('no escalation through another account’s password', () => {
     ).toBe(200);
   });
 
-  it('an administrator outranks every role', async () => {
-    expect((await adminCall(admin, ids.Yeray!, 'reset-link')).status).toBe(200);
+  it('an administrator never takes over a developer account', async () => {
+    for (const what of ['provisional-password', 'reset-link']) {
+      const res = await adminCall(admin, ids.Yeray!, what);
+      expect(res.status, what).toBe(403);
+      expect((await json<ApiErrorBody>(res)).message).toContain(
+        'cuenta de desarrollo',
+      );
+    }
+    const support = await h.request('POST', '/admin/support-sessions', {
+      token: admin,
+      body: {
+        userId: ids.Yeray,
+        reason: 'Revisar una tarea juntos',
+        password: passwordFor('Elvis'),
+        minutes: 5,
+      },
+    });
+    expect(support.status).toBe(403);
+    expect((await json<ApiErrorBody>(support)).message).toContain(
+      'cuenta de desarrollo',
+    );
+    // Nothing happened to the developer account.
+    expect((await h.request('GET', '/me', {token: developer})).status).toBe(
+      200,
+    );
+    const [row] = await h.db.query<{n: number}>(
+      `SELECT count(*)::int AS n FROM account_tokens
+        WHERE user_id = $1 AND purpose = 'password_reset'`,
+      [ids.Yeray],
+    );
+    expect(row?.n).toBe(0);
+    // Still outranks every other account.
+    expect((await adminCall(admin, ids.Dailos!, 'reset-link')).status).toBe(
+      200,
+    );
   });
 });
 

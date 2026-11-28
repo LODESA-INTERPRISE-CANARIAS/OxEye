@@ -94,6 +94,20 @@ test.describe('Gestor logístico · E4 · revisión visual', () => {
     await capture(page, 'support-banner');
   });
 
+  test('a developer account seen by an administrator: fixed roles, locked help', async ({
+    page,
+  }) => {
+    await page.setViewportSize(DESKTOP);
+    await mockApi(page);
+    await signIn(page, 'Elvis');
+    await page.locator('#lx-nav-usuarios').click();
+    const fabian = page.locator('#lx-users-list [data-user="Fabián"]');
+    await fabian.locator('.lx-users__head').click();
+    await expect(page.locator('#lx-users-help-blocked-Fabián')).toBeVisible();
+    await fabian.scrollIntoViewIfNeeded();
+    await capture(page, 'users-developer');
+  });
+
   test('the shared Equipo account: from «Usuarios» and from itself', async ({
     page,
   }) => {
