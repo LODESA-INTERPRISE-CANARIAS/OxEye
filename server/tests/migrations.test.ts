@@ -30,6 +30,8 @@ const ALL_MIGRATIONS = [
   '0011_offer_terms.sql',
   // Safety audit (support attribution: support-attribution.test.ts).
   '0012_support_attribution.sql',
+  // Developer ⇒ admin (its own test from a 0012 database: developer-roles.test.ts).
+  '0013_developer_fixed_roles.sql',
 ];
 
 const tempDirs: string[] = [];

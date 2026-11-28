@@ -174,33 +174,55 @@ test.describe('Gestor logístico · E4 · Usuarios · límites', () => {
     await expect(page.locator('#lx-users-view-as-guest')).toBeEnabled();
   });
 
-  test('password help only for accounts the viewer outranks', async ({
+  test('a developer account: fixed roles, and only development handles its password', async ({
     page,
   }) => {
-    const api = await mockApi(page, {
-      accounts: {Dailos: {roles: ['developer']}},
-    });
-    await signIn(page, 'Dailos');
+    const api = await mockApi(page);
+    await signIn(page, 'Elvis');
     await page.locator('#lx-nav-usuarios').click();
 
-    // Elvis is an administrator: Desarrollo cannot take his account over.
-    await openUser(page, 'Elvis');
-    await expect(page.locator('#lx-users-help-blocked-Elvis')).toContainText(
-      'Tiene el rol Administración',
+    // Elvis is an administrator, but Fabián is a developer account.
+    const fabian = await openUser(page, 'Fabián');
+    await expect(fabian.locator('.lx-users__rolegroup')).toContainText(
+      'Cuenta de desarrollo: sus roles son fijos',
     );
-    await expect(page.locator('#lx-users-pw-Elvis')).toHaveCount(0);
-    await expect(page.locator('#lx-users-link-Elvis')).toHaveCount(0);
+    for (const box of await fabian
+      .locator('.lx-users__rolegroup input[type="checkbox"]')
+      .all()) {
+      await expect(box).toBeDisabled();
+    }
+    await expect(page.locator('#lx-users-help-blocked-Fabián')).toContainText(
+      'solo los gestiona desarrollo',
+    );
+    await expect(page.locator('#lx-users-pw-Fabián')).toHaveCount(0);
+    await expect(page.locator('#lx-users-link-Fabián')).toHaveCount(0);
+    await expect(fabian.getByText('Abrir sesión de soporte')).toHaveCount(0);
 
-    // Equipo gives nothing beyond Desarrollo: its password can be set.
-    await openUser(page, 'Equipo');
-    await expect(page.locator('#lx-users-help-blocked-Equipo')).toHaveCount(0);
-    await page.locator('#lx-users-pw-Equipo').click();
+    // Development is never handed out from «Usuarios».
+    const yeray = await openUser(page, 'Yeray');
+    await expect(
+      yeray.locator('input[type="checkbox"][id$="-developer"]'),
+    ).toBeDisabled();
+    await expect(yeray).toContainText('Lo asigna el equipo técnico');
+    expect(api.calls('PUT', /\/admin\/users\/u-fabián\//)).toHaveLength(0);
+    expect(api.calls('POST', /\/admin\/users\/u-fabián\//)).toHaveLength(0);
+  });
+
+  test('a developer helps every account in, administrators included', async ({
+    page,
+  }) => {
+    const api = await mockApi(page);
+    await signIn(page, 'Fabián');
+    await page.locator('#lx-nav-usuarios').click();
+
+    await openUser(page, 'Elvis');
+    await expect(page.locator('#lx-users-help-blocked-Elvis')).toHaveCount(0);
+    await page.locator('#lx-users-pw-Elvis').click();
     await page.locator('#lx-users-pw-confirm-yes').click();
     await expect(page.locator('#lx-users-secret-value')).toBeVisible();
     expect(
-      api.calls('POST', '/admin/users/u-equipo/provisional-password'),
+      api.calls('POST', '/admin/users/u-elvis/provisional-password'),
     ).toHaveLength(1);
-    expect(api.calls('POST', /\/admin\/users\/u-elvis\//)).toHaveLength(0);
   });
 });
 

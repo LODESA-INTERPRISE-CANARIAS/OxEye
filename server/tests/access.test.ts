@@ -656,20 +656,25 @@ describe('administration', () => {
     for (const name of ['Elvis', 'Dailos']) {
       expect((await put(name, ['team'])).status).toBe(200);
     }
+    // A developer account's roles are fixed, even for itself.
+    for (const roles of [['admin'], ['team'], ['admin', 'developer', 'team']]) {
+      expect((await errorOf(await put('Fabián', roles), 403)).message).toMatch(
+        /sus roles son fijos/,
+      );
+    }
+    // Development is never handed out from the app.
     expect(
-      (await errorOf(await put('Fabián', ['developer']), 400)).fields?.roles,
-    ).toMatch(/al menos una persona/);
-    // A developer helps people back in but does not change roles.
-    expect((await put('Dailos', ['developer'])).status).toBe(200);
+      (await errorOf(await put('Dailos', ['admin', 'developer']), 400)).fields
+        ?.roles,
+    ).toMatch(/lo asigna el equipo técnico/);
+    // Fabián stays an administrator whatever happens to the others.
+    expect((await put('Dailos', ['admin'])).status).toBe(200);
     const dailos = await loginAs('Dailos');
     await setOwnPassword(
       dailos.token,
       passwordFor('Dailos'),
       'dailos-nueva-2026',
     );
-    expect(
-      (await errorOf(await put('Yeray', ['admin'], dailos.token), 403)).message,
-    ).toBe('Solo administración cambia los roles.');
     const provisional = await h.request(
       'POST',
       `/admin/users/${idOf('Yeray')}/provisional-password`,

@@ -46,6 +46,7 @@ import {
 import type {Membership} from '../organizations/service.ts';
 import {VIEW_AS_GUEST_MINUTES} from '../../../shared/logistics/account.ts';
 import {
+  isDeveloper,
   isSharedAccount,
   normalizeRoles,
   rolePermissions,
@@ -76,6 +77,12 @@ const GUEST_NO_SUPPORT = 'Para ver lo que ve Invitado usa «Ver como Invitado».
 const LAST_ADMIN =
   'Tiene que quedar al menos una persona con el rol de administración en la organización.';
 const ONLY_ADMINS_ROLES = 'Solo administración cambia los roles.';
+const DEVELOPER_FIXED =
+  'Es una cuenta de desarrollo: sus roles son fijos (administración y desarrollo) y no se cambian desde la aplicación.';
+const DEVELOPER_NOT_ASSIGNABLE =
+  'El rol de desarrollo no se da ni se quita desde la aplicación: lo asigna el equipo técnico.';
+const DEVELOPER_ACCOUNT =
+  'Es una cuenta de desarrollo: su contraseña y su acceso solo los gestiona desarrollo.';
 const WRONG_PASSWORD = 'Tu contraseña no es correcta.';
 const NO_GUEST_ACCOUNT =
   'Esta organización no tiene cuenta Invitado que mostrar.';
@@ -236,7 +243,20 @@ export async function setRoles(
     if (target.role === 'guest') {
       throw validationError({roles: GUEST_NO_ROLES}, GUEST_NO_ROLES);
     }
+    // Developer accounts keep their roles; development is never handed out
+    // here (it would create accounts nobody could downgrade).
+    const held =
+      target.memberships.find(m => m.organizationId === org.id)?.roles ?? [];
+    if (isDeveloper(held)) {
+      throw new AppError('FORBIDDEN', DEVELOPER_FIXED);
+    }
     const roles = normalizeRoles(input.roles);
+    if (isDeveloper(roles)) {
+      throw validationError(
+        {roles: DEVELOPER_NOT_ASSIGNABLE},
+        DEVELOPER_NOT_ASSIGNABLE,
+      );
+    }
     // Lock the organization's memberships: two administrators removing each
     // other at once must not leave nobody.
     const members = await tx.query<{user_id: string; roles: unknown}>(
@@ -278,20 +298,23 @@ export async function setRoles(
 
 const OUTRANKED =
   'Esta cuenta tiene permisos que tú no tienes: solo administración puede darle una contraseña provisional o un enlace.';
+const OUTRANKED_SUPPORT =
+  'Esta cuenta tiene permisos que tú no tienes en otra organización: no puedes abrir una sesión de soporte en ella.';
 
 /**
  * Taking over an account through its password must never give the actor
  * more than it has. In every organization where the target is a member (the
  * password is the same everywhere), what the target's roles give must be
  * within what the actor's roles give there (so a developer still helps the
- * shared «Equipo» account, but never an administrator); an administrator
- * outranks every role (it could grant itself any of them anyway). 403
- * otherwise.
+ * shared «Equipo» account); a developer outranks every account, an
+ * administrator every account but a developer one (nobody takes over the
+ * technical owner of the pilot). 403 otherwise.
  */
 async function requireOutranks(
   q: Queryable,
   actor: SessionUser,
   targetId: string,
+  outranked: string = OUTRANKED,
 ): Promise<void> {
   const rows = await q.query<{target_roles: unknown; actor_roles: unknown}>(
     `SELECT t.roles AS target_roles, a.roles AS actor_roles
@@ -303,13 +326,16 @@ async function requireOutranks(
   );
   for (const row of rows) {
     const mine = normalizeRoles(parseRoles(row.actor_roles));
+    const target = normalizeRoles(parseRoles(row.target_roles));
+    if (isDeveloper(mine)) continue;
+    if (isDeveloper(target)) {
+      throw new AppError('FORBIDDEN', DEVELOPER_ACCOUNT);
+    }
     if (mine.includes('admin')) continue;
     const given = new Set(rolePermissions(mine));
-    const theirs = rolePermissions(
-      normalizeRoles(parseRoles(row.target_roles)),
-    );
+    const theirs = rolePermissions(target);
     if (theirs.some(p => !given.has(p))) {
-      throw new AppError('FORBIDDEN', OUTRANKED);
+      throw new AppError('FORBIDDEN', outranked);
     }
   }
 }
@@ -591,6 +617,8 @@ export async function startSupport(
   if (target.role === 'guest') {
     throw validationError({userId: GUEST_NO_SUPPORT}, GUEST_NO_SUPPORT);
   }
+  // The session acts in every organization of the account.
+  await requireOutranks(db, actor, target.id, OUTRANKED_SUPPORT);
   const {user: me, ok} = await checkCredentials(
     db,
     {name: actor.username, password: input.password, ip: options.ip},

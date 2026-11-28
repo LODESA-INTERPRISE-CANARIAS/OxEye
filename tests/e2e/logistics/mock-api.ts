@@ -58,6 +58,7 @@ import type {
 } from '../../../shared/logistics/contracts.ts';
 import {
   effectivePermissions,
+  isDeveloper,
   isSharedAccount,
   normalizeRoles,
   rolePermissions,
@@ -1615,6 +1616,8 @@ export async function mockApi(
   const sharedAccount = (a: E4Live) => isSharedAccount(a.role, [a.roles]);
   /** The server's `requireOutranks`, for one organization. */
   const outranks = (actor: E4Live, target: E4Live) => {
+    if (isDeveloper(actor.roles)) return true;
+    if (isDeveloper(target.roles)) return false;
     if (actor.roles.includes('admin')) return true;
     const given = new Set(rolePermissions(actor.roles));
     return rolePermissions(target.roles).every(p => given.has(p));
@@ -1871,6 +1874,11 @@ export async function mockApi(
         if (!target || target === me || target.role === 'guest') {
           return invalid(route, {userId: 'No se puede abrir en esa cuenta.'});
         }
+        if (isDeveloper(target.roles) && !isDeveloper(me.roles)) {
+          return forbidden(
+            'Es una cuenta de desarrollo: su contraseña y su acceso solo los gestiona desarrollo.',
+          );
+        }
         return json(
           route,
           startSession(
@@ -1940,7 +1948,19 @@ export async function mockApi(
             roles: 'La cuenta de Invitado no tiene roles.',
           });
         }
+        // Developer accounts keep their roles; development is never given here.
+        if (isDeveloper(target.roles)) {
+          return forbidden(
+            'Es una cuenta de desarrollo: sus roles son fijos (administración y desarrollo) y no se cambian desde la aplicación.',
+          );
+        }
         const roles = normalizeRoles((input.roles as unknown[]) ?? []);
+        if (isDeveloper(roles)) {
+          return invalid(route, {
+            roles:
+              'El rol de desarrollo no se da ni se quita desde la aplicación: lo asigna el equipo técnico.',
+          });
+        }
         if (target === me && !roles.includes('admin')) {
           return invalid(route, {
             roles: 'No puedes quitarte tu propio rol de administración.',
@@ -1952,7 +1972,9 @@ export async function mockApi(
       }
       const outranked = () =>
         forbidden(
-          'Esta cuenta tiene permisos que tú no tienes: solo administración puede darle una contraseña provisional o un enlace.',
+          isDeveloper(target?.roles ?? [])
+            ? 'Es una cuenta de desarrollo: su contraseña y su acceso solo los gestiona desarrollo.'
+            : 'Esta cuenta tiene permisos que tú no tienes: solo administración puede darle una contraseña provisional o un enlace.',
         );
       if (target && m![2] === 'profile' && method === 'PATCH') {
         // Shared accounts only (server/src/admin/service.ts).

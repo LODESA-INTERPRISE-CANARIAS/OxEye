@@ -47,6 +47,8 @@ export const ROLE_LABEL: Record<OrgRole, string> = {
  * permission, easy to withdraw) and helps people get back in (provisional
  * passwords and reset links through `users.manage`), but only
  * administrators change roles, approve offers or open support sessions.
+ * A developer account always holds `admin` too (see `isDeveloper`), so in
+ * practice it has everything; `developer` adds the diagnostics.
  */
 export const ROLE_PERMISSIONS: Record<OrgRole, readonly Permission[]> = {
   admin: [
@@ -102,6 +104,16 @@ export function isOrgRole(value: unknown): value is OrgRole {
 /** Known roles only, without repeats, in ORG_ROLES order. */
 export function normalizeRoles(roles: readonly unknown[]): OrgRole[] {
   return ORG_ROLES.filter(r => roles.includes(r));
+}
+
+/**
+ * Developer accounts are the technical owners of the pilot: their roles are
+ * fixed (administration + development, nobody changes them from the app)
+ * and the development role is only given by the pilot seed, never from the
+ * app. The database enforces developer ⇒ admin too (migration 0013).
+ */
+export function isDeveloper(roles: readonly unknown[]): boolean {
+  return roles.includes('developer');
 }
 
 /** Everything the roles give, before any withholding, in PERMISSIONS order. */

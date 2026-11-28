@@ -40,6 +40,10 @@ npm --prefix server run dev                 # API en http://localhost:8787
 
 `db:seed` imprime **una sola vez** la contraseña de cada usuario nuevo (Elvis, Dailos, Yeray, Equipo, Invitado y Fabián) con sus roles. Apúntalas: no se guardan en claro en ningún sitio. Las personales son **provisionales**: cada persona la cambia en «Tu espacio en OxEye» al entrar. Las de **Equipo** e **Invitado** son cuentas compartidas: nadie que las use puede cambiarlas; solo administración o desarrollo, desde «Usuarios». Si se pierden, `npm --prefix server run db:seed -- --reset-passwords` genera otras y cierra las sesiones abiertas; también puede hacerlo una persona de administración o desarrollo desde «Usuarios», cuenta por cuenta.
 
+**Cuentas de desarrollo** (Fabián): tienen siempre administración y desarrollo. Nadie cambia sus roles desde la app (`db:seed` los repone si alguien los tocó en la base de datos), el rol de desarrollo no se da ni se quita desde la app, y solo desarrollo pone contraseñas, envía enlaces o abre sesiones de soporte en ellas. Desarrollo gestiona la contraseña de cualquier cuenta de su organización.
+
+**Recuperar una cuenta desde el servidor** (sin correo): `npm --prefix server run cuenta:recuperar -- Fabián`. Da a esa cuenta, y solo a esa, una contraseña provisional nueva que se muestra una vez, cierra sus sesiones, anula sus enlaces pendientes, repone los roles fijos si es de desarrollo y lo anota en su historial («Recuperada desde el servidor»). Sirve para cualquier usuario y necesita acceso a la máquina del servidor (con la API parada si la base es local, como `db:seed`). Si la cuenta quedó bloqueada por intentos fallidos, ese bloqueo vive en la memoria de la API: espera unos minutos o reiníciala.
+
 Comprobación: `http://localhost:8787/api/health` responde `{"status":"ok","database":"ok","version":"0.1.0"}`.
 
 Después arranca la web con `npm run dev` y abre `http://localhost:5173/gestor-logistico`.
@@ -54,6 +58,7 @@ Después arranca la web con `npm run dev` y abre `http://localhost:5173/gestor-l
 | Ver el registro de PostgreSQL                   | `npm --prefix server run db:logs`                                          |
 | Aplicar migraciones nuevas                      | `npm --prefix server run db:migrate`                                       |
 | Borrar los datos de demostración                | `npm --prefix server run db:clear-demo`                                    |
+| Recuperar una cuenta (contraseña provisional)   | `npm --prefix server run cuenta:recuperar -- <usuario>`                    |
 | Base de datos y API en Docker                   | `docker compose -f server/docker-compose.yml --profile full up -d --build` |
 | Tests (sin Docker: PostgreSQL en memoria)       | `npx vitest run --root server`                                             |
 
