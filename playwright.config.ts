@@ -10,6 +10,9 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
+  // The Gestor logístico is a lazy chunk: on a cold dev server with parallel
+  // workers its first compile can exceed the default 5 s of `expect`.
+  expect: {timeout: 10_000},
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',

@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {addDays, mockApi, signIn, today} from './mock-api';
 import {offersData} from './offers-fixtures';
 
@@ -27,7 +28,7 @@ test.describe('E6 · offer terms in the offer sheet', () => {
     page,
   }) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o1');
+    await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o1'));
     const terms = page.locator('#lx-offer-terms');
     await expect(terms).toBeVisible();
     await expect(page.locator('#lx-offer-validity')).toContainText(
@@ -69,7 +70,7 @@ test.describe('E6 · offer terms in the offer sheet', () => {
     page,
   }) => {
     await mockApi(page, {...offersData(), events: []});
-    await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o1');
+    await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o1'));
     await expect(page.locator('#lx-offer-need-breakdown')).toContainText(
       'Sin total',
     );
@@ -83,13 +84,13 @@ test.describe('E6 · offer terms in the offer sheet', () => {
     page,
   }) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o2');
+    await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o2'));
     await expect(page.locator('#lx-offer-terms-legacy')).toBeVisible();
   });
 
   test('«Renegociar» opens a request for the same company', async ({page}) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o1');
+    await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o1'));
     await page.locator('#lx-offer-renegotiate').click();
     const sheet = page.locator('#lx-request-sheet');
     await expect(sheet).toBeVisible();
@@ -105,7 +106,7 @@ test.describe('E7 · asking for quotes', () => {
     page,
   }) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await page.locator('#lx-request-new').click();
     const sheet = page.locator('#lx-request-sheet');
     await sheet.locator('#lx-qr-title').fill('2 escenarios de 8 × 6 m');
@@ -129,7 +130,7 @@ test.describe('E7 · asking for quotes', () => {
     );
     const first = links.first();
     await expect(first.locator('.lx-sharelink__url')).toContainText(
-      '#logistica/proveedor/',
+      `${lxUrl('proveedor')}#`,
     );
     const mail = first.locator('[data-action="mail"]');
     await expect(mail).toHaveAttribute(
@@ -167,7 +168,7 @@ test.describe('E7 · asking for quotes', () => {
     page,
   }) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'requests');
     await page.locator('[data-request-id="qr1"]').click();
     const detail = page.locator('#lx-request-detail');
@@ -194,7 +195,7 @@ test.describe('E7 · asking for quotes', () => {
     page,
   }) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'requests');
     await page.locator('[data-request-id="qr1"]').click();
     const compare = page.locator('#lx-request-compare');
@@ -208,7 +209,7 @@ test.describe('E7 · asking for quotes', () => {
 
   test('closing a request asks first', async ({page}) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'requests');
     await page.locator('[data-request-id="qr1"]').click();
     await page.locator('#lx-request-close').click();
@@ -225,7 +226,7 @@ test.describe('E7 · received proposals', () => {
     page,
   }) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'inbox');
     await expect(page.locator('[data-proposal-id="p2"]')).toBeVisible();
     // A company answers while the inbox is open.
@@ -243,7 +244,7 @@ test.describe('E7 · received proposals', () => {
 
   test('an administrator approves one into the catalogue', async ({page}) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await expect(
       page.locator('#lx-ctab-inbox .lx-segtabs__count'),
     ).toContainText('2');
@@ -273,7 +274,7 @@ test.describe('E7 · received proposals', () => {
     page,
   }) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'inbox');
     await page.locator('[data-proposal-id="p2"]').click();
     const sheet = page.locator('#lx-proposal-sheet');
@@ -291,7 +292,7 @@ test.describe('E7 · received proposals', () => {
 
   test('rejecting needs a reason', async ({page}) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'inbox');
     await page.locator('[data-proposal-id="p2"]').click();
     const sheet = page.locator('#lx-proposal-sheet');
@@ -310,7 +311,7 @@ test.describe('E7 · received proposals', () => {
 
   test('a proposal received by phone enters the inbox', async ({page}) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'inbox');
     await page.locator('#lx-inbox-manual').click();
     await expect(page.locator('#lx-manual-sheet')).toBeVisible();
@@ -340,7 +341,7 @@ test.describe('E7 · received proposals', () => {
 
   test('the team reviews but does not decide', async ({page}) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Equipo', '#logistica/catalogo');
+    await signIn(page, 'Equipo', lxUrl('catalogo'));
     await openTab(page, 'inbox');
     await expect(page.locator('#lx-inbox-team-note')).toBeVisible();
     await page.locator('[data-proposal-id="p1"]').click();
@@ -357,7 +358,7 @@ test.describe('E6 · renewals', () => {
     page,
   }) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'renewals');
     const card = page.locator('[data-renewal-id="rn1"]');
     await expect(card).toContainText('Generada por OxEye');
@@ -375,19 +376,19 @@ test.describe('E6 · renewals', () => {
     page,
   }) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openTab(page, 'renewals');
     await page.locator('#lx-open-link-on').click();
     const box = page.locator('#lx-open-link');
     await expect(box.locator('.lx-sharelink__url')).toContainText(
-      '#logistica/proveedor/abierto/',
+      `${lxUrl('proveedor/abierto')}#`,
     );
     await expect(page.locator('#lx-open-link-local')).toBeVisible();
   });
 
   test('the team cannot change the notice', async ({page}) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Equipo', '#logistica/catalogo');
+    await signIn(page, 'Equipo', lxUrl('catalogo'));
     await openTab(page, 'renewals');
     await expect(page.locator('#lx-notice-days-60')).toBeDisabled();
   });
@@ -396,7 +397,7 @@ test.describe('E6 · renewals', () => {
     page,
   }) => {
     await mockApi(page, offersData());
-    await signIn(page, 'Elvis', '#logistica/tareas/ficha/tarea/t-rn1');
+    await signIn(page, 'Elvis', lxUrl('tareas/ficha/tarea/t-rn1'));
     const mark = page.locator('#lx-task-sheet #lx-task-renewal');
     await expect(mark).toContainText(
       'Generada por OxEye · renegociación de Carpa 6x6',
@@ -407,7 +408,7 @@ test.describe('E6 · renewals', () => {
 
   test('a guest sees the task without the mark', async ({page}) => {
     const mock = await mockApi(page, offersData());
-    await signIn(page, 'Invitado', '#logistica/tareas/ficha/tarea/t-rn1');
+    await signIn(page, 'Invitado', lxUrl('tareas/ficha/tarea/t-rn1'));
     await expect(page.locator('#lx-task-sheet')).toBeVisible();
     await expect(page.locator('#lx-task-renewal')).toHaveCount(0);
     expect(mock.calls('GET', /offer-renewals/)).toHaveLength(0);
@@ -418,7 +419,7 @@ test('E6–E7 · a guest never sees the contracting views nor asks for them', as
   page,
 }) => {
   const mock = await mockApi(page, offersData());
-  await signIn(page, 'Invitado', '#logistica/catalogo');
+  await signIn(page, 'Invitado', lxUrl('catalogo'));
   await expect(page.locator('#lx-ctab-requests')).toHaveCount(0);
   await expect(page.locator('#lx-request-new')).toHaveCount(0);
   const e7 =

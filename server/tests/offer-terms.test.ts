@@ -168,9 +168,19 @@ function pub(method: string, path: string, body?: object, ip?: string) {
   });
 }
 
+/** Kind and token of a supplier link URL; the token is only in the fragment. */
+const linkOf = (url: string) => {
+  const u = new URL(url);
+  expect(u.hash).toMatch(/^#[A-Za-z0-9_-]{43}$/);
+  expect(u.pathname).not.toContain(u.hash.slice(1));
+  return parseSupplierLink(u.pathname + u.hash)!;
+};
+
 const tokenOf = (url: string) => {
-  expect(url.startsWith(`${TEST_ORIGIN}/#logistica/proveedor/`)).toBe(true);
-  return parseSupplierLink(url.slice(url.indexOf('#')))!.token;
+  expect(url.startsWith(`${TEST_ORIGIN}/gestor-logistico/proveedor#`)).toBe(
+    true,
+  );
+  return linkOf(url).token;
 };
 
 const randomToken = () => randomBytes(32).toString('base64url');
@@ -1036,9 +1046,7 @@ describe('renegotiation tasks', () => {
     );
     await vi.waitFor(() => expect(lines).toHaveLength(1));
     stop();
-    expect(lines[0]).toBe(
-      'Renegociaciones: 1 tarea nueva generada por OxEye.',
-    );
+    expect(lines[0]).toBe('Renegociaciones: 1 tarea nueva generada por OxEye.');
 
     const renewals = await ok<ListResponse<OfferRenewal>>(
       await h.request('GET', `/organizations/${h.org.id}/offer-renewals`, {
@@ -1182,12 +1190,10 @@ describe('offer settings and the open form', () => {
     });
     expect(
       on.openLinkUrl?.startsWith(
-        `${TEST_ORIGIN}/#logistica/proveedor/abierto/`,
+        `${TEST_ORIGIN}/gestor-logistico/proveedor/abierto#`,
       ),
     ).toBe(true);
-    const first = parseSupplierLink(
-      on.openLinkUrl!.slice(on.openLinkUrl!.indexOf('#')),
-    )!;
+    const first = linkOf(on.openLinkUrl!);
     expect(first.kind).toBe('open');
     expect(await ok(await pub('GET', `/offers/${first.token}`))).toEqual({
       organization: {name: h.org.name},
@@ -1236,9 +1242,7 @@ describe('offer settings and the open form', () => {
     const rotated = await ok<OfferSettingsResponse>(
       await patch(admin, {version: 2, rotateOpenLink: true}),
     );
-    const second = parseSupplierLink(
-      rotated.openLinkUrl!.slice(rotated.openLinkUrl!.indexOf('#')),
-    )!;
+    const second = linkOf(rotated.openLinkUrl!);
     expect(second.token).not.toBe(first.token);
     await errorOf(await pub('GET', `/offers/${first.token}`), 404);
     expect((await pub('GET', `/offers/${second.token}`)).status).toBe(200);

@@ -42,7 +42,7 @@ npm --prefix server run dev                 # API en http://localhost:8787
 
 Comprobación: `http://localhost:8787/api/health` responde `{"status":"ok","database":"ok","version":"0.1.0"}`.
 
-Después arranca la web con `npm run dev` y abre `http://localhost:5173/#logistica`.
+Después arranca la web con `npm run dev` y abre `http://localhost:5173/gestor-logistico`.
 
 ## Uso diario
 
@@ -96,7 +96,7 @@ Sin `SMTP_HOST` no se envía nada: en desarrollo el enlace aparece en la consola
    SMTP_PASS=<las 16 letras, sin espacios>
    MAIL_FROM=OxEye <la cuenta de Gmail>
    RECOVERY_FALLBACK_EMAIL=<buzón del proyecto>
-   PUBLIC_APP_URL=<dirección de la web, sin #logistica>
+   PUBLIC_APP_URL=<dirección de la web, sin /gestor-logistico ni #>
    ```
 4. Reinicia la API: al arrancar indica «Correo de cuentas: SMTP smtp.gmail.com:465».
 
@@ -108,7 +108,7 @@ Si la contraseña de aplicación se filtra, revócala en la misma página y crea
 
 1. Arranca la base de datos y la API como arriba.
 2. Arranca la web expuesta a la red: `npm run dev -- --host`. Vite muestra una dirección del tipo `http://192.168.1.23:5173`.
-3. Abre en el móvil `http://192.168.1.23:5173/#logistica`.
+3. Abre en el móvil `http://192.168.1.23:5173/gestor-logistico`.
 
 El móvil solo habla con Vite, que reenvía `/api` a `http://localhost:8787`; no hace falta tocar CORS. Si no carga, permite Node.js en el cortafuegos de Windows para redes privadas.
 
@@ -133,7 +133,7 @@ Por el túnel solo pasa la web; la API sigue escuchando únicamente en tu PC y l
 npm run equipo
 ```
 
-Arranca la API (o usa la que ya esté en marcha), compila la web, la sirve en `http://127.0.0.1:4173` y abre el túnel. Cuando está listo muestra un recuadro con la dirección para el equipo, ya con `#logistica`. Ábrela tú primero en el móvil con datos móviles (sin Wi-Fi) e inicia sesión; después mándala. **Ctrl+C** lo para todo.
+Arranca la API (o usa la que ya esté en marcha), compila la web, la sirve en `http://127.0.0.1:4173` y abre el túnel. Cuando está listo muestra un recuadro con la dirección para el equipo, ya con `/gestor-logistico`. Ábrela tú primero en el móvil con datos móviles (sin Wi-Fi) e inicia sesión; después mándala. **Ctrl+C** lo para todo.
 
 | Por partes (para ver qué falla), cada uno en su terminal | Comando                |
 | -------------------------------------------------------- | ---------------------- |
@@ -178,6 +178,29 @@ Se usa la misma imagen y otro `.env`:
 2. `docker compose -f server/docker-compose.yml --profile full up -d --build`. El contenedor aplica las migraciones al arrancar (`MIGRATE_ON_START=true`).
 3. `docker compose -f server/docker-compose.yml exec api node src/cli/seed.ts` para crear los usuarios y anotar sus contraseñas.
 4. Publica la API con HTTPS mediante un proxy inverso (Caddy, nginx). PostgreSQL queda accesible solo desde la propia máquina.
+
+### Servir la web en el servidor del piloto
+
+Las direcciones del Gestor son rutas normales (`/gestor-logistico`, `/gestor-logistico/calendario/2026-12-02`, `/gestor-logistico/tareas/ficha/tarea/<id>`), no fragmentos `#`. Quien sirva la web compilada (`dist/`) tiene que devolver `index.html` para **cualquier ruta que no sea un archivo existente ni `/api`**; si no, recargar o abrir un enlace guardado da «404».
+
+- nginx:
+  ```nginx
+  location /api/ { proxy_pass http://127.0.0.1:8787; }
+  location /     { try_files $uri $uri/ /index.html; }
+  ```
+- Caddy:
+  ```
+  handle /api/* { reverse_proxy 127.0.0.1:8787 }
+  handle {
+    root * /ruta/a/dist
+    try_files {path} /index.html
+    file_server
+  }
+  ```
+
+`npm run dev`, `vite preview` y `npm run equipo` ya lo hacen solos. Si la web vive en una subcarpeta (por ejemplo `/oxeye/`), la regla apunta a `/oxeye/index.html` y `PUBLIC_APP_URL` incluye esa subcarpeta.
+
+Los enlaces de los correos y de los formularios de proveedor llevan el código secreto después de `#` (`…/gestor-logistico/cuenta/restablecer#<código>`, `…/gestor-logistico/proveedor#<código>`): esa parte nunca se envía al servidor, así que no aparece en los registros del proxy ni del túnel. Los enlaces antiguos con `#logistica` (correos ya enviados, marcadores, la app instalada) siguen funcionando: la web los abre en el mismo sitio y cambia la dirección a la nueva.
 
 ## Problemas frecuentes
 

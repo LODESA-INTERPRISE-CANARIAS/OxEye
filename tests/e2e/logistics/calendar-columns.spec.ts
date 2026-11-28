@@ -1,5 +1,6 @@
 import {expect, test, type Locator, type Page} from '@playwright/test';
 import {fiveVenueData} from './calendar-columns-fixtures';
+import {goToAddress, lxUrl, lxUrlRe} from './address';
 import {mockApi, signIn} from './mock-api';
 import {
   ALMACEN,
@@ -31,7 +32,7 @@ const prefs = (page: Page) =>
 
 async function openDay(page: Page, data = planData()) {
   await mockApi(page, data);
-  await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+  await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
   await expect(page.locator('#lx-timeline')).toBeVisible();
 }
 
@@ -180,7 +181,7 @@ test.describe('Gestor logístico · Calendario, columnas por lugar', () => {
     );
     await page.keyboard.press('Escape');
     await expect(page.locator('#lx-task-form')).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`#logistica/calendario/${DAY}$`));
+    await expect(page).toHaveURL(lxUrlRe(`calendario/${DAY}`));
 
     await page.reload();
     await expect(
@@ -290,9 +291,7 @@ test.describe('Gestor logístico · Calendario, columnas por lugar', () => {
     }, PREFS_KEY);
     await mockApi(page, fiveVenueData());
     await signIn(page);
-    await page.evaluate(h => {
-      window.location.hash = h;
-    }, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     const prev = page.locator('#lx-tl-prev');
     const next = page.locator('#lx-tl-next');

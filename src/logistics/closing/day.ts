@@ -13,18 +13,25 @@ import {
 } from '../../../shared/logistics/day-report.ts';
 import {isLocalDate, utcToLocal} from '../../../shared/logistics/time.ts';
 import {dayMonthShort} from '../lib/format';
+import {normalizeAddress, ROOT_ADDRESS} from '../shell/route';
 
-export const CLOSE_HASH = '#logistica/cierre';
+export const CLOSE_ADDRESS = `${ROOT_ADDRESS}/cierre`;
 
-/** The day of `#logistica/cierre/2026-12-02`, or null. */
-export function dayFromHash(hash: string): LocalDate | null {
-  const match = /^#logistica\/cierre\/(\d{4}-\d{2}-\d{2})$/.exec(hash);
-  return match && isLocalDate(match[1]) ? match[1] : null;
+/**
+ * The day of `/gestor-logistico/cierre/2026-12-02` (or its legacy fragment
+ * `#logistica/cierre/2026-12-02`), or null.
+ */
+export function dayFromAddress(address: string): LocalDate | null {
+  const normal = normalizeAddress(address);
+  const prefix = `${CLOSE_ADDRESS}/`;
+  if (!normal.startsWith(prefix)) return null;
+  const day = normal.slice(prefix.length);
+  return isLocalDate(day) ? day : null;
 }
 
 /** Today keeps the plain link (a bookmark always opens today's close). */
-export function hashForDay(date: LocalDate, today: LocalDate): string {
-  return date === today ? CLOSE_HASH : `${CLOSE_HASH}/${date}`;
+export function addressForDay(date: LocalDate, today: LocalDate): string {
+  return date === today ? CLOSE_ADDRESS : `${CLOSE_ADDRESS}/${date}`;
 }
 
 /** A day close is about a day that happened: later days fall back to today. */

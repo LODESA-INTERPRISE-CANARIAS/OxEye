@@ -24,6 +24,7 @@ import {
 } from '../../../shared/logistics/offer-terms.ts';
 import {daysBetween} from '../../../shared/logistics/time.ts';
 import {dayMonthShort, plural} from '../lib/format';
+import {isLegacyHash, legacyLocation} from '../shell/route';
 
 // ---------------------------------------------------------------- dates
 
@@ -131,8 +132,9 @@ export const VIA_LABEL: Record<ProposalVia, string> = {
 export function basisText(
   terms: Pick<OfferTerms, 'basis' | 'customUnit'>,
 ): string {
-  if (terms.basis === 'custom')
-    {return terms.customUnit?.trim() || 'otra unidad';}
+  if (terms.basis === 'custom') {
+    return terms.customUnit?.trim() || 'otra unidad';
+  }
   return PRICE_BASIS_LABEL[terms.basis];
 }
 
@@ -207,18 +209,39 @@ export function termsOfOffer(
 
 // ---------------------------------------------------------------- sharing a link
 
+/** `gestor-logistico/…` and what follows, in a server's link. */
+const GESTOR_PART = /\/(gestor-logistico(?:[/?#].*)?)$/;
+
 /**
- * The address to share: this Gestor's own address (origin and path, so a
- * Gestor served under a sub-path works) with the link's `#logistica/…`
- * part. Falls back to the server's address when it has no `#`.
+ * The Gestor part of a link the server issued, relative to the web's base
+ * (`gestor-logistico/proveedor#<token>`), or null. A legacy
+ * `#logistica/proveedor/<token>` link is translated to the new form (token
+ * in the fragment, never in the path).
+ */
+function gestorPart(serverUrl: string): string | null {
+  const at = serverUrl.indexOf('#');
+  if (at >= 0 && isLegacyHash(serverUrl.slice(at))) {
+    const moved = legacyLocation(serverUrl.slice(at));
+    return moved ? `${moved.address.slice(1)}${moved.hash}` : null;
+  }
+  const match = GESTOR_PART.exec(serverUrl);
+  return match ? (match[1] as string) : null;
+}
+
+/**
+ * The address to share: this Gestor's own origin and base (so a Gestor
+ * served under a sub-path works) with the link's `gestor-logistico/…#<token>`
+ * part. Falls back to the server's address when it is not a Gestor link.
  */
 export function shareableUrl(
   serverUrl: string,
-  location: Pick<Location, 'origin' | 'pathname'>,
+  origin: string,
+  base = '/',
 ): string {
-  const at = serverUrl.indexOf('#');
-  if (at < 0) return serverUrl;
-  return `${location.origin}${location.pathname}${serverUrl.slice(at)}`;
+  const part = gestorPart(serverUrl);
+  if (!part) return serverUrl;
+  const root = base.startsWith('/') ? base : `/${base}`;
+  return `${origin}${root.endsWith('/') ? root : `${root}/`}${part}`;
 }
 
 /** A Gestor opened as localhost only works on this computer. */

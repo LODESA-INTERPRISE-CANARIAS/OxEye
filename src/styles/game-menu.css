@@ -1,24 +1,11 @@
 /**
  * Estilos del Menú Principal a pantalla completa y Wizard de creación de modelos.
+ *
+ * The hub screens themselves (Portada, Simulador, Ajustes, Acerca de) live in
+ * src/styles/hub/hub.css. This file keeps the new-model wizard
+ * (`/simulador/nuevo`), restyled with the hub's `.lx` tokens so its card,
+ * type and buttons match the rest of the hub in all six palettes.
  */
-.game-menu {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  background: radial-gradient(
-    ellipse at 75% 35%,
-    var(--menu-bg-from),
-    var(--menu-bg-to) 72%
-  );
-  color: var(--menu-text);
-  display: flex;
-  align-items: center;
-  justify-content: space-evenly;
-  padding: 30px;
-  overflow: auto;
-  gap: 30px;
-}
-
 .game-menu[hidden] {
   display: none;
 }
@@ -27,216 +14,167 @@
   overflow: hidden;
 }
 
+/* ------------------------------------------------ wizard card */
 .game-card {
+  box-sizing: border-box;
   width: min(520px, 100%);
   padding: 28px;
 }
 
-.game-card.preferences-card {
-  width: min(720px, 100%);
+.hub > .game-card {
+  width: min(680px, calc(100% - 32px));
+  margin: clamp(16px, 5vh, 56px) auto;
+  padding: clamp(20px, 4vw, 36px);
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-xl);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  box-shadow: var(--lx-shadow-float);
 }
 
-.game-card h1 {
-  font-family: Georgia, serif;
-  font-size: clamp(34px, 5vw, 64px);
+/*
+ * Specificity note: the hub root carries `.lx`, so once the Gestor's lazy
+ * stylesheet is in the page its reset (`.lx button`, `.lx h1`, `.lx p`…,
+ * loaded later) applies here too. Element rules below therefore start with
+ * `.game-menu .game-card` (0,2,1), and the wizard's own buttons use
+ * `button.<class>` so they still win over that base by order.
+ */
+.game-menu .game-card h1 {
+  font-family: var(--lx-serif, Georgia, serif);
+  font-size: clamp(30px, 4.4vw, 42px);
   font-weight: normal;
-  margin: 12px 0 20px;
+  letter-spacing: -0.015em;
+  margin: 10px 0 18px;
   line-height: 1.1;
-  color: var(--menu-text);
+  color: var(--lx-heading);
+}
+
+.game-card h1:focus {
+  outline: none;
 }
 
 .game-card p,
 .game-card small {
-  color: var(--menu-muted);
-  line-height: 1.65;
+  color: var(--lx-muted);
+  line-height: 1.6;
+}
+
+.hub .game-card form > p {
+  margin: 1em 0;
+}
+
+.hub .game-card .smart-constraints-box ul {
+  list-style: disc;
 }
 
 .game-eyebrow {
-  letter-spacing: 0.18em;
-  font-size: 10px;
-  color: var(--gold-soft);
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.game-actions {
-  display: grid;
-  gap: 8px;
-  max-width: 320px;
-  margin: 26px 0;
-}
-
-.game-exit-actions {
+/* Step indicator: one segment per step. */
+.game-card .wizard-progress {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.game-menu button {
+.game-card .wizard-progress li {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--lx-line);
+}
+
+.game-card .wizard-progress li.is-done {
+  background: color-mix(in srgb, var(--lx-accent) 55%, var(--lx-surface));
+}
+
+.game-card .wizard-progress li.is-current {
+  background: var(--lx-accent);
+}
+
+/* ------------------------------------------------ wizard controls */
+.game-menu .game-card button {
   font: inherit;
-  padding: 12px 18px;
-  border: 1px solid var(--menu-border);
-  background: var(--menu-btn);
-  color: var(--menu-text);
-  border-radius: 6px;
+  font-size: 14.5px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1.5px solid var(--lx-control-border);
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  border-radius: var(--lx-radius-sm);
   cursor: pointer;
   text-align: left;
 }
 
-.game-menu button:hover:not(:disabled) {
-  background: var(--menu-btn-hover);
-  border-color: var(--menu-primary-bg);
+.game-menu .game-card button:hover:not(:disabled) {
+  background: var(--lx-accent-soft);
+  border-color: var(--lx-accent);
 }
 
-.game-menu button:disabled {
-  opacity: 0.4;
+.game-menu .game-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.game-actions button:first-child,
-.game-menu .game-primary {
-  background: var(--menu-primary-bg);
-  color: var(--menu-primary-ink);
-  border-color: var(--menu-primary-bg);
+.game-card button.game-primary {
+  border-radius: 999px;
+  padding: 10px 24px;
+  text-align: center;
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  border-color: var(--lx-accent);
   font-weight: 700;
+  box-shadow: 0 8px 18px -12px var(--lx-shadow);
 }
 
-.game-actions button:first-child:hover:not(:disabled),
-.game-menu .game-primary:hover:not(:disabled) {
-  background: var(--menu-primary-hover);
-  border-color: var(--menu-primary-hover);
+.game-card button.game-primary:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
+  border-color: var(--lx-accent-strong);
 }
 
-.game-visual {
-  width: 35vw;
-  max-width: 450px;
-  display: grid;
-  justify-items: center;
-  gap: 32px;
-}
-
-.game-visual span {
-  letter-spacing: 0.15em;
-  font-size: 10px;
-}
-
-.game-ring {
-  width: 28vw;
-  height: 28vw;
-  max-width: 350px;
-  max-height: 350px;
-  border: 1px solid var(--menu-border);
-  border-radius: 50%;
-  position: relative;
-  box-shadow:
-    0 0 0 25px rgba(255, 255, 255, 0.07),
-    0 0 0 50px rgba(255, 255, 255, 0.035);
-}
-
-.game-ring:before {
-  content: '';
-  position: absolute;
-  inset: 20%;
-  border: 1px solid var(--gold);
-  transform: rotate(45deg);
+.game-card :focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 2px;
 }
 
 .game-card label {
   display: block;
   margin: 16px 0;
+  color: var(--lx-heading);
+  font-weight: 600;
 }
 
-.game-card input:not([type='checkbox']),
+/* Matches the global form defaults' specificity (variables.css). */
+.game-card input:not([type='checkbox']):not([type='radio']):not([type='range']),
 .game-card select {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  padding: 10px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--menu-border);
+  min-height: 44px;
+  padding: 10px 12px;
+  background-color: var(--lx-surface);
+  color: var(--lx-ink);
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-radius-sm);
   font: inherit;
+  font-weight: 400;
   margin-top: 6px;
 }
 
-/* Selector visual de paletas en Ajustes */
-.palette-picker {
-  margin: 18px 0;
-}
-
-.palette-picker-label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--menu-text);
-  margin-bottom: 10px;
-}
-
-.palette-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.game-menu .palette-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #1c2026;
-  border: 2px solid rgba(255, 255, 255, 0.25);
-  text-align: left;
-  transition:
-    transform 0.12s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.game-menu .palette-card:hover {
-  background: #ffffff;
-  border-color: var(--menu-primary-bg);
-  transform: translateY(-1px);
-}
-
-.game-menu .palette-card.is-selected {
-  background: #ffffff;
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--ring);
-}
-
-.palette-swatches {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 2px;
-  height: 36px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid rgba(17, 19, 23, 0.12);
-}
-
-.palette-swatches i {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.palette-card-name {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #1c2026;
-}
-
-.palette-card-status {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: #46505c !important;
-  line-height: 1.2 !important;
-}
-
-@media (max-width: 680px) {
-  .palette-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.game-card input[type='checkbox'] {
+  accent-color: var(--lx-accent);
+  width: 18px;
+  height: 18px;
 }
 
 .wizard {
@@ -244,15 +182,19 @@
   width: 100%;
 }
 
-.wizard h1 {
-  font-size: 38px;
-}
-
 .wizard-nav {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
   margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.wizard-nav #wizard-back {
+  border-radius: 999px;
+  text-align: center;
 }
 
 .wizard-fields {
@@ -270,9 +212,15 @@
   display: block;
 }
 
+.map-choice b {
+  font-size: 15.5px;
+}
+
 .map-choice span {
-  font-size: 12px;
-  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  margin-top: 6px;
+  color: var(--lx-muted);
 }
 
 .goal-buttons {
@@ -281,38 +229,69 @@
   gap: 8px;
 }
 
-.goal-buttons button[aria-pressed='true'] {
-  background: var(--menu-primary-bg);
-  color: var(--menu-primary-ink);
-  border-color: var(--menu-primary-hover);
+.game-card .goal-buttons button[aria-pressed='true'] {
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  border-color: var(--lx-accent);
   font-weight: 700;
+}
+
+.game-card .goal-buttons button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
+  border-color: var(--lx-accent-strong);
 }
 
 #wizard-radar {
   max-width: 330px;
   margin: auto;
+  color: var(--lx-ink);
+}
+
+/* The radar comes from the engine with fixed colours; follow the palette. */
+#wizard-radar polygon,
+#wizard-radar line {
+  stroke: var(--lx-line-strong);
+}
+
+#wizard-radar polygon:last-of-type {
+  fill: var(--lx-accent);
+  fill-opacity: 0.25;
+  stroke: var(--lx-accent);
 }
 
 #wizard-error {
-  color: #ffb8c2;
+  color: var(--lx-danger);
+  font-weight: 600;
 }
 
-.game-card dd {
+#wizard-error:empty {
+  margin: 0;
+}
+
+.game-menu .game-card dl {
+  margin: 0 0 8px;
+}
+
+.game-menu .game-card dd {
   margin: 0 0 14px;
-  color: var(--gold-soft);
+  color: var(--lx-heading);
+  font-weight: 600;
 }
 
 .game-card dt {
   font-size: 12px;
-  color: var(--menu-muted);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
 }
 
 .wizard-shifts {
   margin: 20px 0 14px;
   padding: 16px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
 }
 
 .wizard-shifts-head {
@@ -324,26 +303,19 @@
 }
 
 .wizard-shifts-head b {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--gold-soft);
+  color: var(--lx-muted);
 }
 
-.wizard-add-shift-btn {
-  padding: 7px 13px !important;
-  font-size: 12px !important;
+.game-card button.wizard-add-shift-btn {
+  min-height: 40px;
+  padding: 7px 14px;
+  font-size: 13px;
   font-weight: 700;
-  text-align: center !important;
-  background: var(--menu-btn) !important;
-  color: var(--menu-text) !important;
-  border: 1px solid var(--menu-border) !important;
-  border-radius: 7px !important;
-}
-
-.wizard-add-shift-btn:hover {
-  background: var(--menu-btn-hover) !important;
-  border-color: var(--menu-primary-bg) !important;
+  text-align: center;
+  border-radius: 999px;
 }
 
 .wizard-shifts-list {
@@ -354,9 +326,9 @@
 
 .wizard-shift-card {
   padding: 12px 14px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -384,20 +356,16 @@
 }
 
 .wizard-shift-field > span {
-  font-size: 11px;
-  color: var(--menu-muted);
+  font-size: 12px;
+  color: var(--lx-muted);
   margin-bottom: 4px;
 }
 
-.game-card .wizard-shift-field input,
-.game-card .wizard-shift-field select {
+#wizard-form .wizard-shift-field input,
+#wizard-form .wizard-shift-field select {
   margin-top: 0;
   padding: 8px 10px;
-  font-size: 13px;
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--menu-border);
+  font-size: 14px;
   min-width: 0;
 }
 
@@ -405,47 +373,47 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
 }
 
 .wizard-shift-hours {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--gold-soft);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--chrome-border);
+  color: var(--lx-heading);
+  background: var(--lx-accent-soft);
   border-radius: 999px;
   padding: 4px 10px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.wizard-shift-remove {
-  width: 30px;
-  height: 30px;
-  padding: 0 !important;
+.game-card button.wizard-shift-remove {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-align: center !important;
-  border-radius: 50% !important;
-  background: rgba(180, 60, 76, 0.2) !important;
-  color: #ffb8c2 !important;
-  border: 1px solid rgba(255, 184, 194, 0.35) !important;
-  font-size: 17px !important;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--lx-danger-soft);
+  color: var(--lx-danger);
+  border: 1.5px solid color-mix(in srgb, var(--lx-danger) 35%, transparent);
+  font-size: 18px;
   line-height: 1;
   flex-shrink: 0;
 }
 
-.wizard-shift-remove:hover {
-  background: rgba(180, 60, 76, 0.42) !important;
-  border-color: #ffb8c2 !important;
+.game-card button.wizard-shift-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lx-danger) 18%, var(--lx-surface));
+  border-color: var(--lx-danger);
 }
 
 .wizard-shifts-empty {
   margin: 0;
-  font-size: 12px;
-  color: var(--menu-muted);
+  font-size: 13px;
+  color: var(--lx-muted);
 }
 
 /* Selector de ubicación real en Wizard paso 2 */
@@ -456,29 +424,32 @@
   margin-bottom: 14px;
 }
 
-.map-choice.is-selected {
-  background: var(--menu-primary-bg);
-  color: var(--menu-primary-ink);
-  border-color: var(--menu-primary-hover);
-  box-shadow: 0 0 0 2px var(--ring);
+.game-card button.map-choice {
+  padding: 14px 16px;
+  border-radius: var(--lx-radius);
 }
 
-.map-choice.is-selected:hover {
-  background: var(--menu-primary-hover);
-  color: var(--menu-primary-ink);
+.game-card .map-choice.is-selected {
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  border: 2px solid var(--lx-accent);
+  box-shadow: 0 0 0 4px var(--lx-ring);
+}
+
+.game-card .map-choice.is-selected:hover:not(:disabled) {
+  background: var(--lx-accent-soft);
 }
 
 .map-choice.is-selected span {
-  color: var(--menu-primary-ink);
-  opacity: 0.8;
+  color: var(--lx-ink);
 }
 
 .location-picker {
   margin: 14px 0 18px;
   padding: 14px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -490,34 +461,34 @@
   align-items: stretch;
 }
 
-.game-card .location-search-bar input {
+#wizard-form .location-search-bar input {
   margin-top: 0;
   flex: 1;
-  border-radius: 7px;
-  padding: 9px 11px;
-  font-size: 13px;
+  padding: 9px 12px;
+  font-size: 14px;
 }
 
-.location-search-btn {
-  padding: 9px 16px !important;
-  font-size: 13px !important;
+.game-card button.location-search-btn {
+  padding: 9px 18px;
+  font-size: 14px;
   font-weight: 700;
-  text-align: center !important;
-  border-radius: 7px !important;
-  background: var(--menu-primary-bg) !important;
-  color: var(--menu-primary-ink) !important;
-  border-color: var(--menu-primary-bg) !important;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  border-color: var(--lx-accent);
   white-space: nowrap;
 }
 
-.location-search-btn:hover:not(:disabled) {
-  background: var(--menu-primary-hover) !important;
+.game-card button.location-search-btn:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
+  border-color: var(--lx-accent-strong);
 }
 
-.location-search-error {
+.game-card .location-search-error {
   margin: 0;
-  font-size: 12px;
-  color: #ffb8c2 !important;
+  font-size: 13px;
+  color: var(--lx-danger);
 }
 
 .location-search-results {
@@ -526,34 +497,37 @@
   padding: 4px;
   max-height: 150px;
   overflow: auto;
-  border: 1px solid var(--chrome-border);
-  border-radius: 8px;
-  background: var(--chrome-bg);
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.location-result-btn {
+.game-card button.location-result-btn {
   width: 100%;
-  padding: 7px 10px !important;
-  font-size: 12px !important;
-  border: 0 !important;
-  background: transparent !important;
-  color: var(--chrome-text) !important;
-  border-radius: 5px !important;
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  color: var(--lx-ink);
+  border-radius: 8px;
 }
 
-.location-result-btn:hover {
-  background: rgba(255, 255, 255, 0.14) !important;
+.game-card button.location-result-btn:hover:not(:disabled) {
+  background: var(--lx-accent-soft);
 }
 
+/* Map overlays sit on the imagery: they keep the palette's map chrome. */
 .location-map-viewport {
   position: relative;
   height: 250px;
-  border-radius: 8px;
+  border-radius: var(--lx-radius-sm, 8px);
   overflow: hidden;
-  border: 1px solid var(--chrome-border);
+  border: 1px solid var(--lx-line-strong);
   background: #d8dfd0;
   cursor: crosshair;
   user-select: none;
@@ -629,20 +603,26 @@
   z-index: 3;
 }
 
-.location-map-controls button {
-  width: 30px;
-  height: 30px;
-  padding: 0 !important;
+.game-card .location-map-controls button {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-align: center !important;
-  font-size: 15px !important;
+  text-align: center;
+  font-size: 16px;
   font-weight: 700;
-  background: var(--chrome-bg) !important;
-  color: var(--chrome-text) !important;
-  border: 1px solid var(--chrome-border) !important;
-  border-radius: 6px !important;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+}
+
+.game-card .location-map-controls button:hover:not(:disabled) {
+  background: var(--chrome-bg);
+  border-color: var(--chrome-text);
 }
 
 .location-map-hint {
@@ -669,21 +649,22 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
-  font-size: 12px;
-  color: var(--menu-muted);
+  font-size: 13px;
+  color: var(--lx-muted);
 }
 
 .location-size-head b {
-  color: var(--gold-soft);
+  color: var(--lx-heading);
   font-variant-numeric: tabular-nums;
 }
 
 .game-card .location-size-control input[type='range'] {
   margin-top: 0;
+  min-height: 0;
   padding: 0;
   background: transparent;
   border: 0;
-  accent-color: var(--gold-soft);
+  accent-color: var(--lx-accent);
 }
 
 .game-card .location-zone-name-field {
@@ -694,15 +675,14 @@
 }
 
 .location-zone-name-field > span {
-  font-size: 11.5px;
-  color: var(--menu-muted);
+  font-size: 12.5px;
+  color: var(--lx-muted);
 }
 
-.game-card .location-zone-name-field input {
+#wizard-form .location-zone-name-field input {
   margin-top: 0;
   padding: 8px 10px;
-  font-size: 13px;
-  border-radius: 7px;
+  font-size: 14px;
 }
 
 .location-coords-row {
@@ -710,8 +690,8 @@
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  font-size: 11px;
-  color: var(--menu-muted);
+  font-size: 12px;
+  color: var(--lx-muted);
 }
 
 .location-label-text {
@@ -722,49 +702,49 @@
 
 .location-coords-row code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--gold-soft);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--lx-heading);
+  background: var(--lx-surface);
+  border: 1px solid var(--lx-line);
   padding: 2px 7px;
-  border-radius: 5px;
+  border-radius: 6px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .wizard-tutorial-card {
   margin: 16px 0 6px;
-  padding: 13px 15px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.07);
+  padding: 14px 16px;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
 }
 
 .game-card .wizard-tutorial-toggle {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   cursor: pointer;
 }
 
 .wizard-tutorial-toggle input[type='checkbox'] {
-  width: 17px;
-  height: 17px;
   margin-top: 2px;
-  accent-color: var(--gold-soft);
   flex-shrink: 0;
 }
 
 .wizard-tutorial-toggle b {
   display: block;
-  font-size: 13.5px;
-  color: var(--menu-text);
+  font-size: 14.5px;
+  color: var(--lx-heading);
   margin-bottom: 2px;
 }
 
 .wizard-tutorial-toggle small {
   display: block;
-  font-size: 11.5px;
+  font-size: 13px;
+  font-weight: 400;
   line-height: 1.45;
-  color: var(--menu-muted);
+  color: var(--lx-muted);
 }
 
 @media (max-width: 750px) {
@@ -775,24 +755,29 @@
   .wizard-shift-bottom {
     grid-template-columns: 1fr;
   }
-  .game-visual {
-    display: none;
-  }
-  .game-menu {
-    padding: 14px;
-    align-items: flex-start;
-  }
-  .game-card {
-    padding: 16px;
+  .hub > .game-card {
+    width: calc(100% - 20px);
+    margin: 10px auto 24px;
+    padding: 18px 16px;
   }
   .wizard-fields {
     grid-template-columns: 1fr;
+  }
+  .goal-buttons {
+    grid-template-columns: 1fr;
+  }
+  .wizard-nav .game-primary {
+    flex: 1 1 auto;
   }
 }
 
 /* Configurador inteligente de objetivos SMART */
 .wizard.is-smart-wide {
   max-width: 860px;
+}
+
+.hub > .game-card.wizard.is-smart-wide {
+  width: min(860px, calc(100% - 32px));
 }
 
 .smart-configurator {
@@ -1139,3 +1124,149 @@
   margin-top: 12px;
 }
 
+/*
+ * The configurator inside the wizard card: the rules above were drawn for
+ * the old dark menu; here it follows the hub tokens (the compact variant in
+ * the objectives dialog is unchanged).
+ */
+.game-card .smart-configurator {
+  color: var(--lx-ink);
+}
+
+.game-card button.smart-subtab {
+  min-height: 38px;
+  padding: 7px 14px;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: 999px;
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  font-size: 13px;
+  text-align: center;
+}
+
+.game-card .smart-subtab.is-active,
+.game-card .smart-subtab.is-active:hover:not(:disabled) {
+  background: var(--lx-accent);
+  border-color: var(--lx-accent);
+  color: var(--lx-on-accent) !important;
+}
+
+.game-card .smart-counter-pill {
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.game-card .smart-search-input {
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-radius-sm);
+}
+
+.game-card button.smart-cat-pill {
+  min-height: 34px;
+  border: 1.5px solid var(--lx-line);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.game-card .smart-cat-pill.is-active {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-weight: 700;
+}
+
+.game-card .smart-card-wrap {
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+}
+
+.game-card .smart-card-wrap.is-selected {
+  border-color: var(--lx-accent);
+  box-shadow: 0 0 0 3px var(--lx-ring);
+}
+
+.game-card button.smart-card {
+  color: var(--lx-ink);
+  min-height: 0;
+}
+
+.game-card .smart-card-title {
+  font-size: 14px;
+  color: var(--lx-heading);
+}
+
+.game-card .smart-card-desc {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--lx-muted);
+  opacity: 1;
+}
+
+.game-card .smart-card-cat {
+  color: var(--lx-muted);
+  opacity: 1;
+}
+
+.game-card .smart-contextual-panel {
+  border-top: 1px solid var(--lx-line);
+  background: var(--lx-surface-2);
+}
+
+.game-card button.smart-ctx-chip {
+  min-height: 28px;
+  border: 1px solid var(--lx-control-border);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+}
+
+.game-card .smart-ctx-chip.is-active {
+  background: var(--lx-accent) !important;
+  color: var(--lx-on-accent) !important;
+  border-color: var(--lx-accent) !important;
+}
+
+.game-card .smart-priority-row {
+  border: 1px solid var(--lx-line);
+  background: var(--lx-surface);
+}
+
+.game-card .smart-priority-head h3,
+.game-card .smart-priority-row b {
+  color: var(--lx-heading);
+}
+
+.game-card button.smart-prio-btn {
+  min-height: 32px;
+  text-align: center;
+}
+
+#wizard-form .smart-target-inline input,
+#wizard-form .smart-weight-input,
+#wizard-form .smart-mix-row input {
+  min-height: 0;
+}
+
+.game-card .smart-prio-btn.is-active {
+  background: var(--lx-accent) !important;
+  color: var(--lx-on-accent) !important;
+  border-color: var(--lx-accent) !important;
+}
+
+.game-card .smart-tradeoffs-box,
+.game-card .smart-constraints-box,
+.game-card .smart-legacy-note {
+  border: 1px solid var(--lx-line-strong);
+  background: var(--lx-surface-2);
+  color: var(--lx-ink);
+}
+
+/* Hypotheses use the Gestor's certainty grammar: dashed accent and a tint. */
+.game-card .smart-hypotheses-box {
+  border: 1.5px dashed var(--lx-hypo-line);
+  background: var(--lx-hypo-tint);
+  color: var(--lx-ink);
+}

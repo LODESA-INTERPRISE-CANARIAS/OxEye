@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {makeContact, mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
 import {choose, expectValue, optionLabels} from './controls';
@@ -53,7 +54,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await expect(page.locator('#lx-contacts-tab-people')).toHaveAttribute(
       'aria-selected',
       'true',
@@ -115,7 +116,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
 
   test('without a name nothing is sent', async ({page}) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-add').click();
     await page.locator('#lx-contact-role').fill('Conductor');
     await page.locator('#lx-contact-save').click();
@@ -130,7 +131,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-add').click();
     await page.locator('#lx-contact-name').fill('Elena Prueba');
     const company = page.locator('#lx-contact-companyName');
@@ -171,7 +172,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-add').click();
     await page.locator('#lx-contact-name').fill('Felipe Prueba');
     await page.locator('#lx-contact-companyName').fill('Sonido Prueba');
@@ -196,7 +197,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-add').click();
     await page.locator('#lx-contact-name').fill('ana  prueba');
     const warn = page.locator('#lx-contact-lookalike');
@@ -216,7 +217,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-add').click();
     await page.locator('#lx-contact-name').fill('Ana Prueba');
     const warn = page.locator('#lx-contact-lookalike');
@@ -242,7 +243,7 @@ test.describe('Gestor logístico · Contactos · capturar personas', () => {
         makeContact('n5', '3 Hermanos Prueba'),
       ],
     });
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     const letters = await page
       .locator('#lx-contacts-panel .lx-letter__title')
       .allTextContents();
@@ -257,7 +258,7 @@ test.describe('Gestor logístico · Contactos · llamar, WhatsApp, correo', () =
     context,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     const start = page.url();
     await openPerson(page, 'p1');
     const reach = page.locator('#lx-reach-sheet');
@@ -331,7 +332,7 @@ test.describe('Gestor logístico · Contactos · llamar, WhatsApp, correo', () =
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openPerson(page, 'p1');
     await page.locator('#lx-contact-reach-call').click();
     await page.locator('#lx-reach-cancel').click();
@@ -346,7 +347,7 @@ test.describe('Gestor logístico · Contactos · llamar, WhatsApp, correo', () =
 
   test('the quick «Llamar» of a row confirms first too', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await expect(page.locator(OUTGOING)).toHaveCount(0);
     const quick = page.locator('#lx-call-p1');
     await expect(quick).toHaveAccessibleName('Llamar a Ana Prueba');
@@ -366,7 +367,7 @@ test.describe('Gestor logístico · Contactos · llamar, WhatsApp, correo', () =
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openPerson(page, 'p2');
     const wa = page.locator('#lx-contact-reach-whatsapp');
     await expect(wa).toHaveClass(/lx-reach__btn--muted/);
@@ -402,7 +403,7 @@ test.describe('Gestor logístico · Contactos · llamar, WhatsApp, correo', () =
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openPerson(page, 'p1');
     const tiles = page.locator('#lx-contact-reach .lx-reach__btn');
     await expect(tiles).toHaveCount(4);
@@ -422,7 +423,7 @@ test.describe('Gestor logístico · Contactos · compartir', () => {
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openPerson(page, 'p1');
     await page.locator('#lx-contact-share').click();
     const sheet = page.locator('#lx-share-sheet');
@@ -475,7 +476,7 @@ test.describe('Gestor logístico · Contactos · compartir', () => {
 
   test('a person with only a name has nothing to share', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openPerson(page, 'p3');
     await expect(page.locator('#lx-contact-share')).toHaveCount(0);
   });
@@ -486,7 +487,7 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-tab-companies').click();
     const row = companyRow(page, 'c1');
     await expect(row).toContainText('Proveedor');
@@ -540,7 +541,7 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompany(page, 'c1');
     await page.locator('#lx-company-edit').click();
     await expect(page.locator('#lx-company-form')).toBeVisible();
@@ -596,7 +597,7 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
 
   test('deleting explains the consequences first', async ({page}) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompany(page, 'c1');
     await page.locator('#lx-company-edit').click();
     await page.locator('#lx-company-delete').click();
@@ -625,7 +626,7 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-tab-companies').click();
     await page.locator('#lx-contacts-add').click();
     await page.locator('#lx-company-name').fill('ESCENARIOS PRUEBA');
@@ -646,7 +647,7 @@ test.describe('Gestor logístico · Empresas y entidades', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompany(page, 'c2');
     await page.locator('#lx-company-edit').click();
     await page.locator('#lx-company-phone').fill('+34 000 000 021');

@@ -13,11 +13,11 @@ import {
   type DayReportInput,
 } from '../../../shared/logistics/day-report';
 import {
+  addressForDay,
   clampDay,
   countTiles,
-  dayFromHash,
+  dayFromAddress,
   groupByDay,
-  hashForDay,
   includedTextTitles,
   isQuietDay,
   listJoin,
@@ -151,15 +151,27 @@ const pageHtml = (extra: Partial<DayReportInput> = {}) => {
 
 describe('day close link', () => {
   it('reads only well-formed days from the link', () => {
-    expect(dayFromHash('#logistica/cierre/2026-12-02')).toBe('2026-12-02');
-    expect(dayFromHash('#logistica/cierre')).toBeNull();
-    expect(dayFromHash('#logistica/cierre/2026-13-40')).toBeNull();
-    expect(dayFromHash('#logistica/calendario/2026-12-02')).toBeNull();
+    expect(dayFromAddress('/gestor-logistico/cierre/2026-12-02')).toBe(
+      '2026-12-02',
+    );
+    expect(dayFromAddress('/gestor-logistico/cierre')).toBeNull();
+    expect(dayFromAddress('/gestor-logistico/cierre/2026-13-40')).toBeNull();
+    expect(
+      dayFromAddress('/gestor-logistico/calendario/2026-12-02'),
+    ).toBeNull();
+    expect(
+      dayFromAddress('/gestor-logistico/cierre/2026-12-02/ficha/tarea/t1'),
+    ).toBeNull();
+    // Links made before 2026-11-28.
+    expect(dayFromAddress('#logistica/cierre/2026-12-02')).toBe('2026-12-02');
+    expect(dayFromAddress('#logistica/cierre')).toBeNull();
   });
 
   it('keeps the plain link for today and never goes past it', () => {
-    expect(hashForDay(DAY, DAY)).toBe('#logistica/cierre');
-    expect(hashForDay('2026-12-01', DAY)).toBe('#logistica/cierre/2026-12-01');
+    expect(addressForDay(DAY, DAY)).toBe('/gestor-logistico/cierre');
+    expect(addressForDay('2026-12-01', DAY)).toBe(
+      '/gestor-logistico/cierre/2026-12-01',
+    );
     expect(clampDay('2026-12-05', DAY)).toBe(DAY);
     expect(clampDay('2026-11-30', DAY)).toBe('2026-11-30');
   });

@@ -15,6 +15,7 @@ import {
   signIn,
   type MockApi,
 } from './mock-api';
+import {goToAddress, lxUrl} from './address';
 import {withBudget} from './money-fixtures';
 import {offersData} from './offers-fixtures';
 import {DAY, fixClock, planData} from './plan-fixtures';
@@ -35,25 +36,26 @@ const budgetCalls = (api: MockApi) =>
   api.requests.filter(
     r => /\/budget$|\/budgets$/.test(r.path) || r.path.startsWith('/expenses'),
   );
-const hash = (page: Page) => page.evaluate(() => location.hash);
+const address = (page: Page) =>
+  page.evaluate(() => location.pathname + location.hash);
 
 test.describe('Gestor logístico · presupuesto con dirección propia', () => {
   test('opened from the event: its own address, Back and Forward', async ({
     page,
   }) => {
     await mockApi(page, withBudget());
-    await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
     await expect(page.locator('#lx-event-budget')).toContainText('Quedan');
     await page.locator('#lx-event-budget-open').click();
     const budget = page.locator('#lx-budget-sheet');
     await expect(budget).toBeVisible();
     await expect(budget).toContainText('Navidad en la Plaza del Cristo');
-    await expect.poll(() => hash(page)).toBe('#logistica/ficha/presupuesto/e1');
+    await expect.poll(() => address(page)).toBe(lxUrl('ficha/presupuesto/e1'));
 
     await page.goBack();
     await expect(budget).toHaveCount(0);
     await expect(page.locator('#lx-event-sheet')).toBeVisible();
-    await expect.poll(() => hash(page)).toBe('#logistica/ficha/evento/e1');
+    await expect.poll(() => address(page)).toBe(lxUrl('ficha/evento/e1'));
 
     await page.goForward();
     await expect(budget).toBeVisible();
@@ -64,19 +66,17 @@ test.describe('Gestor logístico · presupuesto con dirección propia', () => {
     page,
   }) => {
     const api = await mockApi(page, withBudget());
-    await signIn(page, 'Elvis', '#logistica/calendario/ficha/presupuesto/e1');
+    await signIn(page, 'Elvis', lxUrl('calendario/ficha/presupuesto/e1'));
     const budget = page.locator('#lx-budget-sheet');
     await expect(budget).toBeVisible();
     await expect(page.locator('#lx-budget-amount')).toContainText('2000');
     expect(api.calls('GET', '/events/e1/budget')).toHaveLength(1);
     await page.locator('#lx-budget-close').click();
     await expect(budget).toHaveCount(0);
-    await expect.poll(() => hash(page)).toBe('#logistica/calendario');
+    await expect.poll(() => address(page)).toBe(lxUrl('calendario'));
 
     // From the event sheet: the card follows what the budget sheet saved.
-    await page.evaluate(() => {
-      location.hash = '#logistica/calendario/ficha/evento/e1';
-    });
+    await goToAddress(page, lxUrl('calendario/ficha/evento/e1'));
     await page.locator('#lx-event-budget-open').click();
     await page.locator('#lx-budget-edit').click();
     await page.locator('#lx-budget-input').fill('3.000');
@@ -90,7 +90,7 @@ test.describe('Gestor logístico · presupuesto con dirección propia', () => {
     page,
   }) => {
     const api = await mockApi(page, withBudget());
-    await signIn(page, 'Equipo', '#logistica/ficha/presupuesto/e1');
+    await signIn(page, 'Equipo', lxUrl('ficha/presupuesto/e1'));
     const locked = page.locator('#lx-budget-noaccess');
     await expect(locked).toBeVisible();
     await expect(locked).toContainText('Presupuesto: sin acceso');
@@ -107,7 +107,7 @@ test.describe('Gestor logístico · presupuesto con dirección propia', () => {
       ...withBudget(),
       accounts: {Dailos: {passwordProvisional: true}},
     });
-    await signIn(page, 'Dailos', '#logistica/ficha/presupuesto/e1');
+    await signIn(page, 'Dailos', lxUrl('ficha/presupuesto/e1'));
     const held = page.locator('#lx-budget-noaccess');
     await expect(held).toContainText('Pendiente de tu contraseña nueva');
     await expect(page.locator('#lx-budget-noaccess-password')).toBeVisible();
@@ -142,9 +142,7 @@ test.describe('Gestor logístico · cambios firmados en soporte', () => {
       /sesión de soporte en la cuenta de Dailos/,
     );
 
-    await page.evaluate(() => {
-      location.hash = '#logistica/ficha/evento/e1';
-    });
+    await goToAddress(page, lxUrl('ficha/evento/e1'));
     await page.locator('#lx-event-history-toggle').click();
     await expect(page.locator('#lx-event-history')).toContainText(
       'Dailos (soporte: Elvis)',
@@ -209,7 +207,7 @@ test.describe('Gestor logístico · cambios firmados en soporte', () => {
         },
       ],
     });
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
     await page.locator('#lx-day-warnings-toggle').click();
     const box = page.locator('#lx-day-warnings');
     await expect(box.locator('.lx-warning--accepted')).toContainText(
@@ -230,7 +228,7 @@ test.describe('Gestor logístico · cambios firmados en soporte', () => {
       },
     );
     await mockApi(page, data);
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await page.locator('#lx-ctab-inbox').click();
     await page.locator('#lx-inbox-tab-approved').click();
     const row = page.locator('#lx-inbox-list [data-proposal-id="p1"]');

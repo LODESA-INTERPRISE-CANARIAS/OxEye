@@ -1,5 +1,5 @@
 import {expect, test} from '@playwright/test';
-import {completeObjectivesStep} from './helpers';
+import {completeObjectivesStep, openSimulatorSection} from './helpers';
 
 test.describe('Guided Tutorial from Wizard Step 2', () => {
   test('enables tutorial in Step 2, runs guided tour prior to everything else, supports pause/resume, and hands off to perimeter onboarding', async ({
@@ -7,6 +7,7 @@ test.describe('Guided Tutorial from Wizard Step 2', () => {
   }) => {
     await page.setViewportSize({width: 1280, height: 800});
     await page.goto('/');
+    await openSimulatorSection(page);
     await page.click('#game-new');
 
     // Step 1: objectives picker (replaces the former free-text SMART form)

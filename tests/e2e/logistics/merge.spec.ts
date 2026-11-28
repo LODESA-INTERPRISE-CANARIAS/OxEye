@@ -1,5 +1,6 @@
 import {expect, test, type Page} from '@playwright/test';
 import {slotToInstants} from '../../../shared/logistics/time.ts';
+import {lxUrl} from './address';
 import {TZ, mockApi, signIn, type MockApi} from './mock-api';
 import {DAY, fixClock, planData, planTasks} from './plan-fixtures';
 import {directoryData} from './directory-fixtures';
@@ -272,7 +273,7 @@ test.describe('Gestor logístico · juntar cambios tras un 409', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('[data-contact-id="p3"] .lx-dirrow__main').click();
     await page.locator('#lx-contact-edit').click();
     await page.locator('#lx-contact-phone').fill('+34 000 000 033');

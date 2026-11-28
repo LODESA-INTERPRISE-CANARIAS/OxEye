@@ -66,9 +66,40 @@ describe('supplier links', () => {
       kind: 'open',
       token: TOKEN,
     });
+    expect(supplierLinkHash(TOKEN)).toBe(`gestor-logistico/proveedor#${TOKEN}`);
+    expect(openOfferLinkHash(TOKEN)).toBe(
+      `gestor-logistico/proveedor/abierto#${TOKEN}`,
+    );
+    for (const link of [supplierLinkHash(TOKEN), openOfferLinkHash(TOKEN)]) {
+      // The token is only in the fragment, never in the path.
+      expect(link.indexOf(TOKEN)).toBe(link.indexOf('#') + 1);
+      const url = new URL(`https://equipo.example.org/${link}`);
+      expect(url.pathname).not.toContain(TOKEN);
+      expect(parseSupplierLink(url.pathname + url.hash)?.token).toBe(TOKEN);
+      expect(parseSupplierLink(`/${link}`)?.token).toBe(TOKEN);
+    }
+    // Links sent before the clean addresses still open the same form.
+    expect(parseSupplierLink(`#logistica/proveedor/${TOKEN}`)).toEqual({
+      kind: 'request',
+      token: TOKEN,
+    });
+    expect(parseSupplierLink(`#logistica/proveedor/abierto/${TOKEN}`)).toEqual({
+      kind: 'open',
+      token: TOKEN,
+    });
     expect(parseSupplierLink(`#logistica/proveedor/${TOKEN}x`)).toBeNull();
     expect(parseSupplierLink('#logistica/proveedor/corto')).toBeNull();
     expect(parseSupplierLink(`#logistica/otra/${TOKEN}`)).toBeNull();
+    expect(
+      parseSupplierLink(`/gestor-logistico/proveedor#${TOKEN}x`),
+    ).toBeNull();
+    expect(parseSupplierLink('/gestor-logistico/proveedor#corto')).toBeNull();
+    expect(
+      parseSupplierLink(`/gestor-logistico/proveedor/${TOKEN}`),
+    ).toBeNull();
+    expect(
+      parseSupplierLink(`/gestor-logistico/proveedor/cerrado#${TOKEN}`),
+    ).toBeNull();
   });
 
   it('the privacy text says who receives the data and that it awaits legal review', () => {

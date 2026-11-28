@@ -1,6 +1,8 @@
 /**
- * Account links (Revisión 1 · E4): `#logistica/cuenta/restablecer/<token>`
- * and `#logistica/cuenta/verificar/<token>`, opened from an e-mail.
+ * Account links (Revisión 1 · E4): `/gestor-logistico/cuenta/restablecer#<token>`
+ * and `/gestor-logistico/cuenta/verificar#<token>`, opened from an e-mail
+ * (mails sent before 2026-11-28 carry `#logistica/cuenta/…/<token>`, still
+ * read). The token stays in the fragment: it never reaches a server log.
  *
  * The address is read once, when this module loads (before the Gestor's
  * router tidies the address up), and the token is then taken off the
@@ -11,6 +13,8 @@ import {
   parseAccountLink,
   type AccountLinkPurpose,
 } from '../../../shared/logistics/account.ts';
+import {addressUrl, linkLocation} from '../shell/address';
+import {ROOT_ADDRESS} from '../shell/route';
 
 export interface AccountLink {
   purpose: AccountLinkPurpose;
@@ -20,8 +24,8 @@ export interface AccountLink {
 let pending: AccountLink | null = null;
 const listeners = new Set<() => void>();
 
-function capture(hash: string): boolean {
-  const link = parseAccountLink(hash);
+function capture(): boolean {
+  const link = parseAccountLink(linkLocation());
   if (!link) return false;
   pending = link;
   try {
@@ -29,7 +33,7 @@ function capture(hash: string): boolean {
     window.history.replaceState(
       window.history.state,
       '',
-      `${window.location.pathname}${window.location.search}#logistica`,
+      addressUrl(ROOT_ADDRESS),
     );
   } catch {
     // Some embedded browsers refuse; the link still works.
@@ -42,19 +46,20 @@ function notify(): void {
 }
 
 if (typeof window !== 'undefined') {
-  capture(window.location.hash);
-  // A link pasted into the address bar of an open Gestor. Capture phase, so
-  // it runs before the router reads the new address. The sheet is shown
-  // only after this `hashchange` has been handled: the history (historyNav)
-  // closes what is open for a pasted link, and would close the link's own
-  // sheet if it were already there.
-  window.addEventListener(
-    'hashchange',
-    () => {
-      if (capture(window.location.hash)) window.setTimeout(notify, 0);
-    },
-    {capture: true},
-  );
+  capture();
+  // A link pasted into the address bar of an open page that only changes
+  // the fragment (a different path loads the page again, and is read
+  // above). Capture phase, so it runs before the hub and the router read
+  // the new address; `popstate` comes first, `hashchange` is kept for
+  // browsers that fire only that one. The sheet is shown only after the
+  // event has been handled: the history (historyNav) closes what is open
+  // for a pasted link, and would close the link's own sheet if it were
+  // already there.
+  const onPasted = () => {
+    if (capture()) window.setTimeout(notify, 0);
+  };
+  window.addEventListener('popstate', onPasted, {capture: true});
+  window.addEventListener('hashchange', onPasted, {capture: true});
 }
 
 /** The account link waiting to be handled, if any. */

@@ -8,6 +8,7 @@ import {
   signIn,
   signInAgain,
 } from './mock-api';
+import {lxUrl, lxUrlRe} from './address';
 import {DAY, fixClock} from './plan-fixtures';
 import {choose, expectValue, optionGroups} from './controls';
 import {
@@ -55,7 +56,7 @@ test.describe('Gestor logístico · directorio para el invitado', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Invitado', '#logistica/contactos');
+    await signIn(page, 'Invitado', lxUrl('contactos'));
     await expect(page.locator('#lx-readonly')).toBeVisible();
     await expect(page.locator('#lx-contactos-noaccess')).toContainText(
       'contienen datos de personas y precios',
@@ -80,7 +81,7 @@ test.describe('Gestor logístico · directorio para el invitado', () => {
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
     await expect(page.locator('#lx-contact-detail')).toContainText(
       'ana.prueba@example.com',
@@ -334,20 +335,20 @@ test.describe('Gestor logístico · Contactos y Catálogo en el móvil', () => {
 
   test('swipe between Contactos and Catálogo still works', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await expect(page.locator('#lx-space-contactos')).toBeVisible();
     await swipe(page, 320, 80);
-    await expect(page).toHaveURL(/#logistica\/catalogo$/);
+    await expect(page).toHaveURL(lxUrlRe('catalogo'));
     await expect(page.locator('#lx-space-catalogo')).toBeVisible();
     await swipe(page, 80, 320);
-    await expect(page).toHaveURL(/#logistica\/contactos$/);
+    await expect(page).toHaveURL(lxUrlRe('contactos'));
   });
 
   test('Catálogo: the category strip filters and rows are easy to tap', async ({
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await expect(page.locator('#lx-space-catalogo')).toBeVisible();
     const strip = page.locator('#lx-catalog-filters');
     await expect(strip).toBeVisible();

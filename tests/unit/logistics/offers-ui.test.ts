@@ -176,15 +176,49 @@ describe('labels and texts', () => {
 
 describe('sharing a personal link by hand', () => {
   it("builds the address from this Gestor's own location", () => {
+    const token = 'A'.repeat(20) + '_-' + 'z'.repeat(21);
+    const lan = 'http://192.168.1.20:5173';
     expect(
-      shareableUrl('http://server:8787/#logistica/proveedor/abc', {
-        origin: 'http://192.168.1.20:5173',
-        pathname: '/',
-      }),
-    ).toBe('http://192.168.1.20:5173/#logistica/proveedor/abc');
+      shareableUrl(
+        `http://server:8787/gestor-logistico/proveedor#${token}`,
+        lan,
+      ),
+    ).toBe(`${lan}/gestor-logistico/proveedor#${token}`);
     expect(
-      shareableUrl('http://x/sin-hash', {origin: 'o', pathname: '/'}),
-    ).toBe('http://x/sin-hash');
+      shareableUrl(
+        `http://server:8787/gestor-logistico/proveedor/abierto#${token}`,
+        lan,
+      ),
+    ).toBe(`${lan}/gestor-logistico/proveedor/abierto#${token}`);
+    // A Gestor served under a sub-path keeps it; the server's own path goes.
+    expect(
+      shareableUrl(
+        `https://pilot.example.org/web/gestor-logistico/proveedor#${token}`,
+        lan,
+        '/OxEye/',
+      ),
+    ).toBe(`${lan}/OxEye/gestor-logistico/proveedor#${token}`);
+    expect(
+      shareableUrl(
+        `http://s/gestor-logistico/proveedor#${token}`,
+        lan,
+        '/OxEye',
+      ),
+    ).toBe(`${lan}/OxEye/gestor-logistico/proveedor#${token}`);
+    // A link issued before 2026-11-28: shared in the new form, token still
+    // only in the fragment.
+    const legacy = shareableUrl(
+      `http://server:8787/#logistica/proveedor/abierto/${token}`,
+      lan,
+    );
+    expect(legacy).toBe(`${lan}/gestor-logistico/proveedor/abierto#${token}`);
+    expect(new URL(legacy).pathname).not.toContain(token);
+    // Not a Gestor link: the server's address as it is.
+    expect(shareableUrl('http://x/sin-hash', lan)).toBe('http://x/sin-hash');
+    expect(shareableUrl('http://x/#otra', lan)).toBe('http://x/#otra');
+    expect(shareableUrl('http://gestor-logistico.example/x', lan)).toBe(
+      'http://gestor-logistico.example/x',
+    );
   });
 
   it('warns when the address only works on this computer', () => {
@@ -200,7 +234,7 @@ describe('sharing a personal link by hand', () => {
       sender: 'Elvis',
       company: 'Carpas Demo',
       need: NEED,
-      url: 'http://equipo:5173/#logistica/proveedor/abc',
+      url: 'http://equipo:5173/gestor-logistico/proveedor#abc',
       expiresOn: '2026-12-04',
     };
     const {subject, body} = linkMessage(m);

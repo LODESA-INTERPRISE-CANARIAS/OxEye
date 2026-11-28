@@ -8,7 +8,7 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     await page.setViewportSize({width: 1280, height: 800});
 
     // Stub Overpass & Nominatim so the E2E test is fast and deterministic offline
-    await page.route('**/nominatim.openstreetmap.org/**', async (route) => {
+    await page.route('**/nominatim.openstreetmap.org/**', async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -53,7 +53,18 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
       ],
     });
 
-    await page.route('**/api.openstreetmap.org/api/0.6/map.json**', async (route) => {
+    await page.route(
+      '**/api.openstreetmap.org/api/0.6/map.json**',
+      async route => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: osmPayload,
+        });
+      },
+    );
+
+    await page.route('**/overpass-api.de/**', async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -61,15 +72,8 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
       });
     });
 
-    await page.route('**/overpass-api.de/**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: osmPayload,
-      });
-    });
-
-    await page.goto('/');
+    // Deep link to the hub's «Simulador» screen.
+    await page.goto('/simulador');
     await page.click('#game-new');
 
     // Step 1: objectives picker (replaces the former free-text SMART form)
@@ -80,10 +84,14 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     await expect(page.locator('#location-picker')).toBeVisible();
     await page.fill('#location-search-input', 'Plaza de España Tenerife');
     await page.click('#location-search-btn');
-    await expect(page.locator('#location-search-results button').first()).toBeVisible();
+    await expect(
+      page.locator('#location-search-results button').first(),
+    ).toBeVisible();
     await page.click('#location-search-results button >> nth=0');
     await page.locator('#location-size-slider').fill('350');
-    await expect(page.locator('#location-size-readout')).toContainText('350 × 350 m');
+    await expect(page.locator('#location-size-readout')).toContainText(
+      '350 × 350 m',
+    );
     // With empty storage the guided tutorial is pre-checked (first run) and is
     // shown before the perimeter banner; this spec covers the onboarding
     // without the tour (the tour is covered by tutorial.spec.ts).
@@ -101,11 +109,15 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     // Step 1 of onboarding: mandatory perimeter drawing + clean vector base map (no raster tiles in plan mode)
     await expect(page.locator('#onboarding-perimeter-banner')).toBeVisible();
     await expect(page.locator('#place-title')).toContainText('Plaza de España');
-    await expect(page.locator('#venue-select option')).toContainText('Plaza de España');
+    await expect(page.locator('#venue-select option')).toContainText(
+      'Plaza de España',
+    );
     await expect(page.locator('#inventory')).toBeDisabled();
     await expect(page.locator('#base-layer image')).toHaveCount(0);
     await expect(page.locator('#base-layer polygon')).toHaveCount(1);
-    await expect(page.locator('#base-layer .street-label').first()).toBeVisible();
+    await expect(
+      page.locator('#base-layer .street-label').first(),
+    ).toBeVisible();
 
     // Draw a 4-point perimeter polygon on the map
     const mapBox = await page.locator('#map').boundingBox();
@@ -121,7 +133,9 @@ test.describe('Custom Real Map, Mandatory Perimeter -> Inventory Onboarding & Ac
     // Step 2 of onboarding: Inventory opens automatically!
     await expect(page.locator('#inventory-dialog')).toBeVisible();
     await expect(page.locator('#onboarding-inventory-step')).toBeVisible();
-    await page.click('#inventory-dialog button[type="submit"]:has-text("Cerrar")');
+    await page.click(
+      '#inventory-dialog button[type="submit"]:has-text("Cerrar")',
+    );
 
     // Now normal editing is unlocked and coherent spawns were created
     await expect(page.locator('#onboarding-perimeter-banner')).toBeHidden();

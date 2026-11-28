@@ -8,6 +8,7 @@ import {
   mockApi,
   signIn,
 } from './mock-api';
+import {lxUrl} from './address';
 import {CAT, directoryData} from './directory-fixtures';
 import {IGIC} from './money-fixtures';
 import {followData, openHypothesis} from './followup-fixtures';
@@ -214,7 +215,7 @@ test.describe('Gestor logístico · revisión 1 · capturas', () => {
       name: 'Aseos portátiles Prueba',
       builtIn: false,
     });
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await page.locator(`#lx-catgroup-compare-${CAT.carpas}`).click();
     await expect(page.locator(`#lx-catcompare-${CAT.carpas}`)).toBeVisible();
     await capture(page, 'catalog-compare-desktop');
@@ -254,7 +255,7 @@ test.describe('Gestor logístico · revisión 1 · capturas', () => {
   test('calendar day: the warnings pill and its panel', async ({page}) => {
     await page.setViewportSize({width: 1680, height: 1000});
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
     const pill = page.locator('#lx-day-warnings-toggle');
     await expect(pill).toHaveClass(/has-conflict/);
     await capture(page, 'day-warnings-pill', {palettes: ['oxeye', 'noctis']});

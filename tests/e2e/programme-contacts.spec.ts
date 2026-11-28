@@ -14,8 +14,12 @@ test.describe('Programme custom activities, inline contact linking & Contacts cu
     await page.selectOption('#contact-kind', '__other__');
     await page.fill('#contact-kind-other', 'Sonido profesional');
     await page.click('#contact-kind-other-add');
-    await expect(page.locator('#contact-kind')).toHaveValue('Sonido profesional');
-    await page.click('#contacts-dialog button[type="submit"]:has-text("Cerrar")');
+    await expect(page.locator('#contact-kind')).toHaveValue(
+      'Sonido profesional',
+    );
+    await page.click(
+      '#contacts-dialog button[type="submit"]:has-text("Cerrar")',
+    );
 
     // 2. Programme: create custom activity and verify it appears first with "Propia" badge
     await page.click('#programme');
@@ -31,7 +35,9 @@ test.describe('Programme custom activities, inline contact linking & Contacts cu
 
     const firstRow = page.locator('#activity-catalog .activity-row').first();
     await expect(firstRow).toContainText('Taller de cerámica local');
-    await expect(firstRow.locator('.activity-badge-custom')).toHaveText('Propia');
+    await expect(firstRow.locator('.activity-badge-custom')).toHaveText(
+      'Propia',
+    );
 
     // 3. Modify cost (unsaved) and create a new contact inline without losing the modified cost
     const customId = await firstRow.getAttribute('data-activity-id');
@@ -60,7 +66,7 @@ test.describe('Programme custom activities, inline contact linking & Contacts cu
     await expect(costInput).toHaveValue('95');
     await page.click('#programme-plan');
     await expect(page.locator('#programme-result')).toContainText(
-      'Propuesta de programa'
+      'Propuesta de programa',
     );
     await expect(page.locator('#programme-result')).toContainText('Taller Sol');
 
@@ -81,27 +87,32 @@ test.describe('Programme custom activities, inline contact linking & Contacts cu
 
     // 6. Verify saved contacts appear BEFORE suggested providers, and save a suggested provider
     const savedBox = await page.locator('#saved-providers').boundingBox();
-    const suggestedBox = await page.locator('#suggested-providers').boundingBox();
+    const suggestedBox = await page
+      .locator('#suggested-providers')
+      .boundingBox();
     expect(savedBox!.y).toBeLessThan(suggestedBox!.y);
     await expect(page.locator('#saved-providers')).toContainText('Taller Sol');
     await expect(page.locator('#saved-providers')).toContainText(
-      'Taller de cerámica local'
+      'Taller de cerámica local',
     );
     await page.click('button[data-save-provider="Actividades Tafor"]');
     await expect(page.locator('#saved-providers')).toContainText(
-      'Actividades Tafor'
+      'Actividades Tafor',
     );
 
     // 7. Reload page and verify everything persisted
-    await page.reload();
+    // (Reloading /simulador/modelo resumes the saved model by itself; going
+    // through /simulador and «Continuar» checks the same persisted state.)
+    await page.goto('/simulador');
     await page.click('#game-continue');
+    await expect(page.locator('#game-menu')).toBeHidden();
     await page.click('#programme');
     await expect(
-      page.locator('#activity-catalog .activity-row').first()
+      page.locator('#activity-catalog .activity-row').first(),
     ).toContainText('Taller de cerámica local');
     await expect(page.locator('#saved-providers')).toContainText('Taller Sol');
     await expect(page.locator('#saved-providers')).toContainText(
-      'Actividades Tafor'
+      'Actividades Tafor',
     );
   });
 });

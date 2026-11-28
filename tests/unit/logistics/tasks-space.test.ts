@@ -315,10 +315,12 @@ describe('Tareas · device and navigation', () => {
       'catalogo',
     ]);
     expect(PHONE_TABS).toHaveLength(5);
-    expect(parseRoute('#logistica/tareas').space).toBe('tareas');
-    expect(parseRoute('#logistica/tareas/ficha/tarea/t1').sheet).toEqual({
-      type: 'task',
-      id: 't1',
-    });
+    expect(parseRoute('/gestor-logistico/tareas').space).toBe('tareas');
+    expect(parseRoute('/gestor-logistico/tareas/ficha/tarea/t1').sheet).toEqual(
+      {
+        type: 'task',
+        id: 't1',
+      },
+    );
   });
 });

@@ -144,7 +144,7 @@ describe('password recovery', () => {
     const res = await adminCall(admin, ids.Dailos!, 'reset-link');
     expect(res.status).toBe(200);
     const link = await json<ResetLinkResponse>(res);
-    const token = /restablecer\/([A-Za-z0-9_-]{43})/.exec(link.url)![1]!;
+    const token = /restablecer#([A-Za-z0-9_-]{43})$/.exec(link.url)![1]!;
 
     const transport = createMemoryTransport();
     const app = h.newApp({

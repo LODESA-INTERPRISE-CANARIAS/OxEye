@@ -1,8 +1,10 @@
 /**
- * Supplier links (Revisión 1 · E7): `#logistica/proveedor/<token>` (one
- * company's personal form for one request) and
- * `#logistica/proveedor/abierto/<token>` (the open «presentar oferta» form,
- * only while an administrator keeps it on). Same pattern as account links
+ * Supplier links (Revisión 1 · E7): `/gestor-logistico/proveedor#<token>`
+ * (one company's personal form for one request) and
+ * `/gestor-logistico/proveedor/abierto#<token>` (the open «presentar oferta»
+ * form, only while an administrator keeps it on); links sent before
+ * 2026-11-28 carry `#logistica/proveedor/[abierto/]<token>` and are still
+ * read. Same pattern as account links
  * (`account/links.ts`):
  *
  * - the address is read once, when this module loads, before the Gestor's
@@ -17,7 +19,13 @@
  * The form works signed out, before and instead of the login: a supplier
  * never sees the Gestor.
  */
-import {parseSupplierLink} from '../../../shared/logistics/proposals.ts';
+import {
+  openOfferLinkHash,
+  parseSupplierLink,
+  supplierLinkHash,
+} from '../../../shared/logistics/proposals.ts';
+import {addressUrl, currentAddress, linkLocation} from '../shell/address';
+import {LEGACY_ROOT, ROOT_ADDRESS} from '../shell/route';
 
 export interface SupplierLink {
   kind: 'request' | 'open';
@@ -51,11 +59,12 @@ function remembered(): SupplierLink | null {
       (v.kind === 'request' || v.kind === 'open') &&
       typeof v.token === 'string'
     ) {
-      const hash =
+      // Parsed again, so a broken or foreign token is never trusted.
+      const link =
         v.kind === 'open'
-          ? `#logistica/proveedor/abierto/${v.token}`
-          : `#logistica/proveedor/${v.token}`;
-      return parseSupplierLink(hash);
+          ? openOfferLinkHash(v.token)
+          : supplierLinkHash(v.token);
+      return parseSupplierLink(link);
     }
   } catch {
     // A broken copy is simply ignored.
@@ -63,8 +72,8 @@ function remembered(): SupplierLink | null {
   return null;
 }
 
-function capture(hash: string): boolean {
-  const link = parseSupplierLink(hash);
+function capture(): boolean {
+  const link = parseSupplierLink(linkLocation());
   if (!link) return false;
   pending = link;
   remember(link);
@@ -72,7 +81,7 @@ function capture(hash: string): boolean {
     window.history.replaceState(
       window.history.state,
       '',
-      `${window.location.pathname}${window.location.search}#logistica`,
+      addressUrl(ROOT_ADDRESS),
     );
   } catch {
     // Some embedded browsers refuse; the form still works.
@@ -108,21 +117,25 @@ if (typeof window !== 'undefined') {
   // while there are answers not yet sent; and only on the Gestor's root
   // address (where the token was taken off). Opening OxEye again in this
   // tab otherwise opens OxEye, never a form that was already finished.
-  if (!capture(window.location.hash) && window.location.hash === '#logistica') {
+  // This module loads before `main.tsx` rewrites a legacy address, so the
+  // root is recognised in both forms.
+  const atRoot =
+    currentAddress() === ROOT_ADDRESS || window.location.hash === LEGACY_ROOT;
+  if (!capture() && atRoot) {
     const copy = remembered();
     if (copy && (isReload() || hasDraft(copy.token))) pending = copy;
     else if (copy) remember(null);
   }
-  // A supplier link pasted into a tab where OxEye is already open: start
+  // A supplier link pasted into a tab where OxEye is already open and that
+  // changes only the fragment (another path loads the page anyway): start
   // the page again so only the supplier's form is mounted (main.tsx), never
-  // on top of the hub, the map or the Gestor.
-  window.addEventListener(
-    'hashchange',
-    () => {
-      if (capture(window.location.hash)) window.location.reload();
-    },
-    {capture: true},
-  );
+  // on top of the hub, the map or the Gestor. `popstate` comes first;
+  // `hashchange` is kept for browsers that fire only that one.
+  const onPasted = () => {
+    if (capture()) window.location.reload();
+  };
+  window.addEventListener('popstate', onPasted, {capture: true});
+  window.addEventListener('hashchange', onPasted, {capture: true});
 }
 
 /** The supplier link being shown, if any. */

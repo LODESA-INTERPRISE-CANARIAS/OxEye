@@ -31,7 +31,11 @@ import {
 export function urlToShare(serverUrl: string): string {
   return typeof window === 'undefined'
     ? serverUrl
-    : shareableUrl(serverUrl, window.location);
+    : shareableUrl(
+        serverUrl,
+        window.location.origin,
+        import.meta.env?.BASE_URL ?? '/',
+      );
 }
 
 /** «Solo funciona en este ordenador», when the Gestor runs as localhost. */

@@ -1,7 +1,7 @@
 /**
  * «Calendario»: month view and day view, an event filter and «Añadir tarea»
  * for the day being looked at. The day lives in the link
- * (`#logistica/calendario/2026-12-02`), so a day can be shared.
+ * (`/gestor-logistico/calendario/2026-12-02`), so a day can be shared.
  *
  * The day is a timeline by venue on desktop, tablet and phones in landscape
  * (section swipe locked there, so horizontal gestures scroll the venues), and

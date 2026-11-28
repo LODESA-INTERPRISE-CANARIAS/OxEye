@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {mockApi, signIn} from './mock-api';
 import {fixClock} from './plan-fixtures';
 import {trapOutgoing} from './directory-fixtures';
@@ -26,7 +27,7 @@ const REASON = ACCEPTED_REASON;
 const ANSWER = ANSWER_TEXT;
 
 async function openClose(page: Page, name = 'Elvis') {
-  await signIn(page, name, '#logistica/cierre');
+  await signIn(page, name, lxUrl('cierre'));
   await expect(page.locator('#lx-day-title')).toBeVisible();
 }
 

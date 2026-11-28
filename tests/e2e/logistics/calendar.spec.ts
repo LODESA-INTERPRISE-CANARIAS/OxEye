@@ -1,5 +1,6 @@
 import {expect, test, type Page} from '@playwright/test';
 import {choose} from './controls';
+import {goToAddress, lxUrl, lxUrlRe} from './address';
 import {addDays, mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData} from './plan-fixtures';
 
@@ -20,21 +21,15 @@ const dayCell = (page: Page, date: string) =>
 const block = (page: Page, id: string) =>
   page.locator(`#lx-timeline [data-task-id="${id}"]`);
 
-async function goToHash(page: Page, hash: string) {
-  await page.evaluate(h => {
-    window.location.hash = h;
-  }, hash);
-}
-
 const hashOf = (date: string | null) =>
-  new RegExp(`#logistica/calendario${date ? `/${date}` : ''}$`);
+  lxUrlRe(`calendario${date ? `/${date}` : ''}`);
 
 test.describe('Gestor logístico · Calendario, mes', () => {
   test('month view with counts and the conflict mark on the right day', async ({
     page,
   }) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/calendario');
+    await signIn(page, 'Elvis', lxUrl('calendario'));
     await expect(page.locator('#lx-month')).toBeVisible();
     await expect(page.locator('#lx-title')).toHaveText('Calendario');
     await expect(page.locator('#lx-cal-title')).toHaveText(
@@ -75,7 +70,7 @@ test.describe('Gestor logístico · Calendario, mes', () => {
 
   test('a multi-day event shows on each of its days', async ({page}) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/calendario');
+    await signIn(page, 'Elvis', lxUrl('calendario'));
     for (const [offset, label] of [
       [5, 'lunes 7 de diciembre: 1 evento, 1 tarea. Feria de Navidad'],
       [6, 'martes 8 de diciembre: 1 evento. Feria de Navidad'],
@@ -94,13 +89,13 @@ test.describe('Gestor logístico · Calendario, mes', () => {
 
     for (const offset of [5, 6, 7]) {
       const date = addDays(DAY, offset);
-      await goToHash(page, `#logistica/calendario/${date}`);
+      await goToAddress(page, lxUrl(`calendario/${date}`));
       const chip = page.locator('.lx-daychip[data-event-id="e7"]');
       await expect(chip, date).toBeVisible();
       if (offset > 5) await expect(chip).toContainText('continúa');
       else await expect(chip).not.toContainText('continúa');
     }
-    await goToHash(page, `#logistica/calendario/${addDays(DAY, 8)}`);
+    await goToAddress(page, lxUrl(`calendario/${addDays(DAY, 8)}`));
     await expect(page.locator('#lx-day-empty')).toBeVisible();
   });
 
@@ -108,7 +103,7 @@ test.describe('Gestor logístico · Calendario, mes', () => {
     page,
   }) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/calendario');
+    await signIn(page, 'Elvis', lxUrl('calendario'));
     await dayCell(page, addDays(DAY, 1)).click();
     await expect(page).toHaveURL(hashOf(addDays(DAY, 1)));
     await expect(page.locator('#lx-cal-title')).toContainText('3 de diciembre');
@@ -134,7 +129,7 @@ test.describe('Gestor logístico · Calendario, mes', () => {
 
   test('previous, next and «Hoy» move by month', async ({page}) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/calendario');
+    await signIn(page, 'Elvis', lxUrl('calendario'));
     const title = page.locator('#lx-cal-title');
     const todayButton = page.locator('#lx-cal-today');
     await expect(todayButton).toBeDisabled();
@@ -157,11 +152,11 @@ test.describe('Gestor logístico · Calendario, día', () => {
     page,
   }) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', `#logistica/calendario/${addDays(DAY, 6)}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${addDays(DAY, 6)}`));
     await expect(page.locator('#lx-cal-title')).toContainText('8 de diciembre');
     await expect(page.locator('.lx-daychip[data-event-id="e7"]')).toBeVisible();
 
-    await goToHash(page, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
     await expect(page.locator('#lx-cal-title')).toContainText('2 de diciembre');
     await expect(page.locator('#lx-cal-summary')).toContainText(
       '1 evento · 5 tareas',
@@ -173,7 +168,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
     page,
   }) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
     const todayButton = page.locator('#lx-cal-today');
     await expect(todayButton).toBeDisabled();
     await page.locator('#lx-cal-prev').click();
@@ -192,7 +187,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
     page,
   }) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
     const timeline = page.locator('#lx-timeline');
     await expect(timeline).toBeVisible();
     await expect(
@@ -241,7 +236,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
 
   test('the event filter narrows the month and the day', async ({page}) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/calendario');
+    await signIn(page, 'Elvis', lxUrl('calendario'));
     await choose(page, 'lx-cal-filter', 'e1');
     await expect(dayCell(page, DAY)).toHaveAttribute(
       'aria-label',
@@ -291,7 +286,7 @@ test.describe('Gestor logístico · Calendario, día', () => {
     page,
   }) => {
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
     const timeline = page.locator('#lx-timeline');
     await expect(timeline).toHaveAttribute('style', /--lx-hour: 64px/);
     const before = (await block(page, 't1').boundingBox())!.height;
@@ -346,7 +341,7 @@ test.describe('Gestor logístico · Calendario en el móvil', () => {
   test('upright, the day is a list by hour', async ({page}) => {
     await page.setViewportSize({width: 390, height: 844});
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
     const list = page.locator('#lx-hour-list');
     await expect(list).toBeVisible();
     await expect(page.locator('#lx-timeline')).toHaveCount(0);
@@ -373,7 +368,7 @@ test.describe('Gestor logístico · Calendario en el móvil', () => {
     await mockApi(page, planData());
     // The header is folded away beside the timeline, so sign in on «Hoy».
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     await expect(page.locator('#lx-title')).toBeHidden();
     await expect(page.locator('#lx-hour-list')).toHaveCount(0);
@@ -392,7 +387,7 @@ test.describe('Gestor logístico · Calendario en el móvil', () => {
     await page.setViewportSize({width: 844, height: 390});
     await mockApi(page, planData());
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     await swipeLeft(page);
     await page.waitForTimeout(300);
@@ -404,6 +399,6 @@ test.describe('Gestor logístico · Calendario en el móvil', () => {
     await page.locator('#lx-cal-view-month').click();
     await expect(page.locator('#lx-month')).toBeVisible();
     await swipeLeft(page);
-    await expect(page).toHaveURL(/#logistica\/tareas$/);
+    await expect(page).toHaveURL(lxUrlRe('tareas'));
   });
 });

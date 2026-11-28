@@ -7,6 +7,7 @@ import {
   INCIDENT_SCOPE_NOTE,
   NOTE_PRIVACY_HINT,
 } from '../../../shared/logistics/rules.ts';
+import {goToAddress, lxUrl, lxUrlRe} from './address';
 import {mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
 import {copied, trapOutgoing} from './directory-fixtures';
@@ -38,9 +39,9 @@ const PRIVATE = Object.values(ORDER_PRIVATE);
 async function openClose(
   page: Page,
   name = 'Elvis',
-  hash = '#logistica/cierre',
+  address = lxUrl('cierre'),
 ): Promise<void> {
-  await signIn(page, name, hash);
+  await signIn(page, name, address);
   await expect(page.locator('#lx-day-title')).toBeVisible();
   await expect(
     page.locator('#lx-day-summary .lx-daysum__tile'),
@@ -97,7 +98,7 @@ test.describe('Gestor logístico · Cierre de jornada (miembro)', () => {
   }) => {
     await signIn(page);
     await page.locator('#lx-nav-cierre').click();
-    await expect(page).toHaveURL(/#logistica\/cierre$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre'));
     await expect(page.locator('#lx-day-title')).toHaveText(TODAY_TITLE);
     await expect(page.locator('.lx-dayhead__sub')).toContainText(
       'Hoy · hasta las 10:30',
@@ -394,7 +395,7 @@ test.describe('Gestor logístico · Cierre de jornada (miembro)', () => {
     await openClose(page);
     await page.locator('#lx-day-prev').click();
     await expect(page.locator('#lx-day-title')).toHaveText(YESTERDAY_TITLE);
-    await expect(page).toHaveURL(/#logistica\/cierre\/2026-12-01$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre/2026-12-01'));
     await expect(page.locator('.lx-dayhead__sub')).toContainText('Ayer');
     await expect(page.locator('#lx-day-next-day')).toBeEnabled();
     await expect(page.locator('#lx-day-today')).toBeVisible();
@@ -412,26 +413,24 @@ test.describe('Gestor logístico · Cierre de jornada (miembro)', () => {
 
     await page.locator('#lx-day-next-day').click();
     await expect(page.locator('#lx-day-title')).toHaveText(TODAY_TITLE);
-    await expect(page).toHaveURL(/#logistica\/cierre$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre'));
     await page.locator('#lx-day-prev').click();
     await page.locator('#lx-day-prev').click();
-    await expect(page).toHaveURL(/#logistica\/cierre\/2026-11-30$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre/2026-11-30'));
     await page.locator('#lx-day-today').click();
     await expect(page.locator('#lx-day-title')).toHaveText(TODAY_TITLE);
-    await expect(page).toHaveURL(/#logistica\/cierre$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre'));
   });
 
   test('a deep link opens that day; a future day falls back to today', async ({
     page,
   }) => {
-    await openClose(page, 'Elvis', '#logistica/cierre/2026-12-01');
+    await openClose(page, 'Elvis', lxUrl('cierre/2026-12-01'));
     await expect(page.locator('#lx-day-title')).toHaveText(YESTERDAY_TITLE);
-    await expect(page).toHaveURL(/#logistica\/cierre\/2026-12-01$/);
-    await page.evaluate(() => {
-      window.location.hash = '#logistica/cierre/2026-12-09';
-    });
+    await expect(page).toHaveURL(lxUrlRe('cierre/2026-12-01'));
+    await goToAddress(page, lxUrl('cierre/2026-12-09'));
     await expect(page.locator('#lx-day-title')).toHaveText(TODAY_TITLE);
-    await expect(page).toHaveURL(/#logistica\/cierre$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre'));
   });
 
   test('when the day’s history fails, it says so and «Reintentar» recovers', async ({

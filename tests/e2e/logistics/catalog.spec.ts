@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
 import {CAT, directoryData} from './directory-fixtures';
@@ -37,7 +38,7 @@ async function newOffer(page: Page) {
 test.describe('Gestor logístico · Catálogo · lista', () => {
   test('grouped by category; the chips filter and count', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     const groups = page.locator('#lx-space-catalogo section.lx-catgroup');
     expect(
       await groups.evaluateAll(els =>
@@ -83,7 +84,7 @@ test.describe('Gestor logístico · Catálogo · lista', () => {
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await chip(page, CAT.sonido).click();
     await page.locator('#lx-catalog-search').fill('carpa');
     await expect(page.locator('#lx-catalog-noresults')).toContainText(
@@ -100,7 +101,7 @@ test.describe('Gestor logístico · Catálogo · lista', () => {
 
   test('an unknown price says so and never reads as 0 €', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     for (const id of ['o3', 'o6']) {
       await expect(offerRow(page, id)).toContainText(
         'Precio pendiente de verificar',
@@ -132,7 +133,7 @@ test.describe('Gestor logístico · Catálogo · lista', () => {
 
   test('costs stay apart and are never added up', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openOffer(page, 'o1');
     const sheet = page.locator('#lx-offer-sheet');
     await expect(page.locator('#lx-offer-price')).toContainText('180 € / día');
@@ -178,7 +179,7 @@ test.describe('Gestor logístico · Catálogo · comparar', () => {
     const data = directoryData();
     for (const c of data.companies ?? []) c.tax = IGIC;
     await mockApi(page, data);
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openOffer(page, 'o1');
     const compare = page.locator('#lx-offer-compare');
     await expect(compare).toContainText(
@@ -210,7 +211,7 @@ test.describe('Gestor logístico · Catálogo · comparar', () => {
     page,
   }) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await openOffer(page, 'o6');
     await expect(page.locator('#lx-offer-compare-none')).toHaveText(
       'Sin categoría no hay con qué compararla de forma honesta. Asígnale una.',
@@ -227,7 +228,7 @@ test.describe('Gestor logístico · Catálogo · comparar', () => {
 test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
   test('empty amounts go as null and «12,5» as 12.5', async ({page}) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await newOffer(page);
     await page.locator('#lx-offer-companyName').fill('Escenarios Prueba');
     await expect(page.locator('#lx-offer-companyName-status')).toContainText(
@@ -269,7 +270,7 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await newOffer(page);
     await page.locator('#lx-offer-companyName').fill('Sonido Prueba');
     await page.locator('#lx-offer-name').fill('Línea de array Prueba');
@@ -309,7 +310,7 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await newOffer(page);
     await page.locator('#lx-offer-companyName').fill('Escenarios Prueba');
     await page.locator('#lx-offer-name').fill('Escenario Prueba 8 × 6 m');
@@ -341,7 +342,7 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await newOffer(page);
     await page.locator('#lx-offer-companyName').fill('Aseos Prueba');
     await expect(page.locator('#lx-offer-companyName-status')).toContainText(
@@ -360,7 +361,7 @@ test.describe('Gestor logístico · Catálogo · añadir ofertas', () => {
     page,
   }) => {
     const api = await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await newOffer(page);
     await page.locator('#lx-offer-save').click();
     await expect(page.locator('#lx-offer-companyName-error')).toHaveText(

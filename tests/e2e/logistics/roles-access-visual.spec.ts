@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl, lxUrlRe} from './address';
 import {PASSWORD, RESET_TOKEN, mockApi, signIn} from './mock-api';
 import {fixClock} from './plan-fixtures';
 
@@ -121,7 +122,7 @@ test.describe('Gestor logístico · E4 · revisión visual', () => {
   test('guest: Contactos locked, on a phone', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page);
-    await signIn(page, 'Invitado', '#logistica/contactos');
+    await signIn(page, 'Invitado', lxUrl('contactos'));
     await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
     await capture(page, 'noaccess-phone');
   });
@@ -129,13 +130,13 @@ test.describe('Gestor logístico · E4 · revisión visual', () => {
   test('guest: Contactos locked, on desktop', async ({page}) => {
     await page.setViewportSize({width: 1440, height: 900});
     await mockApi(page);
-    await signIn(page, 'Invitado', '#logistica/contactos');
+    await signIn(page, 'Invitado', lxUrl('contactos'));
     const locked = page.locator('#lx-contactos-noaccess');
     await expect(locked).toContainText('Solo para el equipo');
     await expect(locked).toContainText('Lo que el equipo hace aquí');
     await capture(page, 'noaccess-desktop');
     await locked.getByRole('button', {name: 'Ir a Hoy'}).click();
-    await expect(page).toHaveURL(/#logistica\/?$/);
+    await expect(page).toHaveURL(lxUrlRe());
   });
 
   test('phone account sheet and reset link', async ({page}) => {
@@ -149,7 +150,7 @@ test.describe('Gestor logístico · E4 · revisión visual', () => {
     await expect(page.locator('#lx-login-form')).toBeVisible();
     // A fresh load, as when the link is opened from an e-mail.
     await page.goto('about:blank');
-    await page.goto(`/#logistica/cuenta/restablecer/${RESET_TOKEN}`);
+    await page.goto(`${lxUrl('cuenta/restablecer')}#${RESET_TOKEN}`);
     await page.locator('#lx-reset-password').fill('mi frase nueva');
     await expect(page.locator('#lx-reset-form')).toBeVisible();
     await capture(page, 'reset-phone');
