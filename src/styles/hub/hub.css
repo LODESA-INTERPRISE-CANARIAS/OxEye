@@ -1,0 +1,1419 @@
+/**
+ * The OxEye hub (`#game-menu`): Portada, Simulador, Ajustes and Acerca de.
+ * It speaks the Gestor logístico's visual language: the root carries `.lx`,
+ * so every colour comes from the tokens below (derived from the six palettes
+ * in src/styles/variables.css). The wizard's frame lives in game-menu.css.
+ *
+ * Selectors start with `.hub` (or `#game-menu.hub` for the root) so they win
+ * over the Gestor's `.lx` base layer, which arrives with its lazy chunk and
+ * would otherwise turn the hub into the Gestor's grid shell.
+ */
+@import '../logistics/tokens.css';
+
+/* ============================================================ root */
+#game-menu.hub {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: block;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background:
+    radial-gradient(
+      ellipse 60% 55% at 92% 6%,
+      color-mix(in srgb, var(--lx-accent) 10%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 50% 45% at 4% 100%,
+      color-mix(in srgb, var(--lx-accent) 6%, transparent),
+      transparent 70%
+    ),
+    var(--lx-bg);
+  color: var(--lx-ink);
+  font-family: var(--lx-font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#game-menu.hub[hidden] {
+  display: none;
+}
+
+.hub .hub-page,
+.hub .hub-page *,
+.hub .hub-page *::before,
+.hub .hub-page *::after {
+  box-sizing: border-box;
+}
+
+.hub :focus-visible {
+  outline: 3px solid var(--lx-accent-strong);
+  outline-offset: 3px;
+}
+
+.hub h1:focus,
+.hub h1:focus-visible {
+  outline: none;
+}
+
+.hub .hub-num,
+.hub .hub-version {
+  font-variant-numeric: tabular-nums;
+}
+
+.hub .hub-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.hub .hub-icon {
+  flex-shrink: 0;
+}
+
+/* ============================================================ page frame */
+.hub .hub-page {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(18px, 3.5vw, 44px) clamp(16px, 4vw, 48px) 0;
+}
+
+.hub .hub-main {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  flex: 1;
+}
+
+.hub .hub-page--narrow .hub-main {
+  width: min(560px, 100%);
+  display: grid;
+  align-content: center;
+  padding-bottom: 10vh;
+}
+
+.hub .hub-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(760px, 100%);
+  margin: 0 auto clamp(20px, 4vw, 40px);
+}
+
+.hub .hub-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  margin-left: -12px;
+  padding: 0 16px 0 12px;
+  border: 0;
+  border-radius: var(--lx-pill);
+  background: transparent;
+  color: var(--lx-heading);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hub .hub-back:hover:not(:disabled) {
+  background: var(--lx-accent-soft);
+  border-color: transparent;
+}
+
+.hub .hub-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lx-accent);
+  font-family: var(--lx-serif);
+  font-size: 17px;
+}
+
+.hub .hub-topbar__brand .ox-symbol {
+  height: auto;
+}
+
+.hub .hub-head {
+  margin: 0 0 28px;
+}
+
+/* ============================================================ type */
+.hub .hub-eyebrow {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.hub .hub-title {
+  margin: 0;
+  font-family: var(--lx-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.02;
+  color: var(--lx-heading);
+}
+
+.hub .hub-title--brand {
+  font-size: clamp(60px, 8vw, 100px);
+  letter-spacing: -0.03em;
+}
+
+.hub .hub-title--page {
+  font-size: clamp(36px, 5vw, 52px);
+}
+
+.hub .hub-lede {
+  margin: 14px 0 0;
+  max-width: 30em;
+  font-family: var(--lx-serif);
+  font-style: italic;
+  font-size: clamp(19px, 1.8vw, 22px);
+  line-height: 1.35;
+  color: var(--lx-muted);
+}
+
+.hub .hub-lede--sm {
+  max-width: 60ch;
+  font-family: var(--lx-font);
+  font-style: normal;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* ============================================================ buttons */
+.hub .hub-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  padding: 0 20px;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-pill);
+  background: var(--lx-surface);
+  color: var(--lx-heading);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.08s ease;
+}
+
+.hub .hub-btn:hover:not(:disabled) {
+  background: var(--lx-accent-soft);
+  border-color: var(--lx-accent);
+}
+
+.hub .hub-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.hub .hub-btn--primary {
+  background: var(--lx-accent);
+  border-color: var(--lx-accent);
+  color: var(--lx-on-accent);
+  box-shadow: 0 8px 18px -12px var(--lx-shadow);
+}
+
+.hub .hub-btn--primary:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
+  border-color: var(--lx-accent-strong);
+}
+
+.hub .hub-btn--lg {
+  min-height: 54px;
+  padding: 0 26px;
+  font-size: 16px;
+}
+
+.hub .hub-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hub .hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.hub .hub-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--lx-target);
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lx-heading);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--lx-line-strong);
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.hub .hub-link:hover:not(:disabled) {
+  background: transparent;
+  color: var(--lx-accent-strong);
+  text-decoration-color: currentColor;
+}
+
+.hub .hub-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--lx-line-strong);
+}
+
+/* ============================================================ portada */
+.hub .hub-home__grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: center;
+  gap: clamp(28px, 5vw, 80px);
+  padding: clamp(8px, 3vh, 40px) 0;
+}
+
+.hub .hub-entries {
+  display: grid;
+  gap: 12px;
+  max-width: 580px;
+  margin-top: clamp(26px, 4vh, 40px);
+}
+
+.hub .hub-entry {
+  position: relative;
+  display: grid;
+  width: 100%;
+  margin: 0;
+  padding: 18px 20px;
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-lg);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--lx-shadow-card);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.hub .hub-entry:hover:not(:disabled) {
+  background: var(--lx-surface);
+  border-color: var(--lx-accent);
+  box-shadow: var(--lx-shadow-float);
+  transform: translateY(-1px);
+}
+
+.hub .hub-entry:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.hub .hub-entry__title {
+  display: block;
+  font-family: var(--lx-serif);
+  font-size: 23px;
+  line-height: 1.15;
+  color: var(--lx-heading);
+}
+
+.hub .hub-entry__text {
+  display: block;
+  margin-top: 4px;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--lx-muted);
+}
+
+.hub .hub-entry__body {
+  min-width: 0;
+}
+
+.hub .hub-entry__go {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--lx-heading);
+  background: var(--lx-surface-2);
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.hub .hub-entry:hover .hub-entry__go {
+  background: var(--lx-accent-soft);
+  transform: translateX(2px);
+}
+
+/* The Gestor: the main way in. */
+.hub .hub-entry--primary {
+  isolation: isolate;
+  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 20px;
+  padding: 24px 24px 22px 28px;
+  border-color: var(--lx-accent);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  box-shadow: var(--lx-shadow-float);
+}
+
+.hub .hub-entry--primary:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
+  border-color: var(--lx-accent-strong);
+}
+
+/*
+ * Vector's terracotta gives its light text about 4.1:1; the card carries
+ * 12–15 px text, so it uses a deeper shade of the same hue (≈5.3:1).
+ */
+:root[data-palette='vector'] .hub .hub-entry--primary {
+  background: color-mix(in srgb, var(--lx-accent) 84%, #000);
+  border-color: color-mix(in srgb, var(--lx-accent) 84%, #000);
+}
+
+:root[data-palette='vector'] .hub .hub-entry--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lx-accent) 74%, #000);
+  border-color: color-mix(in srgb, var(--lx-accent) 74%, #000);
+}
+
+.hub .hub-entry--primary .hub-entry__title {
+  font-size: clamp(28px, 3.2vw, 34px);
+  color: inherit;
+}
+
+.hub .hub-entry--primary .hub-entry__text {
+  max-width: 40ch;
+  font-size: 15.5px;
+  color: inherit;
+  opacity: 0.92;
+}
+
+.hub .hub-entry__kicker {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.hub .hub-entry__contours {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.hub .hub-entry__contours path {
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.hub .hub-entry__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hub .hub-entry__tags > span {
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: var(--lx-pill);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.hub .hub-entry--primary > :not(.hub-entry__cta, .hub-entry__contours) {
+  grid-column: 1;
+}
+
+/* «Entrar» sits at the card's bottom right; it stacks below on phones. */
+.hub .hub-entry__cta {
+  grid-column: 2;
+  grid-row: 1 / 5;
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lx-target);
+  padding: 0 18px 0 22px;
+  border: 1.5px solid var(--lx-on-accent);
+  border-radius: var(--lx-pill);
+  /* Text stays in the palette's own on-accent pair (readable in all six). */
+  background: color-mix(in srgb, var(--lx-on-accent) 14%, transparent);
+  color: var(--lx-on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.hub .hub-entry--primary:hover .hub-entry__cta {
+  background: color-mix(in srgb, var(--lx-on-accent) 24%, transparent);
+}
+
+.hub .hub-entry__cta .hub-icon {
+  transition: transform 0.15s ease;
+}
+
+.hub .hub-entry--primary:hover .hub-entry__cta .hub-icon {
+  transform: translateX(3px);
+}
+
+/* The Simulador: secondary card with the last model. */
+.hub .hub-entry--secondary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.hub .hub-entry__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lx-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hub .hub-entry__status.is-ready {
+  color: var(--lx-ink);
+}
+
+.hub .hub-entry__status.is-ready .hub-dot {
+  background: var(--lx-accent);
+}
+
+/* Ajustes: a quiet row. */
+.hub .hub-entry--quiet {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: transparent;
+  border-color: var(--lx-line);
+  box-shadow: none;
+}
+
+.hub .hub-entry--quiet:hover:not(:disabled) {
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-card);
+}
+
+.hub .hub-entry--quiet .hub-entry__title {
+  font-family: var(--lx-font);
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.hub .hub-entry--quiet .hub-entry__text {
+  margin-top: 0;
+  font-size: 13.5px;
+}
+
+.hub .hub-entry--quiet .hub-entry__go {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+
+.hub .hub-entry__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+}
+
+.hub .hub-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 0 18px;
+  border-top: 1px solid var(--lx-line);
+}
+
+.hub .hub-version {
+  font-size: 13px;
+  color: var(--lx-muted);
+}
+
+/* ------------------------------------------------ hero symbol */
+.hub .hub-home__hero {
+  display: grid;
+  place-items: center;
+}
+
+.hub .hub-symbol {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(460px, 100%);
+  aspect-ratio: 1;
+  color: var(--lx-accent);
+}
+
+.hub .hub-symbol__isolines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: var(--lx-line-strong);
+}
+
+/* User-space stroke (no non-scaling-stroke: it would break the normalised
+   dash used by the draw-in). */
+.hub .hub-symbol__isolines path {
+  stroke-width: 1.4;
+  stroke-dasharray: 1;
+  opacity: calc(0.95 - var(--i, 0) * 0.2);
+}
+
+.hub .hub-symbol__mark {
+  position: relative;
+  width: 60%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(
+    0 14px 28px color-mix(in srgb, var(--lx-accent) 22%, transparent)
+  );
+}
+
+.hub .hub-symbol__swirl path {
+  stroke-width: 5;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.hub .hub-symbol__frame,
+.hub .hub-symbol__iris {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.hub .hub-symbol__coords {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--lx-muted);
+}
+
+/* ============================================================ simulador */
+.hub .hub-model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px 24px;
+  padding: 24px 26px;
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-lg);
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-card);
+}
+
+.hub .hub-model.is-ready {
+  border-left: 5px solid var(--lx-accent);
+}
+
+.hub .hub-model.is-empty {
+  border-style: dashed;
+  border-color: var(--lx-line-strong);
+  background: var(--lx-surface-2);
+  box-shadow: none;
+}
+
+.hub .hub-model__info {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.hub .hub-model__label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.hub .hub-model__title {
+  margin: 0;
+  font-family: var(--lx-serif);
+  font-size: 26px;
+  line-height: 1.2;
+  color: var(--lx-heading);
+  overflow-wrap: anywhere;
+}
+
+.hub .hub-model.is-empty .hub-model__title {
+  color: var(--lx-muted);
+}
+
+.hub .hub-model__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lx-ink);
+}
+
+.hub .hub-model.is-ready .hub-dot {
+  background: var(--lx-accent);
+}
+
+.hub .hub-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.hub .hub-tile {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 150px;
+  margin: 0;
+  padding: 18px;
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-lg);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.hub .hub-tile:hover:not(:disabled) {
+  background: var(--lx-surface);
+  border-color: var(--lx-accent);
+  transform: translateY(-1px);
+}
+
+.hub .hub-tile__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: var(--lx-accent-soft);
+  color: var(--lx-accent-strong);
+}
+
+.hub .hub-tile__title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--lx-heading);
+}
+
+.hub .hub-tile__text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--lx-muted);
+}
+
+.hub .hub-tile--primary {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent);
+  color: var(--lx-on-accent);
+  box-shadow: var(--lx-shadow-float);
+}
+
+.hub .hub-tile--primary:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
+  border-color: var(--lx-accent-strong);
+}
+
+.hub .hub-tile--primary .hub-tile__title,
+.hub .hub-tile--primary .hub-tile__text {
+  color: inherit;
+}
+
+.hub .hub-tile--primary .hub-tile__text {
+  opacity: 0.9;
+}
+
+.hub .hub-tile--primary .hub-tile__icon {
+  background: color-mix(in srgb, var(--lx-on-accent) 18%, transparent);
+  color: inherit;
+}
+
+/* «Sesión guardada» */
+.hub .hub-panel {
+  padding: clamp(24px, 5vw, 40px);
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-xl);
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-float);
+}
+
+.hub .hub-done__mark {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  background: var(--lx-accent-soft);
+  color: var(--lx-accent-strong);
+}
+
+/* ============================================================ ajustes */
+.hub .hub-group {
+  margin: 0 0 16px;
+  padding: 22px 24px;
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-lg);
+  background: var(--lx-surface);
+  box-shadow: var(--lx-shadow-card);
+}
+
+.hub .hub-group--quiet {
+  background: transparent;
+  box-shadow: none;
+}
+
+.hub .hub-group__title {
+  margin: 0 0 14px;
+  font-family: var(--lx-font);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lx-muted);
+}
+
+.hub .hub-field__label {
+  margin: 0 0 10px;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.hub .palette-picker {
+  margin: 0 0 6px;
+}
+
+.hub .palette-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hub .palette-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: var(--lx-target);
+  margin: 0;
+  padding: 10px;
+  border: 1.5px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-surface);
+  color: var(--lx-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
+}
+
+.hub .palette-card:hover:not(:disabled) {
+  background: var(--lx-surface);
+  border-color: var(--lx-accent);
+  transform: translateY(-1px);
+}
+
+.hub .palette-card.is-selected {
+  border: 2px solid var(--lx-accent);
+  padding: 9.5px;
+  box-shadow: 0 0 0 4px var(--lx-ring);
+}
+
+.hub .palette-swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--lx-line);
+  border-radius: 8px;
+}
+
+.hub .palette-swatches i {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hub .palette-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--lx-heading);
+}
+
+.hub .palette-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--lx-muted);
+}
+
+/* Small text stays in heading colour (some accents are under 4.5:1 on
+   white); the check mark carries the accent. */
+.hub .palette-card.is-selected .palette-card-status {
+  color: var(--lx-heading);
+}
+
+.hub .palette-card.is-selected .palette-card-status .hub-icon {
+  color: var(--lx-accent);
+}
+
+/* A setting: text on the left, its control on the right. */
+.hub .hub-toggle,
+.hub .hub-field--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  min-height: 60px;
+  margin: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--lx-line);
+}
+
+.hub .hub-group__title + .hub-field--row {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.hub .palette-picker + .hub-toggle {
+  margin-top: 16px;
+}
+
+.hub .hub-toggle {
+  cursor: pointer;
+}
+
+.hub .hub-toggle__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hub .hub-toggle__title {
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.hub .hub-toggle__hint {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--lx-muted);
+}
+
+.hub .hub-switch {
+  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 48px;
+  height: 28px;
+  margin: 0;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-pill);
+  background:
+    radial-gradient(circle at 13px 50%, var(--lx-muted) 8px, transparent 8.5px)
+      no-repeat,
+    var(--lx-surface-3);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.hub .hub-switch:checked {
+  border-color: var(--lx-accent);
+  background:
+    radial-gradient(
+        circle at calc(100% - 13px) 50%,
+        var(--lx-on-accent) 8px,
+        transparent 8.5px
+      )
+      no-repeat,
+    var(--lx-accent);
+}
+
+.hub .hub-select {
+  flex-shrink: 0;
+  min-width: 120px;
+  min-height: var(--lx-target);
+  margin: 0;
+  padding: 0 36px 0 14px;
+  border: 1.5px solid var(--lx-control-border);
+  border-radius: var(--lx-radius-sm);
+  background-color: var(--lx-surface);
+  color: var(--lx-heading);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hub .hub-confirm {
+  padding: 16px 18px;
+  border: 1.5px solid var(--lx-line-strong);
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
+}
+
+.hub .hub-confirm__text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.hub .hub-confirm .hub-actions {
+  margin-top: 14px;
+}
+
+/* Sticky at the bottom of the scroll, so «Listo» is always within reach. */
+.hub .hub-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  /* Full-bleed bar; content stays aligned with the column above. */
+  margin: 28px calc(50% - 50vw) 0;
+  padding: 14px calc(50vw - 50%) max(16px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--lx-line);
+  background: color-mix(in srgb, var(--lx-bg) 97%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.hub .hub-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  margin: 0 auto 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.hub .hub-status .hub-icon {
+  color: var(--lx-accent);
+}
+
+/* ============================================================ acerca de */
+.hub .hub-modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hub .hub-module {
+  padding: 16px 18px;
+  border-radius: var(--lx-radius);
+  background: var(--lx-surface-2);
+}
+
+.hub .hub-module__title {
+  margin: 0 0 6px;
+  font-family: var(--lx-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--lx-heading);
+}
+
+.hub .hub-module p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--lx-ink);
+}
+
+.hub .hub-sources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub .hub-sources li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 0;
+  border-top: 1px solid var(--lx-line);
+}
+
+.hub .hub-sources li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.hub .hub-sources__name {
+  font-weight: 600;
+  color: var(--lx-heading);
+}
+
+.hub .hub-sources__use {
+  font-size: 14px;
+  color: var(--lx-muted);
+}
+
+.hub .hub-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--lx-radius-sm);
+  background: var(--lx-accent-soft);
+  color: var(--lx-heading);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.hub .hub-note .hub-icon {
+  margin-top: 1px;
+  color: var(--lx-accent-strong);
+}
+
+.hub .hub-credits p {
+  margin: 0 0 6px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--lx-muted);
+}
+
+.hub .hub-credits p:first-child {
+  color: var(--lx-heading);
+  font-weight: 600;
+}
+
+/* ============================================================ narrow */
+/* Laptops with short screens: the Portada fits without scrolling. */
+@media (min-width: 900px) and (max-height: 820px) {
+  .hub .hub-page {
+    padding-top: 24px;
+  }
+
+  .hub .hub-title--brand {
+    font-size: clamp(60px, 6.5vw, 84px);
+  }
+
+  .hub .hub-entries {
+    margin-top: 22px;
+  }
+
+  .hub .hub-symbol {
+    width: min(400px, 100%);
+  }
+}
+
+@media (max-width: 899px) {
+  .hub .hub-home__grid {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    padding-top: 0;
+  }
+
+  /* The symbol leads on phones and tablets, small and to the side. */
+  .hub .hub-home__hero {
+    order: -1;
+    justify-items: start;
+  }
+
+  .hub .hub-symbol {
+    width: 150px;
+    margin-left: -18px;
+  }
+
+  .hub .hub-symbol__coords {
+    display: none;
+  }
+
+  .hub .hub-symbol__isolines path {
+    stroke-width: 3.2;
+  }
+
+  .hub .hub-entries {
+    max-width: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .hub .hub-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hub .hub-tile {
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 14px;
+    min-height: 0;
+    padding: 14px 16px;
+  }
+
+  .hub .hub-tile__icon {
+    grid-row: span 2;
+    margin: 0;
+  }
+
+  .hub .hub-model {
+    padding: 20px;
+  }
+
+  .hub .hub-model #game-continue {
+    width: 100%;
+  }
+
+  .hub .hub-entry--primary {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px 20px 20px;
+  }
+
+  .hub .hub-entry__cta {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: center;
+    margin-top: 10px;
+  }
+
+  .hub .hub-group {
+    padding: 18px 16px;
+  }
+
+  .hub .palette-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hub .hub-modules {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hub .hub-field--row {
+    flex-wrap: wrap;
+  }
+
+  .hub .hub-field--row .hub-btn {
+    width: 100%;
+  }
+
+  .hub .hub-savebar .hub-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ============================================================ motion */
+/*
+ * Portada intro (≤ 1.5 s, first visit of the session only): the swirl
+ * contour is traced and fills in, the frame settles, the iris opens, the
+ * isolines draw out; text and cards rise in. Then only the iris breathes and
+ * the isolines pulse, very slowly. Resting state = finished symbol.
+ */
+.hub .hub-symbol__iris {
+  animation: hub-breathe 7s 1.6s ease-in-out infinite;
+}
+
+.hub .hub-symbol__isolines path {
+  animation: hub-pulse 9s calc(1.6s + var(--i, 0) * 0.7s) ease-in-out infinite;
+}
+
+/* `backwards`: the start state covers the delay; once done, the resting
+   styles (and hover) apply again. */
+.hub .hub-home--intro .hub-symbol__swirl path {
+  animation:
+    hub-trace 0.95s cubic-bezier(0.45, 0, 0.2, 1) backwards,
+    hub-fill 0.45s 0.6s ease-out backwards;
+}
+
+.hub .hub-home--intro .hub-symbol__frame {
+  animation: hub-settle 0.7s 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+.hub .hub-home--intro .hub-symbol__iris {
+  animation:
+    hub-iris 0.5s 0.8s cubic-bezier(0.3, 1.4, 0.5, 1) backwards,
+    hub-breathe 7s 1.6s ease-in-out infinite;
+}
+
+.hub .hub-home--intro .hub-symbol__isolines path {
+  animation:
+    hub-trace 1.2s calc(var(--i, 0) * 0.08s) ease-out backwards,
+    hub-pulse 9s calc(1.6s + var(--i, 0) * 0.7s) ease-in-out infinite;
+}
+
+.hub .hub-home--intro .hub-home__intro > *,
+.hub .hub-home--intro .hub-entries > * {
+  animation: hub-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+.hub .hub-home--intro .hub-home__intro > :nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.hub .hub-home--intro .hub-home__intro > :nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.hub .hub-home--intro .hub-entries > :nth-child(1) {
+  animation-delay: 0.15s;
+}
+
+.hub .hub-home--intro .hub-entries > :nth-child(2) {
+  animation-delay: 0.22s;
+}
+
+.hub .hub-home--intro .hub-entries > :nth-child(3) {
+  animation-delay: 0.29s;
+}
+
+/* The nav itself must not fade, only its cards. */
+.hub .hub-home--intro .hub-home__intro > .hub-entries {
+  animation: none;
+}
+
+@keyframes hub-trace {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes hub-fill {
+  from {
+    fill-opacity: 0;
+  }
+}
+
+@keyframes hub-settle {
+  from {
+    opacity: 0;
+    transform: scale(1.12) rotate(-6deg);
+  }
+}
+
+@keyframes hub-iris {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+
+@keyframes hub-breathe {
+  50% {
+    transform: scale(0.92);
+  }
+}
+
+@keyframes hub-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes hub-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* «Movimiento reducido» (App sets body.reduce-motion) or the system setting. */
+body.reduce-motion .hub *,
+body.reduce-motion .hub *::before,
+body.reduce-motion .hub *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub *,
+  .hub *::before,
+  .hub *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

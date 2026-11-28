@@ -4,19 +4,41 @@ import {expect, type Page} from '@playwright/test';
 export const WIZARD_SUBMIT = '#wizard-form button[type="submit"]';
 
 /**
+ * Goes to the hub's «Simulador» screen (`/simulador`) through the real UI:
+ * from the Portada with «Simulador», from another inner screen (Ajustes,
+ * Acerca de) via «Portada» first. Must be called while the hub is visible.
+ */
+export async function openSimulatorSection(page: Page): Promise<void> {
+  const menu = page.locator('#game-menu');
+  await expect(menu).toBeVisible();
+  const route = await menu.getAttribute('data-hub-route');
+  if (route === 'simulator') return;
+  if (route !== 'home') {
+    await page.locator('#hub-back').click();
+    await expect(menu).toHaveAttribute('data-hub-route', 'home');
+  }
+  await page.locator('#game-simulator').click();
+  await expect(menu).toHaveAttribute('data-hub-route', 'simulator');
+  await expect(page).toHaveURL(/\/simulador$/);
+}
+
+/**
  * Current first-run flow: with empty storage the app still holds the bundled
  * default project in memory (three La Laguna venues, Cristo example layout),
  * but «Continuar» stays disabled until something has been saved
- * (`hasSavedProject`). Choosing «Salir» on the main menu saves that session,
- * so after a reload «Continuar» is enabled and opens the default project.
+ * (`hasSavedProject`). «Guardar y salir» on the Simulador screen saves that
+ * session, so after a reload «Continuar» is enabled and opens the default
+ * project.
  *
  * This reproduces, through the real UI, the starting state the workspace
- * specs were written against. It must be called while the main menu screen
- * is visible.
+ * specs were written against. It must be called while the hub is visible
+ * (any screen but the wizard); it walks to «Simulador» first.
  */
-export async function persistDefaultProjectAndContinue(page: Page): Promise<void> {
+export async function persistDefaultProjectAndContinue(
+  page: Page,
+): Promise<void> {
   const menu = page.locator('#game-menu');
-  await expect(menu).toBeVisible();
+  await openSimulatorSection(page);
   await page.locator('#game-exit').click();
   await expect(menu.locator('h1')).toHaveText('Sesión guardada');
 
@@ -25,10 +47,13 @@ export async function persistDefaultProjectAndContinue(page: Page): Promise<void
   await expect(continueBtn).toBeEnabled();
   await continueBtn.click();
   await expect(menu).toBeHidden();
+  await expect(page).toHaveURL(/\/simulador\/modelo$/);
 }
 
 /** Opens the app from empty storage and enters the workspace with the default project. */
-export async function openWorkspaceWithDefaultProject(page: Page): Promise<void> {
+export async function openWorkspaceWithDefaultProject(
+  page: Page,
+): Promise<void> {
   await page.goto('/');
   await persistDefaultProjectAndContinue(page);
 }
@@ -48,7 +73,7 @@ export async function completeObjectivesStep(page: Page): Promise<void> {
   const wizard = page.locator('#wizard-form');
   await expect(wizard.locator('#smart-cards-grid')).toBeVisible();
   await expect(
-    wizard.locator('[data-smart-card][aria-pressed="true"]').first()
+    wizard.locator('[data-smart-card][aria-pressed="true"]').first(),
   ).toBeVisible();
 
   await page.locator(WIZARD_SUBMIT).click();
