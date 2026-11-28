@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {mockApi, signIn} from './mock-api';
 import {fixClock, planData} from './plan-fixtures';
 import {decisionsData} from './decisions-fixtures';
@@ -45,7 +46,7 @@ test.describe('Revisión 1 · Tareas, Organización, decisiones del cierre', () 
   test('Tareas · desktop list and chain', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/tareas');
+    await signIn(page, 'Elvis', lxUrl('tareas'));
     await expect(
       page.locator('#lx-tasks-list [data-task-id]').first(),
     ).toBeVisible();
@@ -60,7 +61,7 @@ test.describe('Revisión 1 · Tareas, Organización, decisiones del cierre', () 
   test('Tareas · desktop grouped by venue', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/tareas');
+    await signIn(page, 'Elvis', lxUrl('tareas'));
     await page.locator('#lx-tasks-view-venue').click();
     await expect(page.locator('[data-group="v1"]')).toBeVisible();
     await capture(page, 'tasks-grouped-desktop');
@@ -69,7 +70,7 @@ test.describe('Revisión 1 · Tareas, Organización, decisiones del cierre', () 
   test('Tareas · phone', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page, planData());
-    await signIn(page, 'Elvis', '#logistica/tareas');
+    await signIn(page, 'Elvis', lxUrl('tareas'));
     await expect(
       page.locator('#lx-tasks-list [data-task-id]').first(),
     ).toBeVisible();
@@ -82,7 +83,7 @@ test.describe('Revisión 1 · Tareas, Organización, decisiones del cierre', () 
   test('Tareas · empty', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, {...planData(), tasks: []});
-    await signIn(page, 'Elvis', '#logistica/tareas');
+    await signIn(page, 'Elvis', lxUrl('tareas'));
     await expect(page.locator('#lx-tasks-empty')).toBeVisible();
     await capture(page, 'tasks-empty-desktop');
   });
@@ -102,7 +103,7 @@ test.describe('Revisión 1 · Tareas, Organización, decisiones del cierre', () 
   test('Cierre · decisions and answered question', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, decisionsData());
-    await signIn(page, 'Elvis', '#logistica/cierre');
+    await signIn(page, 'Elvis', lxUrl('cierre'));
     await page.locator('#lx-day-include-decision').check();
     await page.locator('#lx-day-include-open_question').check();
     await page.locator('#lx-day-notes-decision').scrollIntoViewIfNeeded();
@@ -115,7 +116,7 @@ test.describe('Revisión 1 · Tareas, Organización, decisiones del cierre', () 
   test('Cierre · guest decisions', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page, decisionsData());
-    await signIn(page, 'Invitado', '#logistica/cierre');
+    await signIn(page, 'Invitado', lxUrl('cierre'));
     await page.locator('#lx-day-accepted').scrollIntoViewIfNeeded();
     await expect(page.locator('[data-acceptance-id="ca1"]')).toBeVisible();
     await capture(page, 'day-decisions-guest-phone');

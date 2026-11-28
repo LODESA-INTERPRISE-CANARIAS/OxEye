@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './logistics/address';
 import {mockApi, signIn} from './logistics/mock-api';
 
 /**
@@ -230,7 +231,7 @@ test.describe('Revisión visual por paleta', () => {
     // Hold the lazy module so the loading layer stays on screen.
     await page.route(/logistics\/LogisticsApp/, () => new Promise(() => {}));
     await page.emulateMedia({reducedMotion: 'reduce'});
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#logistics-loading')).toBeVisible();
     await expect(page.locator('#logistics-loading .lx-boot__title')).toHaveText(
       'OxEye',

@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {goToAddress, lxUrl} from './address';
 import {ORG, addDays, dailos, mockApi, signIn, type MockApi} from './mock-api';
 import {DAY, fixClock, planData} from './plan-fixtures';
 import {choose, expectValue} from './controls';
@@ -190,7 +191,7 @@ test.describe('Gestor logístico · crear tarea', () => {
   }) => {
     const api = await mockApi(page, planData());
     // From a space without a day, nothing is prefilled.
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openAddTask(page);
     await expect(page.locator('#lx-task-date')).toHaveValue('');
     await page.locator('#lx-task-title').fill('  Comprar bridas  ');
@@ -355,12 +356,7 @@ test.describe('Gestor logístico · crear tarea', () => {
     });
 
     // It shows on every day it covers.
-    await page.evaluate(
-      h => {
-        window.location.hash = h;
-      },
-      `#logistica/calendario/${addDays(DAY, 1)}`,
-    );
+    await goToAddress(page, lxUrl(`calendario/${addDays(DAY, 1)}`));
     await expect(page.locator('#lx-day')).toContainText('Vigilancia nocturna');
   });
 
@@ -773,9 +769,7 @@ test.describe('Gestor logístico · tareas para el invitado', () => {
     await expect(page.locator('#lx-event-add-task')).toHaveCount(0);
     await page.locator('#lx-event-close').click();
 
-    await page.evaluate(h => {
-      window.location.hash = h;
-    }, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     await expect(page.locator('#lx-cal-add-task')).toHaveCount(0);
 

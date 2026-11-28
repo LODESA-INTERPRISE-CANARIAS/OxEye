@@ -21,12 +21,18 @@
  *
  * Entries carry `{lx: 1, depth, index}`: `depth` = sheets open over the
  * base, `index` = position since the Gestor's first entry.
+ *
+ * Addresses are paths (`/gestor-logistico/…`, `address.ts`), so every
+ * traversal fires exactly one `popstate` and no `hashchange`: a `popstate`
+ * while our own `history.go` is pending is that step landing.
  */
 import {flushSync} from 'react-dom';
 import {onSheetsChange, openSheetsNow, type OpenSheet} from '../ui/Sheet';
+import {addressUrl, currentAddress, inGestor} from './address';
 import {
+  isGestorAddress,
   parseRoute,
-  ROOT_HASH,
+  ROOT_ADDRESS,
   sameAddress,
   stripSheet,
   withSheet,
@@ -73,15 +79,13 @@ export class HistoryNav {
   private host: HistoryNavHost;
   private base: string;
   private index = 0;
-  private pendingBase: {hash: string; push: boolean} | null = null;
+  private pendingBase: {address: string; push: boolean} | null = null;
   private pendingLink: SheetAddress | null = null;
   /** Relabel the entry after a Back / Forward instead of pushing or popping. */
   private adopt = false;
   private traversal: {
     done?: () => void;
     timer: number;
-    /** Its `popstate` arrived. */
-    landed?: boolean;
   } | null = null;
   private scheduled = false;
   private stopped = false;
@@ -91,7 +95,13 @@ export class HistoryNav {
 
   constructor(host: HistoryNavHost) {
     this.host = host;
-    this.base = stripSheet(window.location.hash) || ROOT_HASH;
+    this.base = HistoryNav.shownBase();
+  }
+
+  /** The base address on screen; the Gestor's root outside it. */
+  private static shownBase(): string {
+    const base = stripSheet(currentAddress());
+    return isGestorAddress(base) ? base : ROOT_ADDRESS;
   }
 
   setHost(host: HistoryNavHost): void {
@@ -101,11 +111,10 @@ export class HistoryNav {
   /** Starts listening; returns the route the Gestor opens on. */
   start(): Route {
     this.stopped = false;
-    const route = parseRoute(window.location.hash);
+    const route = parseRoute(currentAddress());
     const entry = entryOf(window.history.state);
     this.index = entry?.index ?? 0;
-    this.base = stripSheet(window.location.hash);
-    if (!this.base.startsWith(ROOT_HASH)) this.base = ROOT_HASH;
+    this.base = HistoryNav.shownBase();
     if (route.sheet) {
       // A shared link or a reload on a sheet: open it once it can be.
       this.pendingLink = route.sheet;
@@ -117,7 +126,6 @@ export class HistoryNav {
       this.write('replace', 0, this.base);
     }
     window.addEventListener('popstate', this.onLocation);
-    window.addEventListener('hashchange', this.onLocation);
     this.unsubscribe = onSheetsChange(this.schedule);
     return route;
   }
@@ -125,7 +133,6 @@ export class HistoryNav {
   stop(): void {
     this.stopped = true;
     window.removeEventListener('popstate', this.onLocation);
-    window.removeEventListener('hashchange', this.onLocation);
     this.unsubscribe();
     if (this.traversal) window.clearTimeout(this.traversal.timer);
     this.traversal = null;
@@ -135,13 +142,14 @@ export class HistoryNav {
    * The app moved to another space or day. `fold` folds quick successive
    * changes of the same kind into one entry.
    */
-  go(hash: string, {push = true, fold = false} = {}): void {
-    if (hash === this.base && !this.pendingBase) return;
+  go(address: string, {push = true, fold = false} = {}): void {
+    if (address === this.base && !this.pendingBase) return;
     let doPush = push;
     if (push && fold) {
       // Monotonic: a wall clock may jump (or be fixed in tests).
       const now = performance.now();
-      const space = hash.split('/').slice(0, 2).join('/');
+      // `/gestor-logistico/<space>`: the day that follows does not count.
+      const space = address.split('/').slice(0, 3).join('/');
       if (
         this.lastFold &&
         this.lastFold.space === space &&
@@ -153,9 +161,9 @@ export class HistoryNav {
     } else if (push) {
       this.lastFold = null;
     }
-    this.base = hash;
+    this.base = address;
     this.pendingBase = {
-      hash,
+      address,
       push: doPush || !!this.pendingBase?.push,
     };
     this.schedule();
@@ -190,7 +198,7 @@ export class HistoryNav {
    * pops or clears that one itself).
    */
   exit(onClose: () => void): void {
-    if (this.index <= 0 || !window.location.hash.startsWith(ROOT_HASH)) {
+    if (this.index <= 0 || !inGestor()) {
       this.stop();
       onClose();
       return;
@@ -205,20 +213,21 @@ export class HistoryNav {
 
   // ------------------------------------------------------------ internals
 
-  private url(hash: string): string {
-    return `${window.location.pathname}${window.location.search}${hash}`;
-  }
-
   private key(): string {
     const e = entryOf(window.history.state);
-    return `${window.location.hash}|${e?.index ?? '-'}|${e?.depth ?? '-'}`;
+    return `${currentAddress()}${window.location.hash}|${e?.index ?? '-'}|${e?.depth ?? '-'}`;
   }
 
-  private write(mode: 'push' | 'replace', depth: number, hash: string): void {
+  private write(
+    mode: 'push' | 'replace',
+    depth: number,
+    address: string,
+  ): void {
     if (mode === 'push') this.index += 1;
     const state: Entry = {lx: 1, depth, index: this.index};
-    if (mode === 'push') window.history.pushState(state, '', this.url(hash));
-    else window.history.replaceState(state, '', this.url(hash));
+    const url = addressUrl(address);
+    if (mode === 'push') window.history.pushState(state, '', url);
+    else window.history.replaceState(state, '', url);
     this.lastKey = this.key();
   }
 
@@ -232,9 +241,9 @@ export class HistoryNav {
   }
 
   /**
-   * Our own `history.go` arrived. It is finished after its `hashchange` (or
-   * shortly after `popstate` when the address did not change), so the hub's
-   * own `hashchange` listener has seen it before `done` runs.
+   * Our own `history.go` arrived (its `popstate`, or the timeout when the
+   * browser never reported it). `done` runs after a tick, so every other
+   * `popstate` listener (the hub's) has seen the step first.
    */
   private endTraversal(): void {
     const t = this.traversal;
@@ -265,7 +274,7 @@ export class HistoryNav {
   /** Brings the history in line with what is open. */
   private reconcile(): void {
     if (this.stopped || this.traversal || this.pendingLink) return;
-    if (!window.location.hash.startsWith(ROOT_HASH)) return;
+    if (!inGestor()) return;
     const entry = entryOf(window.history.state);
     const depth = entry?.depth ?? 0;
     const n = openSheetsNow().length;
@@ -273,7 +282,7 @@ export class HistoryNav {
     if (this.adopt) {
       this.adopt = false;
       this.pendingBase = null;
-      if (depth !== n || window.location.hash !== this.target(n)) {
+      if (depth !== n || currentAddress() !== this.target(n)) {
         this.write('replace', n, this.target(n));
       }
       return;
@@ -302,8 +311,8 @@ export class HistoryNav {
       this.traverse(n - depth);
     } else {
       const wanted = this.target(n);
-      if (window.location.hash === wanted) return;
-      const shown = parseRoute(window.location.hash).sheet;
+      if (currentAddress() === wanted) return;
+      const shown = parseRoute(currentAddress()).sheet;
       const now = this.host.address();
       // Another record in place of the one on top: Back returns to it.
       const another = n > 0 && !!shown && !!now && !sameAddress(shown, now);
@@ -338,41 +347,32 @@ export class HistoryNav {
     this.write('push', n, this.target(n));
   }
 
-  private onLocation = (event: Event): void => {
+  private onLocation = (): void => {
     if (this.stopped) return;
     if (this.traversal) {
       const t = this.traversal;
-      if (
-        event.type === 'hashchange' &&
-        t.landed &&
-        !t.done &&
-        !entryOf(window.history.state)
-      ) {
-        // Our step already landed (same address, so no `hashchange` of its
-        // own) and a link was set meanwhile: the step is over, and the link
-        // is handled like any other, below.
-        window.clearTimeout(t.timer);
-        this.traversal = null;
-      } else {
-        if (event.type === 'hashchange') {
-          this.endTraversal();
-        } else {
-          // `popstate` comes first; wait a moment for a `hashchange`.
-          if (entryOf(window.history.state)) t.landed = true;
-          window.clearTimeout(t.timer);
-          t.timer = window.setTimeout(() => this.endTraversal(), 80);
-        }
+      if (entryOf(window.history.state)) {
+        // Our step landed: our steps always land on one of our entries (and
+        // leaving lands on the Gestor's first one). A fragment pasted while
+        // leaving has no entry, so it is not taken for the landing.
+        this.endTraversal();
         return;
       }
+      // A fragment pasted meanwhile (the only other `popstate` without our
+      // entry): the step is over, and the link is handled like any other,
+      // below.
+      window.clearTimeout(t.timer);
+      this.traversal = null;
     }
     // Leaving for the hub: `GameMenu` closes the Gestor.
-    if (!window.location.hash.startsWith(ROOT_HASH)) return;
-    // Back / Forward fire `popstate` and then `hashchange`: handle once.
+    if (!inGestor()) return;
+    // A repeated report of the entry we already handled (some browsers fire
+    // `popstate` on load) changes nothing.
     const key = this.key();
     if (key === this.lastKey) return;
     this.lastKey = key;
 
-    const route = parseRoute(window.location.hash);
+    const route = parseRoute(currentAddress());
     const entry = entryOf(window.history.state);
     const before = this.index;
 
@@ -387,7 +387,7 @@ export class HistoryNav {
         );
         return;
       }
-      this.base = stripSheet(window.location.hash);
+      this.base = HistoryNav.shownBase();
       this.write('replace', 0, this.base);
       this.host.showRoute(route);
       if (route.sheet) {
@@ -415,7 +415,7 @@ export class HistoryNav {
         return;
       }
     }
-    this.base = stripSheet(window.location.hash);
+    this.base = HistoryNav.shownBase();
     this.pendingBase = null;
     this.host.showRoute(route);
     if (route.sheet && openSheetsNow().length < entry.depth) {

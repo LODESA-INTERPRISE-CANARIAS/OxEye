@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl, lxUrlRe} from './address';
 import {mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData} from './plan-fixtures';
 
@@ -22,7 +23,7 @@ const row = (page: Page, id: string) =>
 const count = (page: Page) => page.locator('#lx-tasks-count');
 
 async function openTareas(page: Page, name = 'Elvis') {
-  await signIn(page, name, '#logistica/tareas');
+  await signIn(page, name, lxUrl('tareas'));
   await expect(page.locator('#lx-space-tareas')).toBeVisible();
   await expect(page.locator('#lx-title')).toHaveText('Tareas');
 }
@@ -73,7 +74,7 @@ test.describe('Gestor logístico · Tareas', () => {
     await mockApi(page, planData());
     await signIn(page);
     await page.locator('#lx-nav-tareas').click();
-    await expect(page).toHaveURL(/#logistica\/tareas$/);
+    await expect(page).toHaveURL(lxUrlRe('tareas'));
     await expect(page.locator('#lx-nav-tareas')).toHaveAttribute(
       'aria-current',
       'page',
@@ -185,7 +186,7 @@ test.describe('Gestor logístico · Tareas', () => {
     await expect(page.locator('#lx-tasks-search')).toHaveValue('');
     await expect(page.locator('#lx-tasks-list [data-task-id]')).toHaveCount(1);
     // …and never go into the address.
-    await expect(page).toHaveURL(/#logistica\/tareas$/);
+    await expect(page).toHaveURL(lxUrlRe('tareas'));
     const stored = await page.evaluate(() =>
       Object.keys(localStorage).filter(k =>
         k.startsWith('oxeye.logistics.tasks-space.'),
@@ -284,13 +285,13 @@ test.describe('Gestor logístico · Tareas', () => {
     await openTareas(page);
     await row(page, 't2').locator('.lx-tlrow__open').click();
     await expect(page.locator('#lx-task-sheet')).toBeVisible();
-    await expect(page).toHaveURL(/#logistica\/tareas\/ficha\/tarea\/t2$/);
+    await expect(page).toHaveURL(lxUrlRe('tareas/ficha/tarea/t2'));
     await page.goBack();
     await expect(page.locator('#lx-task-sheet')).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica\/tareas$/);
+    await expect(page).toHaveURL(lxUrlRe('tareas'));
 
     // The address opens it again directly.
-    await page.goto('/#logistica/tareas/ficha/tarea/t3');
+    await page.goto(lxUrl('tareas/ficha/tarea/t3'));
     await expect(page.locator('#lx-task-sheet')).toBeVisible();
     await expect(page.locator('#lx-space-tareas')).toBeVisible();
   });
@@ -360,8 +361,8 @@ test.describe('Gestor logístico · Tareas en el móvil', () => {
     expect(overflow).toBeLessThanOrEqual(0);
 
     await swipe(page, 320, 80);
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(lxUrlRe('inventarios'));
     await swipe(page, 80, 320);
-    await expect(page).toHaveURL(/#logistica\/tareas$/);
+    await expect(page).toHaveURL(lxUrlRe('tareas'));
   });
 });

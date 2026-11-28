@@ -1,4 +1,5 @@
 import {expect, test, type Locator, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {addDays, makeCompany, makeTask, mockApi, signIn} from './mock-api';
 import {DAY, PLAZA_CRISTO, fixClock} from './plan-fixtures';
 import {followCompanies, followData, followTasks} from './followup-fixtures';
@@ -99,7 +100,7 @@ test.describe('Gestor logístico · impresión en A4', () => {
   }) => {
     await page.setViewportSize(A4);
     await mockApi(page, printData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-tab-companies').click();
     await page
       .locator(`[data-company-id="${NOVA.id}"] .lx-dirrow__main`)
@@ -159,7 +160,7 @@ test.describe('Gestor logístico · impresión en A4', () => {
       };
     });
     await mockApi(page, printData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     const before = await page.title();
     await page.locator('#lx-contacts-tab-companies').click();
     await page
@@ -185,7 +186,7 @@ test.describe('Gestor logístico · impresión en A4', () => {
   }) => {
     await page.setViewportSize(A4);
     await mockApi(page, printData());
-    await signIn(page, 'Elvis', '#logistica/cierre');
+    await signIn(page, 'Elvis', lxUrl('cierre'));
     const printed = page.locator('body > .lx-day-root');
     await expect(printed.locator('.lx-dayp')).toHaveCount(1);
     const rows = printed.locator('.lx-dayp__tasks > li');
@@ -215,7 +216,7 @@ test.describe('Gestor logístico · impresión en A4', () => {
 
   test('day close of a past day says which day in the name', async ({page}) => {
     await mockApi(page, printData());
-    await signIn(page, 'Elvis', `#logistica/cierre/${addDays(DAY, -1)}`);
+    await signIn(page, 'Elvis', lxUrl(`cierre/${addDays(DAY, -1)}`));
     await expect(page.locator('body > .lx-day-root .lx-dayp')).toHaveCount(1);
     await beforePrint(page);
     await expect(page).toHaveTitle(

@@ -1,5 +1,6 @@
 import {expect, test, type Page} from '@playwright/test';
 import {choose} from './controls';
+import {goToAddress, lxUrl} from './address';
 import {mockApi, signIn, type MockApi} from './mock-api';
 import {moneyData, withBudget} from './money-fixtures';
 import {fixClock} from './plan-fixtures';
@@ -33,7 +34,7 @@ test.describe('Gestor logístico · impuestos y comparación', () => {
   }) => {
     const data = moneyData();
     const api = await mockApi(page, data);
-    await signIn(page, 'Elvis', '#logistica/contactos/ficha/empresa/c2');
+    await signIn(page, 'Elvis', lxUrl('contactos/ficha/empresa/c2'));
     await expect(page.locator('#lx-company-tax-view')).toContainText(
       'Impuesto sin indicar',
     );
@@ -59,7 +60,7 @@ test.describe('Gestor logístico · impuestos y comparación', () => {
     page,
   }) => {
     await mockApi(page, moneyData());
-    await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o1');
+    await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o1'));
     await expect(page.locator('#lx-offer-price')).toContainText(
       'sin impuestos',
     );
@@ -76,7 +77,7 @@ test.describe('Gestor logístico · impuestos y comparación', () => {
     page,
   }) => {
     await mockApi(page, moneyData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     const compare = page.locator('[id^="lx-catgroup-compare-"]').first();
     await compare.click();
     const ranked = page.locator(
@@ -100,7 +101,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
     page,
   }) => {
     const api = await mockApi(page, moneyData());
-    await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
     await openBudget(page);
     await expect(page.locator('#lx-budget-empty')).toBeVisible();
 
@@ -150,7 +151,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
     page,
   }) => {
     const api = await mockApi(page, withBudget());
-    await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
     // The card: what is left, as an incomplete estimate.
     await expect(page.locator('#lx-event-budget')).toContainText('Quedan');
     await expect(page.locator('#lx-event-budget')).toContainText('incompleta');
@@ -186,7 +187,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
     page,
   }) => {
     const api = await mockApi(page, withBudget());
-    await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
     await openBudget(page);
     await page.locator('[data-expense-id="x3"]').click();
     await page.locator('#lx-expense-amount').fill('300');
@@ -215,7 +216,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
     page,
   }) => {
     const api = await mockApi(page, withBudget());
-    await signIn(page, 'Equipo', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Equipo', lxUrl('ficha/evento/e1'));
     await expect(page.locator('#lx-event-sheet')).toBeVisible();
     await expect(page.locator('#lx-event-budget')).toHaveCount(0);
     expect(budgetCalls(api)).toEqual([]);
@@ -228,7 +229,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
       ...withBudget(),
       accounts: {Fabián: {roles: ['developer']}},
     });
-    await signIn(page, 'Fabián', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Fabián', lxUrl('ficha/evento/e1'));
     await openBudget(page);
     await expect(page.locator('#lx-budget-amount')).toContainText('2000');
     await expect(page.locator('#lx-budget-edit')).toHaveCount(0);
@@ -243,7 +244,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
     // The card's load and the budget sheet's own load (it has its own
     // address and asks again when it opens) both fail.
     api.failBudget = 2;
-    await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+    await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
     await expect(page.locator('#lx-event-budget')).toContainText(
       'Error interno',
     );
@@ -263,9 +264,7 @@ test.describe('Gestor logístico · presupuesto del evento', () => {
     await signIn(page, 'Elvis');
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
     await context.setOffline(true);
-    await page.evaluate(() => {
-      location.hash = '#logistica/ficha/evento/e1';
-    });
+    await goToAddress(page, lxUrl('ficha/evento/e1'));
     await expect(page.locator('#lx-event-budget')).toContainText(
       'Necesita conexión',
     );

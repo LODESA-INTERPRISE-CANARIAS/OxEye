@@ -7,6 +7,7 @@ import {
   signInAgain,
   type MockOptions,
 } from './mock-api';
+import {lxUrl} from './address';
 import {DAY, fixClock} from './plan-fixtures';
 import {M4_WITHHELD, NORTE, inventoryData} from './inventory-fixtures';
 
@@ -216,7 +217,7 @@ test.describe('Gestor logístico · inventario y notas para el invitado', () => 
     page,
   }) => {
     await mockApi(page, privacyData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
     await expect(page.locator('#lx-resource-detail')).toContainText(
       'UBICACION-PRIVADA',
@@ -281,7 +282,7 @@ test.describe('Gestor logístico · el texto de las notas para el equipo', () =>
 
   test('a note about a person is labelled without her name', async ({page}) => {
     const api = await mockApi(page, privacyData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await page
       .locator(`[data-contact-id="${ANA.id}"] .lx-dirrow__main`)
       .click();

@@ -9,6 +9,7 @@ import {
   signIn,
   storedSession,
 } from './mock-api';
+import {goToAddress, hashOf, lxUrl, lxUrlRe, pathOf} from './address';
 
 /**
  * Gestor logístico, milestone 1: entering from the OxEye hub, server gates,
@@ -31,7 +32,7 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     await page.locator('#game-logistics').click();
     const app = page.locator('#logistics-app');
     await expect(app).toBeVisible();
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     await expect(menu).toHaveAttribute('inert', '');
     await expect(page.locator('#lx-login-form')).toBeVisible();
 
@@ -41,7 +42,8 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     await expect(menu).toBeVisible();
     await expect(menu).not.toHaveAttribute('inert');
     await expect(page.locator('#game-logistics')).toBeFocused();
-    expect(new URL(page.url()).hash).toBe('');
+    expect(pathOf(page)).toBe('/');
+    expect(hashOf(page)).toBe('');
   });
 
   test('«Volver a OxEye» from the workspace keeps the session for the next visit', async ({
@@ -61,21 +63,21 @@ test.describe('Gestor logístico · entrada desde el hub', () => {
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
   });
 
-  test('#logistica deep link opens the module directly over an inert hub', async ({
+  test('/gestor-logistico deep link opens the module directly over an inert hub', async ({
     page,
   }) => {
     await mockApi(page);
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#logistics-app')).toBeVisible();
     await expect(page.locator('#lx-login-form')).toBeVisible();
     await expect(page.locator('#game-menu')).toHaveAttribute('inert', '');
   });
 
-  test('#logistica/<space> deep link lands on that space after login', async ({
+  test('/gestor-logistico/<space> deep link lands on that space after login', async ({
     page,
   }) => {
     await mockApi(page);
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await expect(page.locator('#lx-space-contactos')).toBeVisible();
     await expect(page.locator('#lx-title')).toHaveText('Contactos');
     await expect(page.locator('#lx-nav-contactos')).toHaveAttribute(
@@ -101,12 +103,13 @@ test.describe('Gestor logístico · historial y hash', () => {
 
     await page.locator('#game-logistics').click();
     await expect(page.locator('#lx-login-form')).toBeVisible();
-    await expect(page).toHaveURL(/\/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     expect(await historyLength(page)).toBe(before + 1);
 
     await page.locator('#lx-gate-exit').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
-    await expect.poll(() => new URL(page.url()).hash).toBe('');
+    await expect.poll(() => pathOf(page)).toBe('/');
+    expect(hashOf(page)).toBe('');
     // Closing popped the entry it pushed instead of adding another one.
     expect(await historyLength(page)).toBe(before + 1);
     await expect(page.locator('#game-logistics')).toBeFocused();
@@ -128,10 +131,11 @@ test.describe('Gestor logístico · historial y hash', () => {
     await expect(page.locator('#lx-login-form')).toBeVisible();
     await page.locator('#lx-gate-exit').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
-    await expect.poll(() => new URL(page.url()).hash).toBe('');
+    await expect.poll(() => pathOf(page)).toBe('/');
+    expect(hashOf(page)).toBe('');
 
     await page.goForward();
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     await expect(page.locator('#lx-login-form')).toBeVisible();
     // And Back closes it again.
     await page.goBack();
@@ -139,20 +143,21 @@ test.describe('Gestor logístico · historial y hash', () => {
     await expect(page.locator('#game-menu')).not.toHaveAttribute('inert');
   });
 
-  test('closing after a #logistica deep link does not add an entry', async ({
+  test('closing after a /gestor-logistico deep link does not add an entry', async ({
     page,
   }) => {
     await mockApi(page);
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#lx-login-form')).toBeVisible();
     const before = await historyLength(page);
     await page.locator('#lx-gate-exit').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
-    await expect.poll(() => new URL(page.url()).hash).toBe('');
+    await expect.poll(() => pathOf(page)).toBe('/');
+    expect(hashOf(page)).toBe('');
     expect(await historyLength(page)).toBe(before);
   });
 
-  test('#logistica never opens on top of a simulation in use', async ({
+  test('a legacy #logistica never opens on top of a simulation in use', async ({
     page,
   }) => {
     const api = await mockApi(page);
@@ -163,7 +168,9 @@ test.describe('Gestor logístico · historial y hash', () => {
     await page.evaluate(() => {
       window.location.hash = '#logistica';
     });
-    await expect(page).toHaveURL(/#logistica$/);
+    // The address is put back to the workspace's own (replaceState).
+    await expect.poll(() => pathOf(page)).toBe('/simulador/modelo');
+    expect(hashOf(page)).toBe('');
     // Negative check: give the lazy chunk time it would need to appear.
     await page.waitForTimeout(800);
     await expect(page.locator('#logistics-loading')).toHaveCount(0);
@@ -172,14 +179,30 @@ test.describe('Gestor logístico · historial y hash', () => {
     expect(api.requests).toHaveLength(0);
   });
 
-  test('with the module open, a hash change switches the space', async ({
+  test('/gestor-logistico never opens on top of a simulation in use', async ({
+    page,
+  }) => {
+    const api = await mockApi(page);
+    await openWorkspaceWithDefaultProject(page);
+    await expect(page.locator('#drawing')).toBeVisible();
+
+    await goToAddress(page, lxUrl());
+    // The address is put back to the workspace's own (replaceState).
+    await expect.poll(() => pathOf(page)).toBe('/simulador/modelo');
+    // Negative check: give the lazy chunk time it would need to appear.
+    await page.waitForTimeout(800);
+    await expect(page.locator('#logistics-loading')).toHaveCount(0);
+    await expect(page.locator('#logistics-app')).toHaveCount(0);
+    await expect(page.locator('#drawing')).toBeVisible();
+    expect(api.requests).toHaveLength(0);
+  });
+
+  test('with the module open, an address change switches the space', async ({
     page,
   }) => {
     await mockApi(page);
     await signIn(page);
-    await page.evaluate(() => {
-      window.location.hash = '#logistica/calendario';
-    });
+    await goToAddress(page, lxUrl('calendario'));
     await expect(page.locator('#lx-space-calendario')).toBeVisible();
     await expect(page.locator('#lx-title')).toHaveText('Calendario');
     await expect(page.locator('#lx-nav-calendario')).toHaveAttribute(
@@ -187,9 +210,7 @@ test.describe('Gestor logístico · historial y hash', () => {
       'page',
     );
 
-    await page.evaluate(() => {
-      window.location.hash = '#logistica';
-    });
+    await goToAddress(page, lxUrl());
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
     await expect(page.locator('#logistics-app')).toBeVisible();
@@ -201,7 +222,7 @@ test.describe('Gestor logístico · servidor no disponible', () => {
     page,
   }) => {
     const api = await mockApi(page, {health: 'down'});
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     const gate = page.locator('#lx-gate-unreachable');
     await expect(gate).toBeVisible();
     await expect(page.locator('#lx-gate-title')).toHaveText(
@@ -217,7 +238,7 @@ test.describe('Gestor logístico · servidor no disponible', () => {
 
   test('database down says so instead of a generic error', async ({page}) => {
     const api = await mockApi(page, {health: 'database'});
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#lx-gate-title')).toHaveText(
       'La base de datos no responde',
     );
@@ -232,7 +253,7 @@ test.describe('Gestor logístico · acceso', () => {
     page,
   }) => {
     const api = await mockApi(page);
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
 
     // E4: no list of people anywhere.
     await expect(page.locator('.lx-person')).toHaveCount(0);
@@ -294,7 +315,7 @@ test.describe('Gestor logístico · acceso', () => {
     page,
   }) => {
     const api = await mockApi(page);
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await page.locator('#lx-login-username').fill('Yeray');
     await page.locator('#lx-login-forgot').click();
     // The username typed so far comes along.
@@ -394,7 +415,7 @@ test.describe('Gestor logístico · sesión caducada', () => {
         }),
       );
     }, SESSION_KEY);
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#lx-login-form')).toBeVisible();
     expect(api.calls('GET', '/me')).toHaveLength(0);
   });

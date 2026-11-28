@@ -3,6 +3,7 @@ import {
   INCIDENT_SCOPE_NOTE,
   NOTE_PRIVACY_HINT,
 } from '../../../shared/logistics/rules.ts';
+import {lxUrl} from './address';
 import {ORG, makeNote, mockApi, signIn, type MockApi} from './mock-api';
 import {DAY, fixClock} from './plan-fixtures';
 import {choose} from './controls';
@@ -101,7 +102,7 @@ test.describe('Gestor logístico · incidencias y notas', () => {
     page,
   }) => {
     const api = await mockApi(page, inventoryData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
     const list = page.locator('#lx-resource-notelist');
     await expect(
@@ -268,7 +269,7 @@ test.describe('Gestor logístico · incidencias y notas', () => {
 test.describe('Gestor logístico · historial de un registro', () => {
   test('loaded when opened: loading, then who changed what', async ({page}) => {
     const api = await mockApi(page, inventoryData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
     const history = page.locator('#lx-resource-history');
     const toggle = page.locator('#lx-resource-history-toggle');
@@ -302,7 +303,7 @@ test.describe('Gestor logístico · historial de un registro', () => {
 
   test('an error offers to retry; an empty history says so', async ({page}) => {
     const api = await mockApi(page, inventoryData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
     api.failHistory = 1;
     await page.locator('#lx-resource-history-toggle').click();
@@ -324,7 +325,7 @@ test.describe('Gestor logístico · historial de un registro', () => {
 
   test('a saved change shows up in the history', async ({page}) => {
     await mockApi(page, inventoryData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page.locator('[data-resource-id="r2"] .lx-resrow__main').click();
     await page.locator('#lx-resource-edit').click();
     await page.locator('#lx-resource-quantity').fill('180');

@@ -1,9 +1,10 @@
 import {expect, test, type Locator, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {choose} from './controls';
 
 /**
  * Visual walk through the Revisión 1 mock-ups (F1 offers and suppliers, F2
- * access and profiles) at `#logistica/maquetas` (development server only).
+ * access and profiles) at `/gestor-logistico/maquetas` (development server only).
  * The mock-ups use fictitious data and no server, so nothing is mocked here;
  * the spec clicks through every screen and takes screenshots on phone and
  * desktop in a light and a dark palette. It asserts only what it needs to
@@ -27,7 +28,7 @@ test.describe.configure({timeout: 180_000});
 async function openIndex(page: Page, vp: Viewport) {
   await page.setViewportSize(VIEWPORTS[vp]);
   await page.emulateMedia({reducedMotion: 'reduce'});
-  await page.goto('/#logistica/maquetas');
+  await page.goto(lxUrl('maquetas'));
   await expect(page.locator('#mk-index')).toBeVisible({timeout: 30_000});
 }
 

@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {makeMedia, mockApi, signIn, type MockApi} from './mock-api';
 import {fixClock} from './plan-fixtures';
 import {NORTE, inventoryData} from './inventory-fixtures';
@@ -26,7 +27,7 @@ const patches = (api: MockApi, id: string) =>
   api.calls('PATCH', `/warehouses/${id}`).map(c => c.body as Json);
 
 async function openInventory(page: Page, name = 'Elvis') {
-  await signIn(page, name, '#logistica/inventarios');
+  await signIn(page, name, lxUrl('inventarios'));
   await expect(page.locator('#lx-space-inventarios')).toBeVisible();
 }
 

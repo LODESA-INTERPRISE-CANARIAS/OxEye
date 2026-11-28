@@ -79,10 +79,11 @@ import {
   type HistoryNavHost,
   type OpenResult,
 } from './shell/historyNav';
+import {currentAddress} from './shell/address';
 import {
-  baseHash,
+  baseAddress,
   parseRoute,
-  ROOT_HASH,
+  ROOT_ADDRESS,
   stripSheet,
   type Route,
   type SheetAddress,
@@ -230,7 +231,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
   const supplierLink = useSupplierLink();
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const [initialRoute] = useState(() => parseRoute(window.location.hash));
+  const [initialRoute] = useState(() => parseRoute(currentAddress()));
   const [space, setSpace] = useState<Space>(initialRoute.space);
   const [calendarDay, setCalendarDay] = useState<string | null>(
     initialRoute.calendarDay,
@@ -490,7 +491,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       setCalendarDay(nextDay);
       setCloseDay(null);
       nav.go(
-        baseHash({
+        baseAddress({
           space: next,
           calendarDay: nextDay,
           closeDay: null,
@@ -506,7 +507,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     (day: string | null) => {
       setCalendarDay(day);
       nav.go(
-        baseHash({
+        baseAddress({
           space: 'calendario',
           calendarDay: day,
           closeDay: null,
@@ -523,7 +524,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     (day: string | null) => {
       setCloseDay(day);
       nav.go(
-        baseHash({
+        baseAddress({
           space: 'cierre',
           calendarDay: null,
           closeDay: day,
@@ -537,7 +538,9 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
 
   const openMockups = useCallback(() => {
     setMockups(true);
-    nav.go(baseHash({space, calendarDay: null, closeDay: null, mockups: true}));
+    nav.go(
+      baseAddress({space, calendarDay: null, closeDay: null, mockups: true}),
+    );
   }, [nav, space]);
   const exitMockups = useCallback(() => {
     // Back to where the mock-ups were opened from; from a direct link, Hoy.
@@ -546,7 +549,7 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
     setSpace('hoy');
     setCalendarDay(null);
     setCloseDay(null);
-    nav.go(ROOT_HASH, {push: false});
+    nav.go(ROOT_ADDRESS, {push: false});
   }, [nav]);
 
   const openEvent = useCallback(
@@ -1097,13 +1100,13 @@ const LogisticsApp: React.FC<LogisticsAppProps> = ({onClose}) => {
       });
       setCalendarDay(route.calendarDay);
       setCloseDay(pastDay);
-      const normal = baseHash({
+      const normal = baseAddress({
         space: next,
         calendarDay: route.calendarDay,
         closeDay: pastDay,
         mockups: wantsMockups,
       });
-      if (normal !== stripSheet(window.location.hash)) {
+      if (normal !== stripSheet(currentAddress())) {
         nav.go(normal, {push: false});
       }
     },

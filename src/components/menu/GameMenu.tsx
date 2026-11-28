@@ -1,5 +1,6 @@
 import React, {Suspense, useCallback, useEffect, useRef, useState} from 'react';
 import {useProjectStore} from '../../store/useProjectStore';
+import {inGestor} from '../../logistics/shell/address';
 import {
   LogisticsBoundary,
   LogisticsLoading,
@@ -15,9 +16,7 @@ import {useHubRoute} from './useHubRoute';
 // Logistics Manager: separate chunk, loaded only when opened.
 const LogisticsApp = React.lazy(() => import('../../logistics/LogisticsApp'));
 
-const isLogisticsHash = (): boolean =>
-  typeof window !== 'undefined' &&
-  window.location.hash.startsWith('#logistica');
+const LOGISTICS_TITLE = 'Gestor logístico · OxEye';
 
 const TITLE_OF: Record<HubRoute, string> = {
   home: 'OxEye',
@@ -26,6 +25,9 @@ const TITLE_OF: Record<HubRoute, string> = {
   workspace: 'Simulador · OxEye',
   settings: 'Ajustes · OxEye',
   about: 'Acerca de OxEye',
+  // Only while the Gestor opens or closes over the portada (the title is
+  // the Gestor's whenever it is open).
+  logistics: 'OxEye',
 };
 
 export interface GameMenuProps {
@@ -35,7 +37,7 @@ export interface GameMenuProps {
 /**
  * The OxEye hub (`#game-menu`): Portada, Simulador, Ajustes and Acerca de,
  * each at its own clean address (`hubRoute.ts`), plus the Gestor logístico
- * at `#logistica` over it.
+ * at `/gestor-logistico/**` over it.
  *
  * `/simulador/modelo` mirrors the simulation workspace (`menuOpen === false`):
  * closing the menu writes it, Back from it reopens the menu, and loading it
@@ -52,21 +54,30 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
   const showToast = useProjectStore(s => s.showToast);
 
   const {route, navigate} = useHubRoute();
-  const [logisticsOpen, setLogisticsOpen] = useState(isLogisticsHash);
+  const [logisticsOpen, setLogisticsOpen] = useState(inGestor);
 
-  // `#logistica` opens the Logistics Manager directly (also on Back/Forward),
-  // but only from the hub: never on top of a running simulation.
+  // `/gestor-logistico/**` opens the Logistics Manager directly (also on
+  // Back/Forward), but only from the hub: never on top of a running
+  // simulation. Path changes fire only `popstate` (it also comes with a
+  // pasted fragment, rewritten to its clean address by `useHubRoute` first).
   const menuOpenRef = useRef(menuOpen);
   menuOpenRef.current = menuOpen;
   useEffect(() => {
-    const onHashChange = () => {
-      const wanted = isLogisticsHash();
-      if (wanted && !menuOpenRef.current) return;
+    const onPop = () => {
+      const wanted = inGestor();
+      if (wanted && !menuOpenRef.current) {
+        // The simulation is in use: the Gestor stays closed and the address
+        // goes back to the workspace, so address and screen agree. Same
+        // event as `useHubRoute`'s own update, so the hub never sees the
+        // `logistics` route (which would pause the simulation).
+        navigate('workspace', {replace: true});
+        return;
+      }
       setLogisticsOpen(wanted);
     };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [navigate]);
 
   // True when opening from the hub added a history entry, so closing can pop
   // it instead of leaving a duplicate hub entry behind.
@@ -74,28 +85,26 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
 
   const openLogistics = () => {
     setLogisticsOpen(true);
-    if (!isLogisticsHash()) {
+    if (!inGestor()) {
       pushedLogisticsEntry.current = true;
-      window.location.hash = 'logistica';
+      navigate('logistics');
     }
   };
 
   const closeLogistics = useCallback(() => {
     setLogisticsOpen(false);
-    if (pushedLogisticsEntry.current && isLogisticsHash()) {
+    if (pushedLogisticsEntry.current && inGestor()) {
       pushedLogisticsEntry.current = false;
       window.history.back();
-    } else if (isLogisticsHash()) {
-      window.history.replaceState(
-        null,
-        '',
-        window.location.pathname + window.location.search,
-      );
+    } else if (inGestor()) {
+      // Opened from a link: its entry becomes the portada.
+      pushedLogisticsEntry.current = false;
+      navigate('home', {replace: true});
     }
     requestAnimationFrame(() =>
       document.getElementById('game-logistics')?.focus(),
     );
-  }, []);
+  }, [navigate]);
 
   const canContinue = hasSavedProject && !!project.scenes.cristo;
   const activeTitle = currentScene().title;
@@ -163,16 +172,22 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
 
   // Tab title and focus follow the screen.
   const firstRouteRun = useRef(true);
+  const previousRoute = useRef(route);
   useEffect(() => {
     if (!logisticsOpen) document.title = TITLE_OF[route];
-    else document.title = 'Gestor logístico · OxEye';
+    else document.title = LOGISTICS_TITLE;
   }, [route, logisticsOpen]);
   useEffect(() => {
+    const from = previousRoute.current;
+    previousRoute.current = route;
     if (firstRouteRun.current) {
       firstRouteRun.current = false;
       return;
     }
     if (route === 'workspace') return;
+    // Opening or leaving the Gestor: the portada stays where it was, and
+    // closing puts the focus back on «Gestor logístico» (closeLogistics).
+    if (route === 'logistics' || from === 'logistics') return;
     // The hub is one scroll container: each screen starts at its top.
     const hub = document.getElementById('game-menu');
     if (hub) hub.scrollTop = 0;
@@ -221,7 +236,9 @@ export const GameMenu: React.FC<GameMenuProps> = ({onResume}) => {
         hidden={!menuOpen}
         inert={logisticsOpen || undefined}
       >
-        {(route === 'home' || route === 'workspace') && (
+        {(route === 'home' ||
+          route === 'workspace' ||
+          route === 'logistics') && (
           <HubHome
             canContinue={canContinue}
             modelTitle={activeTitle}

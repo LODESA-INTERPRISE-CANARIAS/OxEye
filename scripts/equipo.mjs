@@ -186,7 +186,7 @@ async function main() {
     fail(`La web no responde en ${WEB_URL}.`);
     return;
   }
-  say(`Web lista en ${WEB_URL}#logistica (en este PC).`);
+  say(`Web lista en ${WEB_URL}gestor-logistico (en este PC).`);
 
   // 3. Tunnel
   say('Abriendo el túnel…');
@@ -204,7 +204,7 @@ async function main() {
         box([
           'Dirección para el equipo:',
           '',
-          `${found[0]}/#logistica`,
+          `${found[0]}/gestor-logistico`,
           '',
           'Puede tardar unos segundos en responder la primera vez.',
           'Cambia cada vez que arrancas. Ctrl+C lo para todo.',

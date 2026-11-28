@@ -137,15 +137,35 @@ describe('e-mail addresses', () => {
 describe('account links', () => {
   const token = 'A'.repeat(20) + '_-' + 'z'.repeat(21);
 
-  it('round-trip through the address fragment', () => {
+  it('round-trip, with the token only in the fragment', () => {
     expect(accountLinkHash('reset', token)).toBe(
-      `#logistica/cuenta/restablecer/${token}`,
+      `gestor-logistico/cuenta/restablecer#${token}`,
     );
-    expect(parseAccountLink(accountLinkHash('reset', token))).toEqual({
+    expect(accountLinkHash('verify', token)).toBe(
+      `gestor-logistico/cuenta/verificar#${token}`,
+    );
+    for (const purpose of ['reset', 'verify'] as const) {
+      const link = accountLinkHash(purpose, token);
+      expect(link.indexOf(token)).toBe(link.indexOf('#') + 1);
+      expect(parseAccountLink(link)).toEqual({purpose, token});
+      // As the browser gives it: path with a leading slash, plus the fragment.
+      expect(parseAccountLink(`/${link}`)).toEqual({purpose, token});
+      // The full address the server mails.
+      const url = new URL(`https://equipo.example.org/${link}`);
+      expect(url.pathname).not.toContain(token);
+      expect(parseAccountLink(url.pathname + url.hash)).toEqual({
+        purpose,
+        token,
+      });
+    }
+  });
+
+  it('still read the links mailed before the clean addresses', () => {
+    expect(parseAccountLink(`#logistica/cuenta/restablecer/${token}`)).toEqual({
       purpose: 'reset',
       token,
     });
-    expect(parseAccountLink(accountLinkHash('verify', token))).toEqual({
+    expect(parseAccountLink(`#logistica/cuenta/verificar/${token}`)).toEqual({
       purpose: 'verify',
       token,
     });
@@ -155,6 +175,20 @@ describe('account links', () => {
     expect(parseAccountLink('#logistica/cuenta/restablecer/corto')).toBeNull();
     expect(parseAccountLink(`#logistica/cuenta/borrar/${token}`)).toBeNull();
     expect(parseAccountLink('#logistica/hoy')).toBeNull();
+    expect(
+      parseAccountLink('/gestor-logistico/cuenta/restablecer#corto'),
+    ).toBeNull();
+    expect(
+      parseAccountLink(`/gestor-logistico/cuenta/borrar#${token}`),
+    ).toBeNull();
+    // Never a token in the path.
+    expect(
+      parseAccountLink(`/gestor-logistico/cuenta/restablecer/${token}`),
+    ).toBeNull();
+    expect(
+      parseAccountLink(`/gestor-logistico/cuenta/restablecer#${token}x`),
+    ).toBeNull();
+    expect(parseAccountLink('/gestor-logistico')).toBeNull();
   });
 });
 

@@ -205,7 +205,7 @@ function mailConfig(e: z.output<typeof envSchema>): MailConfig {
     const url = e.PUBLIC_APP_URL.replace(/\/+$/, '');
     if (!/^https?:\/\/[^\s]+$/.test(url)) {
       throw new ConfigError(
-        `PUBLIC_APP_URL no es una dirección web válida: «${url}». Usa por ejemplo https://equipo.example.org/logistica`,
+        `PUBLIC_APP_URL no es una dirección web válida: «${url}». Usa la dirección de la web, sin /gestor-logistico ni #, por ejemplo https://equipo.example.org`,
       );
     }
     publicAppUrl = url;

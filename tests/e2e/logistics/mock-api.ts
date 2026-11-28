@@ -1,4 +1,6 @@
 import {expect, type Page, type Route} from '@playwright/test';
+import {lxUrl} from './address';
+export * from './address';
 import {
   delayBlocker,
   delayItems,
@@ -2029,7 +2031,7 @@ export async function mockApi(
         logSecurity(target, 'reset_link_created', ref(me));
         if (state.e4.mailConfigured) return noContent(route, 202);
         return json(route, {
-          url: `http://localhost:5173/#logistica/cuenta/restablecer/${RESET_TOKEN}`,
+          url: `http://localhost:5173/gestor-logistico/cuenta/restablecer#${RESET_TOKEN}`,
           expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
         });
       }
@@ -6324,9 +6326,13 @@ export async function loginAs(page: Page, name = 'Elvis') {
   await expect(page.locator('#lx-title')).toBeVisible();
 }
 
-/** Opens the module by deep link and signs in through the real login UI. */
-export async function signIn(page: Page, name = 'Elvis', hash = '#logistica') {
-  await page.goto(`/${hash}`);
+/**
+ * Opens the module by deep link and signs in through the real login UI.
+ * `address` is a Gestor path (`lxUrl('calendario')`); a legacy
+ * `#logistica…` fragment is also accepted and opened on `/`.
+ */
+export async function signIn(page: Page, name = 'Elvis', address = lxUrl()) {
+  await page.goto(address.startsWith('#') ? `/${address}` : address);
   await loginAs(page, name);
 }
 

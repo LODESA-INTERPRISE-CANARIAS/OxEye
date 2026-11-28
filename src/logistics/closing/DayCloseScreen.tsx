@@ -11,8 +11,8 @@
  * server's `forViewer` copies) plus the day's activity, or the records' own
  * dates when the activity cannot be loaded.
  *
- * Link: `#logistica/cierre` is today; `#logistica/cierre/YYYY-MM-DD` a past
- * day. The day comes from `LogisticsApp`, which keeps the link and the
+ * Link: `/gestor-logistico/cierre` is today;
+ * `/gestor-logistico/cierre/YYYY-MM-DD` a past day. The day comes from `LogisticsApp`, which keeps the link and the
  * browser history in step (each day visited is a step of «Atrás»).
  *
  * Printing (the button or Ctrl+P) names the saved PDF

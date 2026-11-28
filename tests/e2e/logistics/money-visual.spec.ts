@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {mockApi, signIn} from './mock-api';
 import {moneyData, withBudget} from './money-fixtures';
 import {fixClock} from './plan-fixtures';
@@ -39,7 +40,7 @@ async function capture(page: Page, screen: string) {
 test('E5 · budget sheet (desktop)', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, withBudget());
-  await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+  await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
   await page.locator('#lx-event-budget-open').click();
   await expect(page.locator('#lx-budget-ribbon')).toBeVisible();
   await capture(page, 'budget');
@@ -50,7 +51,7 @@ test('E5 · budget over (phone)', async ({page}) => {
   const data = withBudget();
   data.budgets[0].amount = 1200;
   await mockApi(page, data);
-  await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+  await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
   await page.locator('#lx-event-budget-open').click();
   await expect(page.locator('#lx-budget-ribbon')).toBeVisible();
   await capture(page, 'budget-over-phone');
@@ -59,7 +60,7 @@ test('E5 · budget over (phone)', async ({page}) => {
 test('E5 · event sheet card', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, withBudget());
-  await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+  await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
   const card = page.locator('#lx-event-budget');
   await expect(card).toContainText('Quedan');
   await card.scrollIntoViewIfNeeded();
@@ -69,7 +70,7 @@ test('E5 · event sheet card', async ({page}) => {
 test('E5 · expense from the catalogue', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, withBudget());
-  await signIn(page, 'Elvis', '#logistica/ficha/evento/e1');
+  await signIn(page, 'Elvis', lxUrl('ficha/evento/e1'));
   await page.locator('#lx-event-budget-open').click();
   await page.locator('#lx-budget-from-catalog').click();
   await page.locator('#lx-offerpick-sheet [data-offer-id="o1"]').click();
@@ -80,7 +81,7 @@ test('E5 · expense from the catalogue', async ({page}) => {
 test('E5 · catalogue comparison', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, moneyData());
-  await signIn(page, 'Elvis', '#logistica/catalogo');
+  await signIn(page, 'Elvis', lxUrl('catalogo'));
   await page.locator('[id^="lx-catgroup-compare-"]').first().click();
   await expect(page.locator('.lx-catcompare')).toBeVisible();
   await capture(page, 'compare');
@@ -89,7 +90,7 @@ test('E5 · catalogue comparison', async ({page}) => {
 test('E5 · offer sheet and its tax', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, moneyData());
-  await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o1');
+  await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o1'));
   await expect(page.locator('#lx-offer-estimate')).toBeVisible();
   await capture(page, 'offer');
   await page.locator('#lx-offer-edit').click();

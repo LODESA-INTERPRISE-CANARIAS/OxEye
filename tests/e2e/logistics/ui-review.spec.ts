@@ -1,4 +1,5 @@
 import {expect, test, type Page, type Route} from '@playwright/test';
+import {goToAddress, lxUrl} from './address';
 import {mockApi as qaMock, signIn as qaSignIn} from './mock-api';
 import {fixClock, planData} from './plan-fixtures';
 import {followData, openHypothesis} from './followup-fixtures';
@@ -934,7 +935,7 @@ async function mockApi(page: Page, opts: MockOptions = {}) {
 
 async function signIn(page: Page, name = 'Elvis') {
   await page.addInitScript(() => localStorage.clear());
-  await page.goto('/#logistica');
+  await page.goto(lxUrl());
   await page.locator('#lx-login-username').fill(name);
   await page.locator('#lx-login-password').fill('secreto');
   await page.locator('#lx-login-submit').click();
@@ -954,13 +955,6 @@ async function capture(page: Page, screen: string) {
 }
 
 const PHONE = {width: 390, height: 844};
-
-/** Changes the hash in place, keeping the signed-in session. */
-async function goToHash(page: Page, hash: string) {
-  await page.evaluate(h => {
-    window.location.hash = h;
-  }, hash);
-}
 
 /** Scrolls the day timeline to an hour, so shots do not depend on the clock. */
 async function scrollTimelineTo(page: Page, hour: number) {
@@ -984,14 +978,14 @@ test.describe.configure({timeout: 120_000});
 test.describe('Gestor logístico · revisión visual', () => {
   test('server unreachable', async ({page}) => {
     await mockApi(page, {health: 'down'});
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#lx-gate-unreachable')).toBeVisible();
     await capture(page, 'unreachable');
   });
 
   test('login and password recovery', async ({page}) => {
     await mockApi(page);
-    await page.goto('/#logistica');
+    await page.goto(lxUrl());
     await expect(page.locator('#lx-login-form')).toBeVisible();
     await page.locator('#lx-login-username').fill('Elvis');
     await capture(page, 'login');
@@ -1074,7 +1068,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize({width: 1440, height: 1000});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/calendario');
+    await goToAddress(page, lxUrl('calendario'));
     await expect(page.locator('#lx-month')).toBeVisible();
     await capture(page, 'calendar-month-desktop');
     await page.setViewportSize(PHONE);
@@ -1085,7 +1079,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize({width: 1440, height: 1000});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     await scrollTimelineTo(page, 7);
     await capture(page, 'calendar-day-desktop');
@@ -1095,7 +1089,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize({width: 1024, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     await scrollTimelineTo(page, 7);
     await capture(page, 'calendar-day-tablet');
@@ -1105,7 +1099,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize(PHONE);
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await expect(page.locator('#lx-hour-list')).toBeVisible();
     await capture(page, 'calendar-day-phone');
     await page.locator('#lx-hour-list').scrollIntoViewIfNeeded();
@@ -1116,7 +1110,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize({width: 844, height: 390});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await expect(page.locator('#lx-timeline')).toBeVisible();
     await scrollTimelineTo(page, 7);
     await capture(page, 'calendar-day-landscape');
@@ -1126,7 +1120,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await scrollTimelineTo(page, 7);
     await page.locator('#lx-timeline [data-task-id="t2"]').click();
     await expect(page.locator('#lx-task-form')).toBeVisible();
@@ -1157,7 +1151,7 @@ test.describe('Gestor logístico · revisión visual', () => {
     await signIn(page);
     // «Cierre de jornada» is real since milestone 6 (it was the last
     // placeholder); the M6 block below shoots it with the QA day.
-    await goToHash(page, '#logistica/cierre');
+    await goToAddress(page, lxUrl('cierre'));
     await expect(page.locator('#lx-day-title')).toBeVisible();
     await capture(page, 'dayclose-harness-phone');
   });
@@ -1168,7 +1162,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1440, height: 1000});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/contactos');
+    await goToAddress(page, lxUrl('contactos'));
     await expect(page.locator('#lx-space-contactos .lx-dirrow')).toHaveCount(6);
     await capture(page, 'contacts-people-desktop');
     await page.locator('#lx-contacts-tab-companies').click();
@@ -1202,7 +1196,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/contactos');
+    await goToAddress(page, lxUrl('contactos'));
     await page.locator('[data-contact-id="p1"] .lx-dirrow__main').click();
     await expect(page.locator('#lx-contact-sheet')).toBeVisible();
     await capture(page, 'contact-sheet-desktop');
@@ -1223,7 +1217,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/contactos');
+    await goToAddress(page, lxUrl('contactos'));
     await page.locator('[data-contact-id="p2"] .lx-dirrow__main').click();
     await page.locator('#lx-contact-reach-whatsapp').click();
     await expect(page.locator('#lx-reach-sheet')).toBeVisible();
@@ -1234,7 +1228,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/contactos');
+    await goToAddress(page, lxUrl('contactos'));
     await page.locator('#lx-contacts-tab-companies').click();
     await page.locator('[data-company-id="c1"] .lx-dirrow__main').click();
     await expect(page.locator('#lx-company-sheet')).toBeVisible();
@@ -1252,7 +1246,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1440, height: 1000});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/catalogo');
+    await goToAddress(page, lxUrl('catalogo'));
     await expect(page.locator('.lx-offerrow')).toHaveCount(6);
     await capture(page, 'catalog-desktop');
     await page
@@ -1277,7 +1271,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/catalogo');
+    await goToAddress(page, lxUrl('catalogo'));
     await page.locator('[data-offer-id="o1"]').click();
     await expect(page.locator('#lx-offer-sheet')).toBeVisible();
     await capture(page, 'offer-sheet-desktop');
@@ -1323,7 +1317,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await scrollTimelineTo(page, 7);
     await page.locator('#lx-timeline [data-task-id="t1"]').click();
     await expect(page.locator('#lx-task-contact')).toBeVisible();
@@ -1340,7 +1334,7 @@ test.describe('Gestor logístico · contactos y catálogo', () => {
     await page.locator('#lx-tab-contactos').click();
     await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
     await capture(page, 'guest-contacts-phone');
-    await goToHash(page, '#logistica/catalogo');
+    await goToAddress(page, lxUrl('catalogo'));
     await expect(page.locator('#lx-catalogo-noaccess')).toBeVisible();
     await capture(page, 'guest-catalog-phone');
     // Last, so closing the sheet never races the address change above.
@@ -1357,7 +1351,7 @@ test.describe('Gestor logístico · inventarios y captura rápida', () => {
     await page.setViewportSize({width: 1440, height: 1000});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/inventarios');
+    await goToAddress(page, lxUrl('inventarios'));
     await expect(page.locator('[data-resource-id="r1"]')).toBeVisible();
     await capture(page, 'inventory-owned-desktop');
     await page.locator('#lx-inventory-tab-contracted').click();
@@ -1384,7 +1378,7 @@ test.describe('Gestor logístico · inventarios y captura rápida', () => {
     await page.setViewportSize({width: 1280, height: 900});
     await mockApi(page);
     await signIn(page);
-    await goToHash(page, '#logistica/inventarios');
+    await goToAddress(page, lxUrl('inventarios'));
     await page.locator('#lx-inventory-tab-owned').click();
     await page.locator('[data-resource-id="r1"] .lx-resrow__main').click();
     await expect(page.locator('#lx-resource-sheet')).toBeVisible();
@@ -1481,7 +1475,7 @@ test.describe('Gestor logístico · inventarios y captura rápida', () => {
     await page.locator('#lx-warnings').scrollIntoViewIfNeeded();
     await capture(page, 'resource-conflict-phone');
     await page.setViewportSize({width: 1280, height: 900});
-    await goToHash(page, `#logistica/calendario/${today}`);
+    await goToAddress(page, lxUrl(`calendario/${today}`));
     await scrollTimelineTo(page, 7);
     await page.locator('#lx-timeline [data-task-id="t1"]').click();
     await expect(page.locator('#lx-task-resources')).toBeVisible();
@@ -1541,7 +1535,7 @@ test.describe('Gestor logístico · seguimiento y órdenes de trabajo', () => {
   }) => {
     await page.setViewportSize(DESKTOP);
     await qaMock(page, followData());
-    await qaSignIn(page, 'Elvis', '#logistica/contactos');
+    await qaSignIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('#lx-contacts-tab-companies').click();
     await page.locator('[data-company-id="c1"] .lx-dirrow__main').click();
     await page.locator('#lx-company-work-order').click();
@@ -1571,7 +1565,7 @@ test.describe('Gestor logístico · seguimiento y órdenes de trabajo', () => {
   test('send sheet for a person without phone (phone)', async ({page}) => {
     await page.setViewportSize(PHONE);
     await qaMock(page, followData());
-    await qaSignIn(page, 'Elvis', '#logistica/contactos');
+    await qaSignIn(page, 'Elvis', lxUrl('contactos'));
     await page.locator('[data-contact-id="p2"] .lx-dirrow__main').click();
     await page.locator('#lx-contact-work-order').click();
     await page.locator('#lx-order-send').click();
@@ -1640,7 +1634,7 @@ test.describe('Gestor logístico · sin cobertura y cierre de jornada', () => {
   const chip = (page: Page) => page.locator('#lx-sync-chip');
 
   async function openDayClose(page: Page, name = 'Elvis') {
-    await qaSignIn(page, name, '#logistica/cierre');
+    await qaSignIn(page, name, lxUrl('cierre'));
     await expect(
       page.locator('#lx-day-summary .lx-daysum__tile'),
     ).not.toHaveCount(0);

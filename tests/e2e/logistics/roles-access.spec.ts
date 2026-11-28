@@ -12,6 +12,7 @@ import {
   mockApi,
   signIn,
 } from './mock-api';
+import {lxUrl, lxUrlRe} from './address';
 
 /**
  * Revisión 1 · E4, roles and access: what the guest account no longer sees,
@@ -72,7 +73,7 @@ test.describe('Gestor logístico · E4 · Invitado', () => {
 
   test('a member still sees the directory', async ({page}) => {
     await mockApi(page, directory());
-    await signIn(page, 'Equipo', '#logistica/contactos');
+    await signIn(page, 'Equipo', lxUrl('contactos'));
     await expect(page.locator('#lx-space-contactos')).toContainText(
       'Ana Pérez Demo',
     );
@@ -276,7 +277,7 @@ test.describe('Gestor logístico · E4 · Usuarios', () => {
     // Reset link: shown because the server has no mail transport.
     await page.locator('#lx-users-link-Dailos').click();
     await expect(page.locator('#lx-users-secret-value')).toContainText(
-      `#logistica/cuenta/restablecer/${RESET_TOKEN}`,
+      `${lxUrl('cuenta/restablecer')}#${RESET_TOKEN}`,
     );
 
     await page.locator('#lx-users-tab-registro').click();
@@ -364,7 +365,7 @@ test.describe('Gestor logístico · E4 · soporte y ver como Invitado', () => {
     page,
   }) => {
     await mockApi(page, directory());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await expect(page.locator('#lx-space-contactos')).toContainText(
       'Ana Pérez Demo',
     );
@@ -388,12 +389,13 @@ test.describe('Gestor logístico · E4 · enlaces de cuenta', () => {
     page,
   }) => {
     const api = await mockApi(page);
-    await page.goto(`/#logistica/cuenta/restablecer/${RESET_TOKEN}`);
+    await page.goto(`${lxUrl('cuenta/restablecer')}#${RESET_TOKEN}`);
     await expect(page.locator('#lx-reset-form')).toContainText(
       'Elige una contraseña nueva',
     );
     // The token left the address bar.
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
+    expect(page.url()).not.toContain(RESET_TOKEN);
     await page.locator('#lx-reset-password').fill('corta');
     await page.locator('#lx-reset-submit').click();
     await expect(page.locator('#lx-reset-password-error')).toContainText(
@@ -419,7 +421,7 @@ test.describe('Gestor logístico · E4 · enlaces de cuenta', () => {
     page,
   }) => {
     await mockApi(page);
-    await page.goto(`/#logistica/cuenta/restablecer/${'x'.repeat(43)}`);
+    await page.goto(`${lxUrl('cuenta/restablecer')}#${'x'.repeat(43)}`);
     await page.locator('#lx-reset-password').fill('mi frase nueva y larga');
     await page.locator('#lx-reset-submit').click();
     await expect(page.locator('#lx-link-invalid')).toContainText(
@@ -431,7 +433,7 @@ test.describe('Gestor logístico · E4 · enlaces de cuenta', () => {
 
   test('a verification link confirms the recovery e-mail', async ({page}) => {
     await mockApi(page);
-    await page.goto(`/#logistica/cuenta/verificar/${VERIFY_TOKEN}`);
+    await page.goto(`${lxUrl('cuenta/verificar')}#${VERIFY_TOKEN}`);
     await expect(page.locator('#lx-verify-done')).toContainText(
       'Correo verificado',
     );

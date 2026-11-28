@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {goToAddress, lxUrl, lxUrlRe} from './address';
 import {addDays, loginAs, mockApi, signIn} from './mock-api';
 import {DAY, fixClock} from './plan-fixtures';
 import {ESCENARIOS, followData} from './followup-fixtures';
@@ -16,7 +17,11 @@ test.beforeEach(async ({page}) => {
   await fixClock(page);
 });
 
-const hash = (page: Page) => new URL(page.url()).hash;
+/** Path and fragment: the whole address the Gestor writes. */
+const where = (page: Page) => {
+  const url = new URL(page.url());
+  return url.pathname + url.hash;
+};
 const historyLength = (page: Page) => page.evaluate(() => history.length);
 
 async function openCompanySheet(page: Page) {
@@ -34,34 +39,31 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await mockApi(page, followData());
     await signIn(page);
     await page.locator('#lx-nav-calendario').click();
-    await expect(page).toHaveURL(/#logistica\/calendario$/);
+    await expect(page).toHaveURL(lxUrlRe('calendario'));
     await page.locator('#lx-nav-contactos').click();
-    await expect(page).toHaveURL(/#logistica\/contactos$/);
+    await expect(page).toHaveURL(lxUrlRe('contactos'));
 
     await page.goBack();
-    await expect(page).toHaveURL(/#logistica\/calendario$/);
+    await expect(page).toHaveURL(lxUrlRe('calendario'));
     await expect(page.locator('#lx-title')).toHaveText('Calendario');
     await expect(page.locator('#lx-nav-calendario')).toHaveAttribute(
       'aria-current',
       'page',
     );
     await page.goBack();
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
     await page.goForward();
     await expect(page.locator('#lx-title')).toHaveText('Calendario');
 
     // A day, then the next one: Back returns to the first day.
-    await page.evaluate(h => {
-      window.location.hash = h;
-    }, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
+    await expect(page).toHaveURL(lxUrlRe(`calendario/${DAY}`));
     await expect(page.locator('#lx-cal-title')).toContainText('2 de diciembre');
     await page.locator('#lx-cal-next').click();
-    await expect(page).toHaveURL(
-      new RegExp(`#logistica/calendario/${addDays(DAY, 1)}$`),
-    );
+    await expect(page).toHaveURL(lxUrlRe(`calendario/${addDays(DAY, 1)}`));
     await page.goBack();
-    await expect(page).toHaveURL(new RegExp(`#logistica/calendario/${DAY}$`));
+    await expect(page).toHaveURL(lxUrlRe(`calendario/${DAY}`));
     await expect(page.locator('#lx-cal-title')).toContainText('2 de diciembre');
     await expect(page.locator('#logistics-app')).toBeVisible();
   });
@@ -74,12 +76,12 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await page.locator('#lx-nav-contactos').click();
     await openCompanySheet(page);
     await expect(page).toHaveURL(
-      new RegExp(`#logistica/contactos/ficha/empresa/${ESCENARIOS.id}$`),
+      lxUrlRe(`contactos/ficha/empresa/${ESCENARIOS.id}`),
     );
 
     await page.goBack();
     await expect(page.locator('#lx-company-sheet')).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica\/contactos$/);
+    await expect(page).toHaveURL(lxUrlRe('contactos'));
     await expect(page.locator('#lx-title')).toHaveText('Contactos');
 
     await page.goForward();
@@ -89,7 +91,7 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     // Closing it with its own button steps back: Back does not reopen it.
     await page.keyboard.press('Escape');
     await expect(page.locator('#lx-company-sheet')).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica\/contactos$/);
+    await expect(page).toHaveURL(lxUrlRe('contactos'));
     await page.goBack();
     await expect(page.locator('#lx-company-sheet')).toHaveCount(0);
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
@@ -99,7 +101,7 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanySheet(page);
     await page.locator('#lx-company-work-order').click();
     await expect(page.locator('#lx-order-sheet')).toBeVisible();
@@ -109,25 +111,25 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await expect(page.locator('#lx-company-sheet')).toBeVisible();
     await page.goBack();
     await expect(page.locator('#lx-company-sheet')).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica\/contactos$/);
+    await expect(page).toHaveURL(lxUrlRe('contactos'));
   });
 
   test('a shared sheet link opens after signing in; Back stays in the Gestor', async ({
     page,
   }) => {
     await mockApi(page, followData());
-    await page.goto('/#logistica/calendario/2026-12-02/ficha/tarea/h1');
+    await page.goto(lxUrl('calendario/2026-12-02/ficha/tarea/h1'));
     await loginAs(page, 'Elvis');
     const sheet = page.locator('#lx-task-sheet');
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText('Montaje del escenario Demo');
     await expect(page).toHaveURL(
-      /#logistica\/calendario\/2026-12-02\/ficha\/tarea\/h1$/,
+      lxUrlRe('calendario/2026-12-02/ficha/tarea/h1'),
     );
 
     await page.goBack();
     await expect(sheet).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica\/calendario\/2026-12-02$/);
+    await expect(page).toHaveURL(lxUrlRe('calendario/2026-12-02'));
     await expect(page.locator('#lx-cal-title')).toContainText('2 de diciembre');
     await expect(page.locator('#logistics-app')).toBeVisible();
   });
@@ -136,12 +138,12 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/inventarios/ficha/recurso/nope');
+    await signIn(page, 'Elvis', lxUrl('inventarios/ficha/recurso/nope'));
     await expect(page.locator('.lx-toast')).toContainText(
       'No se encuentra esa ficha',
     );
     await expect(page.locator('#lx-resource-sheet')).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(lxUrlRe('inventarios'));
     await expect(page.locator('#lx-title')).toHaveText('Inventarios');
   });
 
@@ -156,7 +158,7 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await expect(sheet).toBeVisible();
     await page.locator('#lx-contact-name').fill('Persona a medias Demo');
     const length = await historyLength(page);
-    const where = hash(page);
+    const before = where(page);
 
     await page.goBack();
     // Not closed: «¿Descartarlos?» and the history position back in place.
@@ -165,13 +167,13 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await expect(page.locator('#lx-contact-name')).toHaveValue(
       'Persona a medias Demo',
     );
-    await expect.poll(() => hash(page)).toBe(where);
+    await expect.poll(() => where(page)).toBe(before);
     expect(await historyLength(page)).toBe(length);
 
     // «Descartar» closes it and steps the history back.
     await page.locator('#lx-contact-discard-confirm').click();
     await expect(sheet).toHaveCount(0);
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
   });
 
@@ -186,11 +188,11 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
     await page.locator('#lx-nav-calendario').click();
     await page.locator('#lx-nav-inventarios').click();
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(lxUrlRe('inventarios'));
 
     await page.locator('#lx-back-to-oxeye').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
-    await expect.poll(() => hash(page)).toBe('');
+    await expect.poll(() => where(page)).toBe('/');
     await expect(page.locator('#game-menu')).not.toHaveAttribute('inert');
     // It stays closed (no flash back into the Gestor).
     await page.waitForTimeout(300);
@@ -207,15 +209,15 @@ test.describe('Gestor logístico · Atrás y Adelante', () => {
     await mockApi(page, followData());
     await signIn(page);
     await page.locator('#lx-tab-inventarios').click();
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(lxUrlRe('inventarios'));
     await page.locator('#lx-account-button').click();
     await expect(page.locator('#lx-account-sheet')).toBeVisible();
 
     await page.goBack();
     await expect(page.locator('#lx-account-sheet')).toBeHidden();
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(lxUrlRe('inventarios'));
     await page.goBack();
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
   });
 });
@@ -227,7 +229,7 @@ test.describe('Gestor logístico · maquetas (solo desarrollo)', () => {
     await mockApi(page, followData());
     await signIn(page);
     await page.locator('#lx-nav-maquetas').click();
-    await expect(page).toHaveURL(/#logistica\/maquetas$/);
+    await expect(page).toHaveURL(lxUrlRe('maquetas'));
     await expect(page.locator('#lx-mockups')).toBeVisible();
     await page.goBack();
     await expect(page.locator('#lx-mockups')).toHaveCount(0);
@@ -236,7 +238,7 @@ test.describe('Gestor logístico · maquetas (solo desarrollo)', () => {
 
   test('a direct link needs no sign-in', async ({page}) => {
     const api = await mockApi(page);
-    await page.goto('/#logistica/maquetas');
+    await page.goto(lxUrl('maquetas'));
     await expect(page.locator('#lx-mockups')).toBeVisible();
     await expect(page.locator('#lx-login-form')).toHaveCount(0);
     expect(api.requests.filter(r => r.path.startsWith('/auth'))).toHaveLength(

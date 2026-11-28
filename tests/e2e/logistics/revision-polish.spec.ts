@@ -8,6 +8,7 @@ import {
   mockApi,
   signIn,
 } from './mock-api';
+import {lxUrl} from './address';
 import {CAT, directoryData} from './directory-fixtures';
 import {IGIC} from './money-fixtures';
 import {
@@ -321,7 +322,7 @@ test.describe('Gestor logístico · forms · the quality group names the record'
 
   test('an offer', async ({page}) => {
     await mockApi(page, directoryData());
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await page.locator('#lx-catalog-add').click();
     await expect(page.locator('#lx-offer-quality-title')).toHaveText(
       'Calidad de la oferta',
@@ -338,7 +339,7 @@ test.describe('Gestor logístico · Catálogo · «Comparar» junto a la categor
     const data = directoryData();
     for (const c of data.companies ?? []) c.tax = IGIC;
     await mockApi(page, data);
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     const compare = page.locator(`#lx-catgroup-compare-${CAT.carpas}`);
     await expect(compare).toHaveText('Comparar');
     await expect(compare).toHaveAccessibleName(
@@ -411,7 +412,7 @@ test.describe('Gestor logístico · categorías · «Gestionar» en el sitio', (
       builtIn: false,
     };
     api.categories.push(custom);
-    await signIn(page, 'Elvis', '#logistica/catalogo');
+    await signIn(page, 'Elvis', lxUrl('catalogo'));
     await page.locator('#lx-catalog-add').click();
     const picker = page.locator('#lx-offer-categories');
     await expect(picker.locator('.lx-catpick__remove')).toHaveCount(0);

@@ -1,5 +1,6 @@
 import {expect, test, type Page} from '@playwright/test';
 import {fiveVenueData} from './calendar-columns-fixtures';
+import {goToAddress, lxUrl} from './address';
 import {mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData} from './plan-fixtures';
 
@@ -56,11 +57,9 @@ async function openDay(
   await mockApi(page, data);
   if (landscape) {
     await signIn(page);
-    await page.evaluate(h => {
-      window.location.hash = h;
-    }, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
   } else {
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
   }
   await expect(page.locator('#lx-timeline')).toBeVisible();
   await scrollTo(page, 7.5);

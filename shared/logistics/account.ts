@@ -31,24 +31,33 @@ const LINK_SEGMENT: Record<AccountLinkPurpose, string> = {
 };
 
 /**
- * Address fragment of an account link: `#logistica/cuenta/restablecer/<token>`.
- * The token travels in the fragment, so it never reaches a server log.
+ * Address of an account link relative to the web's address, e.g.
+ * `gestor-logistico/cuenta/restablecer#<token>` (the server prefixes
+ * `${PUBLIC_APP_URL}/`). The token travels in the fragment, so it never
+ * reaches a server, a proxy or a log.
  */
 export function accountLinkHash(
   purpose: AccountLinkPurpose,
   token: string,
 ): string {
-  return `#logistica/cuenta/${LINK_SEGMENT[purpose]}/${token}`;
+  return `gestor-logistico/cuenta/${LINK_SEGMENT[purpose]}#${token}`;
 }
 
-/** The purpose and token of an account link fragment, or null. */
+const ACCOUNT_LINK =
+  /^\/?gestor-logistico\/cuenta\/(restablecer|verificar)\/?#([A-Za-z0-9_-]{43})$/;
+/** The form mailed before 2026-11-28, still honoured. */
+const LEGACY_ACCOUNT_LINK =
+  /^#logistica\/cuenta\/(restablecer|verificar)\/([A-Za-z0-9_-]{43})$/;
+
+/**
+ * The purpose and token of an account link, or null. Reads the address and
+ * fragment together (`/gestor-logistico/cuenta/verificar#<token>`) or a
+ * legacy fragment alone (`#logistica/cuenta/verificar/<token>`).
+ */
 export function parseAccountLink(
-  hash: string,
+  location: string,
 ): {purpose: AccountLinkPurpose; token: string} | null {
-  const m =
-    /^#logistica\/cuenta\/(restablecer|verificar)\/([A-Za-z0-9_-]{43})$/.exec(
-      hash,
-    );
+  const m = ACCOUNT_LINK.exec(location) ?? LEGACY_ACCOUNT_LINK.exec(location);
   if (!m) return null;
   return {
     purpose: m[1] === 'restablecer' ? 'reset' : 'verify',

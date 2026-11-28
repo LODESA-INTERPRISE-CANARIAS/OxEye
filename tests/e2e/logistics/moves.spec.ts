@@ -13,6 +13,7 @@ import {
   type MockApi,
   type MockOptions,
 } from './mock-api';
+import {lxUrl} from './address';
 import {DAY, fixClock, planData, PLAZA_CRISTO} from './plan-fixtures';
 
 /**
@@ -47,7 +48,7 @@ async function openDay(
 ) {
   await page.setViewportSize({width: 1280, height: 900});
   const api = await mockApi(page, data);
-  await signIn(page, who, `#logistica/calendario/${DAY}`);
+  await signIn(page, who, lxUrl(`calendario/${DAY}`));
   await expect(page.locator('#lx-timeline')).toBeVisible();
   return api;
 }

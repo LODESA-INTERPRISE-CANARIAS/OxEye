@@ -14,6 +14,7 @@ const ROUTES: [HubRoute, string][] = [
   ['workspace', '/simulador/modelo'],
   ['settings', '/ajustes'],
   ['about', '/acerca'],
+  ['logistics', '/gestor-logistico'],
 ];
 
 describe('hub routes', () => {
@@ -57,6 +58,31 @@ describe('hub routes', () => {
       if (p) expect(parsed.known).toBe(false);
     }
     expect(parseHubPath('/ajustes', '/OxEye/').known).toBe(false);
+  });
+
+  it('everything under /gestor-logistico is the Gestor, never rewritten', () => {
+    for (const p of [
+      '/gestor-logistico',
+      '/gestor-logistico/',
+      '/gestor-logistico/calendario/2026-12-02',
+      '/gestor-logistico/tareas/ficha/tarea/AbC-123',
+      '/gestor-logistico/cuenta/restablecer',
+      '//gestor-logistico//contactos',
+    ]) {
+      expect(parseHubPath(p)).toEqual({route: 'logistics', known: true});
+      // The hub never puts a Gestor address «right»: the Gestor does.
+      expect(isCanonical(p)).toBe(true);
+    }
+    expect(parseHubPath('/OxEye/gestor-logistico/tareas', '/OxEye/')).toEqual({
+      route: 'logistics',
+      known: true,
+    });
+    // Not the Gestor's: other spellings fall back to the portada.
+    for (const p of ['/gestor-logisticos', '/Gestor-Logistico', '/gestor']) {
+      expect(parseHubPath(p).route).not.toBe('logistics');
+      expect(isCanonical(p)).toBe(false);
+    }
+    expect(parseHubPath('/gestor-logistico', '/OxEye/').known).toBe(false);
   });
 
   it('normalizes the base', () => {

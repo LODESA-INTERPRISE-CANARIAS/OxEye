@@ -5,6 +5,7 @@
  * profile photos, read-only members and the security log (never a secret).
  */
 import {beforeAll, describe, expect, it} from 'vitest';
+import {parseAccountLink} from '../../shared/logistics/account.ts';
 import {NO_MAIL} from '../src/config.ts';
 import {createMemoryTransport} from '../src/mail/transport.ts';
 import {seed} from '../src/seed/seed.ts';
@@ -410,7 +411,7 @@ describe('recovery and verification e-mails', () => {
     return {app, sent: transport.sent, call};
   };
   const tokenOf = (text: string) =>
-    /#logistica\/cuenta\/(?:restablecer|verificar)\/([A-Za-z0-9_-]{43})/.exec(
+    /\/gestor-logistico\/cuenta\/(?:restablecer|verificar)#([A-Za-z0-9_-]{43})/.exec(
       text,
     )?.[1] as string;
 
@@ -428,8 +429,10 @@ describe('recovery and verification e-mails', () => {
     expect(sent[0]).toMatchObject({to: FALLBACK});
     expect(sent[0]?.subject).toContain('«Equipo»');
     expect(sent[0]?.text).toContain(
-      `${TEST_ORIGIN}/#logistica/cuenta/restablecer/`,
+      `${TEST_ORIGIN}/gestor-logistico/cuenta/restablecer#`,
     );
+    // The token travels only in the fragment, never in the path.
+    expect(sent[0]?.text).not.toMatch(/\/\/[^\s#]*[A-Za-z0-9_-]{43}/);
     expect(sent[0]?.text).toContain('OxEye');
     expect(sent[0]?.text).not.toMatch(/pw-|contraseña: /);
 
@@ -769,8 +772,14 @@ describe('administration', () => {
       }),
     );
     expect(link.url).toMatch(
-      /^http:\/\/localhost:5173\/#logistica\/cuenta\/restablecer\/[A-Za-z0-9_-]{43}$/,
+      /^http:\/\/localhost:5173\/gestor-logistico\/cuenta\/restablecer#[A-Za-z0-9_-]{43}$/,
     );
+    const linkUrl = new URL(link.url);
+    expect(linkUrl.pathname).toBe('/gestor-logistico/cuenta/restablecer');
+    expect(parseAccountLink(linkUrl.pathname + linkUrl.hash)).toEqual({
+      purpose: 'reset',
+      token: linkUrl.hash.slice(1),
+    });
     expect(Date.parse(link.expiresAt) - h.clock.now().getTime()).toBe(
       30 * 60_000,
     );

@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl, lxUrlRe} from './address';
 import {PASSWORD, RESET_TOKEN, mockApi, signIn} from './mock-api';
 
 /**
@@ -209,12 +210,11 @@ test.describe('Gestor logístico · E4 · sesión', () => {
   }) => {
     const api = await mockApi(page);
     await signIn(page, 'Yeray');
-    // Pasted into the address bar of the open Gestor.
-    await page.evaluate(token => {
-      window.location.hash = `#logistica/cuenta/restablecer/${token}`;
-    }, RESET_TOKEN);
+    // Pasted into the address bar of the open Gestor (a new page load).
+    await page.goto(`${lxUrl('cuenta/restablecer')}#${RESET_TOKEN}`);
     // The token leaves the address bar at once.
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
+    expect(page.url()).not.toContain(RESET_TOKEN);
     await expect(page.locator('#lx-account-link-sheet')).toBeVisible();
     await page.locator('#lx-reset-password').fill('mi frase nueva y larga');
     await page.locator('#lx-reset-submit').click();

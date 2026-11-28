@@ -1,6 +1,6 @@
 /**
  * The budget sheet with its own address (Revisión 1 · E5):
- * `#logistica/…/ficha/presupuesto/<eventId>`, rendered by `LogisticsApp` like
+ * `/gestor-logistico/…/ficha/presupuesto/<eventId>`, rendered by `LogisticsApp` like
  * every other record sheet so a link opens it and Back / Forward step over
  * it.
  *

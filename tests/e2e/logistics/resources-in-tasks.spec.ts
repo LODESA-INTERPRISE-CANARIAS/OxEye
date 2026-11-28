@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {mockApi, signIn, type MockApi} from './mock-api';
 import {DAY, fixClock} from './plan-fixtures';
 import {RCAT, inventoryData} from './inventory-fixtures';
@@ -257,7 +258,7 @@ test.describe('Gestor logístico · inventario y carga sobre el suelo', () => {
     page,
   }) => {
     const api = await mockApi(page, inventoryData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page.locator('#lx-inventory-add').click();
     const note = page.locator('#lx-resource-load-note');
     await page.locator('#lx-resource-name').fill('Lastres Prueba');

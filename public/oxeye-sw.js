@@ -5,7 +5,8 @@
  * Gestor needs lives in its own IndexedDB copy; this worker only keeps the
  * page and its build files.
  *
- * - The app's page (the scope root or its index.html): network first, so a
+ * - The app's page (the scope root, its index.html or any clean address
+ *   under the scope such as `/gestor-logistico/calendario`): network first, so a
  *   new version is picked up as soon as there is coverage. When the network
  *   fails, or takes longer than NAVIGATION_WAIT_MS (weak coverage on site),
  *   the last page that loaded opens; the request still finishes in the
@@ -23,7 +24,8 @@
 /* global self, caches, fetch, Request, Response, URL, setTimeout */
 'use strict';
 
-const VERSION = 'oxeye-sw-v1';
+// v2: every clean address (`/gestor-logistico/…`) opens the stored page.
+const VERSION = 'oxeye-sw-v2';
 const PAGES = `${VERSION}:pages`;
 const ASSETS = `${VERSION}:assets`;
 /** Enough for the simulator and the Gestor chunks, without growing forever. */
@@ -81,11 +83,18 @@ function isApi(url) {
   );
 }
 
-/** The app's own page: the scope root or its index.html (any query). */
-function isAppIndex(url) {
-  return (
-    url.pathname === SCOPE_PATH || url.pathname === `${SCOPE_PATH}index.html`
-  );
+/**
+ * A navigation to one of the app's own addresses: the scope root, its
+ * index.html, or any clean path under the scope (`/gestor-logistico/…`,
+ * `/ajustes`, …; every one is the same page). Build files, public files with
+ * an extension and the API are not.
+ */
+function isAppPage(url) {
+  const path = url.pathname;
+  if (path === SCOPE_PATH || path === `${SCOPE_PATH}index.html`) return true;
+  if (path.startsWith(ASSETS_PATH)) return false;
+  const last = path.slice(path.lastIndexOf('/') + 1);
+  return !last.includes('.');
 }
 
 function cacheable(response) {
@@ -169,11 +178,26 @@ function navigate(event) {
   let storing = Promise.resolve();
   const network = fetch(request).then(response => {
     if (cacheable(response) && isHtml(response)) {
-      // Cloned before the page reads the body.
+      // Cloned before the page reads the body. Any clean address answers
+      // with the app's page, but a server without the index fallback (a
+      // «soft 404» page, a captive portal) answers with something else:
+      // only the app's own page replaces the stored one.
       const copy = response.clone();
-      storing = caches
-        .open(PAGES)
-        .then(cache => cache.put(INDEX_URL, copy))
+      storing = copy
+        .text()
+        .then(html =>
+          html.includes('<div id="root">')
+            ? caches.open(PAGES).then(cache =>
+                cache.put(
+                  INDEX_URL,
+                  new Response(html, {
+                    status: 200,
+                    headers: copy.headers,
+                  }),
+                ),
+              )
+            : undefined,
+        )
         .catch(() => undefined);
     }
     return response;
@@ -227,7 +251,7 @@ self.addEventListener('fetch', event => {
   if (request.headers.has('range')) return;
 
   if (request.mode === 'navigate') {
-    if (isAppIndex(url)) event.respondWith(navigate(event));
+    if (isAppPage(url)) event.respondWith(navigate(event));
     return;
   }
   if (url.pathname.startsWith(ASSETS_PATH) && HASHED.test(url.pathname)) {

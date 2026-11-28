@@ -1,4 +1,5 @@
 import {expect, test} from '@playwright/test';
+import {lxUrlRe} from './address';
 import {mockApi, signIn} from './mock-api';
 
 /**
@@ -38,7 +39,7 @@ test.describe('Gestor logístico · móvil', () => {
       await tab.click();
       await expect(page.locator(`#lx-space-${space.id}`)).toBeVisible();
       await expect(page.locator('#lx-title')).toHaveText(space.title);
-      await expect(page).toHaveURL(new RegExp(`#logistica/${space.id}$`));
+      await expect(page).toHaveURL(lxUrlRe(space.id));
       await expect(tab).toHaveAttribute('aria-current', 'page');
       await expect(page.locator('#lx-tab-hoy')).not.toHaveAttribute(
         'aria-current',
@@ -48,7 +49,7 @@ test.describe('Gestor logístico · móvil', () => {
     await page.locator('#lx-tab-hoy').click();
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
     await expect(page.locator('#lx-title')).toHaveText('Hola, Elvis');
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
 
     // Five tabs fit with readable labels; «Catálogo» (desk work) lives in
     // the account sheet.
@@ -57,12 +58,12 @@ test.describe('Gestor logístico · móvil', () => {
     await page.locator('#lx-account-button').click();
     await page.locator('#lx-account-catalogo').click();
     await expect(page.locator('#lx-space-catalogo')).toBeVisible();
-    await expect(page).toHaveURL(/#logistica\/catalogo$/);
+    await expect(page).toHaveURL(lxUrlRe('catalogo'));
     await expect(page.locator('#lx-account-sheet')).toBeHidden();
 
     // The hash a tab wrote reopens the same space after a reload.
     await page.locator('#lx-tab-inventarios').click();
-    await expect(page).toHaveURL(/#logistica\/inventarios$/);
+    await expect(page).toHaveURL(lxUrlRe('inventarios'));
     await page.reload();
     await expect(page.locator('#lx-space-inventarios')).toBeVisible();
     // Milestone 4: Inventarios is a real space, not the placeholder.
@@ -83,14 +84,14 @@ test.describe('Gestor logístico · móvil', () => {
       .locator('#lx-account-sheet')
       .getByRole('button', {name: 'Cierre de jornada'})
       .click();
-    await expect(page).toHaveURL(/#logistica\/cierre$/);
+    await expect(page).toHaveURL(lxUrlRe('cierre'));
     await expect(page.locator('#lx-space-cierre #lx-day-title')).toBeVisible();
     await expect(
       page.locator('#lx-space-cierre').getByRole('button', {name: 'Ir a Hoy'}),
     ).toHaveCount(0);
     await page.locator('#lx-tab-hoy').click();
     await expect(page.locator('#lx-space-hoy')).toBeVisible();
-    await expect(page).toHaveURL(/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
   });
 
   test('the floating «Añadir» opens the event sheet', async ({page}) => {

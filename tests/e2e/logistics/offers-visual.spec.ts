@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrl} from './address';
 import {SUPPLIER_TOKEN, mockApi, signIn} from './mock-api';
 import {offersData} from './offers-fixtures';
 
@@ -47,7 +48,7 @@ async function scrollSheetTo(page: Page, selector: string) {
 test('E6 · offer terms and the cost of a need (desktop)', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, offersData());
-  await signIn(page, 'Elvis', '#logistica/catalogo/ficha/oferta/o1');
+  await signIn(page, 'Elvis', lxUrl('catalogo/ficha/oferta/o1'));
   await expect(page.locator('#lx-offer-terms')).toBeVisible();
   await scrollSheetTo(page, '#lx-offer-terms');
   await capture(page, 'terms');
@@ -59,7 +60,7 @@ test('E6 · offer terms and the cost of a need (desktop)', async ({page}) => {
 test('E7 · request detail with the comparison (desktop)', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, offersData());
-  await signIn(page, 'Elvis', '#logistica/catalogo');
+  await signIn(page, 'Elvis', lxUrl('catalogo'));
   await page.locator('#lx-ctab-requests').click();
   await capture(page, 'requests');
   await page.locator('[data-request-id="qr1"]').click();
@@ -70,7 +71,7 @@ test('E7 · request detail with the comparison (desktop)', async ({page}) => {
 test('E7 · inbox and a proposal to check (desktop)', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, offersData());
-  await signIn(page, 'Elvis', '#logistica/catalogo');
+  await signIn(page, 'Elvis', lxUrl('catalogo'));
   await page.locator('#lx-ctab-inbox').click();
   await expect(page.locator('#lx-inbox-list')).toBeVisible();
   await capture(page, 'inbox');
@@ -82,7 +83,7 @@ test('E7 · inbox and a proposal to check (desktop)', async ({page}) => {
 test('E6 · renewals (desktop)', async ({page}) => {
   await page.setViewportSize(DESKTOP);
   await mockApi(page, offersData());
-  await signIn(page, 'Elvis', '#logistica/catalogo');
+  await signIn(page, 'Elvis', lxUrl('catalogo'));
   await page.locator('#lx-ctab-renewals').click();
   await expect(page.locator('#lx-renewals-list')).toBeVisible();
   await page.locator('#lx-open-link-on').click();
@@ -93,7 +94,7 @@ test('E6 · renewals (desktop)', async ({page}) => {
 test('E7 · links to share after asking (phone)', async ({page}) => {
   await page.setViewportSize(PHONE);
   await mockApi(page, offersData());
-  await signIn(page, 'Elvis', '#logistica/catalogo');
+  await signIn(page, 'Elvis', lxUrl('catalogo'));
   await page.locator('#lx-request-new').click();
   await page.locator('#lx-qr-title').fill('2 escenarios de 8 × 6 m');
   await page.locator('#lx-qr-companyIds').click();
@@ -113,7 +114,7 @@ test('E7 · links to share after asking (phone)', async ({page}) => {
 test('E7 · proposal sheet as the team (phone)', async ({page}) => {
   await page.setViewportSize(PHONE);
   await mockApi(page, offersData());
-  await signIn(page, 'Equipo', '#logistica/catalogo');
+  await signIn(page, 'Equipo', lxUrl('catalogo'));
   await page.locator('#lx-ctab-inbox').click();
   await page.locator('[data-proposal-id="p1"]').click();
   await expect(page.locator('#lx-proposal-locked')).toBeVisible();
@@ -124,7 +125,7 @@ test.describe('supplier page (needs the mount in LogisticsApp)', () => {
   test('E7 · supplier form steps (phone)', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page, offersData());
-    await page.goto(`/#logistica/proveedor/${SUPPLIER_TOKEN}`);
+    await page.goto(`${lxUrl('proveedor')}#${SUPPLIER_TOKEN}`);
     await expect(page.locator('#lx-supplier-request')).toBeVisible();
     await capture(page, 'supplier-start-phone');
     await page.locator('#lx-sf-intent .lx-choice[data-value="yes"]').click();
@@ -165,7 +166,7 @@ test.describe('supplier page (needs the mount in LogisticsApp)', () => {
   test('E7 · link no longer available (desktop)', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, offersData());
-    await page.goto(`/#logistica/proveedor/${'z'.repeat(43)}`);
+    await page.goto(`${lxUrl('proveedor')}#${'z'.repeat(43)}`);
     await expect(page.locator('#lx-supplier-gone')).toBeVisible();
     await capture(page, 'supplier-gone');
   });

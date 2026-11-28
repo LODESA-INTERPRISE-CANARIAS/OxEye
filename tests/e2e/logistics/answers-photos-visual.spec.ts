@@ -7,6 +7,7 @@ import {
   mockApi,
   signIn,
 } from './mock-api';
+import {lxUrl} from './address';
 import {fixClock} from './plan-fixtures';
 import {inventoryData} from './inventory-fixtures';
 
@@ -284,7 +285,7 @@ test.describe('Revisión 1 visual · siglas y horario del almacén', () => {
   test('form with an hours problem (desktop)', async ({page}) => {
     await page.setViewportSize(DESKTOP);
     await mockApi(page, hoursData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await capture(page, 'warehouse-cards');
     await page.locator('#lx-inventory-add-warehouse').click();
     await page.locator('#lx-warehouse-name').fill('Almacén Municipal');
@@ -298,7 +299,7 @@ test.describe('Revisión 1 visual · siglas y horario del almacén', () => {
   test('sheet with hours (phone)', async ({page}) => {
     await page.setViewportSize(PHONE);
     await mockApi(page, hoursData());
-    await signIn(page, 'Elvis', '#logistica/inventarios');
+    await signIn(page, 'Elvis', lxUrl('inventarios'));
     await page
       .locator('[data-warehouse-id] .lx-whgroup__open')
       .filter({hasText: 'Sur'})

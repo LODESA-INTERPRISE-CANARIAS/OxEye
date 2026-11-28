@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {goToAddress, lxUrl} from './address';
 import {mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData, PLAZA_CRISTO} from './plan-fixtures';
 
@@ -50,11 +51,9 @@ async function open(page: Page, size: {width: number; height: number}) {
   await mockApi(page, data());
   if (size === LANDSCAPE) {
     await signIn(page);
-    await page.evaluate(h => {
-      window.location.hash = h;
-    }, `#logistica/calendario/${DAY}`);
+    await goToAddress(page, lxUrl(`calendario/${DAY}`));
   } else {
-    await signIn(page, 'Elvis', `#logistica/calendario/${DAY}`);
+    await signIn(page, 'Elvis', lxUrl(`calendario/${DAY}`));
   }
 }
 

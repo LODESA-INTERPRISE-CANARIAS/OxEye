@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useState} from 'react';
+import {rewriteLegacyLocation} from '../../logistics/shell/address';
 import {hubPath, isCanonical, parseHubPath, type HubRoute} from './hubRoute';
 
 const BASE = import.meta.env?.BASE_URL ?? '/';
@@ -21,9 +22,12 @@ export interface HubNavigation {
  * the phone's back gesture move between them, and puts unknown or
  * non-canonical paths right with `replaceState` (no error page).
  *
- * It reads only the pathname: the Gestor's `#logistica…` entries (its own
- * `historyNav`) leave it unchanged, and hub navigation drops the hash only
- * when it moves to another screen.
+ * It reads only the pathname: every Gestor address (`/gestor-logistico/**`,
+ * written by its own `historyNav`) is the `logistics` route and is never
+ * rewritten here, and hub navigation drops the hash only when it moves to
+ * another screen. A legacy `#logistica…` fragment typed or pasted over the
+ * hub is rewritten to its clean address first (`main.tsx` does the same on
+ * load).
  */
 export function useHubRoute(): HubNavigation {
   const [route, setRoute] = useState<HubRoute>(current);
@@ -37,7 +41,10 @@ export function useHubRoute(): HubNavigation {
         `${hubPath(current(), BASE)}${search}${hash}`,
       );
     }
-    const onPop = () => setRoute(current());
+    const onPop = () => {
+      rewriteLegacyLocation();
+      setRoute(current());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);

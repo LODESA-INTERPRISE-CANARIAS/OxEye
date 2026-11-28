@@ -67,8 +67,9 @@ interface BoundaryState {
 
 /**
  * Catches a failed lazy import or a render error inside the module and offers
- * to reload (a rejected lazy import is cached until reload; the `#logistica`
- * hash reopens the module) or go back, instead of leaving a blank screen.
+ * to reload (a rejected lazy import is cached until reload; the
+ * `/gestor-logistico` address reopens the module) or go back, instead of
+ * leaving a blank screen.
  */
 export class LogisticsBoundary extends React.Component<
   BoundaryProps,

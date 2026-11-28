@@ -4,8 +4,8 @@
  * the users panel (F2). Development builds only, fictitious data, no server.
  *
  * Contract with LogisticsApp: default export, rendered lazily for
- * `#logistica/maquetas` when `import.meta.env.DEV`; `onExit` returns to the
- * Gestor.
+ * `/gestor-logistico/maquetas` when `import.meta.env.DEV`; `onExit` returns
+ * to the Gestor.
  *
  * State lives in React only: nothing is stored, sent or fetched. A ribbon on
  * every screen says so, leads back to the index and switches the palette

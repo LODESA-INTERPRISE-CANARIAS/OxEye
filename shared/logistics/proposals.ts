@@ -39,22 +39,37 @@ export const PROPOSAL_BODY_MAX_BYTES = 48 * 1024;
 /** Personal and open links: 32 random bytes, base64url (43 characters). */
 export const LINK_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
-/** `#logistica/proveedor/<token>`: the company's personal form for one request. */
+/*
+ * Link addresses are relative to the web's address (the server prefixes
+ * `${base}/`). The token travels in the fragment, so it never reaches a
+ * server, a proxy or a log.
+ */
+
+/** `gestor-logistico/proveedor#<token>`: the company's personal form for one request. */
 export function supplierLinkHash(token: string): string {
-  return `#logistica/proveedor/${token}`;
+  return `gestor-logistico/proveedor#${token}`;
 }
 
-/** `#logistica/proveedor/abierto/<token>`: the open «presentar oferta» form. */
+/** `gestor-logistico/proveedor/abierto#<token>`: the open «presentar oferta» form. */
 export function openOfferLinkHash(token: string): string {
-  return `#logistica/proveedor/abierto/${token}`;
+  return `gestor-logistico/proveedor/abierto#${token}`;
 }
 
+const SUPPLIER_LINK =
+  /^\/?gestor-logistico\/proveedor(\/abierto)?\/?#([A-Za-z0-9_-]{43})$/;
+/** The form sent before 2026-11-28, still honoured. */
+const LEGACY_SUPPLIER_LINK =
+  /^#logistica\/proveedor\/(abierto\/)?([A-Za-z0-9_-]{43})$/;
+
+/**
+ * Kind and token of a supplier link, or null. Reads the address and fragment
+ * together (`/gestor-logistico/proveedor#<token>`) or a legacy fragment
+ * alone (`#logistica/proveedor/<token>`).
+ */
 export function parseSupplierLink(
-  hash: string,
+  location: string,
 ): {kind: 'request' | 'open'; token: string} | null {
-  const m = /^#logistica\/proveedor\/(abierto\/)?([A-Za-z0-9_-]{43})$/.exec(
-    hash,
-  );
+  const m = SUPPLIER_LINK.exec(location) ?? LEGACY_SUPPLIER_LINK.exec(location);
   if (!m) return null;
   return {kind: m[1] ? 'open' : 'request', token: m[2] as string};
 }
@@ -185,10 +200,12 @@ export function proposalFlags(
       `${name}${rate !== null ? ` ${rate.toLocaleString('es-ES')} %` : ''} · por verificar`,
     );
   }
-  if (content.pricesIncludeTax === true)
-    {flags.push('Precios con impuesto incluido');}
-  if (content.pricesIncludeTax === null)
-    {flags.push('No dice si el precio incluye impuesto');}
+  if (content.pricesIncludeTax === true) {
+    flags.push('Precios con impuesto incluido');
+  }
+  if (content.pricesIncludeTax === null) {
+    flags.push('No dice si el precio incluye impuesto');
+  }
   for (const p of content.products) {
     if (p.price === null) flags.push(`${p.name}: sin precio`);
     for (const s of p.supplements ?? []) {
@@ -207,7 +224,8 @@ export function proposalFlags(
   } else if (content.acceptUntil <= addDays(today, 7)) {
     flags.push('Vence en menos de una semana');
   }
-  if (content.serviceMonths === null)
-    {flags.push('No dice cuándo puede dar el servicio');}
+  if (content.serviceMonths === null) {
+    flags.push('No dice cuándo puede dar el servicio');
+  }
   return [...new Set(flags)];
 }

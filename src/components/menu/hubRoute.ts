@@ -10,12 +10,26 @@
  *
  * Paths are relative to the build's base (`import.meta.env.BASE_URL`), so a
  * build served under a sub-folder keeps working at its root. The hash is not
- * part of a hub address: the Gestor logístico still lives at `#logistica`
- * over whichever hub path is open.
+ * part of a hub address.
+ *
+ *   /gestor-logistico/** the Gestor logístico is open over the hub
+ *
+ * Everything under `/gestor-logistico` belongs to the Gestor (its own
+ * addresses: `src/logistics/shell/route.ts`): the hub knows it as one route
+ * and never rewrites it.
  */
 
 export type HubRoute =
-  'home' | 'simulator' | 'new-model' | 'workspace' | 'settings' | 'about';
+  | 'home'
+  | 'simulator'
+  | 'new-model'
+  | 'workspace'
+  | 'settings'
+  | 'about'
+  | 'logistics';
+
+/** First path segment of every Gestor address (exact case). */
+const LOGISTICS_SEGMENT = 'gestor-logistico';
 
 const PATH_OF: Record<HubRoute, string> = {
   home: '',
@@ -24,10 +38,15 @@ const PATH_OF: Record<HubRoute, string> = {
   workspace: 'simulador/modelo',
   settings: 'ajustes',
   about: 'acerca',
+  logistics: LOGISTICS_SEGMENT,
 };
 
+// The hub's own screens, read leniently; the Gestor's prefix is matched
+// exactly in `parseHubPath`.
 const ROUTE_OF = new Map<string, HubRoute>(
-  (Object.entries(PATH_OF) as [HubRoute, string][]).map(([r, p]) => [p, r]),
+  (Object.entries(PATH_OF) as [HubRoute, string][])
+    .filter(([r]) => r !== 'logistics')
+    .map(([r, p]) => [p, r]),
 );
 
 /** `/OxEye` or `/OxEye/` → `/OxEye/`; empty → `/`. */
@@ -55,6 +74,11 @@ export function parseHubPath(pathname: string, base?: string): ParsedHubPath {
   if (`${path}/` === root) path = root;
   if (!path.startsWith(root)) return {route: 'home', known: false};
   let rest = path.slice(root.length);
+  // The Gestor's addresses, as they are: its ids are case-sensitive and its
+  // own router reads them.
+  if (rest.split('/').find(Boolean) === LOGISTICS_SEGMENT) {
+    return {route: 'logistics', known: true};
+  }
   try {
     rest = decodeURIComponent(rest);
   } catch {
@@ -78,5 +102,7 @@ export function hubPath(route: HubRoute, base?: string): string {
 /** True when the path is a hub address in its exact form (`/ajustes`, not `/ajustes/`). */
 export function isCanonical(pathname: string, base?: string): boolean {
   const {route, known} = parseHubPath(pathname, base);
+  // The Gestor puts its own addresses right (`historyNav`).
+  if (route === 'logistics') return true;
   return known && pathname === hubPath(route, base);
 }

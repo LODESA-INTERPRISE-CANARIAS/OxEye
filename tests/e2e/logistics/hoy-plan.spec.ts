@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import {lxUrlRe} from './address';
 import {mockApi, signIn} from './mock-api';
 import {DAY, fixClock, planData, planEvents, planTasks} from './plan-fixtures';
 
@@ -93,7 +94,7 @@ test.describe('Gestor logístico · «Hoy» con tareas', () => {
 
     // «Ver el día» opens today in the calendar.
     await page.locator('#lx-today-open-day').click();
-    await expect(page).toHaveURL(new RegExp(`#logistica/calendario/${DAY}$`));
+    await expect(page).toHaveURL(lxUrlRe(`calendario/${DAY}`));
   });
 
   test('«Avisos de hoy»: conflicts first, each link opens its task', async ({

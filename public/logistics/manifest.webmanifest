@@ -3,7 +3,7 @@
   "short_name": "Gestor logístico",
   "description": "Montaje y desmontaje de eventos: qué llega, cuándo, de quién y si está hecho. Funciona también sin cobertura.",
   "lang": "es",
-  "start_url": "../#logistica",
+  "start_url": "../gestor-logistico",
   "scope": "../",
   "display": "standalone",
   "background_color": "#f7f6fa",

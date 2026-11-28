@@ -4,6 +4,7 @@ import {
   openWorkspaceWithDefaultProject,
   WIZARD_SUBMIT,
 } from './helpers';
+import {lxUrl, lxUrlRe} from './logistics/address';
 import {mockApi} from './logistics/mock-api';
 
 /**
@@ -293,7 +294,7 @@ test.describe('Hub · Gestor logístico', () => {
     await page.locator('#game-logistics').click();
     // The Gestor is a lazy chunk; a cold dev server compiles it on demand.
     await expect(page.locator('#logistics-app')).toBeVisible({timeout: 15000});
-    await expect(page).toHaveURL(/\/#logistica$/);
+    await expect(page).toHaveURL(lxUrlRe());
     await expect(page).toHaveTitle('Gestor logístico · OxEye');
 
     await page.locator('#lx-gate-exit').click();
@@ -305,7 +306,7 @@ test.describe('Hub · Gestor logístico', () => {
     await expect(page).toHaveTitle('OxEye');
   });
 
-  test('#logistica works on any hub path and closing keeps that path', async ({
+  test('a legacy #logistica on any hub path opens the Gestor at its new address', async ({
     page,
   }) => {
     await mockApi(page);
@@ -313,12 +314,29 @@ test.describe('Hub · Gestor logístico', () => {
     // The Gestor is a lazy chunk; a cold dev server compiles it on demand.
     await expect(page.locator('#logistics-app')).toBeVisible({timeout: 15000});
     await expect(menu(page)).toHaveAttribute('inert', '');
+    await expect(page).toHaveURL(lxUrlRe());
 
     await page.locator('#lx-gate-exit').click();
     await expect(page.locator('#logistics-app')).toHaveCount(0);
-    await expect.poll(() => new URL(page.url()).hash).toBe('');
-    expect(pathOf(page)).toBe('/ajustes');
-    await expect(title(page)).toHaveText('Ajustes');
+    await expect.poll(() => pathOf(page)).toBe('/');
+    expect(new URL(page.url()).hash).toBe('');
+    await expect(title(page)).toHaveText('OxEye');
+  });
+
+  test('/gestor-logistico opens the Gestor directly; closing returns to /', async ({
+    page,
+  }) => {
+    await mockApi(page);
+    await page.goto(lxUrl());
+    await expect(page.locator('#logistics-app')).toBeVisible({timeout: 15000});
+    await expect(menu(page)).toHaveAttribute('inert', '');
+    await expect(page).toHaveTitle('Gestor logístico · OxEye');
+
+    await page.locator('#lx-gate-exit').click();
+    await expect(page.locator('#logistics-app')).toHaveCount(0);
+    await expect.poll(() => pathOf(page)).toBe('/');
+    expect(new URL(page.url()).hash).toBe('');
+    await expect(title(page)).toHaveText('OxEye');
   });
 });
 

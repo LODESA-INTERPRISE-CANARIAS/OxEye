@@ -5,6 +5,7 @@ import {
   whatsappHref,
 } from '../../../shared/logistics/contact-links.ts';
 import {WORK_ORDER_NEVER_NOTE} from '../../../shared/logistics/work-order.ts';
+import {lxUrl} from './address';
 import {addDays, makeTask, mockApi, signIn} from './mock-api';
 import {DAY, PLAZA_CRISTO, fixClock} from './plan-fixtures';
 import {copied, opened, trapOutgoing} from './directory-fixtures';
@@ -81,7 +82,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
   test('the guest has no work-order entry', async ({page}) => {
     await mockApi(page, followData());
     // E4: no Contactos for the guest, so no company or person to start from.
-    await signIn(page, 'Invitado', '#logistica/contactos');
+    await signIn(page, 'Invitado', lxUrl('contactos'));
     await expect(page.locator('#lx-contactos-noaccess')).toBeVisible();
     await expect(
       page.locator(`[data-company-id="${ESCENARIOS.id}"]`),
@@ -94,7 +95,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
 
     for (const on of [
@@ -161,7 +162,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     const preview = page.locator('#lx-order-preview');
     const extra: [string, string][] = [
@@ -195,7 +196,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     const routes = page.locator('#lx-order-preview .lx-order__routes');
     await expect(routes).toContainText('A (acceso de vehículos)');
@@ -225,7 +226,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
       ),
     ];
     await mockApi(page, followData({tasks}));
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     await expect(page.locator(`#lx-order-day-${DAY}`)).toHaveAttribute(
       'aria-pressed',
@@ -246,7 +247,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     await expect(page.locator(`#lx-order-sheet ${OUTGOING}`)).toHaveCount(0);
     await page.locator('#lx-order-send').click();
@@ -267,7 +268,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     // One task keeps the links short (no copy step).
     await page.locator('#lx-order-task-h9').uncheck();
@@ -299,7 +300,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     await page.locator('#lx-order-task-h9').uncheck();
     const text = await orderText(page);
@@ -315,7 +316,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
     page,
   }) => {
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     // Bruno Demo: no phone, no e-mail; contact of h4 today.
     await openPersonOrder(page, 'p2');
     await expect(page.locator('#lx-order-preview')).toContainText(
@@ -344,7 +345,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
       };
     });
     await mockApi(page, followData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     await page.locator('#lx-order-print').click();
     expect(
@@ -372,7 +373,7 @@ test.describe('Gestor logístico · órdenes de trabajo', () => {
 
   test('a hypothesis never reaches the order', async ({page}) => {
     await mockApi(page, followData({hypotheses: [openHypothesis()]}));
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     const preview = page.locator('#lx-order-preview');
     // The plan's time, not the hypothetical 09:30–13:30.
@@ -412,7 +413,7 @@ test.describe('Gestor logístico · órdenes de trabajo largas', () => {
     page,
   }) => {
     await mockApi(page, longData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     await page.locator('#lx-order-send').click();
     await expect(page.locator('#lx-order-send-whatsapp-what')).toContainText(
@@ -446,7 +447,7 @@ test.describe('Gestor logístico · órdenes de trabajo largas', () => {
     cdp.on('Page.frameRequestedNavigation', e => navigations.push(e.url));
 
     await mockApi(page, longData());
-    await signIn(page, 'Elvis', '#logistica/contactos');
+    await signIn(page, 'Elvis', lxUrl('contactos'));
     await openCompanyOrder(page);
     await page.locator('#lx-order-send').click();
     await expect(page.locator('#lx-order-send-mail-what')).toContainText(
